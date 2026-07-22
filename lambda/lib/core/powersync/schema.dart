@@ -1,0 +1,62 @@
+import 'package:powersync/powersync.dart';
+
+const schema = Schema([
+  Table('dim_user', [
+    Column.text('user_id'),
+    Column.text('user_name'),
+    Column.text('user_lastname'),
+    Column.text('user_date_created'),
+    Column.text('user_date_of_birth'),
+    Column.text('user_gender'),
+    Column.text('user_height_cm'),
+    Column.integer('onboarded'),
+    Column.text('user_weight_kg'),
+  ]),
+  Table('fact_user_workout', [
+    Column.text('user_workout_id'),
+    Column.text('user_id'),
+    Column.text('user_pre_workout_notes'),
+    Column.text('user_post_workout_notes'),
+    Column.text('user_workout_created_date'),
+    Column.integer('is_active'),
+    Column.integer('deleted_locally'),
+  ]),
+  Table('user_custom_exercise', [
+    Column.text('custom_exercise_id'),
+    Column.text('user_id'),
+    Column.text('exercise_name'),
+    Column.text('exercise_volume_type'),
+    Column.integer('is_active'),
+  ]),
+  Table('user_custom_variation', [
+    Column.text('custom_variation_id'),
+    Column.text('user_id'),
+    Column.text('variation_name'),
+    Column.integer('is_active'),
+  ]),
+  Table('user_custom_exercise_variation_bridge', [
+    Column.text('custom_exercise_id'),
+    Column.text('custom_variation_id'),
+    Column.text('user_id'),
+    Column.integer('deleted_locally'),
+  ]),
+  Table('fact_user_weight', [
+    Column.integer('user_weight_id'),
+    Column.text('user_id'),
+    Column.text('user_weight'),
+    Column.text('user_weight_date'),
+    Column.text('created_date'),
+  ]),
+  Table('fact_workout_set', [
+    Column.text('workout_set_id'),
+    Column.text('user_workout_id'),
+    Column.text('custom_exercise_id'),
+    Column.text('custom_variation_id'),
+    Column.integer('workout_set_number'),
+    Column.text('workout_set_weight'),
+    Column.text('workout_set_reps'),
+    Column.text('workout_set_duration_seconds'),
+    Column.text('workout_set_notes'),
+    Column.integer('deleted_locally'),
+  ]),
+]);

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "powersync": {
+      "type": "http",
+      "url": "https://docs.powersync.com/mcp"
+    }
+  }
+}

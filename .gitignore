@@ -1,0 +1,5 @@
+# Claude Code local settings & transcripts
+.claude/
+
+# Editor
+.vscode/
