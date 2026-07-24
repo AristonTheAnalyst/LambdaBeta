@@ -10,6 +10,49 @@ class DropdownOption<T> {
   final T value;
 }
 
+/// Wraps modal-sheet content (every [showLambdaModal] call gets one
+/// automatically) so any [DropdownSelect] inside shows its option picker as
+/// an in-place overlay confined to that sheet's own bounds, instead of
+/// stacking a brand-new independent bottom sheet on top of it.
+class DropdownSheetHost extends StatefulWidget {
+  const DropdownSheetHost({super.key, required this.child});
+
+  final Widget child;
+
+  static DropdownSheetHostState? maybeOf(BuildContext context) =>
+      context.findAncestorStateOfType<DropdownSheetHostState>();
+
+  @override
+  State<DropdownSheetHost> createState() => DropdownSheetHostState();
+}
+
+class DropdownSheetHostState extends State<DropdownSheetHost> {
+  Widget Function(VoidCallback dismiss)? _picker;
+
+  void showPicker(Widget Function(VoidCallback dismiss) builder) {
+    setState(() => _picker = builder);
+  }
+
+  void _dismiss() => setState(() => _picker = null);
+
+  @override
+  Widget build(BuildContext context) {
+    final picker = _picker;
+    return Stack(
+      children: [
+        widget.child,
+        if (picker != null)
+          Positioned.fill(
+            child: Container(
+              color: AppColors.surface,
+              child: picker(_dismiss),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
 class DropdownSelect<T> extends StatelessWidget {
   const DropdownSelect({
     super.key,
@@ -44,15 +87,31 @@ class DropdownSelect<T> extends StatelessWidget {
   Widget build(BuildContext context) {
     final hasValue = value != null;
     return GestureDetector(
-      onTap: () => showDropdownPickerSheet<T>(
-        context,
-        options: options,
-        value: value,
-        searchable: searchable,
-        onCreateNew: onCreateNew,
-        createNewLabel: createNewLabel,
-        onSelect: onChange,
-      ),
+      onTap: () {
+        final host = DropdownSheetHost.maybeOf(context);
+        if (host != null) {
+          host.showPicker((dismiss) => _DropdownSheetContent<T>(
+                options: options,
+                value: value,
+                searchable: searchable,
+                onCreateNew: onCreateNew,
+                createNewLabel: createNewLabel,
+                fillHeight: true,
+                onClose: dismiss,
+                onSelect: onChange,
+              ));
+        } else {
+          showDropdownPickerSheet<T>(
+            context,
+            options: options,
+            value: value,
+            searchable: searchable,
+            onCreateNew: onCreateNew,
+            createNewLabel: createNewLabel,
+            onSelect: onChange,
+          );
+        }
+      },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         decoration: BoxDecoration(
@@ -81,8 +140,9 @@ class DropdownSelect<T> extends StatelessWidget {
   }
 }
 
-/// Shows the searchable option-picker sheet on its own, independent of a
-/// [DropdownSelect] field. Used by [DropdownSelect] itself, and standalone by
+/// Shows the searchable option-picker as its own independent bottom sheet —
+/// used as a fallback when there's no enclosing [DropdownSheetHost] to
+/// confine to (e.g. a [DropdownSelect] on a plain page), and standalone by
 /// callers that want to jump straight to picking an option — e.g. reopening
 /// the picker right after the user creates a brand-new option from within it,
 /// instead of dropping them back into a whole form first.
@@ -98,27 +158,29 @@ void showDropdownPickerSheet<T>(
   showLambdaModal<T>(
     context,
     fitContent: true,
-    child: _DropdownSheet<T>(
+    keyboardAware: true,
+    child: _DropdownSheetContent<T>(
       options: options,
       value: value,
       searchable: searchable,
       onCreateNew: onCreateNew,
       createNewLabel: createNewLabel,
-      onSelect: (v) {
-        Navigator.of(context, rootNavigator: true).pop();
-        onSelect(v);
-      },
+      fillHeight: false,
+      onClose: () => Navigator.of(context, rootNavigator: true).pop(),
+      onSelect: onSelect,
     ),
   );
 }
 
-class _DropdownSheet<T> extends StatefulWidget {
-  const _DropdownSheet({
+class _DropdownSheetContent<T> extends StatefulWidget {
+  const _DropdownSheetContent({
     required this.options,
     required this.value,
     required this.searchable,
     required this.onSelect,
     required this.createNewLabel,
+    required this.onClose,
+    required this.fillHeight,
     this.onCreateNew,
   });
 
@@ -128,12 +190,20 @@ class _DropdownSheet<T> extends StatefulWidget {
   final VoidCallback? onCreateNew;
   final String createNewLabel;
   final ValueChanged<T?> onSelect;
+  // Closes this picker — pops the route when shown standalone, or clears the
+  // hosting sheet's overlay when shown in-place.
+  final VoidCallback onClose;
+  // true when confined inside a DropdownSheetHost (Positioned.fill gives a
+  // definite height to fill); false when this is its own bottom sheet route
+  // sizing itself to content, up to a max height.
+  final bool fillHeight;
 
   @override
-  State<_DropdownSheet<T>> createState() => _DropdownSheetState<T>();
+  State<_DropdownSheetContent<T>> createState() =>
+      _DropdownSheetContentState<T>();
 }
 
-class _DropdownSheetState<T> extends State<_DropdownSheet<T>> {
+class _DropdownSheetContentState<T> extends State<_DropdownSheetContent<T>> {
   String _query = '';
 
   List<DropdownOption<T>> get _filtered => widget.options
@@ -142,75 +212,96 @@ class _DropdownSheetState<T> extends State<_DropdownSheet<T>> {
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Handle bar
-          Container(
-            margin: const EdgeInsets.symmetric(vertical: 10),
-            width: 36,
-            height: 4,
-            decoration: BoxDecoration(
-              color: AppColors.border,
-              borderRadius: BorderRadius.circular(2),
+    final list = ListView.separated(
+      shrinkWrap: true,
+      itemCount: _filtered.length,
+      separatorBuilder: (_, _) => Divider(height: 1, color: AppColors.border),
+      itemBuilder: (_, i) {
+        final opt = _filtered[i];
+        return _SheetRow(
+          label: opt.label,
+          isSelected: opt.value == widget.value,
+          onTap: () {
+            widget.onClose();
+            widget.onSelect(opt.value);
+          },
+        );
+      },
+    );
+
+    final children = [
+      // Handle bar
+      Container(
+        margin: const EdgeInsets.symmetric(vertical: 10),
+        width: 36,
+        height: 4,
+        decoration: BoxDecoration(
+          color: AppColors.border,
+          borderRadius: BorderRadius.circular(2),
+        ),
+      ),
+      if (widget.searchable)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: TextField(
+            autofocus: true,
+            style: TextStyle(
+                fontSize: AppTextStyles.md, color: AppColors.primary),
+            decoration: InputDecoration(
+              hintText: 'Search…',
+              hintStyle: TextStyle(color: AppColors.muted),
+              filled: true,
+              fillColor: AppColors.surfaceHigh,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(AppRadius.md),
+                borderSide: BorderSide.none,
+              ),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              prefixIcon:
+                  Icon(Icons.search, size: 18, color: AppColors.muted),
             ),
+            onChanged: (v) => setState(() => _query = v),
           ),
-          if (widget.searchable)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-              child: TextField(
-                autofocus: true,
-                style: TextStyle(
-                    fontSize: AppTextStyles.md, color: AppColors.primary),
-                decoration: InputDecoration(
-                  hintText: 'Search…',
-                  hintStyle: TextStyle(color: AppColors.muted),
-                  filled: true,
-                  fillColor: AppColors.surfaceHigh,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(AppRadius.md),
-                    borderSide: BorderSide.none,
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 14, vertical: 10),
-                  prefixIcon:
-                      Icon(Icons.search, size: 18, color: AppColors.muted),
-                ),
-                onChanged: (v) => setState(() => _query = v),
+        ),
+      if (widget.onCreateNew != null)
+        _SheetRow(
+          label: widget.createNewLabel,
+          color: AppColors.accent,
+          isSelected: false,
+          onTap: () {
+            widget.onClose();
+            widget.onCreateNew!();
+          },
+        ),
+      widget.fillHeight
+          ? Expanded(child: list)
+          : Flexible(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                    maxHeight: MediaQuery.of(context).size.height * 0.5),
+                child: list,
               ),
             ),
-          if (widget.onCreateNew != null)
-            _SheetRow(
-              label: widget.createNewLabel,
-              color: AppColors.accent,
-              isSelected: false,
-              onTap: () {
-                Navigator.of(context, rootNavigator: true).pop();
-                widget.onCreateNew!();
-              },
-            ),
-          ConstrainedBox(
-            constraints: BoxConstraints(
-              maxHeight: MediaQuery.of(context).size.height * 0.45,
-            ),
-            child: ListView.separated(
-              shrinkWrap: true,
-              itemCount: _filtered.length,
-              separatorBuilder: (_, _) =>
-                  Divider(height: 1, color: AppColors.border),
-              itemBuilder: (_, i) {
-                final opt = _filtered[i];
-                return _SheetRow(
-                  label: opt.label,
-                  isSelected: opt.value == widget.value,
-                  onTap: () => widget.onSelect(opt.value),
-                );
-              },
-            ),
-          ),
-          const SizedBox(height: 8),
-        ],
+      const SizedBox(height: 8),
+    ];
+
+    if (widget.fillHeight) {
+      return SafeArea(
+        top: false,
+        child: Column(children: children),
+      );
+    }
+
+    final media = MediaQuery.of(context);
+    // Bound the whole sheet by what's actually left above the keyboard, not
+    // a fixed fraction of the full screen — otherwise a long list plus the
+    // keyboard's own height can add up to more than the viewport and overflow.
+    final maxSheetHeight = media.size.height - media.viewInsets.bottom;
+    return SafeArea(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: maxSheetHeight * 0.6),
+        child: Column(mainAxisSize: MainAxisSize.min, children: children),
       ),
     );
   }

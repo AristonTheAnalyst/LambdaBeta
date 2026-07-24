@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_radius.dart';
+import 'dropdown_select.dart';
 
 Future<T?> showLambdaModal<T>(
   BuildContext context, {
@@ -20,13 +21,16 @@ Future<T?> showLambdaModal<T>(
       ),
     ),
     builder: (ctx) {
-      Widget content = child;
+      // Every sheet hosts its own DropdownSheetHost, so any DropdownSelect
+      // inside shows its picker confined to this sheet instead of stacking
+      // a second independent bottom sheet on top of it.
+      Widget content = DropdownSheetHost(child: child);
       if (keyboardAware) {
         content = Padding(
           padding: EdgeInsets.only(
             bottom: MediaQuery.viewInsetsOf(ctx).bottom,
           ),
-          child: child,
+          child: content,
         );
       }
       return content;

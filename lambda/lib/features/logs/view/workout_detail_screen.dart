@@ -10,6 +10,7 @@ import '../../../../shared/widgets/dropdown_select.dart';
 import '../../../../shared/widgets/glass_button.dart';
 import '../../../../shared/widgets/lambda_input.dart';
 import '../../../../shared/widgets/page_header.dart';
+import '../../../../shared/widgets/set_form_sheet.dart';
 import '../../../../shared/widgets/slide_up_modal.dart';
 import '../../../../shared/widgets/workout_sets_list.dart';
 import '../viewmodel/workout_detail_viewmodel.dart';
@@ -68,12 +69,37 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
       context,
       fitContent: true,
       keyboardAware: true,
-      child: _LogSetModal(
-        vm: _vm,
-        workoutId: widget.workoutId,
-        weightCtrl: _logWeightController,
-        repsCtrl: _logRepsController,
-        notesCtrl: _logNotesController,
+      child: ValueListenableBuilder<WorkoutDetailState>(
+        valueListenable: _vm.state,
+        builder: (ctx, state, _) {
+          final detail = state.selectedExDetail;
+          return SetFormSheet(
+            title: 'Log Set',
+            exerciseOptions: state.exerciseDetailMap.values
+                .map((d) => DropdownOption(
+                    label: toProperCase(d.name), value: d.exerciseId))
+                .toList(),
+            selectedExerciseId: state.selectedExId,
+            onExerciseChanged: _vm.selectExercise,
+            variationOptions: [
+              const DropdownOption<String?>(label: 'None', value: null),
+              ...(detail?.assignedVariations ?? []).map((v) => DropdownOption(
+                  label: toProperCase(v.name), value: v.variationId)),
+            ],
+            selectedVariationId: state.selectedVarId,
+            onVariationChanged: _vm.selectVariation,
+            volumeType: detail?.volumeType,
+            weightCtrl: _logWeightController,
+            repsCtrl: _logRepsController,
+            notesCtrl: _logNotesController,
+            onWeightChanged: _vm.setLogWeight,
+            onRepsChanged: _vm.setLogReps,
+            onNotesChanged: _vm.setLogNotes,
+            submitLabel: 'Log Set',
+            submitLoading: state.logLoading,
+            onSubmit: () => _vm.submitLogSet(widget.workoutId),
+          );
+        },
       ),
     ).then((_) => _vm.closeLogSet());
   }
@@ -89,13 +115,38 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
       context,
       fitContent: true,
       keyboardAware: true,
-      child: _EditSetModal(
-        vm: _vm,
-        workoutId: widget.workoutId,
-        weightCtrl: _editWeightController,
-        repsCtrl: _editRepsController,
-        notesCtrl: _editNotesController,
-        onDelete: () => _confirmDeleteSet(s.setId),
+      child: ValueListenableBuilder<WorkoutDetailState>(
+        valueListenable: _vm.state,
+        builder: (ctx, state, _) {
+          final detail = state.editExDetail;
+          return SetFormSheet(
+            title: 'Edit Set',
+            exerciseOptions: state.exerciseDetailMap.values
+                .map((d) => DropdownOption(
+                    label: toProperCase(d.name), value: d.exerciseId))
+                .toList(),
+            selectedExerciseId: state.editExId,
+            onExerciseChanged: _vm.setEditExId,
+            variationOptions: [
+              const DropdownOption<String?>(label: 'None', value: null),
+              ...(detail?.assignedVariations ?? []).map((v) => DropdownOption(
+                  label: toProperCase(v.name), value: v.variationId)),
+            ],
+            selectedVariationId: state.editVarId,
+            onVariationChanged: _vm.setEditVarId,
+            volumeType: detail?.volumeType,
+            weightCtrl: _editWeightController,
+            repsCtrl: _editRepsController,
+            notesCtrl: _editNotesController,
+            onWeightChanged: _vm.setEditWeight,
+            onRepsChanged: _vm.setEditReps,
+            onNotesChanged: _vm.setEditNotes,
+            submitLabel: 'Save',
+            submitLoading: state.editLoading,
+            onSubmit: () => _vm.submitEditSet(widget.workoutId),
+            onDelete: () => _confirmDeleteSet(s.setId),
+          );
+        },
       ),
     ).then((_) => _vm.closeEditSet());
   }
@@ -431,349 +482,3 @@ class _NotesModal extends StatelessWidget {
   }
 }
 
-// ── Log Set modal ─────────────────────────────────────────────────────────────
-
-class _LogSetModal extends StatelessWidget {
-  const _LogSetModal({
-    required this.vm,
-    required this.workoutId,
-    required this.weightCtrl,
-    required this.repsCtrl,
-    required this.notesCtrl,
-  });
-
-  final WorkoutDetailViewModel vm;
-  final String workoutId;
-  final TextEditingController weightCtrl;
-  final TextEditingController repsCtrl;
-  final TextEditingController notesCtrl;
-
-  @override
-  Widget build(BuildContext context) {
-    return ValueListenableBuilder<WorkoutDetailState>(
-      valueListenable: vm.state,
-      builder: (ctx, state, _) {
-        final detail = state.selectedExDetail;
-        final exOptions = state.exerciseDetailMap.values
-            .map((d) => DropdownOption(
-                label: toProperCase(d.name), value: d.exerciseId))
-            .toList();
-        final varOptions = [
-          const DropdownOption<String?>(label: 'None', value: null),
-          ...(detail?.assignedVariations ?? []).map((v) => DropdownOption(
-              label: toProperCase(v.name), value: v.variationId)),
-        ];
-
-        return SafeArea(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(AppSpacing.xl),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text('Log Set',
-                    style: TextStyle(
-                        fontSize: AppTextStyles.lg,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.primary)),
-                const SizedBox(height: AppSpacing.md),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Expanded(
-                      flex: 3,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('Exercise',
-                              style: TextStyle(
-                                  fontSize: AppTextStyles.sm,
-                                  fontWeight: FontWeight.w500,
-                                  color: AppColors.primary)),
-                          const SizedBox(height: AppSpacing.xs),
-                          DropdownSelect<String>(
-                            options: exOptions,
-                            value: state.selectedExId,
-                            onChange: vm.selectExercise,
-                            placeholder: 'Select exercise…',
-                            searchable: true,
-                          ),
-                        ],
-                      ),
-                    ),
-                    if (detail != null) ...[
-                      const SizedBox(width: AppSpacing.sm),
-                      Expanded(
-                        flex: 2,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Variation',
-                                style: TextStyle(
-                                    fontSize: AppTextStyles.sm,
-                                    fontWeight: FontWeight.w500,
-                                    color: AppColors.primary)),
-                            const SizedBox(height: AppSpacing.xs),
-                            DropdownSelect<String?>(
-                              options: varOptions,
-                              value: state.selectedVarId,
-                              onChange: vm.selectVariation,
-                              placeholder: 'None',
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-                if (detail != null) ...[
-                  const SizedBox(height: AppSpacing.md),
-                  LambdaInput(
-                    controller: weightCtrl,
-                    label: 'Weight (optional)',
-                    placeholder: 'kg',
-                    keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true),
-                    onChanged: vm.setLogWeight,
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  LambdaInput(
-                    controller: repsCtrl,
-                    label: detail.volumeType == 'reps'
-                        ? 'Reps'
-                        : 'Duration (seconds)',
-                    placeholder: detail.volumeType == 'reps'
-                        ? 'e.g. 10,8,6'
-                        : 'e.g. 60,45',
-                    keyboardType: const TextInputType.numberWithOptions(
-                        decimal: false),
-                    onChanged: vm.setLogReps,
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  LambdaInput(
-                    controller: notesCtrl,
-                    label: 'Set notes (optional)',
-                    placeholder: 'Notes…',
-                    onChanged: vm.setLogNotes,
-                  ),
-                ],
-                const SizedBox(height: AppSpacing.lg),
-                Row(
-                  children: [
-                    Expanded(
-                      child: GlassButton(
-                        label: 'Cancel',
-                        color: AppColors.danger,
-                        compact: true,
-                        onPressed: () =>
-                            Navigator.of(ctx, rootNavigator: true).pop(),
-                      ),
-                    ),
-                    const SizedBox(width: AppSpacing.sm),
-                    Expanded(
-                      child: GlassButton(
-                        label: 'Log Set',
-                        compact: true,
-                        loading: state.logLoading,
-                        disabled: state.logLoading,
-                        onPressed: () async {
-                          final ok =
-                              await vm.submitLogSet(workoutId);
-                          if (ok && ctx.mounted) {
-                            Navigator.of(ctx, rootNavigator: true)
-                                .pop();
-                          }
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.xxl),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-// ── Edit Set modal ────────────────────────────────────────────────────────────
-
-class _EditSetModal extends StatelessWidget {
-  const _EditSetModal({
-    required this.vm,
-    required this.workoutId,
-    required this.weightCtrl,
-    required this.repsCtrl,
-    required this.notesCtrl,
-    required this.onDelete,
-  });
-
-  final WorkoutDetailViewModel vm;
-  final String workoutId;
-  final TextEditingController weightCtrl;
-  final TextEditingController repsCtrl;
-  final TextEditingController notesCtrl;
-  final VoidCallback onDelete;
-
-  @override
-  Widget build(BuildContext context) {
-    return ValueListenableBuilder<WorkoutDetailState>(
-      valueListenable: vm.state,
-      builder: (ctx, state, _) {
-        final detail = state.editExDetail;
-        final exOptions = state.exerciseDetailMap.values
-            .map((d) => DropdownOption(
-                label: toProperCase(d.name), value: d.exerciseId))
-            .toList();
-        final varOptions = [
-          const DropdownOption<String?>(label: 'None', value: null),
-          ...(detail?.assignedVariations ?? []).map((v) => DropdownOption(
-              label: toProperCase(v.name), value: v.variationId)),
-        ];
-
-        return SafeArea(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(AppSpacing.xl),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text('Edit Set',
-                          style: TextStyle(
-                              fontSize: AppTextStyles.lg,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.primary)),
-                    ),
-                    GlassButton(
-                      label: '',
-                      icon: Icons.delete_outline,
-                      color: AppColors.danger,
-                      compact: true,
-                      onPressed: onDelete,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.md),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Expanded(
-                      flex: 3,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('Exercise',
-                              style: TextStyle(
-                                  fontSize: AppTextStyles.sm,
-                                  fontWeight: FontWeight.w500,
-                                  color: AppColors.primary)),
-                          const SizedBox(height: AppSpacing.xs),
-                          DropdownSelect<String>(
-                            options: exOptions,
-                            value: state.editExId,
-                            onChange: vm.setEditExId,
-                            placeholder: 'Select exercise…',
-                            searchable: true,
-                          ),
-                        ],
-                      ),
-                    ),
-                    if (detail != null) ...[
-                      const SizedBox(width: AppSpacing.sm),
-                      Expanded(
-                        flex: 2,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Variation',
-                                style: TextStyle(
-                                    fontSize: AppTextStyles.sm,
-                                    fontWeight: FontWeight.w500,
-                                    color: AppColors.primary)),
-                            const SizedBox(height: AppSpacing.xs),
-                            DropdownSelect<String?>(
-                              options: varOptions,
-                              value: state.editVarId,
-                              onChange: vm.setEditVarId,
-                              placeholder: 'None',
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-                if (detail != null) ...[
-                  const SizedBox(height: AppSpacing.md),
-                  LambdaInput(
-                    controller: weightCtrl,
-                    label: 'Weight (optional)',
-                    placeholder: 'kg',
-                    keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true),
-                    onChanged: vm.setEditWeight,
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  LambdaInput(
-                    controller: repsCtrl,
-                    label: detail.volumeType == 'reps'
-                        ? 'Reps'
-                        : 'Duration (seconds)',
-                    placeholder: detail.volumeType == 'reps'
-                        ? 'e.g. 10,8,6'
-                        : 'e.g. 60,45',
-                    keyboardType: const TextInputType.numberWithOptions(
-                        decimal: false),
-                    onChanged: vm.setEditReps,
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  LambdaInput(
-                    controller: notesCtrl,
-                    label: 'Set notes (optional)',
-                    placeholder: 'Notes…',
-                    onChanged: vm.setEditNotes,
-                  ),
-                ],
-                const SizedBox(height: AppSpacing.lg),
-                Row(
-                  children: [
-                    Expanded(
-                      child: GlassButton(
-                        label: 'Cancel',
-                        color: AppColors.danger,
-                        compact: true,
-                        onPressed: () =>
-                            Navigator.of(ctx, rootNavigator: true).pop(),
-                      ),
-                    ),
-                    const SizedBox(width: AppSpacing.sm),
-                    Expanded(
-                      child: GlassButton(
-                        label: 'Save',
-                        compact: true,
-                        loading: state.editLoading,
-                        disabled: state.editLoading,
-                        onPressed: () async {
-                          final ok =
-                              await vm.submitEditSet(workoutId);
-                          if (ok && ctx.mounted) {
-                            Navigator.of(ctx, rootNavigator: true)
-                                .pop();
-                          }
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.xxl),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
