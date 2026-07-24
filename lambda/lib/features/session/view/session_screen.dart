@@ -93,13 +93,56 @@ class _SessionScreenState extends State<SessionScreen> {
         notesCtrl: _logNotesCtrl,
         onNewExercise: () {
           Navigator.of(context, rootNavigator: true).pop();
-          _openNewExerciseModal(forLog: true);
+          _openNewExerciseModal(forLog: true, onDone: _pickExerciseForLog);
         },
         onNewVariation: () {
           Navigator.of(context, rootNavigator: true).pop();
-          _openNewVariationModal(forLog: true);
+          _openNewVariationModal(forLog: true, onDone: _pickVariationForLog);
         },
       ),
+    );
+  }
+
+  // Shown instead of the full Log Set form right after creating a new
+  // exercise/variation — lets the user pick it (or another one) from the
+  // list directly, rather than dropping them back into the whole form first.
+  void _pickExerciseForLog() {
+    final options = _vm.exercises
+        .map((d) => DropdownOption(label: toProperCase(d.name), value: d.exerciseId))
+        .toList();
+    showDropdownPickerSheet<String>(
+      context,
+      options: options,
+      value: _vm.selectedExId,
+      searchable: true,
+      onCreateNew: () =>
+          _openNewExerciseModal(forLog: true, onDone: _pickExerciseForLog),
+      createNewLabel: 'New Exercise',
+      onSelect: (id) {
+        _vm.selectExercise(id);
+        _openLogSetModal();
+      },
+    );
+  }
+
+  void _pickVariationForLog() {
+    final detail = _vm.selectedExDetail;
+    final options = [
+      const DropdownOption<String?>(label: 'None', value: null),
+      ...(detail?.assignedVariations ?? []).map((v) => DropdownOption(
+          label: toProperCase(v.name), value: v.variationId)),
+    ];
+    showDropdownPickerSheet<String?>(
+      context,
+      options: options,
+      value: _vm.selectedVarId,
+      onCreateNew: () =>
+          _openNewVariationModal(forLog: true, onDone: _pickVariationForLog),
+      createNewLabel: 'New Variation',
+      onSelect: (id) {
+        _vm.selectVariation(id);
+        _openLogSetModal();
+      },
     );
   }
 
@@ -108,6 +151,12 @@ class _SessionScreenState extends State<SessionScreen> {
     _editWeightCtrl.text = _vm.editWeight;
     _editRepsCtrl.text   = _vm.editRepsOrDuration;
     _editNotesCtrl.text  = _vm.editNotes;
+    _showEditSetModal(s);
+  }
+
+  // Re-shown after creating a new exercise/variation mid-edit, without
+  // resetting the edit form fields (which _openEditSetModal would do).
+  void _showEditSetModal(WorkoutSet s) {
     showLambdaModal(
       context,
       fitContent: true,
@@ -123,14 +172,78 @@ class _SessionScreenState extends State<SessionScreen> {
         },
         onNewExercise: () {
           Navigator.of(context, rootNavigator: true).pop();
-          _openNewExerciseModal(forLog: false);
+          _openNewExerciseModal(
+            forLog: false,
+            onDone: () {
+              _restoreEditState(s);
+              _pickExerciseForEdit(s);
+            },
+          );
         },
         onNewVariation: () {
           Navigator.of(context, rootNavigator: true).pop();
-          _openNewVariationModal(forLog: false);
+          _openNewVariationModal(
+            forLog: false,
+            onDone: () {
+              _restoreEditState(s);
+              _pickVariationForEdit(s);
+            },
+          );
         },
       ),
     ).then((_) => _vm.clearEditSet());
+  }
+
+  // Popping the Edit Set sheet above (to step into New Exercise/Variation
+  // creation) fires the .then(clearEditSet) above immediately, since that
+  // fires on ANY close of the sheet, not just a deliberate Cancel. editExId/
+  // editVarId get reassigned correctly by submitNewExercise/submitNewVariation
+  // regardless, but editingSet and the text fields need restoring by hand.
+  void _restoreEditState(WorkoutSet s) {
+    _vm.editingSet = s;
+    _vm.editWeight = _editWeightCtrl.text;
+    _vm.editRepsOrDuration = _editRepsCtrl.text;
+    _vm.editNotes = _editNotesCtrl.text;
+  }
+
+  void _pickExerciseForEdit(WorkoutSet s) {
+    final options = _vm.exercises
+        .map((d) => DropdownOption(label: toProperCase(d.name), value: d.exerciseId))
+        .toList();
+    showDropdownPickerSheet<String>(
+      context,
+      options: options,
+      value: _vm.editExId,
+      searchable: true,
+      onCreateNew: () => _openNewExerciseModal(
+          forLog: false, onDone: () => _pickExerciseForEdit(s)),
+      createNewLabel: 'New Exercise',
+      onSelect: (id) {
+        _vm.setEditExId(id);
+        _showEditSetModal(s);
+      },
+    );
+  }
+
+  void _pickVariationForEdit(WorkoutSet s) {
+    final detail = _vm.editExDetail;
+    final options = [
+      const DropdownOption<String?>(label: 'None', value: null),
+      ...(detail?.assignedVariations ?? []).map((v) => DropdownOption(
+          label: toProperCase(v.name), value: v.variationId)),
+    ];
+    showDropdownPickerSheet<String?>(
+      context,
+      options: options,
+      value: _vm.editVarId,
+      onCreateNew: () => _openNewVariationModal(
+          forLog: false, onDone: () => _pickVariationForEdit(s)),
+      createNewLabel: 'New Variation',
+      onSelect: (id) {
+        _vm.setEditVarId(id);
+        _showEditSetModal(s);
+      },
+    );
   }
 
   void _confirmDeleteSet(String setId) {
@@ -161,7 +274,7 @@ class _SessionScreenState extends State<SessionScreen> {
     );
   }
 
-  void _openNewExerciseModal({required bool forLog}) {
+  void _openNewExerciseModal({required bool forLog, required VoidCallback onDone}) {
     _vm.prepareNewExercise(forLog: forLog);
     _newExNameCtrl.clear();
     showLambdaModal(
@@ -169,18 +282,22 @@ class _SessionScreenState extends State<SessionScreen> {
       fitContent: true,
       keyboardAware: true,
       child: _NewExerciseModal(
-          vm: _vm, nameCtrl: _newExNameCtrl, volumeOptions: _volumeOptions),
+          vm: _vm,
+          nameCtrl: _newExNameCtrl,
+          volumeOptions: _volumeOptions,
+          onCreated: onDone),
     );
   }
 
-  void _openNewVariationModal({required bool forLog}) {
+  void _openNewVariationModal({required bool forLog, required VoidCallback onDone}) {
     _vm.prepareNewVariation(forLog: forLog);
     _newVarNameCtrl.clear();
     showLambdaModal(
       context,
       fitContent: true,
       keyboardAware: true,
-      child: _NewVariationModal(vm: _vm, nameCtrl: _newVarNameCtrl),
+      child: _NewVariationModal(
+          vm: _vm, nameCtrl: _newVarNameCtrl, onCreated: onDone),
     );
   }
 
@@ -584,64 +701,60 @@ class _LogSetModal extends StatelessWidget {
                         ],
                       ),
                     ),
-                    if (detail != null) ...[
-                      const SizedBox(width: AppSpacing.sm),
-                      Expanded(
-                        flex: 2,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Variation',
-                                style: TextStyle(
-                                    fontSize: AppTextStyles.sm,
-                                    fontWeight: FontWeight.w500,
-                                    color: AppColors.primary)),
-                            const SizedBox(height: AppSpacing.xs),
-                            DropdownSelect<String?>(
-                              options: varOptions,
-                              value: vm.selectedVarId,
-                              onChange: vm.selectVariation,
-                              placeholder: 'None',
-                              onCreateNew: onNewVariation,
-                              createNewLabel: 'New Variation',
-                            ),
-                          ],
-                        ),
+                    const SizedBox(width: AppSpacing.sm),
+                    Expanded(
+                      flex: 2,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Variation',
+                              style: TextStyle(
+                                  fontSize: AppTextStyles.sm,
+                                  fontWeight: FontWeight.w500,
+                                  color: AppColors.primary)),
+                          const SizedBox(height: AppSpacing.xs),
+                          DropdownSelect<String?>(
+                            options: varOptions,
+                            value: vm.selectedVarId,
+                            onChange: vm.selectVariation,
+                            placeholder: 'None',
+                            onCreateNew: onNewVariation,
+                            createNewLabel: 'New Variation',
+                          ),
+                        ],
                       ),
-                    ],
+                    ),
                   ],
                 ),
-                if (detail != null) ...[
-                  const SizedBox(height: AppSpacing.md),
-                  LambdaInput(
-                    controller: weightCtrl,
-                    label: 'Weight (optional)',
-                    placeholder: 'kg',
-                    keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true),
-                    onChanged: (v) => vm.logWeight = v,
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  LambdaInput(
-                    controller: repsCtrl,
-                    label: detail.volumeType == 'reps'
-                        ? 'Reps'
-                        : 'Duration (seconds)',
-                    placeholder: detail.volumeType == 'reps'
-                        ? 'e.g. 10,8,6'
-                        : 'e.g. 60,45',
-                    keyboardType: const TextInputType.numberWithOptions(
-                        decimal: false),
-                    onChanged: (v) => vm.logRepsOrDuration = v,
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  LambdaInput(
-                    controller: notesCtrl,
-                    label: 'Set notes (optional)',
-                    placeholder: 'Notes…',
-                    onChanged: (v) => vm.logNotes = v,
-                  ),
-                ],
+                const SizedBox(height: AppSpacing.md),
+                LambdaInput(
+                  controller: weightCtrl,
+                  label: 'Weight (optional)',
+                  placeholder: 'kg',
+                  keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true),
+                  onChanged: (v) => vm.logWeight = v,
+                ),
+                const SizedBox(height: AppSpacing.md),
+                LambdaInput(
+                  controller: repsCtrl,
+                  label: detail?.volumeType == 'duration'
+                      ? 'Duration (seconds)'
+                      : 'Reps',
+                  placeholder: detail?.volumeType == 'duration'
+                      ? 'e.g. 60,45'
+                      : 'e.g. 10,8,6',
+                  keyboardType: const TextInputType.numberWithOptions(
+                      decimal: false),
+                  onChanged: (v) => vm.logRepsOrDuration = v,
+                ),
+                const SizedBox(height: AppSpacing.md),
+                LambdaInput(
+                  controller: notesCtrl,
+                  label: 'Set notes (optional)',
+                  placeholder: 'Notes…',
+                  onChanged: (v) => vm.logNotes = v,
+                ),
                 const SizedBox(height: AppSpacing.lg),
                 Row(
                   children: [
@@ -769,64 +882,60 @@ class _EditSetModal extends StatelessWidget {
                         ],
                       ),
                     ),
-                    if (detail != null) ...[
-                      const SizedBox(width: AppSpacing.sm),
-                      Expanded(
-                        flex: 2,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Variation',
-                                style: TextStyle(
-                                    fontSize: AppTextStyles.sm,
-                                    fontWeight: FontWeight.w500,
-                                    color: AppColors.primary)),
-                            const SizedBox(height: AppSpacing.xs),
-                            DropdownSelect<String?>(
-                              options: varOptions,
-                              value: vm.editVarId,
-                              onChange: vm.setEditVarId,
-                              placeholder: 'None',
-                              onCreateNew: onNewVariation,
-                              createNewLabel: 'New Variation',
-                            ),
-                          ],
-                        ),
+                    const SizedBox(width: AppSpacing.sm),
+                    Expanded(
+                      flex: 2,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Variation',
+                              style: TextStyle(
+                                  fontSize: AppTextStyles.sm,
+                                  fontWeight: FontWeight.w500,
+                                  color: AppColors.primary)),
+                          const SizedBox(height: AppSpacing.xs),
+                          DropdownSelect<String?>(
+                            options: varOptions,
+                            value: vm.editVarId,
+                            onChange: vm.setEditVarId,
+                            placeholder: 'None',
+                            onCreateNew: onNewVariation,
+                            createNewLabel: 'New Variation',
+                          ),
+                        ],
                       ),
-                    ],
+                    ),
                   ],
                 ),
-                if (detail != null) ...[
-                  const SizedBox(height: AppSpacing.md),
-                  LambdaInput(
-                    controller: weightCtrl,
-                    label: 'Weight (optional)',
-                    placeholder: 'kg',
-                    keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true),
-                    onChanged: (v) => vm.editWeight = v,
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  LambdaInput(
-                    controller: repsCtrl,
-                    label: detail.volumeType == 'reps'
-                        ? 'Reps'
-                        : 'Duration (seconds)',
-                    placeholder: detail.volumeType == 'reps'
-                        ? 'e.g. 10,8,6'
-                        : 'e.g. 60,45',
-                    keyboardType: const TextInputType.numberWithOptions(
-                        decimal: false),
-                    onChanged: (v) => vm.editRepsOrDuration = v,
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  LambdaInput(
-                    controller: notesCtrl,
-                    label: 'Set notes (optional)',
-                    placeholder: 'Notes…',
-                    onChanged: (v) => vm.editNotes = v,
-                  ),
-                ],
+                const SizedBox(height: AppSpacing.md),
+                LambdaInput(
+                  controller: weightCtrl,
+                  label: 'Weight (optional)',
+                  placeholder: 'kg',
+                  keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true),
+                  onChanged: (v) => vm.editWeight = v,
+                ),
+                const SizedBox(height: AppSpacing.md),
+                LambdaInput(
+                  controller: repsCtrl,
+                  label: detail?.volumeType == 'duration'
+                      ? 'Duration (seconds)'
+                      : 'Reps',
+                  placeholder: detail?.volumeType == 'duration'
+                      ? 'e.g. 60,45'
+                      : 'e.g. 10,8,6',
+                  keyboardType: const TextInputType.numberWithOptions(
+                      decimal: false),
+                  onChanged: (v) => vm.editRepsOrDuration = v,
+                ),
+                const SizedBox(height: AppSpacing.md),
+                LambdaInput(
+                  controller: notesCtrl,
+                  label: 'Set notes (optional)',
+                  placeholder: 'Notes…',
+                  onChanged: (v) => vm.editNotes = v,
+                ),
                 const SizedBox(height: AppSpacing.lg),
                 Row(
                   children: [
@@ -873,11 +982,13 @@ class _NewExerciseModal extends StatelessWidget {
     required this.vm,
     required this.nameCtrl,
     required this.volumeOptions,
+    required this.onCreated,
   });
 
   final SessionViewModel vm;
   final TextEditingController nameCtrl;
   final List<SegmentOption<String>> volumeOptions;
+  final VoidCallback onCreated;
 
   @override
   Widget build(BuildContext context) {
@@ -938,6 +1049,7 @@ class _NewExerciseModal extends StatelessWidget {
                         final id = await vm.submitNewExercise();
                         if (id != null && ctx.mounted) {
                           Navigator.of(ctx, rootNavigator: true).pop();
+                          onCreated();
                         }
                       },
                     ),
@@ -955,10 +1067,15 @@ class _NewExerciseModal extends StatelessWidget {
 // ── New Variation Modal ─────────────────────────────────────────────────────────
 
 class _NewVariationModal extends StatelessWidget {
-  const _NewVariationModal({required this.vm, required this.nameCtrl});
+  const _NewVariationModal({
+    required this.vm,
+    required this.nameCtrl,
+    required this.onCreated,
+  });
 
   final SessionViewModel vm;
   final TextEditingController nameCtrl;
+  final VoidCallback onCreated;
 
   @override
   Widget build(BuildContext context) {
@@ -1007,6 +1124,7 @@ class _NewVariationModal extends StatelessWidget {
                         final id = await vm.submitNewVariation();
                         if (id != null && ctx.mounted) {
                           Navigator.of(ctx, rootNavigator: true).pop();
+                          onCreated();
                         }
                       },
                     ),

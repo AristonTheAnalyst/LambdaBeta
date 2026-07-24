@@ -44,7 +44,15 @@ class DropdownSelect<T> extends StatelessWidget {
   Widget build(BuildContext context) {
     final hasValue = value != null;
     return GestureDetector(
-      onTap: () => _openSheet(context),
+      onTap: () => showDropdownPickerSheet<T>(
+        context,
+        options: options,
+        value: value,
+        searchable: searchable,
+        onCreateNew: onCreateNew,
+        createNewLabel: createNewLabel,
+        onSelect: onChange,
+      ),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         decoration: BoxDecoration(
@@ -71,24 +79,37 @@ class DropdownSelect<T> extends StatelessWidget {
       ),
     );
   }
+}
 
-  void _openSheet(BuildContext context) {
-    showLambdaModal<T>(
-      context,
-      fitContent: true,
-      child: _DropdownSheet<T>(
-        options: options,
-        value: value,
-        searchable: searchable,
-        onCreateNew: onCreateNew,
-        createNewLabel: createNewLabel,
-        onSelect: (v) {
-          Navigator.of(context, rootNavigator: true).pop();
-          onChange(v);
-        },
-      ),
-    );
-  }
+/// Shows the searchable option-picker sheet on its own, independent of a
+/// [DropdownSelect] field. Used by [DropdownSelect] itself, and standalone by
+/// callers that want to jump straight to picking an option — e.g. reopening
+/// the picker right after the user creates a brand-new option from within it,
+/// instead of dropping them back into a whole form first.
+void showDropdownPickerSheet<T>(
+  BuildContext context, {
+  required List<DropdownOption<T>> options,
+  required T? value,
+  required ValueChanged<T?> onSelect,
+  bool searchable = false,
+  VoidCallback? onCreateNew,
+  String createNewLabel = 'Create new',
+}) {
+  showLambdaModal<T>(
+    context,
+    fitContent: true,
+    child: _DropdownSheet<T>(
+      options: options,
+      value: value,
+      searchable: searchable,
+      onCreateNew: onCreateNew,
+      createNewLabel: createNewLabel,
+      onSelect: (v) {
+        Navigator.of(context, rootNavigator: true).pop();
+        onSelect(v);
+      },
+    ),
+  );
 }
 
 class _DropdownSheet<T> extends StatefulWidget {

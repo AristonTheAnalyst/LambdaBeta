@@ -88,8 +88,7 @@ class AuthRepository {
     try {
       await _auth.resetPasswordForEmail(
         email,
-        // TODO: replace with your actual bundle ID / app scheme
-        redirectTo: 'com.example.lambda://reset-password/',
+        redirectTo: 'com.rockyzubiri.lambda://reset-password/',
       );
       return null;
     } on AuthException catch (e) {

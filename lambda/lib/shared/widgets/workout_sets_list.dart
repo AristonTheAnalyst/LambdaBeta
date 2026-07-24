@@ -1,5 +1,6 @@
 ﻿import 'package:flutter/material.dart';
 import '../../core/styles/app_colors.dart';
+import '../../core/styles/app_radius.dart';
 import '../../core/styles/app_spacing.dart';
 import '../../core/styles/app_text_styles.dart';
 import '../../core/utils/workout_format.dart';
@@ -189,9 +190,8 @@ class _ChronoSetsList extends StatelessWidget {
       return ReorderableListView(
         shrinkWrap: true,
         physics: const NeverScrollableScrollPhysics(),
-        onReorder: (oldIndex, newIndex) {
+        onReorderItem: (oldIndex, newIndex) {
           final updated = List<WorkoutSet>.from(sets);
-          if (newIndex > oldIndex) newIndex--;
           final item = updated.removeAt(oldIndex);
           updated.insert(newIndex, item);
           onReorderSets!(
@@ -260,76 +260,67 @@ class SetRow extends StatelessWidget {
     return v != null ? toProperCase(v.name) : null;
   }
 
+  /// Variation and notes condensed onto one muted line, e.g. "Incline · so close".
+  String? _metaLabel() {
+    final varLabel = _variationLabel();
+    final notes = set.notes?.isNotEmpty == true ? set.notes : null;
+    if (varLabel == null) return notes;
+    if (notes == null) return varLabel;
+    return '$varLabel · $notes';
+  }
+
   @override
   Widget build(BuildContext context) {
-    final varLabel = _variationLabel();
+    final metaLabel = _metaLabel();
     final content = Container(
-      padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+      margin: const EdgeInsets.only(bottom: AppSpacing.sm),
+      padding: const EdgeInsets.all(AppSpacing.sm),
       decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(color: AppColors.border, width: 0.5),
-        ),
+        color: AppColors.surfaceHigh,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(color: AppColors.border, width: 0.5),
       ),
       child: Row(
         children: [
-          // Set number bubble
-          Container(
-            width: 26,
-            height: 26,
-            margin: const EdgeInsets.only(right: AppSpacing.sm),
-            decoration: BoxDecoration(
-              color: AppColors.surfaceHigh,
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Center(
-              child: Text(
-                '${set.setNumber}',
-                style: TextStyle(
-                    fontSize: AppTextStyles.xs,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.muted),
-              ),
-            ),
-          ),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 if (showExerciseName && detail != null)
-                  Text(
-                    toProperCase(detail!.name),
-                    style: TextStyle(
-                        fontSize: AppTextStyles.xs,
-                        color: AppColors.accent,
-                        fontWeight: FontWeight.w600),
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 2),
+                    child: Text(
+                      toProperCase(detail!.name),
+                      style: TextStyle(
+                          fontSize: AppTextStyles.sm,
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.w600),
+                    ),
                   ),
                 Text(
                   _volumeLabel(),
                   style: TextStyle(
                       fontSize: AppTextStyles.md,
+                      fontWeight: FontWeight.w700,
                       color: AppColors.primary),
                 ),
-                if (varLabel != null)
+                if (metaLabel != null)
                   Text(
-                    varLabel,
+                    metaLabel,
                     style: TextStyle(
                         fontSize: AppTextStyles.xs,
                         color: AppColors.muted),
-                  ),
-                if (set.notes?.isNotEmpty == true)
-                  Text(
-                    set.notes!,
-                    style: TextStyle(
-                        fontSize: AppTextStyles.xs,
-                        color: AppColors.muted,
-                        fontStyle: FontStyle.italic),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
               ],
             ),
           ),
-          if (interactive)
+          if (interactive) ...[
+            const SizedBox(width: AppSpacing.xs),
             Icon(Icons.drag_handle,
                 size: 18, color: AppColors.muted),
+          ],
         ],
       ),
     );

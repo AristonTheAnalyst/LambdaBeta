@@ -8,7 +8,7 @@
 PRODUCT_NAME = lambda
 
 // The application's bundle identifier
-PRODUCT_BUNDLE_IDENTIFIER = com.example.lambda
+PRODUCT_BUNDLE_IDENTIFIER = com.rockyzubiri.lambda
 
 // The copyright displayed in application information
 PRODUCT_COPYRIGHT = Copyright © 2026 com.example. All rights reserved.

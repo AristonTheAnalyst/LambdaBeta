@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../core/powersync/database.dart' as ps;
 import '../../data/repositories/user_repository.dart';
 
 class AuthNotifier extends ChangeNotifier {
@@ -50,7 +51,18 @@ class AuthNotifier extends ChangeNotifier {
       return;
     }
     try {
-      final profile = await _userRepo.fetchProfile(_session!.user.id);
+      var profile = await _userRepo.fetchProfile(_session!.user.id);
+      // On a fresh install/device, the local PowerSync cache may not have
+      // synced this user's row down yet, even for an existing, already-
+      // onboarded account. Wait for the initial sync before concluding
+      // there's no profile.
+      if (profile == null) {
+        await ps.db.waitForFirstSync().timeout(
+          const Duration(seconds: 10),
+          onTimeout: () {},
+        );
+        profile = await _userRepo.fetchProfile(_session!.user.id);
+      }
       _isOnboarded = profile?.onboarded ?? false;
     } catch (_) {
       _isOnboarded = null;

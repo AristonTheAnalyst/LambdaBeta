@@ -264,7 +264,7 @@ class _SocialButton extends StatelessWidget {
     this.disabled = false,
   });
 
-  final IconData icon;
+  final FaIconData icon;
   final double iconSize;
   final VoidCallback onTap;
   final bool loading;

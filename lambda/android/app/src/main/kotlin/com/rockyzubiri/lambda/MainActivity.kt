@@ -1,4 +1,4 @@
-package com.example.lambda
+package com.rockyzubiri.lambda
 
 import io.flutter.embedding.android.FlutterActivity
 

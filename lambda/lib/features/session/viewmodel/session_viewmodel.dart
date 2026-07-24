@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/utils/workout_format.dart';
+import '../../../data/models/custom_exercise.dart';
+import '../../../data/models/custom_variation.dart';
 import '../../../data/models/exercise_detail.dart';
 import '../../../data/models/workout_set.dart';
 import '../../../data/repositories/exercise_repository.dart';
@@ -320,6 +322,7 @@ class SessionViewModel extends ChangeNotifier {
     try {
       final existing = await _exerciseRepo.findExerciseByName(_userId, name);
       String id;
+      CustomExercise exercise;
       if (existing != null) {
         if (existing.isActive) {
           error = '"$name" already exists.';
@@ -329,11 +332,23 @@ class SessionViewModel extends ChangeNotifier {
         }
         await _exerciseRepo.reactivateExercise(existing.exerciseId, newExVolumeType);
         id = existing.exerciseId;
+        exercise = CustomExercise(
+          exerciseId: existing.exerciseId,
+          userId: existing.userId,
+          name: existing.name,
+          volumeType: newExVolumeType,
+          isActive: true,
+        );
       } else {
-        final created = await _exerciseRepo.createExercise(_userId, name, newExVolumeType);
-        id = created.exerciseId;
+        exercise = await _exerciseRepo.createExercise(_userId, name, newExVolumeType);
+        id = exercise.exerciseId;
       }
       await _loadCatalog();
+      // The catalog reload reads from the local PowerSync cache, which may
+      // not have synced this brand-new row down from Supabase yet. Make sure
+      // it's usable immediately regardless of that race.
+      exerciseDetailMap.putIfAbsent(
+          id, () => ExerciseDetail(exercise: exercise, assignedVariations: []));
       newExCreating = false;
       if (_newExForLog) {
         selectExercise(id);
@@ -370,6 +385,7 @@ class SessionViewModel extends ChangeNotifier {
     try {
       final existing = await _exerciseRepo.findVariationByName(_userId, name);
       String id;
+      CustomVariation variation;
       if (existing != null) {
         if (existing.isActive) {
           error = '"$name" already exists.';
@@ -379,12 +395,29 @@ class SessionViewModel extends ChangeNotifier {
         }
         await _exerciseRepo.reactivateVariation(existing.variationId);
         id = existing.variationId;
+        variation = CustomVariation(
+          variationId: existing.variationId,
+          userId: existing.userId,
+          name: existing.name,
+          isActive: true,
+        );
       } else {
-        final created = await _exerciseRepo.createVariation(_userId, name);
-        id = created.variationId;
+        variation = await _exerciseRepo.createVariation(_userId, name);
+        id = variation.variationId;
       }
       await _exerciseRepo.addBridge(_userId, exId, id);
       await _loadCatalog();
+      // Same PowerSync sync-down race as above: make sure the exercise's
+      // assigned-variations list includes this one even if the local cache
+      // hasn't caught up yet.
+      final currentDetail = exerciseDetailMap[exId];
+      if (currentDetail != null &&
+          !currentDetail.assignedVariations.any((v) => v.variationId == id)) {
+        exerciseDetailMap[exId] = ExerciseDetail(
+          exercise: currentDetail.exercise,
+          assignedVariations: [...currentDetail.assignedVariations, variation],
+        );
+      }
       newVarCreating = false;
       if (_newVarForLog) {
         selectedVarId = id;

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/styles/app_colors.dart';
+import '../../../../core/styles/app_radius.dart';
 import '../../../../core/styles/app_spacing.dart';
 import '../../../../core/styles/app_text_styles.dart';
 import '../../../../data/models/workout.dart';
@@ -986,24 +987,20 @@ class _SetsPanel extends StatelessWidget {
           final valStr    = vals.isEmpty ? '—' : vals.join(', ');
           final unit      = isReps ? 'reps' : 's';
           final weightStr = row.weight != null ? '${row.weight} kg × ' : '';
-          final exerciseLabel  = row.exerciseName ?? '—';
-          final variationLabel = row.variationName;
+          final exerciseLabel = row.exerciseName ?? '—';
+          final metaLabel = [
+            if (row.variationName != null) row.variationName!,
+            if (row.notes?.isNotEmpty == true) row.notes!,
+          ].join(' · ');
 
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (isNewDate) ...[
                 if (i > 0) const SizedBox(height: AppSpacing.lg),
-                Container(
-                  width: double.infinity,
+                Padding(
                   padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.lg, vertical: AppSpacing.xs),
-                  decoration: BoxDecoration(
-                    border: Border(
-                      top: BorderSide(color: AppColors.border, width: 0.5),
-                      bottom: BorderSide(color: AppColors.border, width: 0.5),
-                    ),
-                  ),
+                      horizontal: AppSpacing.lg),
                   child: Text(
                     formatDate(row.workoutCreatedDate),
                     style: TextStyle(
@@ -1017,56 +1014,50 @@ class _SetsPanel extends StatelessWidget {
               ],
               Padding(
                 padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
+                    horizontal: AppSpacing.lg, vertical: AppSpacing.xs),
+                child: Container(
+                  padding: const EdgeInsets.all(AppSpacing.sm),
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceHigh,
+                    borderRadius: BorderRadius.circular(AppRadius.md),
+                    border: Border.all(color: AppColors.border, width: 0.5),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              exerciseLabel,
+                              style: TextStyle(
+                                  fontSize: AppTextStyles.sm,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.primary),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            Text(
+                              '$weightStr$valStr $unit',
+                              style: TextStyle(
+                                  fontSize: AppTextStyles.md,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.primary),
+                            ),
+                            if (metaLabel.isNotEmpty)
                               Text(
-                                exerciseLabel,
+                                metaLabel,
                                 style: TextStyle(
-                                    fontSize: AppTextStyles.sm,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppColors.primary),
+                                    fontSize: AppTextStyles.xs,
+                                    color: AppColors.muted),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
-                              if (variationLabel != null) ...[
-                                Text(
-                                  ' · ',
-                                  style: TextStyle(
-                                      fontSize: AppTextStyles.sm,
-                                      color: AppColors.muted),
-                                ),
-                                Flexible(
-                                  child: Text(
-                                    variationLabel,
-                                    style: TextStyle(
-                                        fontSize: AppTextStyles.sm,
-                                        color: AppColors.muted),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                          Text(
-                            '$weightStr$valStr $unit',
-                            style: TextStyle(
-                                fontSize: AppTextStyles.md,
-                                color: AppColors.primary),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
-                    Text(
-                      '#${row.setNumber}',
-                      style: TextStyle(
-                          fontSize: AppTextStyles.xs, color: AppColors.muted),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ],

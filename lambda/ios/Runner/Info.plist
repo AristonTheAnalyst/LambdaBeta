@@ -54,10 +54,20 @@
 			<string>Editor</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>com.example.lambda</string>
+				<string>com.rockyzubiri.lambda</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.1087524383718-jaq962la7r80cdkquclmc34m7dkpd3ib</string>
 			</array>
 		</dict>
 	</array>
+	<key>GIDClientID</key>
+	<string>1087524383718-jaq962la7r80cdkquclmc34m7dkpd3ib.apps.googleusercontent.com</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>
