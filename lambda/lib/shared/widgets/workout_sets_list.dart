@@ -242,8 +242,7 @@ class SetRow extends StatelessWidget {
   final bool showExerciseName;
 
   String _volumeLabel() {
-    final isReps =
-        detail?.volumeType == 'reps' || set.duration.isEmpty;
+    final isReps = set.duration.isEmpty;
     final values = isReps ? set.reps : set.duration;
     final valStr = values.isEmpty ? '—' : values.join(', ');
     final weightStr = set.weight != null ? '${set.weight} kg' : null;

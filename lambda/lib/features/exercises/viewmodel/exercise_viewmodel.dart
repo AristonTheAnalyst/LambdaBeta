@@ -19,7 +19,6 @@ class ExerciseState {
     // Edit exercise modal
     this.editExercise,
     this.editExName = '',
-    this.editExVolumeType = 'reps',
     this.editExOriginalVarIds = const {},
     this.editExDraftVarIds = const {},
     this.editExLoadingVars = false,
@@ -31,7 +30,6 @@ class ExerciseState {
     this.editVarLoadingExs = false,
     // Create modals
     this.createExName = '',
-    this.createExVolumeType = 'reps',
     this.createVarName = '',
     this.showCreateEx = false,
     this.showCreateVar = false,
@@ -51,7 +49,6 @@ class ExerciseState {
 
   final CustomExercise? editExercise;
   final String editExName;
-  final String editExVolumeType;
   final Set<String> editExOriginalVarIds;
   final Set<String> editExDraftVarIds;
   final bool editExLoadingVars;
@@ -63,7 +60,6 @@ class ExerciseState {
   final bool editVarLoadingExs;
 
   final String createExName;
-  final String createExVolumeType;
   final String createVarName;
   final bool showCreateEx;
   final bool showCreateVar;
@@ -110,7 +106,6 @@ class ExerciseState {
     CustomExercise? editExercise,
     bool clearEditEx = false,
     String? editExName,
-    String? editExVolumeType,
     Set<String>? editExOriginalVarIds,
     Set<String>? editExDraftVarIds,
     bool? editExLoadingVars,
@@ -121,7 +116,6 @@ class ExerciseState {
     Set<String>? editVarDraftExIds,
     bool? editVarLoadingExs,
     String? createExName,
-    String? createExVolumeType,
     String? createVarName,
     bool? showCreateEx,
     bool? showCreateVar,
@@ -140,7 +134,6 @@ class ExerciseState {
         varSearch: varSearch ?? this.varSearch,
         editExercise: clearEditEx ? null : (editExercise ?? this.editExercise),
         editExName: clearEditEx ? '' : (editExName ?? this.editExName),
-        editExVolumeType: clearEditEx ? 'reps' : (editExVolumeType ?? this.editExVolumeType),
         editExOriginalVarIds: clearEditEx ? {} : (editExOriginalVarIds ?? this.editExOriginalVarIds),
         editExDraftVarIds: clearEditEx ? {} : (editExDraftVarIds ?? this.editExDraftVarIds),
         editExLoadingVars: clearEditEx ? false : (editExLoadingVars ?? this.editExLoadingVars),
@@ -150,7 +143,6 @@ class ExerciseState {
         editVarDraftExIds: clearEditVar ? {} : (editVarDraftExIds ?? this.editVarDraftExIds),
         editVarLoadingExs: clearEditVar ? false : (editVarLoadingExs ?? this.editVarLoadingExs),
         createExName: createExName ?? this.createExName,
-        createExVolumeType: createExVolumeType ?? this.createExVolumeType,
         createVarName: createVarName ?? this.createVarName,
         showCreateEx: showCreateEx ?? this.showCreateEx,
         showCreateVar: showCreateVar ?? this.showCreateVar,
@@ -195,7 +187,6 @@ class ExerciseViewModel {
     state.value = state.value.copyWith(
       editExercise: ex,
       editExName: ex.name,
-      editExVolumeType: ex.volumeType,
       editExLoadingVars: true,
       clearError: true,
     );
@@ -218,7 +209,6 @@ class ExerciseViewModel {
   void closeEditExercise() => state.value = state.value.copyWith(clearEditEx: true);
 
   void setEditExName(String v) => state.value = state.value.copyWith(editExName: v);
-  void setEditExVolumeType(String v) => state.value = state.value.copyWith(editExVolumeType: v);
 
   void addEditExVarIds(List<String> ids) {
     final next = Set<String>.from(state.value.editExDraftVarIds)..addAll(ids);
@@ -235,9 +225,7 @@ class ExerciseViewModel {
     if (s.editExercise == null || s.editExName.trim().isEmpty) return;
     state.value = s.copyWith(isSaving: true, clearError: true);
     try {
-      // Update name / volume type
-      await _repo.updateExercise(
-          s.editExercise!.exerciseId, s.editExName.trim(), s.editExVolumeType);
+      await _repo.updateExercise(s.editExercise!.exerciseId, s.editExName.trim());
 
       // Diff bridge assignments
       final toAdd    = s.editExDraftVarIds.difference(s.editExOriginalVarIds);
@@ -332,14 +320,12 @@ class ExerciseViewModel {
 
   // ── Create exercise ────────────────────────────────────────────────────────
 
-  void openCreateExercise() => state.value = state.value.copyWith(
-      showCreateEx: true, createExName: '', createExVolumeType: 'reps');
+  void openCreateExercise() =>
+      state.value = state.value.copyWith(showCreateEx: true, createExName: '');
   void closeCreateExercise() =>
       state.value = state.value.copyWith(showCreateEx: false);
   void setCreateExName(String v) =>
       state.value = state.value.copyWith(createExName: v);
-  void setCreateExVolumeType(String v) =>
-      state.value = state.value.copyWith(createExVolumeType: v);
 
   Future<String?> submitCreateExercise() async {
     final s = state.value;
@@ -356,11 +342,10 @@ class ExerciseViewModel {
               error: '"$name" already exists.');
           return null;
         }
-        await _repo.reactivateExercise(existing.exerciseId, s.createExVolumeType);
+        await _repo.reactivateExercise(existing.exerciseId);
         id = existing.exerciseId;
       } else {
-        final created =
-            await _repo.createExercise(_userId, name, s.createExVolumeType);
+        final created = await _repo.createExercise(_userId, name);
         id = created.exerciseId;
       }
       state.value = state.value.copyWith(isCreatingEx: false, showCreateEx: false);

@@ -200,4 +200,24 @@ class WorkoutRepository {
     if (rows.isEmpty) return null;
     return Workout.fromMap(rows.first);
   }
+
+  /// The most recently logged set for this exercise (any workout, any
+  /// variation) — used to prefill weight/variation/volume-type defaults when
+  /// the user selects an exercise while logging a new set.
+  Future<WorkoutSet?> findLastSetForExercise(
+      String userId, String exerciseId) async {
+    final rows = await ps.db.getAll(
+      '''
+      SELECT s.*
+      FROM fact_workout_set s
+      INNER JOIN fact_user_workout w ON w.user_workout_id = s.user_workout_id
+      WHERE w.user_id = ? AND s.custom_exercise_id = ?
+      ORDER BY w.user_workout_created_date DESC, s.workout_set_number DESC
+      LIMIT 1
+      ''',
+      [userId, exerciseId],
+    );
+    if (rows.isEmpty) return null;
+    return WorkoutSet.fromMap(rows.first);
+  }
 }

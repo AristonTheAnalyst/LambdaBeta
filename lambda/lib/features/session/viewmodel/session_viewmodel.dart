@@ -53,6 +53,7 @@ class SessionViewModel extends ChangeNotifier {
   String? selectedVarId;
   String logWeight = '';
   String logRepsOrDuration = '';
+  String logVolumeType = 'reps'; // 'reps' | 'duration' — chosen per set
   String logNotes = '';
   bool logLoading = false;
 
@@ -62,12 +63,12 @@ class SessionViewModel extends ChangeNotifier {
   String? editVarId;
   String editWeight = '';
   String editRepsOrDuration = '';
+  String editVolumeType = 'reps';
   String editNotes = '';
   bool editLoading = false;
 
   // ── New exercise ───────────────────────────────────────────────────────────
   String newExName = '';
-  String newExVolumeType = 'reps';
   bool newExCreating = false;
   bool _newExForLog = true; // true=log form, false=edit form
 
@@ -181,11 +182,30 @@ class SessionViewModel extends ChangeNotifier {
     selectedVarId = null;
     logWeight = '';
     logRepsOrDuration = '';
+    logVolumeType = 'reps';
     notifyListeners();
   }
 
   void selectVariation(String? varId) {
     selectedVarId = varId;
+    notifyListeners();
+  }
+
+  void setLogVolumeType(String v) {
+    logVolumeType = v;
+    notifyListeners();
+  }
+
+  /// Prefills weight/variation/volume-type from the most recently logged set
+  /// for this exercise, so the user isn't re-entering the same values every
+  /// time. Guards against a stale result landing after the user has already
+  /// moved on to a different exercise.
+  Future<void> prefillLastUsedForLog(String exerciseId) async {
+    final last = await _workoutRepo.findLastSetForExercise(_userId, exerciseId);
+    if (last == null || selectedExId != exerciseId) return;
+    selectedVarId = last.variationId;
+    logWeight = last.weight != null ? '${last.weight}' : '';
+    logVolumeType = last.duration.isNotEmpty ? 'duration' : 'reps';
     notifyListeners();
   }
 
@@ -197,7 +217,7 @@ class SessionViewModel extends ChangeNotifier {
     final values = parseValues(logRepsOrDuration);
     if (values.isEmpty) return false;
 
-    final isReps = detail.volumeType == 'reps';
+    final isReps = logVolumeType == 'reps';
     final nextNum = sets.isEmpty
         ? 1
         : sets.map((s) => s.setNumber).reduce((a, b) => a > b ? a : b) + 1;
@@ -242,6 +262,7 @@ class SessionViewModel extends ChangeNotifier {
     editWeight = s.weight != null ? '${s.weight}' : '';
     final vals = s.reps.isNotEmpty ? s.reps : s.duration;
     editRepsOrDuration = vals.join(',');
+    editVolumeType = s.duration.isNotEmpty ? 'duration' : 'reps';
     editNotes = s.notes ?? '';
     notifyListeners();
   }
@@ -252,7 +273,23 @@ class SessionViewModel extends ChangeNotifier {
     editVarId = null;
     editWeight = '';
     editRepsOrDuration = '';
+    editVolumeType = 'reps';
     editNotes = '';
+    notifyListeners();
+  }
+
+  void setEditVolumeType(String v) {
+    editVolumeType = v;
+    notifyListeners();
+  }
+
+  /// Same as [prefillLastUsedForLog], for the edit form.
+  Future<void> prefillLastUsedForEdit(String exerciseId) async {
+    final last = await _workoutRepo.findLastSetForExercise(_userId, exerciseId);
+    if (last == null || editExId != exerciseId) return;
+    editVarId = last.variationId;
+    editWeight = last.weight != null ? '${last.weight}' : '';
+    editVolumeType = last.duration.isNotEmpty ? 'duration' : 'reps';
     notifyListeners();
   }
 
@@ -262,7 +299,7 @@ class SessionViewModel extends ChangeNotifier {
     final values = parseValues(editRepsOrDuration);
     if (values.isEmpty) return false;
 
-    final isReps = detail.volumeType == 'reps';
+    final isReps = editVolumeType == 'reps';
     editLoading = true;
     notifyListeners();
     try {
@@ -310,7 +347,6 @@ class SessionViewModel extends ChangeNotifier {
   void prepareNewExercise({required bool forLog}) {
     _newExForLog = forLog;
     newExName = '';
-    newExVolumeType = 'reps';
     notifyListeners();
   }
 
@@ -330,17 +366,16 @@ class SessionViewModel extends ChangeNotifier {
           notifyListeners();
           return null;
         }
-        await _exerciseRepo.reactivateExercise(existing.exerciseId, newExVolumeType);
+        await _exerciseRepo.reactivateExercise(existing.exerciseId);
         id = existing.exerciseId;
         exercise = CustomExercise(
           exerciseId: existing.exerciseId,
           userId: existing.userId,
           name: existing.name,
-          volumeType: newExVolumeType,
           isActive: true,
         );
       } else {
-        exercise = await _exerciseRepo.createExercise(_userId, name, newExVolumeType);
+        exercise = await _exerciseRepo.createExercise(_userId, name);
         id = exercise.exerciseId;
       }
       await _loadCatalog();
@@ -447,16 +482,12 @@ class SessionViewModel extends ChangeNotifier {
   void setEditExId(String? id) {
     editExId = id;
     editVarId = null;
+    editVolumeType = 'reps';
     notifyListeners();
   }
 
   void setEditVarId(String? id) {
     editVarId = id;
-    notifyListeners();
-  }
-
-  void setNewExVolumeType(String v) {
-    newExVolumeType = v;
     notifyListeners();
   }
 

@@ -12,7 +12,6 @@ import '../../../../shared/widgets/lambda_input.dart';
 import '../../../../shared/widgets/multi_select_sheet.dart';
 import '../../../../shared/widgets/page_header.dart';
 import '../../../../shared/widgets/press_squash.dart';
-import '../../../../shared/widgets/segmented_control.dart';
 import '../../../../shared/widgets/slide_tab_bar.dart';
 import '../../../../shared/widgets/slide_tab_view.dart';
 import '../../../../shared/widgets/slide_up_modal.dart';
@@ -34,11 +33,6 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
   final _editExController    = TextEditingController();
   final _createVarController = TextEditingController();
   final _editVarController   = TextEditingController();
-
-  static const _volumeOptions = [
-    SegmentOption(label: 'Reps',     value: 'reps'),
-    SegmentOption(label: 'Duration', value: 'duration'),
-  ];
 
   @override
   void initState() {
@@ -74,7 +68,6 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
       keyboardAware: true,
       child: _CreateExerciseModal(
         controller: _createExController,
-        volumeOptions: _volumeOptions,
         viewModel: _viewModel,
       ),
     );
@@ -107,7 +100,6 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
       keyboardAware: true,
       child: _EditExerciseModal(
         controller: _editExController,
-        volumeOptions: _volumeOptions,
         viewModel: _viewModel,
         onAddVariations: _openAddVariationsToExercise,
         onCreateNewVariation: _openCreateVariationFromEditEx,
@@ -232,7 +224,6 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
       keyboardAware: true,
       child: _CreateExerciseModal(
         controller: _createExController,
-        volumeOptions: _volumeOptions,
         viewModel: _viewModel,
         onCreated: (id) => _viewModel.addEditVarExIds([id]),
       ),
@@ -436,21 +427,10 @@ class _ExercisesPanel extends StatelessWidget {
                         child: Row(
                           children: [
                             Expanded(
-                              child: Column(
-                                crossAxisAlignment:
-                                    CrossAxisAlignment.start,
-                                children: [
-                                  Text(toProperCase(ex.name),
-                                      style: TextStyle(
-                                          fontSize: AppTextStyles.md,
-                                          color: AppColors.primary)),
-                                  const SizedBox(height: 2),
-                                  Text(ex.volumeType,
-                                      style: TextStyle(
-                                          fontSize: AppTextStyles.xs,
-                                          color: AppColors.muted)),
-                                ],
-                              ),
+                              child: Text(toProperCase(ex.name),
+                                  style: TextStyle(
+                                      fontSize: AppTextStyles.md,
+                                      color: AppColors.primary)),
                             ),
                             Icon(Icons.chevron_right,
                                 size: 16, color: AppColors.muted),
@@ -588,13 +568,11 @@ class _VariationsPanel extends StatelessWidget {
 class _CreateExerciseModal extends StatelessWidget {
   const _CreateExerciseModal({
     required this.controller,
-    required this.volumeOptions,
     required this.viewModel,
     this.onCreated,
   });
 
   final TextEditingController controller;
-  final List<SegmentOption<String>> volumeOptions;
   final ExerciseViewModel viewModel;
   final ValueChanged<String>? onCreated;
 
@@ -623,18 +601,6 @@ class _CreateExerciseModal extends StatelessWidget {
                   textCapitalization: TextCapitalization.words,
                   textInputAction: TextInputAction.done,
                   onChanged: viewModel.setCreateExName,
-                ),
-                const SizedBox(height: AppSpacing.md),
-                Text('Volume type',
-                    style: TextStyle(
-                        fontSize: AppTextStyles.sm,
-                        fontWeight: FontWeight.w500,
-                        color: AppColors.primary)),
-                const SizedBox(height: AppSpacing.xs),
-                SegmentedControl<String>(
-                  options: volumeOptions,
-                  value: state.createExVolumeType,
-                  onChange: viewModel.setCreateExVolumeType,
                 ),
                 const SizedBox(height: AppSpacing.lg),
                 Row(
@@ -760,7 +726,6 @@ class _CreateVariationModal extends StatelessWidget {
 class _EditExerciseModal extends StatelessWidget {
   const _EditExerciseModal({
     required this.controller,
-    required this.volumeOptions,
     required this.viewModel,
     required this.onAddVariations,
     required this.onCreateNewVariation,
@@ -768,7 +733,6 @@ class _EditExerciseModal extends StatelessWidget {
   });
 
   final TextEditingController controller;
-  final List<SegmentOption<String>> volumeOptions;
   final ExerciseViewModel viewModel;
   final VoidCallback onAddVariations;
   final VoidCallback onCreateNewVariation;
@@ -812,18 +776,6 @@ class _EditExerciseModal extends StatelessWidget {
                   enabled: !state.isSaving,
                   textCapitalization: TextCapitalization.words,
                   onChanged: viewModel.setEditExName,
-                ),
-                const SizedBox(height: AppSpacing.md),
-                Text('Volume type',
-                    style: TextStyle(
-                        fontSize: AppTextStyles.sm,
-                        fontWeight: FontWeight.w500,
-                        color: AppColors.primary)),
-                const SizedBox(height: AppSpacing.xs),
-                SegmentedControl<String>(
-                  options: volumeOptions,
-                  value: state.editExVolumeType,
-                  onChange: viewModel.setEditExVolumeType,
                 ),
                 const SizedBox(height: AppSpacing.lg),
                 Divider(color: AppColors.border),
@@ -1020,19 +972,10 @@ class _EditVariationModal extends StatelessWidget {
                       child: Row(
                         children: [
                           Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(toProperCase(ex.name),
-                                    style: TextStyle(
-                                        fontSize: AppTextStyles.md,
-                                        color: AppColors.primary)),
-                                Text(ex.volumeType,
-                                    style: TextStyle(
-                                        fontSize: AppTextStyles.xs,
-                                        color: AppColors.muted)),
-                              ],
-                            ),
+                            child: Text(toProperCase(ex.name),
+                                style: TextStyle(
+                                    fontSize: AppTextStyles.md,
+                                    color: AppColors.primary)),
                           ),
                           GlassButton(
                             label: '',

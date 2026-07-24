@@ -5,6 +5,12 @@ import '../../core/styles/app_text_styles.dart';
 import 'dropdown_select.dart';
 import 'glass_button.dart';
 import 'lambda_input.dart';
+import 'segmented_control.dart';
+
+const _volumeTypeOptions = [
+  SegmentOption(label: 'Reps', value: 'reps'),
+  SegmentOption(label: 'Duration', value: 'duration'),
+];
 
 /// The Log Set / Edit Set form — shared by the Session screen (logging sets
 /// during an active workout) and Workout Detail (editing sets on a past
@@ -21,6 +27,7 @@ class SetFormSheet extends StatelessWidget {
     required this.selectedVariationId,
     required this.onVariationChanged,
     required this.volumeType,
+    required this.onVolumeTypeChanged,
     required this.weightCtrl,
     required this.repsCtrl,
     required this.notesCtrl,
@@ -42,9 +49,9 @@ class SetFormSheet extends StatelessWidget {
   final List<DropdownOption<String?>> variationOptions;
   final String? selectedVariationId;
   final ValueChanged<String?> onVariationChanged;
-  // 'reps' | 'duration' | null — null (no exercise selected yet) falls back
-  // to labeling the field "Reps".
-  final String? volumeType;
+  // 'reps' | 'duration' — chosen per set, not tied to the exercise.
+  final String volumeType;
+  final ValueChanged<String> onVolumeTypeChanged;
   final TextEditingController weightCtrl;
   final TextEditingController repsCtrl;
   final TextEditingController notesCtrl;
@@ -77,7 +84,16 @@ class SetFormSheet extends StatelessWidget {
                           fontWeight: FontWeight.w700,
                           color: AppColors.primary)),
                 ),
-                if (onDelete != null)
+                SizedBox(
+                  width: 148,
+                  child: SegmentedControl<String>(
+                    options: _volumeTypeOptions,
+                    value: volumeType,
+                    onChange: onVolumeTypeChanged,
+                  ),
+                ),
+                if (onDelete != null) ...[
+                  const SizedBox(width: AppSpacing.sm),
                   GlassButton(
                     label: '',
                     icon: Icons.delete_outline,
@@ -85,6 +101,7 @@ class SetFormSheet extends StatelessWidget {
                     compact: true,
                     onPressed: onDelete!,
                   ),
+                ],
               ],
             ),
             const SizedBox(height: AppSpacing.md),

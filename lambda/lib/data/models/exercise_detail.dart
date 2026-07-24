@@ -12,5 +12,4 @@ class ExerciseDetail {
 
   String get exerciseId => exercise.exerciseId;
   String get name => exercise.name;
-  String get volumeType => exercise.volumeType;
 }

@@ -9,7 +9,6 @@ import '../../../../shared/widgets/glass_button.dart';
 import '../../../../shared/widgets/lambda_button.dart';
 import '../../../../shared/widgets/lambda_input.dart';
 import '../../../../shared/widgets/page_header.dart';
-import '../../../../shared/widgets/segmented_control.dart';
 import '../../../../shared/widgets/set_form_sheet.dart';
 import '../../../../shared/widgets/slide_pages.dart';
 import '../../../../shared/widgets/slide_up_modal.dart';
@@ -37,11 +36,6 @@ class _SessionScreenState extends State<SessionScreen> {
   final _editNotesCtrl   = TextEditingController();
   final _newExNameCtrl   = TextEditingController();
   final _newVarNameCtrl  = TextEditingController();
-
-  static const _volumeOptions = [
-    SegmentOption(label: 'Reps',     value: 'reps'),
-    SegmentOption(label: 'Duration', value: 'duration'),
-  ];
 
   @override
   void initState() {
@@ -124,7 +118,15 @@ class _SessionScreenState extends State<SessionScreen> {
                     label: toProperCase(d.name), value: d.exerciseId))
                 .toList(),
             selectedExerciseId: _vm.selectedExId,
-            onExerciseChanged: _vm.selectExercise,
+            onExerciseChanged: (id) {
+              _vm.selectExercise(id);
+              _logWeightCtrl.text = _vm.logWeight;
+              if (id != null) {
+                _vm.prefillLastUsedForLog(id).then((_) {
+                  if (mounted) _logWeightCtrl.text = _vm.logWeight;
+                });
+              }
+            },
             variationOptions: [
               const DropdownOption<String?>(label: 'None', value: null),
               ...(detail?.assignedVariations ?? []).map((v) => DropdownOption(
@@ -132,7 +134,8 @@ class _SessionScreenState extends State<SessionScreen> {
             ],
             selectedVariationId: _vm.selectedVarId,
             onVariationChanged: _vm.selectVariation,
-            volumeType: detail?.volumeType,
+            volumeType: _vm.logVolumeType,
+            onVolumeTypeChanged: _vm.setLogVolumeType,
             weightCtrl: _logWeightCtrl,
             repsCtrl: _logRepsCtrl,
             notesCtrl: _logNotesCtrl,
@@ -184,7 +187,15 @@ class _SessionScreenState extends State<SessionScreen> {
                     label: toProperCase(d.name), value: d.exerciseId))
                 .toList(),
             selectedExerciseId: _vm.editExId,
-            onExerciseChanged: _vm.setEditExId,
+            onExerciseChanged: (id) {
+              _vm.setEditExId(id);
+              _editWeightCtrl.text = _vm.editWeight;
+              if (id != null) {
+                _vm.prefillLastUsedForEdit(id).then((_) {
+                  if (mounted) _editWeightCtrl.text = _vm.editWeight;
+                });
+              }
+            },
             variationOptions: [
               const DropdownOption<String?>(label: 'None', value: null),
               ...(detail?.assignedVariations ?? []).map((v) => DropdownOption(
@@ -192,7 +203,8 @@ class _SessionScreenState extends State<SessionScreen> {
             ],
             selectedVariationId: _vm.editVarId,
             onVariationChanged: _vm.setEditVarId,
-            volumeType: detail?.volumeType,
+            volumeType: _vm.editVolumeType,
+            onVolumeTypeChanged: _vm.setEditVolumeType,
             weightCtrl: _editWeightCtrl,
             repsCtrl: _editRepsCtrl,
             notesCtrl: _editNotesCtrl,
@@ -207,23 +219,25 @@ class _SessionScreenState extends State<SessionScreen> {
               _confirmDeleteSet(s.setId);
             },
             onNewExercise: () {
+              final savedVolumeType = _vm.editVolumeType;
               Navigator.of(context, rootNavigator: true).pop();
               // submitNewExercise() already selects the new exercise for the
               // edit form, so just restore the edit state and reopen it.
               _openNewExerciseModal(
                 forLog: false,
                 onDone: () {
-                  _restoreEditState(s);
+                  _restoreEditState(s, savedVolumeType);
                   _showEditSetModal(s);
                 },
               );
             },
             onNewVariation: () {
+              final savedVolumeType = _vm.editVolumeType;
               Navigator.of(context, rootNavigator: true).pop();
               _openNewVariationModal(
                 forLog: false,
                 onDone: () {
-                  _restoreEditState(s);
+                  _restoreEditState(s, savedVolumeType);
                   _showEditSetModal(s);
                 },
               );
@@ -238,11 +252,13 @@ class _SessionScreenState extends State<SessionScreen> {
   // creation) fires the .then(clearEditSet) above immediately, since that
   // fires on ANY close of the sheet, not just a deliberate Cancel. editExId/
   // editVarId get reassigned correctly by submitNewExercise/submitNewVariation
-  // regardless, but editingSet and the text fields need restoring by hand.
-  void _restoreEditState(WorkoutSet s) {
+  // regardless, but editingSet, volume type, and the text fields need
+  // restoring by hand.
+  void _restoreEditState(WorkoutSet s, String volumeType) {
     _vm.editingSet = s;
     _vm.editWeight = _editWeightCtrl.text;
     _vm.editRepsOrDuration = _editRepsCtrl.text;
+    _vm.editVolumeType = volumeType;
     _vm.editNotes = _editNotesCtrl.text;
   }
 
@@ -282,10 +298,7 @@ class _SessionScreenState extends State<SessionScreen> {
       fitContent: true,
       keyboardAware: true,
       child: _NewExerciseModal(
-          vm: _vm,
-          nameCtrl: _newExNameCtrl,
-          volumeOptions: _volumeOptions,
-          onCreated: onDone),
+          vm: _vm, nameCtrl: _newExNameCtrl, onCreated: onDone),
     );
   }
 
@@ -634,13 +647,11 @@ class _NewExerciseModal extends StatelessWidget {
   const _NewExerciseModal({
     required this.vm,
     required this.nameCtrl,
-    required this.volumeOptions,
     required this.onCreated,
   });
 
   final SessionViewModel vm;
   final TextEditingController nameCtrl;
-  final List<SegmentOption<String>> volumeOptions;
   final VoidCallback onCreated;
 
   @override
@@ -666,18 +677,6 @@ class _NewExerciseModal extends StatelessWidget {
                 textCapitalization: TextCapitalization.words,
                 enabled: !vm.newExCreating,
                 onChanged: (v) => vm.newExName = v,
-              ),
-              const SizedBox(height: AppSpacing.md),
-              Text('Volume type',
-                  style: TextStyle(
-                      fontSize: AppTextStyles.sm,
-                      fontWeight: FontWeight.w500,
-                      color: AppColors.primary)),
-              const SizedBox(height: AppSpacing.xs),
-              SegmentedControl<String>(
-                options: volumeOptions,
-                value: vm.newExVolumeType,
-                onChange: vm.setNewExVolumeType,
               ),
               const SizedBox(height: AppSpacing.lg),
               Row(

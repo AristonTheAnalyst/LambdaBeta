@@ -25,7 +25,6 @@ const schema = Schema([
     Column.text('custom_exercise_id'),
     Column.text('user_id'),
     Column.text('exercise_name'),
-    Column.text('exercise_volume_type'),
     Column.integer('is_active'),
   ]),
   Table('user_custom_variation', [

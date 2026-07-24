@@ -80,15 +80,13 @@ class ExerciseRepository {
     return CustomVariation.fromMap(rows.first);
   }
 
-  Future<CustomExercise> createExercise(
-      String userId, String name, String volumeType) async {
+  Future<CustomExercise> createExercise(String userId, String name) async {
     final data = await _client
         .from('user_custom_exercise')
         .insert({
           'custom_exercise_id': _uuid.v4(),
           'user_id': userId,
           'exercise_name': name,
-          'exercise_volume_type': volumeType,
           'is_active': true,
         })
         .select()
@@ -96,12 +94,10 @@ class ExerciseRepository {
     return CustomExercise.fromMap(data);
   }
 
-  Future<void> reactivateExercise(
-      String exerciseId, String volumeType) async {
+  Future<void> reactivateExercise(String exerciseId) async {
     await _client
         .from('user_custom_exercise')
-        .update({'is_active': true, 'exercise_volume_type': volumeType}).eq(
-            'custom_exercise_id', exerciseId);
+        .update({'is_active': true}).eq('custom_exercise_id', exerciseId);
   }
 
   Future<CustomVariation> createVariation(String userId, String name) async {
@@ -145,11 +141,9 @@ class ExerciseRepository {
         .update({'is_active': false}).eq('custom_variation_id', variationId);
   }
 
-  Future<void> updateExercise(
-      String exerciseId, String name, String volumeType) async {
+  Future<void> updateExercise(String exerciseId, String name) async {
     await _client.from('user_custom_exercise').update({
       'exercise_name': name,
-      'exercise_volume_type': volumeType,
     }).eq('custom_exercise_id', exerciseId);
   }
 

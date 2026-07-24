@@ -3,6 +3,17 @@
     "powersync": {
       "type": "http",
       "url": "https://docs.powersync.com/mcp"
+    },
+    "supabase": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@supabase/mcp-server-supabase@latest",
+        "--project-ref=dybluaeowmpdwsweawcq"
+      ],
+      "env": {
+        "SUPABASE_ACCESS_TOKEN": "${SUPABASE_ACCESS_TOKEN}"
+      }
     }
   }
 }

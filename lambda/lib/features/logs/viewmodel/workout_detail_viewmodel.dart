@@ -25,6 +25,7 @@ class WorkoutDetailState {
     this.editVarId,
     this.editWeight = '',
     this.editRepsOrDuration = '',
+    this.editVolumeType = 'reps',
     this.editNotes = '',
     this.editLoading = false,
     // Log set form
@@ -33,6 +34,7 @@ class WorkoutDetailState {
     this.selectedVarId,
     this.logWeight = '',
     this.logRepsOrDuration = '',
+    this.logVolumeType = 'reps',
     this.logNotes = '',
     this.logLoading = false,
   });
@@ -53,6 +55,7 @@ class WorkoutDetailState {
   final String? editVarId;
   final String editWeight;
   final String editRepsOrDuration;
+  final String editVolumeType; // 'reps' | 'duration' — chosen per set
   final String editNotes;
   final bool editLoading;
 
@@ -61,6 +64,7 @@ class WorkoutDetailState {
   final String? selectedVarId;
   final String logWeight;
   final String logRepsOrDuration;
+  final String logVolumeType;
   final String logNotes;
   final bool logLoading;
 
@@ -92,6 +96,7 @@ class WorkoutDetailState {
     bool clearEditVarId = false,
     String? editWeight,
     String? editRepsOrDuration,
+    String? editVolumeType,
     String? editNotes,
     bool? editLoading,
     bool? logSetVisible,
@@ -101,6 +106,7 @@ class WorkoutDetailState {
     bool clearSelectedVarId = false,
     String? logWeight,
     String? logRepsOrDuration,
+    String? logVolumeType,
     String? logNotes,
     bool? logLoading,
   }) =>
@@ -120,6 +126,7 @@ class WorkoutDetailState {
         editVarId: clearEditVarId ? null : (editVarId ?? this.editVarId),
         editWeight: editWeight ?? this.editWeight,
         editRepsOrDuration: editRepsOrDuration ?? this.editRepsOrDuration,
+        editVolumeType: editVolumeType ?? this.editVolumeType,
         editNotes: editNotes ?? this.editNotes,
         editLoading: editLoading ?? this.editLoading,
         logSetVisible: logSetVisible ?? this.logSetVisible,
@@ -127,6 +134,7 @@ class WorkoutDetailState {
         selectedVarId: clearSelectedVarId ? null : (selectedVarId ?? this.selectedVarId),
         logWeight: logWeight ?? this.logWeight,
         logRepsOrDuration: logRepsOrDuration ?? this.logRepsOrDuration,
+        logVolumeType: logVolumeType ?? this.logVolumeType,
         logNotes: logNotes ?? this.logNotes,
         logLoading: logLoading ?? this.logLoading,
       );
@@ -225,6 +233,7 @@ class WorkoutDetailViewModel {
         clearSelectedVarId: true,
         logWeight: '',
         logRepsOrDuration: '',
+        logVolumeType: 'reps',
         logNotes: '',
       );
 
@@ -235,6 +244,7 @@ class WorkoutDetailViewModel {
       clearSelectedVarId: true,
       logWeight: '',
       logRepsOrDuration: '',
+      logVolumeType: 'reps',
     );
   }
 
@@ -246,8 +256,24 @@ class WorkoutDetailViewModel {
       state.value = state.value.copyWith(logWeight: v);
   void setLogReps(String v) =>
       state.value = state.value.copyWith(logRepsOrDuration: v);
+  void setLogVolumeType(String v) =>
+      state.value = state.value.copyWith(logVolumeType: v);
   void setLogNotes(String v) =>
       state.value = state.value.copyWith(logNotes: v);
+
+  /// Prefills weight/variation/volume-type from the most recently logged set
+  /// for this exercise. Guards against a stale result landing after the user
+  /// has already moved on to a different exercise.
+  Future<void> prefillLastUsedForLog(String exerciseId) async {
+    final last = await _workoutRepo.findLastSetForExercise(_userId, exerciseId);
+    if (last == null || state.value.selectedExId != exerciseId) return;
+    state.value = state.value.copyWith(
+      selectedVarId: last.variationId,
+      clearSelectedVarId: last.variationId == null,
+      logWeight: last.weight != null ? '${last.weight}' : '',
+      logVolumeType: last.duration.isNotEmpty ? 'duration' : 'reps',
+    );
+  }
 
   Future<bool> submitLogSet(String workoutId) async {
     final s = state.value;
@@ -256,7 +282,7 @@ class WorkoutDetailViewModel {
     final values = parseValues(s.logRepsOrDuration);
     if (values.isEmpty) return false;
 
-    final isReps = detail.volumeType == 'reps';
+    final isReps = s.logVolumeType == 'reps';
     final nextNum = s.sets.isEmpty
         ? 1
         : s.sets.map((x) => x.setNumber).reduce((a, b) => a > b ? a : b) + 1;
@@ -294,6 +320,7 @@ class WorkoutDetailViewModel {
       editVarId: s.variationId,
       editWeight: s.weight != null ? '${s.weight}' : '',
       editRepsOrDuration: vals.join(','),
+      editVolumeType: s.duration.isNotEmpty ? 'duration' : 'reps',
       editNotes: s.notes ?? '',
     );
   }
@@ -304,12 +331,15 @@ class WorkoutDetailViewModel {
         clearEditVarId: true,
         editWeight: '',
         editRepsOrDuration: '',
+        editVolumeType: 'reps',
         editNotes: '',
       );
 
   void setEditExId(String? id) => state.value = id == null
-      ? state.value.copyWith(clearEditExId: true, clearEditVarId: true)
-      : state.value.copyWith(editExId: id, clearEditVarId: true);
+      ? state.value.copyWith(
+          clearEditExId: true, clearEditVarId: true, editVolumeType: 'reps')
+      : state.value.copyWith(
+          editExId: id, clearEditVarId: true, editVolumeType: 'reps');
 
   void setEditVarId(String? id) => state.value = id == null
       ? state.value.copyWith(clearEditVarId: true)
@@ -319,8 +349,22 @@ class WorkoutDetailViewModel {
       state.value = state.value.copyWith(editWeight: v);
   void setEditReps(String v) =>
       state.value = state.value.copyWith(editRepsOrDuration: v);
+  void setEditVolumeType(String v) =>
+      state.value = state.value.copyWith(editVolumeType: v);
   void setEditNotes(String v) =>
       state.value = state.value.copyWith(editNotes: v);
+
+  /// Same as [prefillLastUsedForLog], for the edit form.
+  Future<void> prefillLastUsedForEdit(String exerciseId) async {
+    final last = await _workoutRepo.findLastSetForExercise(_userId, exerciseId);
+    if (last == null || state.value.editExId != exerciseId) return;
+    state.value = state.value.copyWith(
+      editVarId: last.variationId,
+      clearEditVarId: last.variationId == null,
+      editWeight: last.weight != null ? '${last.weight}' : '',
+      editVolumeType: last.duration.isNotEmpty ? 'duration' : 'reps',
+    );
+  }
 
   Future<bool> submitEditSet(String workoutId) async {
     final s = state.value;
@@ -331,7 +375,7 @@ class WorkoutDetailViewModel {
     final values = parseValues(s.editRepsOrDuration);
     if (values.isEmpty) return false;
 
-    final isReps = detail.volumeType == 'reps';
+    final isReps = s.editVolumeType == 'reps';
     state.value = s.copyWith(editLoading: true);
     try {
       await _workoutRepo.updateSet(

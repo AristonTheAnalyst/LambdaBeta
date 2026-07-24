@@ -80,7 +80,17 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
                     label: toProperCase(d.name), value: d.exerciseId))
                 .toList(),
             selectedExerciseId: state.selectedExId,
-            onExerciseChanged: _vm.selectExercise,
+            onExerciseChanged: (id) {
+              _vm.selectExercise(id);
+              _logWeightController.text = _vm.state.value.logWeight;
+              if (id != null) {
+                _vm.prefillLastUsedForLog(id).then((_) {
+                  if (mounted) {
+                    _logWeightController.text = _vm.state.value.logWeight;
+                  }
+                });
+              }
+            },
             variationOptions: [
               const DropdownOption<String?>(label: 'None', value: null),
               ...(detail?.assignedVariations ?? []).map((v) => DropdownOption(
@@ -88,7 +98,8 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
             ],
             selectedVariationId: state.selectedVarId,
             onVariationChanged: _vm.selectVariation,
-            volumeType: detail?.volumeType,
+            volumeType: state.logVolumeType,
+            onVolumeTypeChanged: _vm.setLogVolumeType,
             weightCtrl: _logWeightController,
             repsCtrl: _logRepsController,
             notesCtrl: _logNotesController,
@@ -126,7 +137,17 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
                     label: toProperCase(d.name), value: d.exerciseId))
                 .toList(),
             selectedExerciseId: state.editExId,
-            onExerciseChanged: _vm.setEditExId,
+            onExerciseChanged: (id) {
+              _vm.setEditExId(id);
+              _editWeightController.text = _vm.state.value.editWeight;
+              if (id != null) {
+                _vm.prefillLastUsedForEdit(id).then((_) {
+                  if (mounted) {
+                    _editWeightController.text = _vm.state.value.editWeight;
+                  }
+                });
+              }
+            },
             variationOptions: [
               const DropdownOption<String?>(label: 'None', value: null),
               ...(detail?.assignedVariations ?? []).map((v) => DropdownOption(
@@ -134,7 +155,8 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
             ],
             selectedVariationId: state.editVarId,
             onVariationChanged: _vm.setEditVarId,
-            volumeType: detail?.volumeType,
+            volumeType: state.editVolumeType,
+            onVolumeTypeChanged: _vm.setEditVolumeType,
             weightCtrl: _editWeightController,
             repsCtrl: _editRepsController,
             notesCtrl: _editNotesController,
