@@ -2,8 +2,8 @@ import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'app.dart';
 import 'core/powersync/database.dart';
+import 'version_gate_app.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -19,7 +19,7 @@ Future<void> main() async {
 
   _initDeepLinks();
 
-  runApp(const LambdaApp());
+  runApp(const VersionGateApp());
 }
 
 void _initDeepLinks() {

@@ -70,7 +70,10 @@ class DropdownSelect<T> extends StatelessWidget {
   final ValueChanged<T?> onChange;
   final String placeholder;
   final bool searchable;
-  final VoidCallback? onCreateNew;
+  // Called with whatever the user had typed in the search box (empty string
+  // if nothing was typed), so callers can create-and-select in one step
+  // instead of asking the user to type the name a second time.
+  final ValueChanged<String>? onCreateNew;
   final String createNewLabel;
 
   String get _displayLabel {
@@ -152,7 +155,7 @@ void showDropdownPickerSheet<T>(
   required T? value,
   required ValueChanged<T?> onSelect,
   bool searchable = false,
-  VoidCallback? onCreateNew,
+  ValueChanged<String>? onCreateNew,
   String createNewLabel = 'Create new',
 }) {
   showLambdaModal<T>(
@@ -187,7 +190,7 @@ class _DropdownSheetContent<T> extends StatefulWidget {
   final List<DropdownOption<T>> options;
   final T? value;
   final bool searchable;
-  final VoidCallback? onCreateNew;
+  final ValueChanged<String>? onCreateNew;
   final String createNewLabel;
   final ValueChanged<T?> onSelect;
   // Closes this picker — pops the route when shown standalone, or clears the
@@ -271,7 +274,7 @@ class _DropdownSheetContentState<T> extends State<_DropdownSheetContent<T>> {
           isSelected: false,
           onTap: () {
             widget.onClose();
-            widget.onCreateNew!();
+            widget.onCreateNew!(_query);
           },
         ),
       widget.fillHeight

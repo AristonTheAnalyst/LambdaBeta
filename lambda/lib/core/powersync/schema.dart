@@ -12,7 +12,7 @@ const schema = Schema([
     Column.integer('onboarded'),
     Column.text('user_weight_kg'),
   ]),
-  Table('fact_user_workout', [
+  Table('fact_workout', [
     Column.text('user_workout_id'),
     Column.text('user_id'),
     Column.text('user_pre_workout_notes'),
@@ -20,26 +20,30 @@ const schema = Schema([
     Column.text('user_workout_created_date'),
     Column.integer('is_active'),
     Column.integer('deleted_locally'),
+    Column.text('program_id'),
+    Column.text('program_run_id'),
+    Column.text('planned_workout_id'),
+    Column.integer('user_workout_feeling'),
   ]),
-  Table('user_custom_exercise', [
+  Table('dim_exercise', [
     Column.text('custom_exercise_id'),
     Column.text('user_id'),
     Column.text('exercise_name'),
     Column.integer('is_active'),
   ]),
-  Table('user_custom_variation', [
+  Table('dim_variation', [
     Column.text('custom_variation_id'),
     Column.text('user_id'),
     Column.text('variation_name'),
     Column.integer('is_active'),
   ]),
-  Table('user_custom_exercise_variation_bridge', [
+  Table('dim_exercise_variation_bridge', [
     Column.text('custom_exercise_id'),
     Column.text('custom_variation_id'),
     Column.text('user_id'),
     Column.integer('deleted_locally'),
   ]),
-  Table('fact_user_weight', [
+  Table('fact_bodyweight', [
     Column.integer('user_weight_id'),
     Column.text('user_id'),
     Column.text('user_weight'),
@@ -57,5 +61,49 @@ const schema = Schema([
     Column.text('workout_set_duration_seconds'),
     Column.text('workout_set_notes'),
     Column.integer('deleted_locally'),
+    Column.text('program_id'),
+    Column.text('planned_set_id'),
+  ]),
+  Table('dim_program', [
+    Column.text('program_id'),
+    Column.text('user_id'),
+    Column.text('program_name'),
+    Column.text('program_description'),
+    Column.integer('program_length_weeks'),
+    Column.text('progression_mode'),
+    Column.integer('is_active'),
+    Column.text('program_created_date'),
+  ]),
+  Table('dim_planned_workout', [
+    Column.text('planned_workout_id'),
+    Column.text('program_id'),
+    Column.text('user_id'),
+    Column.text('planned_workout_name'),
+    Column.text('planned_workout_notes'),
+    Column.integer('sequence_order'),
+    Column.integer('day_of_week'),
+    Column.integer('is_active'),
+  ]),
+  Table('dim_planned_set', [
+    Column.text('planned_set_id'),
+    Column.text('planned_workout_id'),
+    Column.text('user_id'),
+    Column.text('custom_exercise_id'),
+    Column.text('custom_variation_id'),
+    Column.integer('exercise_sequence_order'),
+    Column.integer('planned_set_number'),
+    Column.text('target_weight'),
+    Column.text('target_reps'),
+    Column.text('target_duration_seconds'),
+    Column.text('target_notes'),
+    Column.integer('is_active'),
+  ]),
+  Table('fact_program_run', [
+    Column.text('program_run_id'),
+    Column.text('program_id'),
+    Column.text('user_id'),
+    Column.text('started_date'),
+    Column.text('ended_date'),
+    Column.integer('is_current'),
   ]),
 ]);

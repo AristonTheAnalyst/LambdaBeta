@@ -24,7 +24,7 @@ class UserRepository {
     final today = DateTime.now();
     final dateStr =
         '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
-    await _client.from('fact_user_weight').insert({
+    await _client.from('fact_bodyweight').insert({
       'user_id': userId,
       'user_weight': weightKg,
       'user_weight_date': dateStr,

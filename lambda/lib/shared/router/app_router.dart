@@ -12,10 +12,11 @@ import '../../features/dev/view/gallery_screen.dart';
 import '../../features/exercises/view/exercise_hub_screen.dart';
 import '../../features/exercises/view/exercise_library_screen.dart';
 import '../../features/exercises/view/guide_screen.dart';
-import '../../features/exercises/view/programs_screen.dart';
 import '../../features/logs/view/logs_screen.dart';
 import '../../features/logs/view/workout_detail_screen.dart';
 import '../../features/onboarding/view/onboarding_screen.dart';
+import '../../features/programs/view/program_detail_screen.dart';
+import '../../features/programs/view/program_library_screen.dart';
 import '../../features/profile/view/profile_detail_screen.dart';
 import '../../features/profile/view/profile_hub_screen.dart';
 import '../../features/session/view/session_screen.dart';
@@ -105,7 +106,18 @@ abstract final class AppRouter {
             routes: [
               GoRoute(path: 'library',  builder: (_, _) => ExerciseLibraryScreen()),
               GoRoute(path: 'guide',    builder: (_, _) => GuideScreen()),
-              GoRoute(path: 'programs', builder: (_, _) => ProgramsScreen()),
+              GoRoute(
+                path: 'programs',
+                builder: (_, _) => ProgramLibraryScreen(),
+                routes: [
+                  GoRoute(
+                    path: ':id',
+                    builder: (_, state) => ProgramDetailScreen(
+                      programId: state.pathParameters['id']!,
+                    ),
+                  ),
+                ],
+              ),
             ],
           ),
           GoRoute(

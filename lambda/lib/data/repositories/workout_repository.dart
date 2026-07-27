@@ -9,21 +9,31 @@ const _uuid = Uuid();
 class WorkoutRepository {
   final _client = Supabase.instance.client;
 
-  Future<String> createWorkout(String userId, {String? preNotes}) async {
+  Future<String> createWorkout(
+    String userId, {
+    String? preNotes,
+    String? programId,
+    String? programRunId,
+    String? plannedWorkoutId,
+  }) async {
     final workoutId = _uuid.v4();
-    await _client.from('fact_user_workout').insert({
+    await _client.from('fact_workout').insert({
       'user_workout_id': workoutId,
       'user_id': userId,
       'user_pre_workout_notes': preNotes?.isNotEmpty == true ? preNotes : null,
       'is_active': true,
+      'program_id': programId,
+      'program_run_id': programRunId,
+      'planned_workout_id': plannedWorkoutId,
     });
     return workoutId;
   }
 
-  Future<void> endWorkout(String workoutId, {String? postNotes}) async {
-    await _client.from('fact_user_workout').update({
+  Future<void> endWorkout(String workoutId, {String? postNotes, int? feeling}) async {
+    await _client.from('fact_workout').update({
       'is_active': false,
       'user_post_workout_notes': postNotes?.isNotEmpty == true ? postNotes : null,
+      'user_workout_feeling': feeling,
     }).eq('user_workout_id', workoutId);
   }
 
@@ -33,14 +43,14 @@ class WorkoutRepository {
         .delete()
         .eq('user_workout_id', workoutId);
     await _client
-        .from('fact_user_workout')
+        .from('fact_workout')
         .delete()
         .eq('user_workout_id', workoutId);
   }
 
   Future<String?> getActiveWorkoutId(String userId) async {
     final rows = await ps.db.getAll(
-      'SELECT user_workout_id FROM fact_user_workout WHERE user_id = ? AND is_active = 1 LIMIT 1',
+      'SELECT user_workout_id FROM fact_workout WHERE user_id = ? AND is_active = 1 LIMIT 1',
       [userId],
     );
     if (rows.isEmpty) return null;
@@ -56,6 +66,8 @@ class WorkoutRepository {
     required List<num> reps,
     required List<num> duration,
     String? notes,
+    String? programId,
+    String? plannedSetId,
   }) async {
     final setId = _uuid.v4();
     final data = await _client
@@ -70,6 +82,8 @@ class WorkoutRepository {
           'workout_set_reps': reps,
           'workout_set_duration_seconds': duration,
           'workout_set_notes': notes?.isNotEmpty == true ? notes : null,
+          'program_id': programId,
+          'planned_set_id': plannedSetId,
         })
         .select()
         .single();
@@ -141,7 +155,7 @@ class WorkoutRepository {
 
   Future<List<WorkoutWithSets>> loadWorkoutsWithSets(String userId) async {
     final workoutRows = await ps.db.getAll(
-      'SELECT * FROM fact_user_workout WHERE user_id = ? AND is_active = 0 ORDER BY user_workout_created_date DESC',
+      'SELECT * FROM fact_workout WHERE user_id = ? AND is_active = 0 ORDER BY user_workout_created_date DESC',
       [userId],
     );
     if (workoutRows.isEmpty) return [];
@@ -152,10 +166,10 @@ class WorkoutRepository {
       '''
       SELECT s.*, e.exercise_name, v.variation_name
       FROM fact_workout_set s
-      LEFT JOIN user_custom_exercise e ON e.custom_exercise_id = s.custom_exercise_id
-      LEFT JOIN user_custom_variation v ON v.custom_variation_id = s.custom_variation_id
+      LEFT JOIN dim_exercise e ON e.custom_exercise_id = s.custom_exercise_id
+      LEFT JOIN dim_variation v ON v.custom_variation_id = s.custom_variation_id
       WHERE s.user_workout_id IN (
-        SELECT user_workout_id FROM fact_user_workout WHERE user_id = ? AND is_active = 0
+        SELECT user_workout_id FROM fact_workout WHERE user_id = ? AND is_active = 0
       )
       ORDER BY s.user_workout_id, s.workout_set_number
       ''',
@@ -181,9 +195,9 @@ class WorkoutRepository {
       '''
       SELECT s.*, w.user_workout_created_date, e.exercise_name, v.variation_name
       FROM fact_workout_set s
-      INNER JOIN fact_user_workout w ON w.user_workout_id = s.user_workout_id
-      LEFT JOIN user_custom_exercise e ON e.custom_exercise_id = s.custom_exercise_id
-      LEFT JOIN user_custom_variation v ON v.custom_variation_id = s.custom_variation_id
+      INNER JOIN fact_workout w ON w.user_workout_id = s.user_workout_id
+      LEFT JOIN dim_exercise e ON e.custom_exercise_id = s.custom_exercise_id
+      LEFT JOIN dim_variation v ON v.custom_variation_id = s.custom_variation_id
       WHERE w.user_id = ? AND w.is_active = 0
       ORDER BY w.user_workout_created_date DESC, s.workout_set_number
       ''',
@@ -194,7 +208,7 @@ class WorkoutRepository {
 
   Future<Workout?> fetchWorkout(String workoutId) async {
     final rows = await ps.db.getAll(
-      'SELECT * FROM fact_user_workout WHERE user_workout_id = ?',
+      'SELECT * FROM fact_workout WHERE user_workout_id = ?',
       [workoutId],
     );
     if (rows.isEmpty) return null;
@@ -210,7 +224,7 @@ class WorkoutRepository {
       '''
       SELECT s.*
       FROM fact_workout_set s
-      INNER JOIN fact_user_workout w ON w.user_workout_id = s.user_workout_id
+      INNER JOIN fact_workout w ON w.user_workout_id = s.user_workout_id
       WHERE w.user_id = ? AND s.custom_exercise_id = ?
       ORDER BY w.user_workout_created_date DESC, s.workout_set_number DESC
       LIMIT 1

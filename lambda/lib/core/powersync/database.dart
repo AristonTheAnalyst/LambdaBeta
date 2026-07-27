@@ -16,11 +16,15 @@ const _powersyncUrl =
 // PowerSync uses 'id' internally; we remap on upload.
 const _pkColumns = {
   'dim_user': 'user_id',
-  'fact_user_workout': 'user_workout_id',
-  'user_custom_exercise': 'custom_exercise_id',
-  'user_custom_variation': 'custom_variation_id',
-  'fact_user_weight': 'user_weight_id',
+  'fact_workout': 'user_workout_id',
+  'dim_exercise': 'custom_exercise_id',
+  'dim_variation': 'custom_variation_id',
+  'fact_bodyweight': 'user_weight_id',
   'fact_workout_set': 'workout_set_id',
+  'dim_program': 'program_id',
+  'dim_planned_workout': 'planned_workout_id',
+  'dim_planned_set': 'planned_set_id',
+  'fact_program_run': 'program_run_id',
 };
 
 final _fatalCodes = [

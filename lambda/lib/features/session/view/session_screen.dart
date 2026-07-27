@@ -145,15 +145,31 @@ class _SessionScreenState extends State<SessionScreen> {
             submitLabel: 'Log Set',
             submitLoading: _vm.logLoading,
             onSubmit: _vm.submitLogSet,
-            onNewExercise: () {
-              Navigator.of(context, rootNavigator: true).pop();
-              // submitNewExercise() already selects the new exercise for the
-              // log form, so just reopen it directly.
-              _openNewExerciseModal(forLog: true, onDone: _openLogSetModal);
+            exerciseCreating: _vm.newExCreating,
+            variationCreating: _vm.newVarCreating,
+            onNewExercise: (query) {
+              if (query.trim().isEmpty) {
+                Navigator.of(context, rootNavigator: true).pop();
+                // submitNewExercise() already selects the new exercise for
+                // the log form, so just reopen it directly.
+                _openNewExerciseModal(forLog: true, onDone: _openLogSetModal);
+                return;
+              }
+              // Already typed a name while searching — create and select it
+              // directly instead of asking again in a separate modal.
+              _vm.prepareNewExercise(forLog: true);
+              _vm.newExName = query.trim();
+              _vm.submitNewExercise();
             },
-            onNewVariation: () {
-              Navigator.of(context, rootNavigator: true).pop();
-              _openNewVariationModal(forLog: true, onDone: _openLogSetModal);
+            onNewVariation: (query) {
+              if (query.trim().isEmpty) {
+                Navigator.of(context, rootNavigator: true).pop();
+                _openNewVariationModal(forLog: true, onDone: _openLogSetModal);
+                return;
+              }
+              _vm.prepareNewVariation(forLog: true);
+              _vm.newVarName = query.trim();
+              _vm.submitNewVariation();
             },
           );
         },
@@ -214,33 +230,47 @@ class _SessionScreenState extends State<SessionScreen> {
             submitLabel: 'Save',
             submitLoading: _vm.editLoading,
             onSubmit: _vm.submitEditSet,
+            exerciseCreating: _vm.newExCreating,
+            variationCreating: _vm.newVarCreating,
             onDelete: () {
               Navigator.of(context, rootNavigator: true).pop();
               _confirmDeleteSet(s.setId);
             },
-            onNewExercise: () {
-              final savedVolumeType = _vm.editVolumeType;
-              Navigator.of(context, rootNavigator: true).pop();
-              // submitNewExercise() already selects the new exercise for the
-              // edit form, so just restore the edit state and reopen it.
-              _openNewExerciseModal(
-                forLog: false,
-                onDone: () {
-                  _restoreEditState(s, savedVolumeType);
-                  _showEditSetModal(s);
-                },
-              );
+            onNewExercise: (query) {
+              if (query.trim().isEmpty) {
+                final savedVolumeType = _vm.editVolumeType;
+                Navigator.of(context, rootNavigator: true).pop();
+                // submitNewExercise() already selects the new exercise for
+                // the edit form, so just restore the edit state and reopen.
+                _openNewExerciseModal(
+                  forLog: false,
+                  onDone: () {
+                    _restoreEditState(s, savedVolumeType);
+                    _showEditSetModal(s);
+                  },
+                );
+                return;
+              }
+              _vm.prepareNewExercise(forLog: false);
+              _vm.newExName = query.trim();
+              _vm.submitNewExercise();
             },
-            onNewVariation: () {
-              final savedVolumeType = _vm.editVolumeType;
-              Navigator.of(context, rootNavigator: true).pop();
-              _openNewVariationModal(
-                forLog: false,
-                onDone: () {
-                  _restoreEditState(s, savedVolumeType);
-                  _showEditSetModal(s);
-                },
-              );
+            onNewVariation: (query) {
+              if (query.trim().isEmpty) {
+                final savedVolumeType = _vm.editVolumeType;
+                Navigator.of(context, rootNavigator: true).pop();
+                _openNewVariationModal(
+                  forLog: false,
+                  onDone: () {
+                    _restoreEditState(s, savedVolumeType);
+                    _showEditSetModal(s);
+                  },
+                );
+                return;
+              }
+              _vm.prepareNewVariation(forLog: false);
+              _vm.newVarName = query.trim();
+              _vm.submitNewVariation();
             },
           );
         },

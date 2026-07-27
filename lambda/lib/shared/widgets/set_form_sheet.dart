@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../core/styles/app_colors.dart';
+import '../../core/styles/app_radius.dart';
 import '../../core/styles/app_spacing.dart';
 import '../../core/styles/app_text_styles.dart';
 import 'dropdown_select.dart';
@@ -39,7 +40,13 @@ class SetFormSheet extends StatelessWidget {
     required this.onSubmit,
     this.onNewExercise,
     this.onNewVariation,
+    this.exerciseCreating = false,
+    this.variationCreating = false,
     this.onDelete,
+    this.weightLabel = 'Weight (optional)',
+    this.repsLabel = 'Reps',
+    this.durationLabel = 'Duration (seconds)',
+    this.notesLabel = 'Set notes (optional)',
   });
 
   final String title;
@@ -61,10 +68,23 @@ class SetFormSheet extends StatelessWidget {
   final String submitLabel;
   final bool submitLoading;
   final Future<bool> Function() onSubmit;
-  final VoidCallback? onNewExercise;
-  final VoidCallback? onNewVariation;
+  // Called with whatever the user had already typed in the picker's search
+  // box, so "New Exercise"/"New Variation" can create-and-select in one step
+  // instead of asking for the name a second time.
+  final ValueChanged<String>? onNewExercise;
+  final ValueChanged<String>? onNewVariation;
+  // True while a quick-create (see onNewExercise/onNewVariation above) is in
+  // flight, so the field can show it's busy instead of looking frozen.
+  final bool exerciseCreating;
+  final bool variationCreating;
   // Shows a delete icon next to the title when set (edit mode only).
   final VoidCallback? onDelete;
+  // Overridable so this same form can serve "Plan Set" (program planning)
+  // as well as "Log Set"/"Edit Set" (live logging) with different copy.
+  final String weightLabel;
+  final String repsLabel;
+  final String durationLabel;
+  final String notesLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -119,15 +139,18 @@ class SetFormSheet extends StatelessWidget {
                               fontWeight: FontWeight.w500,
                               color: AppColors.primary)),
                       const SizedBox(height: AppSpacing.xs),
-                      DropdownSelect<String>(
-                        options: exerciseOptions,
-                        value: selectedExerciseId,
-                        onChange: onExerciseChanged,
-                        placeholder: 'Select exercise…',
-                        searchable: true,
-                        onCreateNew: onNewExercise,
-                        createNewLabel: 'New Exercise',
-                      ),
+                      if (exerciseCreating)
+                        const _CreatingField()
+                      else
+                        DropdownSelect<String>(
+                          options: exerciseOptions,
+                          value: selectedExerciseId,
+                          onChange: onExerciseChanged,
+                          placeholder: 'Select exercise…',
+                          searchable: true,
+                          onCreateNew: onNewExercise,
+                          createNewLabel: 'New Exercise',
+                        ),
                     ],
                   ),
                 ),
@@ -143,15 +166,18 @@ class SetFormSheet extends StatelessWidget {
                               fontWeight: FontWeight.w500,
                               color: AppColors.primary)),
                       const SizedBox(height: AppSpacing.xs),
-                      DropdownSelect<String?>(
-                        options: variationOptions,
-                        value: selectedVariationId,
-                        onChange: onVariationChanged,
-                        placeholder: 'None',
-                        searchable: true,
-                        onCreateNew: onNewVariation,
-                        createNewLabel: 'New Variation',
-                      ),
+                      if (variationCreating)
+                        const _CreatingField()
+                      else
+                        DropdownSelect<String?>(
+                          options: variationOptions,
+                          value: selectedVariationId,
+                          onChange: onVariationChanged,
+                          placeholder: 'None',
+                          searchable: true,
+                          onCreateNew: onNewVariation,
+                          createNewLabel: 'New Variation',
+                        ),
                     ],
                   ),
                 ),
@@ -160,7 +186,7 @@ class SetFormSheet extends StatelessWidget {
             const SizedBox(height: AppSpacing.md),
             LambdaInput(
               controller: weightCtrl,
-              label: 'Weight (optional)',
+              label: weightLabel,
               placeholder: 'kg',
               keyboardType:
                   const TextInputType.numberWithOptions(decimal: true),
@@ -169,7 +195,7 @@ class SetFormSheet extends StatelessWidget {
             const SizedBox(height: AppSpacing.md),
             LambdaInput(
               controller: repsCtrl,
-              label: isDuration ? 'Duration (seconds)' : 'Reps',
+              label: isDuration ? durationLabel : repsLabel,
               placeholder: isDuration ? 'e.g. 60,45' : 'e.g. 10,8,6',
               keyboardType:
                   const TextInputType.numberWithOptions(decimal: false),
@@ -178,7 +204,7 @@ class SetFormSheet extends StatelessWidget {
             const SizedBox(height: AppSpacing.md),
             LambdaInput(
               controller: notesCtrl,
-              label: 'Set notes (optional)',
+              label: notesLabel,
               placeholder: 'Notes…',
               onChanged: onNotesChanged,
             ),
@@ -214,6 +240,41 @@ class SetFormSheet extends StatelessWidget {
             const SizedBox(height: AppSpacing.xxl),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Stands in for a [DropdownSelect] while a quick-create is in flight —
+/// matches its container styling exactly so the field doesn't jump.
+class _CreatingField extends StatelessWidget {
+  const _CreatingField();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 14,
+            height: 14,
+            child: CircularProgressIndicator(
+                strokeWidth: 1.5, color: AppColors.accent),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Text('Creating…',
+                style: TextStyle(
+                    fontSize: AppTextStyles.md, color: AppColors.muted),
+                overflow: TextOverflow.ellipsis),
+          ),
+        ],
       ),
     );
   }
