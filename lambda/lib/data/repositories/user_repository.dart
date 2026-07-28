@@ -14,10 +14,39 @@ class UserRepository {
     return UserProfile.fromJson(rows.first);
   }
 
+  /// The dim_user row already exists by the time this runs (created by the
+  /// on_auth_user_created Postgres trigger on signup), but a real upsert
+  /// guards against the rare case where that trigger-created row hasn't
+  /// synced down to the local cache yet. id and user_id hold the same value
+  /// for this table, so ON CONFLICT(id) is equivalent to ON CONFLICT(user_id).
   Future<void> upsertProfile(UserProfile profile) async {
-    await _client
-        .from('dim_user')
-        .upsert(profile.toJson(), onConflict: 'user_id');
+    await ps.db.execute(
+      '''
+      INSERT INTO dim_user
+        (id, user_id, user_name, user_lastname, user_date_of_birth, user_gender,
+         user_height_cm, user_weight_kg, onboarded)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        user_name = excluded.user_name,
+        user_lastname = excluded.user_lastname,
+        user_date_of_birth = excluded.user_date_of_birth,
+        user_gender = excluded.user_gender,
+        user_height_cm = excluded.user_height_cm,
+        user_weight_kg = excluded.user_weight_kg,
+        onboarded = excluded.onboarded
+      ''',
+      [
+        profile.userId,
+        profile.userId,
+        profile.userName,
+        profile.userLastname,
+        profile.userDateOfBirth?.toIso8601String().split('T').first,
+        profile.userGender,
+        profile.userHeightCm,
+        profile.userWeightKg,
+        profile.onboarded ? 1 : 0,
+      ],
+    );
   }
 
   Future<void> logWeight(String userId, double weightKg) async {

@@ -1,4 +1,3 @@
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 import '../../core/powersync/database.dart' as ps;
 import '../models/planned_workout.dart';
@@ -15,7 +14,6 @@ class ProgramRunRepository {
   ProgramRunRepository({ProgramRepository? programRepository})
       : _programRepo = programRepository ?? ProgramRepository();
 
-  final _client = Supabase.instance.client;
   final ProgramRepository _programRepo;
 
   Future<ProgramRun?> getCurrentRun(String userId) async {
@@ -28,36 +26,29 @@ class ProgramRunRepository {
   }
 
   /// Ends any existing current run and starts a fresh one for [programId].
-  /// Returns the row straight from the Supabase insert response — callers
-  /// should use this return value directly rather than immediately
-  /// re-querying getCurrentRun, since local PowerSync reads can lag behind a
-  /// just-completed remote write (the same sync-lag gap seen elsewhere in
-  /// this app, e.g. new-exercise-not-appearing).
   Future<ProgramRun> startProgramRun(String userId, String programId) async {
     await endCurrentRun(userId);
 
-    final data = await _client
-        .from('fact_program_run')
-        .insert({
-          'program_run_id': _uuid.v4(),
-          'program_id': programId,
-          'user_id': userId,
-          'is_current': true,
-        })
-        .select()
-        .single();
-    return ProgramRun.fromMap(data);
+    final id = _uuid.v4();
+    final startedDate = DateTime.now();
+    await ps.db.execute(
+      'INSERT INTO fact_program_run (id, program_run_id, program_id, user_id, started_date, is_current) VALUES (?, ?, ?, ?, ?, ?)',
+      [id, id, programId, userId, startedDate.toIso8601String(), 1],
+    );
+    return ProgramRun(
+      programRunId: id,
+      programId: programId,
+      userId: userId,
+      startedDate: startedDate,
+      isCurrent: true,
+    );
   }
 
   Future<void> endCurrentRun(String userId) async {
-    await _client
-        .from('fact_program_run')
-        .update({
-          'is_current': false,
-          'ended_date': DateTime.now().toIso8601String(),
-        })
-        .eq('user_id', userId)
-        .eq('is_current', true);
+    await ps.db.execute(
+      'UPDATE fact_program_run SET is_current = 0, ended_date = ? WHERE user_id = ? AND is_current = 1',
+      [DateTime.now().toIso8601String(), userId],
+    );
   }
 
   Future<List<ProgramRun>> fetchProgramHistory(String userId) async {

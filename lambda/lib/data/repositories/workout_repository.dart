@@ -1,4 +1,5 @@
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'dart:convert';
+
 import 'package:uuid/uuid.dart';
 import '../../core/powersync/database.dart' as ps;
 import '../models/workout.dart';
@@ -7,8 +8,6 @@ import '../models/workout_set.dart';
 const _uuid = Uuid();
 
 class WorkoutRepository {
-  final _client = Supabase.instance.client;
-
   Future<String> createWorkout(
     String userId, {
     String? preNotes,
@@ -17,35 +16,44 @@ class WorkoutRepository {
     String? plannedWorkoutId,
   }) async {
     final workoutId = _uuid.v4();
-    await _client.from('fact_workout').insert({
-      'user_workout_id': workoutId,
-      'user_id': userId,
-      'user_pre_workout_notes': preNotes?.isNotEmpty == true ? preNotes : null,
-      'is_active': true,
-      'program_id': programId,
-      'program_run_id': programRunId,
-      'planned_workout_id': plannedWorkoutId,
-    });
+    await ps.db.execute(
+      '''
+      INSERT INTO fact_workout
+        (id, user_workout_id, user_id, user_pre_workout_notes, user_workout_created_date,
+         is_active, program_id, program_run_id, planned_workout_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ''',
+      [
+        workoutId,
+        workoutId,
+        userId,
+        preNotes?.isNotEmpty == true ? preNotes : null,
+        DateTime.now().toIso8601String(),
+        1,
+        programId,
+        programRunId,
+        plannedWorkoutId,
+      ],
+    );
     return workoutId;
   }
 
   Future<void> endWorkout(String workoutId, {String? postNotes, int? feeling}) async {
-    await _client.from('fact_workout').update({
-      'is_active': false,
-      'user_post_workout_notes': postNotes?.isNotEmpty == true ? postNotes : null,
-      'user_workout_feeling': feeling,
-    }).eq('user_workout_id', workoutId);
+    await ps.db.execute(
+      'UPDATE fact_workout SET is_active = 0, user_post_workout_notes = ?, user_workout_feeling = ? WHERE user_workout_id = ?',
+      [postNotes?.isNotEmpty == true ? postNotes : null, feeling, workoutId],
+    );
   }
 
   Future<void> cancelWorkout(String workoutId) async {
-    await _client
-        .from('fact_workout_set')
-        .delete()
-        .eq('user_workout_id', workoutId);
-    await _client
-        .from('fact_workout')
-        .delete()
-        .eq('user_workout_id', workoutId);
+    await ps.db.execute(
+      'DELETE FROM fact_workout_set WHERE user_workout_id = ?',
+      [workoutId],
+    );
+    await ps.db.execute(
+      'DELETE FROM fact_workout WHERE user_workout_id = ?',
+      [workoutId],
+    );
   }
 
   Future<String?> getActiveWorkoutId(String userId) async {
@@ -70,24 +78,40 @@ class WorkoutRepository {
     String? plannedSetId,
   }) async {
     final setId = _uuid.v4();
-    final data = await _client
-        .from('fact_workout_set')
-        .insert({
-          'workout_set_id': setId,
-          'user_workout_id': workoutId,
-          'custom_exercise_id': exerciseId,
-          'custom_variation_id': variationId,
-          'workout_set_number': setNumber,
-          'workout_set_weight': weight,
-          'workout_set_reps': reps,
-          'workout_set_duration_seconds': duration,
-          'workout_set_notes': notes?.isNotEmpty == true ? notes : null,
-          'program_id': programId,
-          'planned_set_id': plannedSetId,
-        })
-        .select()
-        .single();
-    return WorkoutSet.fromMap(data);
+    await ps.db.execute(
+      '''
+      INSERT INTO fact_workout_set
+        (id, workout_set_id, user_workout_id, custom_exercise_id, custom_variation_id,
+         workout_set_number, workout_set_weight, workout_set_reps, workout_set_duration_seconds,
+         workout_set_notes, program_id, planned_set_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ''',
+      [
+        setId,
+        setId,
+        workoutId,
+        exerciseId,
+        variationId,
+        setNumber,
+        weight,
+        jsonEncode(reps),
+        jsonEncode(duration),
+        notes?.isNotEmpty == true ? notes : null,
+        programId,
+        plannedSetId,
+      ],
+    );
+    return WorkoutSet(
+      setId: setId,
+      workoutId: workoutId,
+      exerciseId: exerciseId,
+      variationId: variationId,
+      setNumber: setNumber,
+      weight: weight,
+      reps: reps,
+      duration: duration,
+      notes: notes?.isNotEmpty == true ? notes : null,
+    );
   }
 
   Future<void> updateSet(
@@ -102,37 +126,56 @@ class WorkoutRepository {
     bool clearWeight = false,
     bool clearNotes = false,
   }) async {
-    final updates = <String, dynamic>{};
-    if (exerciseId != null) updates['custom_exercise_id'] = exerciseId;
+    final setClauses = <String>[];
+    final params = <Object?>[];
+
+    if (exerciseId != null) {
+      setClauses.add('custom_exercise_id = ?');
+      params.add(exerciseId);
+    }
     if (clearVariation) {
-      updates['custom_variation_id'] = null;
+      setClauses.add('custom_variation_id = ?');
+      params.add(null);
     } else if (variationId != null) {
-      updates['custom_variation_id'] = variationId;
+      setClauses.add('custom_variation_id = ?');
+      params.add(variationId);
     }
     if (clearWeight) {
-      updates['workout_set_weight'] = null;
+      setClauses.add('workout_set_weight = ?');
+      params.add(null);
     } else if (weight != null) {
-      updates['workout_set_weight'] = weight;
+      setClauses.add('workout_set_weight = ?');
+      params.add(weight);
     }
-    if (reps != null) updates['workout_set_reps'] = reps;
-    if (duration != null) updates['workout_set_duration_seconds'] = duration;
+    if (reps != null) {
+      setClauses.add('workout_set_reps = ?');
+      params.add(jsonEncode(reps));
+    }
+    if (duration != null) {
+      setClauses.add('workout_set_duration_seconds = ?');
+      params.add(jsonEncode(duration));
+    }
     if (clearNotes) {
-      updates['workout_set_notes'] = null;
+      setClauses.add('workout_set_notes = ?');
+      params.add(null);
     } else if (notes != null) {
-      updates['workout_set_notes'] = notes.isNotEmpty ? notes : null;
+      setClauses.add('workout_set_notes = ?');
+      params.add(notes.isNotEmpty ? notes : null);
     }
-    if (updates.isEmpty) return;
-    await _client
-        .from('fact_workout_set')
-        .update(updates)
-        .eq('workout_set_id', setId);
+    if (setClauses.isEmpty) return;
+
+    params.add(setId);
+    await ps.db.execute(
+      'UPDATE fact_workout_set SET ${setClauses.join(', ')} WHERE workout_set_id = ?',
+      params,
+    );
   }
 
   Future<void> deleteSet(String setId) async {
-    await _client
-        .from('fact_workout_set')
-        .delete()
-        .eq('workout_set_id', setId);
+    await ps.db.execute(
+      'DELETE FROM fact_workout_set WHERE workout_set_id = ?',
+      [setId],
+    );
   }
 
   Future<List<WorkoutSet>> loadSetsForWorkout(String workoutId) async {
@@ -146,10 +189,10 @@ class WorkoutRepository {
   Future<void> reorderSets(
       String workoutId, List<String> orderedSetIds) async {
     for (var i = 0; i < orderedSetIds.length; i++) {
-      await _client
-          .from('fact_workout_set')
-          .update({'workout_set_number': i + 1}).eq(
-              'workout_set_id', orderedSetIds[i]);
+      await ps.db.execute(
+        'UPDATE fact_workout_set SET workout_set_number = ? WHERE workout_set_id = ?',
+        [i + 1, orderedSetIds[i]],
+      );
     }
   }
 

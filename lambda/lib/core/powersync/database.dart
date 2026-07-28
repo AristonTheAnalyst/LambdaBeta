@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:logging/logging.dart';
 import 'package:path/path.dart';
@@ -26,6 +28,30 @@ const _pkColumns = {
   'dim_planned_set': 'planned_set_id',
   'fact_program_run': 'program_run_id',
 };
+
+// Postgres integer[] columns are mirrored locally as Column.text (written as
+// JSON-encoded strings, same as how they arrive via download sync). Undo that
+// encoding on the way back up, or PostgREST receives a string instead of an
+// array.
+const _arrayColumns = {
+  'workout_set_reps',
+  'workout_set_duration_seconds',
+  'target_reps',
+  'target_duration_seconds',
+};
+
+Map<String, dynamic> _decodeArrayColumns(Map<String, dynamic> data) {
+  final result = Map<String, dynamic>.of(data);
+  for (final col in _arrayColumns) {
+    final v = result[col];
+    if (v is String) {
+      try {
+        result[col] = jsonDecode(v);
+      } catch (_) {}
+    }
+  }
+  return result;
+}
 
 final _fatalCodes = [
   RegExp(r'^22...$'), // data exception
@@ -76,11 +102,11 @@ class SupabaseConnector extends PowerSyncBackendConnector {
         final table = rest.from(op.table);
 
         if (op.op == UpdateType.put) {
-          final data = Map<String, dynamic>.of(op.opData ?? {});
+          final data = _decodeArrayColumns(op.opData ?? {});
           data[pkCol] = op.id;
           await table.upsert(data);
         } else if (op.op == UpdateType.patch) {
-          await table.update(op.opData!).eq(pkCol, op.id);
+          await table.update(_decodeArrayColumns(op.opData!)).eq(pkCol, op.id);
         } else if (op.op == UpdateType.delete) {
           await table.delete().eq(pkCol, op.id);
         }
