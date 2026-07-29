@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/styles/app_colors.dart';
+import '../../../../core/styles/app_fonts.dart';
 import '../../../../core/styles/app_radius.dart';
 import '../../../../core/styles/app_spacing.dart';
 import '../../../../core/styles/app_text_styles.dart';
 import '../../../../data/models/workout.dart';
 import '../../../../data/models/workout_set.dart';
 import '../../../../shared/widgets/app_card.dart';
+import '../../../../shared/widgets/dropdown_select.dart';
 import '../../../../shared/widgets/page_header.dart';
 import '../../../../shared/widgets/press_squash.dart';
 import '../../../../shared/widgets/slide_tab_bar.dart';
@@ -253,20 +255,38 @@ class _FilterBar extends StatelessWidget {
       child: Row(
         children: [
           Expanded(
-            child: _SearchableDropdownButton(
-              placeholder: 'Exercise',
-              value: selectedExercise,
-              options: exercises,
-              onChanged: onExerciseChanged,
+            child: _FilterChip(
+              label: selectedExercise ?? 'Exercise',
+              isActive: selectedExercise != null,
+              onTap: exercises.isEmpty
+                  ? null
+                  : () => showDropdownPickerSheet<String>(
+                        context,
+                        options: exercises
+                            .map((e) => DropdownOption(label: e, value: e))
+                            .toList(),
+                        value: selectedExercise,
+                        searchable: true,
+                        onSelect: onExerciseChanged,
+                      ),
             ),
           ),
           const SizedBox(width: AppSpacing.sm),
           Expanded(
-            child: _SearchableDropdownButton(
-              placeholder: 'Variation',
-              value: selectedVariation,
-              options: variations,
-              onChanged: onVariationChanged,
+            child: _FilterChip(
+              label: selectedVariation ?? 'Variation',
+              isActive: selectedVariation != null,
+              onTap: variations.isEmpty
+                  ? null
+                  : () => showDropdownPickerSheet<String>(
+                        context,
+                        options: variations
+                            .map((v) => DropdownOption(label: v, value: v))
+                            .toList(),
+                        value: selectedVariation,
+                        searchable: true,
+                        onSelect: onVariationChanged,
+                      ),
             ),
           ),
           const SizedBox(width: AppSpacing.sm),
@@ -301,7 +321,7 @@ class _FilterChip extends StatelessWidget {
 
   final String label;
   final bool isActive;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -311,11 +331,10 @@ class _FilterChip extends StatelessWidget {
         height: 36,
         padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
         decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(8),
+          color: isActive ? AppColors.accentBg : AppColors.surface,
+          borderRadius: BorderRadius.circular(AppRadius.md),
           border: Border.all(
             color: isActive ? AppColors.accent : AppColors.border,
-            width: 0.5,
           ),
         ),
         child: Row(
@@ -323,8 +342,9 @@ class _FilterChip extends StatelessWidget {
             Expanded(
               child: Text(
                 label,
-                style: TextStyle(
+                style: AppFonts.ui(
                   fontSize: AppTextStyles.sm,
+                  fontWeight: FontWeight.w600,
                   color: isActive ? AppColors.accent : AppColors.muted,
                 ),
                 maxLines: 1,
@@ -438,9 +458,9 @@ class _DateRangeSheetState extends State<_DateRangeSheet> {
             child: Row(
               children: [
                 Text('Date Range',
-                    style: TextStyle(
+                    style: AppFonts.ui(
                         fontSize: AppTextStyles.md,
-                        fontWeight: FontWeight.w600,
+                        fontWeight: FontWeight.w800,
                         color: AppColors.primary)),
                 const Spacer(),
                 if (_from != null || _to != null)
@@ -450,8 +470,9 @@ class _DateRangeSheetState extends State<_DateRangeSheet> {
                       _to   = null;
                     }),
                     child: Text('Clear',
-                        style: TextStyle(
+                        style: AppFonts.ui(
                             fontSize: AppTextStyles.sm,
+                            fontWeight: FontWeight.w600,
                             color: AppColors.accent)),
                   ),
               ],
@@ -487,14 +508,14 @@ class _DateRangeSheetState extends State<_DateRangeSheet> {
                 height: 44,
                 decoration: BoxDecoration(
                   color: AppColors.accent,
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(AppRadius.md),
                 ),
                 alignment: Alignment.center,
                 child: Text('Apply',
-                    style: TextStyle(
+                    style: AppFonts.ui(
                         fontSize: AppTextStyles.md,
                         fontWeight: FontWeight.w600,
-                        color: Colors.white)),
+                        color: AppColors.accentText)),
               ),
             ),
           ),
@@ -533,13 +554,13 @@ class _DateRow extends StatelessWidget {
             SizedBox(
               width: 48,
               child: Text(label,
-                  style: TextStyle(
+                  style: AppFonts.ui(
                       fontSize: AppTextStyles.sm, color: AppColors.muted)),
             ),
             Expanded(
               child: Text(
                 date != null ? fmt.format(date!) : hint,
-                style: TextStyle(
+                style: AppFonts.mono(
                   fontSize: AppTextStyles.sm,
                   color: date != null ? AppColors.primary : AppColors.muted,
                   fontWeight: date != null ? FontWeight.w500 : FontWeight.normal,
@@ -556,258 +577,6 @@ class _DateRow extends StatelessWidget {
                   size: 16, color: AppColors.muted),
           ],
         ),
-      ),
-    );
-  }
-}
-
-// ── Searchable dropdown button ──────────────────────────────────────────────────
-
-class _SearchableDropdownButton extends StatelessWidget {
-  const _SearchableDropdownButton({
-    required this.placeholder,
-    required this.value,
-    required this.options,
-    required this.onChanged,
-  });
-
-  final String placeholder;
-  final String? value;
-  final List<String> options;
-  final ValueChanged<String?> onChanged;
-
-  void _open(BuildContext context) {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _SearchSheet(
-        title: placeholder,
-        current: value,
-        options: options,
-        onSelected: (v) {
-          Navigator.of(context).pop();
-          onChanged(v);
-        },
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final isActive = value != null;
-    return GestureDetector(
-      onTap: options.isEmpty ? null : () => _open(context),
-      child: Container(
-        height: 36,
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: isActive ? AppColors.accent : AppColors.border,
-            width: 0.5,
-          ),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                value ?? placeholder,
-                style: TextStyle(
-                  fontSize: AppTextStyles.sm,
-                  color: isActive ? AppColors.accent : AppColors.muted,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            const SizedBox(width: 4),
-            Icon(
-              Icons.keyboard_arrow_down,
-              size: 14,
-              color: isActive ? AppColors.accent : AppColors.muted,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ── Search sheet ────────────────────────────────────────────────────────────────
-
-class _SearchSheet extends StatefulWidget {
-  const _SearchSheet({
-    required this.title,
-    required this.current,
-    required this.options,
-    required this.onSelected,
-  });
-
-  final String title;
-  final String? current;
-  final List<String> options;
-  final ValueChanged<String?> onSelected;
-
-  @override
-  State<_SearchSheet> createState() => _SearchSheetState();
-}
-
-class _SearchSheetState extends State<_SearchSheet> {
-  final _ctrl = TextEditingController();
-  List<String> _filtered = [];
-
-  @override
-  void initState() {
-    super.initState();
-    _filtered = widget.options;
-    _ctrl.addListener(() {
-      final q = _ctrl.text.toLowerCase();
-      setState(() {
-        _filtered = q.isEmpty
-            ? widget.options
-            : widget.options
-                .where((o) => o.toLowerCase().contains(q))
-                .toList();
-      });
-    });
-  }
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final sheetHeight = MediaQuery.of(context).size.height * 0.6;
-    return Container(
-      height: sheetHeight,
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      child: Column(
-        children: [
-          // handle
-          Padding(
-            padding: const EdgeInsets.only(top: AppSpacing.sm),
-            child: Container(
-              width: 36,
-              height: 4,
-              decoration: BoxDecoration(
-                color: AppColors.border,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ),
-          // title
-          Padding(
-            padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.lg, vertical: AppSpacing.md),
-            child: Row(
-              children: [
-                Text(
-                  widget.title,
-                  style: TextStyle(
-                      fontSize: AppTextStyles.md,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.primary),
-                ),
-                const Spacer(),
-                if (widget.current != null)
-                  GestureDetector(
-                    onTap: () => widget.onSelected(null),
-                    child: Text(
-                      'Clear',
-                      style: TextStyle(
-                          fontSize: AppTextStyles.sm, color: AppColors.accent),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          // search field
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-            child: Container(
-              height: 40,
-              decoration: BoxDecoration(
-                color: AppColors.surfaceHigh,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: AppColors.border, width: 0.5),
-              ),
-              child: Row(
-                children: [
-                  const SizedBox(width: AppSpacing.sm),
-                  Icon(Icons.search, size: 16, color: AppColors.muted),
-                  const SizedBox(width: AppSpacing.xs),
-                  Expanded(
-                    child: TextField(
-                      controller: _ctrl,
-                      autofocus: true,
-                      style: TextStyle(
-                          fontSize: AppTextStyles.sm, color: AppColors.primary),
-                      decoration: InputDecoration(
-                        hintText: 'Search…',
-                        hintStyle: TextStyle(
-                            fontSize: AppTextStyles.sm, color: AppColors.muted),
-                        border: InputBorder.none,
-                        isDense: true,
-                        contentPadding: EdgeInsets.zero,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          // list
-          Expanded(
-            child: ListView.builder(
-              itemCount: _filtered.length,
-              itemBuilder: (_, i) {
-                final opt = _filtered[i];
-                final isSelected = opt == widget.current;
-                return InkWell(
-                  onTap: () => widget.onSelected(opt),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: AppSpacing.lg, vertical: AppSpacing.md),
-                    decoration: BoxDecoration(
-                      border: Border(
-                          bottom:
-                              BorderSide(color: AppColors.border, width: 0.5)),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            opt,
-                            style: TextStyle(
-                              fontSize: AppTextStyles.sm,
-                              color: isSelected
-                                  ? AppColors.accent
-                                  : AppColors.primary,
-                              fontWeight: isSelected
-                                  ? FontWeight.w600
-                                  : FontWeight.normal,
-                            ),
-                          ),
-                        ),
-                        if (isSelected)
-                          Icon(Icons.check, size: 16, color: AppColors.accent),
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -858,7 +627,7 @@ class _WorkoutsPanel extends StatelessWidget {
                   children: [
                     Text(
                       formatDate(w.workout.createdDate),
-                      style: TextStyle(
+                      style: AppFonts.mono(
                           fontSize: AppTextStyles.sm,
                           fontWeight: FontWeight.w700,
                           color: AppColors.accent),
@@ -867,10 +636,10 @@ class _WorkoutsPanel extends StatelessWidget {
                       const SizedBox(height: AppSpacing.xs),
                       Text(
                         '"${w.workout.preNotes}"',
-                        style: TextStyle(
+                        style: AppFonts.ui(
                             fontSize: AppTextStyles.xs,
-                            color: AppColors.muted,
-                            fontStyle: FontStyle.italic),
+                            color: AppColors.muted)
+                            .copyWith(fontStyle: FontStyle.italic),
                         textAlign: TextAlign.center,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
@@ -884,10 +653,10 @@ class _WorkoutsPanel extends StatelessWidget {
                       const SizedBox(height: AppSpacing.xs),
                       Text(
                         '"${w.workout.postNotes}"',
-                        style: TextStyle(
+                        style: AppFonts.ui(
                             fontSize: AppTextStyles.xs,
-                            color: AppColors.muted,
-                            fontStyle: FontStyle.italic),
+                            color: AppColors.muted)
+                            .copyWith(fontStyle: FontStyle.italic),
                         textAlign: TextAlign.center,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
@@ -924,7 +693,7 @@ class _WorkoutsPanel extends StatelessWidget {
             Flexible(
               child: Text(
                 names[exId]!,
-                style: TextStyle(
+                style: AppFonts.ui(
                     fontSize: AppTextStyles.sm, color: AppColors.primary),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -933,7 +702,7 @@ class _WorkoutsPanel extends StatelessWidget {
             const SizedBox(width: AppSpacing.sm),
             Text(
               '$count ${count == 1 ? 'set' : 'sets'}',
-              style: TextStyle(
+              style: AppFonts.mono(
                   fontSize: AppTextStyles.xs, color: AppColors.muted),
             ),
           ],
@@ -1003,7 +772,7 @@ class _SetsPanel extends StatelessWidget {
                       horizontal: AppSpacing.lg),
                   child: Text(
                     formatDate(row.workoutCreatedDate),
-                    style: TextStyle(
+                    style: AppFonts.mono(
                         fontSize: AppTextStyles.sm,
                         fontWeight: FontWeight.w700,
                         color: AppColors.accent,
@@ -1030,7 +799,7 @@ class _SetsPanel extends StatelessWidget {
                           children: [
                             Text(
                               exerciseLabel,
-                              style: TextStyle(
+                              style: AppFonts.ui(
                                   fontSize: AppTextStyles.sm,
                                   fontWeight: FontWeight.w600,
                                   color: AppColors.primary),
@@ -1039,7 +808,7 @@ class _SetsPanel extends StatelessWidget {
                             ),
                             Text(
                               '$weightStr$valStr $unit',
-                              style: TextStyle(
+                              style: AppFonts.mono(
                                   fontSize: AppTextStyles.md,
                                   fontWeight: FontWeight.w700,
                                   color: AppColors.primary),
@@ -1047,7 +816,7 @@ class _SetsPanel extends StatelessWidget {
                             if (metaLabel.isNotEmpty)
                               Text(
                                 metaLabel,
-                                style: TextStyle(
+                                style: AppFonts.ui(
                                     fontSize: AppTextStyles.xs,
                                     color: AppColors.muted),
                                 maxLines: 1,
@@ -1092,9 +861,9 @@ class _EmptyState extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Text(message,
-                    style: TextStyle(
+                    style: AppFonts.ui(
                         fontSize: AppTextStyles.lg,
-                        fontWeight: FontWeight.w600,
+                        fontWeight: FontWeight.w800,
                         color: AppColors.primary)),
                 const SizedBox(height: AppSpacing.sm),
                 Padding(
@@ -1102,7 +871,7 @@ class _EmptyState extends StatelessWidget {
                       const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
                   child: Text(hint,
                       textAlign: TextAlign.center,
-                      style: TextStyle(
+                      style: AppFonts.ui(
                           fontSize: AppTextStyles.sm, color: AppColors.muted)),
                 ),
               ],

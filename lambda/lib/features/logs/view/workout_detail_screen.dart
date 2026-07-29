@@ -2,6 +2,7 @@
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/styles/app_colors.dart';
+import '../../../../core/styles/app_fonts.dart';
 import '../../../../core/styles/app_spacing.dart';
 import '../../../../core/styles/app_text_styles.dart';
 import '../../../../core/utils/workout_format.dart';
@@ -180,21 +181,21 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
         title: Text('Delete Set',
-            style: TextStyle(color: AppColors.primary)),
+            style: AppFonts.ui(fontWeight: FontWeight.w800, color: AppColors.primary)),
         content: Text('Remove this set?',
-            style: TextStyle(color: AppColors.muted)),
+            style: AppFonts.ui(color: AppColors.muted)),
         actions: [
           TextButton(
               onPressed: () => Navigator.of(ctx).pop(),
               child: Text('Cancel',
-                  style: TextStyle(color: AppColors.muted))),
+                  style: AppFonts.ui(color: AppColors.muted))),
           TextButton(
               onPressed: () {
                 Navigator.of(ctx).pop();
                 _vm.deleteSet(setId, widget.workoutId);
               },
               child: Text('Delete',
-                  style: TextStyle(
+                  style: AppFonts.ui(
                       color: AppColors.danger,
                       fontWeight: FontWeight.w600))),
         ],
@@ -315,7 +316,7 @@ class _ReadonlyView extends StatelessWidget {
           if (workout != null)
             Text(
               formatDate(workout.createdDate),
-              style: TextStyle(
+              style: AppFonts.mono(
                   fontSize: AppTextStyles.sm,
                   fontWeight: FontWeight.w700,
                   color: AppColors.muted),
@@ -324,21 +325,22 @@ class _ReadonlyView extends StatelessWidget {
 
           // Pre-workout notes
           Text('Pre-workout notes',
-              style: TextStyle(
-                  fontSize: AppTextStyles.xs, color: AppColors.muted)),
+              style: AppFonts.ui(
+                  fontSize: AppTextStyles.xs, fontWeight: FontWeight.w600, color: AppColors.muted)),
           const SizedBox(height: AppSpacing.xs),
           Text(
             workout?.preNotes?.isNotEmpty == true
                 ? '"${workout!.preNotes}"'
                 : 'No pre-workout notes',
-            style: TextStyle(
+            style: AppFonts.ui(
                 fontSize: AppTextStyles.sm,
                 color: workout?.preNotes?.isNotEmpty == true
                     ? AppColors.primary
-                    : AppColors.muted,
-                fontStyle: workout?.preNotes?.isNotEmpty == true
-                    ? FontStyle.italic
-                    : FontStyle.normal),
+                    : AppColors.muted)
+                .copyWith(
+                    fontStyle: workout?.preNotes?.isNotEmpty == true
+                        ? FontStyle.italic
+                        : FontStyle.normal),
           ),
           const SizedBox(height: AppSpacing.md),
           Divider(color: AppColors.border),
@@ -358,21 +360,22 @@ class _ReadonlyView extends StatelessWidget {
 
           // Post-workout notes
           Text('Post-workout notes',
-              style: TextStyle(
-                  fontSize: AppTextStyles.xs, color: AppColors.muted)),
+              style: AppFonts.ui(
+                  fontSize: AppTextStyles.xs, fontWeight: FontWeight.w600, color: AppColors.muted)),
           const SizedBox(height: AppSpacing.xs),
           Text(
             workout?.postNotes?.isNotEmpty == true
                 ? '"${workout!.postNotes}"'
                 : 'No post-workout notes',
-            style: TextStyle(
+            style: AppFonts.ui(
                 fontSize: AppTextStyles.sm,
                 color: workout?.postNotes?.isNotEmpty == true
                     ? AppColors.primary
-                    : AppColors.muted,
-                fontStyle: workout?.postNotes?.isNotEmpty == true
-                    ? FontStyle.italic
-                    : FontStyle.normal),
+                    : AppColors.muted)
+                .copyWith(
+                    fontStyle: workout?.postNotes?.isNotEmpty == true
+                        ? FontStyle.italic
+                        : FontStyle.normal),
           ),
           const SizedBox(height: AppSpacing.xxl),
         ],
@@ -479,9 +482,9 @@ class _NotesModal extends StatelessWidget {
           children: [
             Text(
               target == 'pre' ? 'Pre-Workout Notes' : 'Post-Workout Notes',
-              style: TextStyle(
+              style: AppFonts.ui(
                   fontSize: AppTextStyles.lg,
-                  fontWeight: FontWeight.w700,
+                  fontWeight: FontWeight.w800,
                   color: AppColors.primary),
             ),
             const SizedBox(height: AppSpacing.md),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../core/styles/app_colors.dart';
+import '../../core/styles/app_fonts.dart';
 import '../../core/styles/app_radius.dart';
 import '../../core/styles/app_spacing.dart';
 import '../../core/styles/app_text_styles.dart';
@@ -127,7 +128,7 @@ class DropdownSelect<T> extends StatelessWidget {
               children: [
                 Text(
                   _displayLabel,
-                  style: TextStyle(
+                  style: AppFonts.ui(
                     fontSize: AppTextStyles.sm,
                     fontWeight: FontWeight.w500,
                     color: hasValue ? AppColors.accent : AppColors.muted,
@@ -149,7 +150,7 @@ class DropdownSelect<T> extends StatelessWidget {
                   Expanded(
                     child: Text(
                       _displayLabel,
-                      style: TextStyle(
+                      style: AppFonts.ui(
                         fontSize: AppTextStyles.md,
                         color: hasValue ? AppColors.primary : AppColors.muted,
                       ),
@@ -270,11 +271,11 @@ class _DropdownSheetContentState<T> extends State<_DropdownSheetContent<T>> {
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
           child: TextField(
             autofocus: true,
-            style: TextStyle(
+            style: AppFonts.ui(
                 fontSize: AppTextStyles.md, color: AppColors.primary),
             decoration: InputDecoration(
               hintText: 'Search…',
-              hintStyle: TextStyle(color: AppColors.muted),
+              hintStyle: AppFonts.ui(color: AppColors.muted),
               filled: true,
               fillColor: AppColors.surfaceHigh,
               border: OutlineInputBorder(
@@ -360,7 +361,7 @@ class _SheetRow extends StatelessWidget {
             Expanded(
               child: Text(
                 label,
-                style: TextStyle(
+                style: AppFonts.ui(
                   fontSize: AppTextStyles.md,
                   color: effectiveColor,
                   fontWeight:
@@ -402,7 +403,7 @@ class DropdownLoadingField extends StatelessWidget {
           const SizedBox(width: AppSpacing.sm),
           Expanded(
             child: Text('Creating…',
-                style: TextStyle(
+                style: AppFonts.ui(
                     fontSize: AppTextStyles.md, color: AppColors.muted),
                 overflow: TextOverflow.ellipsis),
           ),

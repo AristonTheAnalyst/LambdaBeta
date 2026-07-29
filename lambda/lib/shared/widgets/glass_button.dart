@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../core/styles/app_colors.dart';
+import '../../core/styles/app_fonts.dart';
 import '../../core/styles/app_radius.dart';
 import '../../core/styles/app_text_styles.dart';
 
@@ -67,7 +68,7 @@ class GlassButton extends StatelessWidget {
                 ],
                 Text(
                   label,
-                  style: TextStyle(
+                  style: AppFonts.ui(
                     fontSize: AppTextStyles.sm,
                     fontWeight: FontWeight.w600,
                     color: fgColor,

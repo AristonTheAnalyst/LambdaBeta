@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/styles/app_colors.dart';
+import '../../../../core/styles/app_fonts.dart';
+import '../../../../core/styles/app_radius.dart';
 import '../../../../core/styles/app_spacing.dart';
 import '../../../../core/styles/app_text_styles.dart';
 import '../../../../core/utils/workout_format.dart';
@@ -127,9 +129,9 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> {
                             state.editingWorkout == null
                                 ? 'New Planned Workout'
                                 : 'Edit Planned Workout',
-                            style: TextStyle(
+                            style: AppFonts.ui(
                                 fontSize: AppTextStyles.lg,
-                                fontWeight: FontWeight.w700,
+                                fontWeight: FontWeight.w800,
                                 color: AppColors.primary)),
                       ),
                       if (state.editingWorkout != null)
@@ -161,7 +163,7 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> {
                   if (state.isCalendarMode) ...[
                     const SizedBox(height: AppSpacing.md),
                     Text('Day of week',
-                        style: TextStyle(
+                        style: AppFonts.ui(
                             fontSize: AppTextStyles.sm,
                             fontWeight: FontWeight.w500,
                             color: AppColors.primary)),
@@ -187,7 +189,7 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> {
                       children: [
                         Expanded(
                           child: Text('Planned Sets',
-                              style: TextStyle(
+                              style: AppFonts.ui(
                                   fontSize: AppTextStyles.md,
                                   fontWeight: FontWeight.w600,
                                   color: AppColors.primary)),
@@ -206,7 +208,7 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> {
                           child: CircularProgressIndicator(color: AppColors.accent))
                     else if (state.workoutPlannedSets.isEmpty)
                       Text('No planned sets yet.',
-                          style: TextStyle(
+                          style: AppFonts.ui(
                               color: AppColors.muted, fontSize: AppTextStyles.sm))
                     else
                       ReorderableListView(
@@ -247,13 +249,13 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> {
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
         title: Text('Delete Planned Workout',
-            style: TextStyle(color: AppColors.danger)),
+            style: AppFonts.ui(fontWeight: FontWeight.w800, color: AppColors.danger)),
         content: Text('Remove this workout and its planned sets?',
-            style: TextStyle(color: AppColors.muted)),
+            style: AppFonts.ui(color: AppColors.muted)),
         actions: [
           TextButton(
               onPressed: () => Navigator.of(ctx).pop(),
-              child: Text('Cancel', style: TextStyle(color: AppColors.muted))),
+              child: Text('Cancel', style: AppFonts.ui(color: AppColors.muted))),
           TextButton(
               onPressed: () {
                 Navigator.of(ctx).pop();
@@ -261,7 +263,7 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> {
                 _vm.archiveWorkout(plannedWorkoutId);
               },
               child: Text('Delete',
-                  style: TextStyle(
+                  style: AppFonts.ui(
                       color: AppColors.danger, fontWeight: FontWeight.w600))),
         ],
       ),
@@ -341,20 +343,21 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
-        title: Text('Delete Planned Set', style: TextStyle(color: AppColors.primary)),
+        title: Text('Delete Planned Set',
+            style: AppFonts.ui(fontWeight: FontWeight.w800, color: AppColors.primary)),
         content:
-            Text('Remove this planned set?', style: TextStyle(color: AppColors.muted)),
+            Text('Remove this planned set?', style: AppFonts.ui(color: AppColors.muted)),
         actions: [
           TextButton(
               onPressed: () => Navigator.of(ctx).pop(),
-              child: Text('Cancel', style: TextStyle(color: AppColors.muted))),
+              child: Text('Cancel', style: AppFonts.ui(color: AppColors.muted))),
           TextButton(
               onPressed: () {
                 Navigator.of(ctx).pop();
                 _vm.deletePlannedSet(plannedSetId);
               },
               child: Text('Delete',
-                  style: TextStyle(
+                  style: AppFonts.ui(
                       color: AppColors.danger, fontWeight: FontWeight.w600))),
         ],
       ),
@@ -394,7 +397,7 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> {
                   padding: const EdgeInsets.symmetric(
                       horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
                   child: Text(state.error!,
-                      style: TextStyle(
+                      style: AppFonts.ui(
                           color: AppColors.danger, fontSize: AppTextStyles.sm)),
                 ),
               if (state.isLoading)
@@ -432,7 +435,7 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> {
                         ),
                         const SizedBox(height: AppSpacing.md),
                         Text('Progression',
-                            style: TextStyle(
+                            style: AppFonts.ui(
                                 fontSize: AppTextStyles.sm,
                                 fontWeight: FontWeight.w500,
                                 color: AppColors.primary)),
@@ -452,13 +455,14 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> {
                                           vertical: 10),
                                       decoration: BoxDecoration(
                                         color: AppColors.accentBg,
-                                        borderRadius: BorderRadius.circular(8),
+                                        borderRadius: BorderRadius.circular(AppRadius.md),
+                                        border: Border.all(color: AppColors.accent),
                                       ),
                                       child: Center(
                                         child: Text('Current Program',
-                                            style: TextStyle(
+                                            style: AppFonts.ui(
                                                 fontSize: AppTextStyles.sm,
-                                                fontWeight: FontWeight.w600,
+                                                fontWeight: FontWeight.w700,
                                                 color: AppColors.accent)),
                                       ),
                                     )
@@ -479,7 +483,7 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> {
                           children: [
                             Expanded(
                               child: Text('Planned Workouts',
-                                  style: TextStyle(
+                                  style: AppFonts.ui(
                                       fontSize: AppTextStyles.md,
                                       fontWeight: FontWeight.w600,
                                       color: AppColors.primary)),
@@ -495,7 +499,7 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> {
                         const SizedBox(height: AppSpacing.sm),
                         if (state.plannedWorkouts.isEmpty)
                           Text('No planned workouts yet.',
-                              style: TextStyle(
+                              style: AppFonts.ui(
                                   color: AppColors.muted, fontSize: AppTextStyles.sm))
                         else
                           ReorderableListView(
@@ -561,13 +565,13 @@ class _PlannedWorkoutRow extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(toProperCase(workout.name),
-                        style: TextStyle(
+                        style: AppFonts.ui(
                             fontSize: AppTextStyles.md,
                             fontWeight: FontWeight.w600,
                             color: AppColors.primary)),
                     if (workout.notes?.isNotEmpty == true)
                       Text(workout.notes!,
-                          style: TextStyle(
+                          style: AppFonts.ui(
                               fontSize: AppTextStyles.xs, color: AppColors.muted),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis),
@@ -583,7 +587,7 @@ class _PlannedWorkoutRow extends StatelessWidget {
                   ),
                   child: Text(_dayOfWeekLabel(workout.dayOfWeek),
                       style:
-                          TextStyle(fontSize: AppTextStyles.xs, color: AppColors.muted)),
+                          AppFonts.ui(fontSize: AppTextStyles.xs, color: AppColors.muted)),
                 ),
                 const SizedBox(width: AppSpacing.sm),
               ],
@@ -614,44 +618,38 @@ class _PlannedSetRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: AppSpacing.sm),
-      child: GestureDetector(
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+      child: AppCard(
         onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.all(AppSpacing.sm),
-          decoration: BoxDecoration(
-            color: AppColors.surfaceHigh,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: AppColors.border, width: 0.5),
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (set.exerciseName != null)
-                      Text(toProperCase(set.exerciseName!),
-                          style: TextStyle(
-                              fontSize: AppTextStyles.sm,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.primary)),
-                    Text(_volumeLabel(),
-                        style: TextStyle(
-                            fontSize: AppTextStyles.md,
-                            fontWeight: FontWeight.w700,
+        padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (set.exerciseName != null)
+                    Text(toProperCase(set.exerciseName!),
+                        style: AppFonts.ui(
+                            fontSize: AppTextStyles.sm,
+                            fontWeight: FontWeight.w600,
                             color: AppColors.primary)),
-                    if (set.variationName != null)
-                      Text(toProperCase(set.variationName!),
-                          style:
-                              TextStyle(fontSize: AppTextStyles.xs, color: AppColors.muted)),
-                  ],
-                ),
+                  Text(_volumeLabel(),
+                      style: AppFonts.mono(
+                          fontSize: AppTextStyles.md,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.primary)),
+                  if (set.variationName != null)
+                    Text(toProperCase(set.variationName!),
+                        style:
+                            AppFonts.ui(fontSize: AppTextStyles.xs, color: AppColors.muted)),
+                ],
               ),
-              Icon(Icons.drag_handle, size: 18, color: AppColors.muted),
-            ],
-          ),
+            ),
+            Icon(Icons.drag_handle, size: 18, color: AppColors.muted),
+          ],
         ),
       ),
     );

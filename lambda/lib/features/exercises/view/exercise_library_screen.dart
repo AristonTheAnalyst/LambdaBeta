@@ -1,8 +1,11 @@
 ﻿import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/styles/app_colors.dart';
+import '../../../../core/styles/app_fonts.dart';
+import '../../../../core/styles/app_radius.dart';
 import '../../../../core/styles/app_spacing.dart';
 import '../../../../core/styles/app_text_styles.dart';
+import '../../../../shared/widgets/app_card.dart';
 import '../../../../core/utils/workout_format.dart';
 import '../../../../data/models/custom_exercise.dart';
 import '../../../../data/models/custom_variation.dart';
@@ -11,7 +14,6 @@ import '../../../../shared/widgets/lambda_button.dart';
 import '../../../../shared/widgets/lambda_input.dart';
 import '../../../../shared/widgets/multi_select_sheet.dart';
 import '../../../../shared/widgets/page_header.dart';
-import '../../../../shared/widgets/press_squash.dart';
 import '../../../../shared/widgets/slide_tab_bar.dart';
 import '../../../../shared/widgets/slide_tab_view.dart';
 import '../../../../shared/widgets/slide_up_modal.dart';
@@ -151,14 +153,14 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
         title: Text('Delete Exercise',
-            style: TextStyle(color: AppColors.danger)),
+            style: AppFonts.ui(fontWeight: FontWeight.w800, color: AppColors.danger)),
         content: Text('Remove "$name"? This will unassign it from all sets.',
-            style: TextStyle(color: AppColors.muted)),
+            style: AppFonts.ui(color: AppColors.muted)),
         actions: [
           TextButton(
               onPressed: () => Navigator.of(ctx).pop(),
               child: Text('Cancel',
-                  style: TextStyle(color: AppColors.muted))),
+                  style: AppFonts.ui(color: AppColors.muted))),
           TextButton(
               onPressed: () {
                 Navigator.of(ctx).pop();
@@ -166,7 +168,7 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
                 _viewModel.deleteExercise(exerciseId);
               },
               child: Text('Delete',
-                  style: TextStyle(
+                  style: AppFonts.ui(
                       color: AppColors.danger,
                       fontWeight: FontWeight.w600))),
         ],
@@ -236,14 +238,14 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
         title: Text('Delete Variation',
-            style: TextStyle(color: AppColors.danger)),
+            style: AppFonts.ui(fontWeight: FontWeight.w800, color: AppColors.danger)),
         content: Text('Remove "$name"?',
-            style: TextStyle(color: AppColors.muted)),
+            style: AppFonts.ui(color: AppColors.muted)),
         actions: [
           TextButton(
               onPressed: () => Navigator.of(ctx).pop(),
               child: Text('Cancel',
-                  style: TextStyle(color: AppColors.muted))),
+                  style: AppFonts.ui(color: AppColors.muted))),
           TextButton(
               onPressed: () {
                 Navigator.of(ctx).pop();
@@ -251,7 +253,7 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
                 _viewModel.deleteVariation(variationId);
               },
               child: Text('Delete',
-                  style: TextStyle(
+                  style: AppFonts.ui(
                       color: AppColors.danger,
                       fontWeight: FontWeight.w600))),
         ],
@@ -291,7 +293,7 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
                   padding: const EdgeInsets.symmetric(
                       horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
                   child: Text(state.error!,
-                      style: TextStyle(
+                      style: AppFonts.ui(
                           color: AppColors.danger,
                           fontSize: AppTextStyles.sm)),
                 ),
@@ -348,27 +350,27 @@ class _ExercisesPanel extends StatelessWidget {
                 children: [
                   Expanded(
                     child: Text('All Exercises',
-                        style: TextStyle(
+                        style: AppFonts.ui(
                             fontSize: AppTextStyles.lg,
-                            fontWeight: FontWeight.w700,
+                            fontWeight: FontWeight.w800,
                             color: AppColors.primary)),
                   ),
                   if (state.exercises.isNotEmpty)
                     Expanded(
                       child: TextField(
                         controller: searchController,
-                        style: TextStyle(
+                        style: AppFonts.ui(
                             fontSize: AppTextStyles.sm,
                             color: AppColors.primary),
                         decoration: InputDecoration(
                           hintText: 'Search…',
                           hintStyle:
-                              TextStyle(color: AppColors.muted),
+                              AppFonts.ui(color: AppColors.muted),
                           filled: true,
                           fillColor: AppColors.surface,
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(
-                                AppSpacing.sm),
+                                AppRadius.md),
                             borderSide: BorderSide.none,
                           ),
                           contentPadding: const EdgeInsets.symmetric(
@@ -394,13 +396,13 @@ class _ExercisesPanel extends StatelessWidget {
                     child: Column(
                       children: [
                         Text('No exercises yet',
-                            style: TextStyle(
+                            style: AppFonts.ui(
                                 fontSize: AppTextStyles.md,
                                 fontWeight: FontWeight.w600,
                                 color: AppColors.primary)),
                         SizedBox(height: AppSpacing.sm),
                         Text('Tap + to create your first exercise.',
-                            style: TextStyle(
+                            style: AppFonts.ui(
                                 fontSize: AppTextStyles.sm,
                                 color: AppColors.muted)),
                       ],
@@ -409,27 +411,23 @@ class _ExercisesPanel extends StatelessWidget {
                 )
               else if (state.filteredExercises.isEmpty)
                 Text('No results.',
-                    style: TextStyle(
+                    style: AppFonts.ui(
                         color: AppColors.muted,
                         fontSize: AppTextStyles.sm))
               else
-                ...state.filteredExercises.map((ex) => PressSquash(
-                      onTap: () => onEdit(ex),
-                      child: Container(
+                ...state.filteredExercises.map((ex) => Padding(
+                      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                      child: AppCard(
+                        onTap: () => onEdit(ex),
                         padding: const EdgeInsets.symmetric(
-                            vertical: AppSpacing.md),
-                        decoration: BoxDecoration(
-                          border: Border(
-                            bottom: BorderSide(
-                                color: AppColors.border, width: 0.5),
-                          ),
-                        ),
+                            horizontal: AppSpacing.md, vertical: AppSpacing.sm),
                         child: Row(
                           children: [
                             Expanded(
                               child: Text(toProperCase(ex.name),
-                                  style: TextStyle(
+                                  style: AppFonts.ui(
                                       fontSize: AppTextStyles.md,
+                                      fontWeight: FontWeight.w600,
                                       color: AppColors.primary)),
                             ),
                             Icon(Icons.chevron_right,
@@ -468,27 +466,27 @@ class _VariationsPanel extends StatelessWidget {
                 children: [
                   Expanded(
                     child: Text('All Variations',
-                        style: TextStyle(
+                        style: AppFonts.ui(
                             fontSize: AppTextStyles.lg,
-                            fontWeight: FontWeight.w700,
+                            fontWeight: FontWeight.w800,
                             color: AppColors.primary)),
                   ),
                   if (state.variations.isNotEmpty)
                     Expanded(
                       child: TextField(
                         controller: searchController,
-                        style: TextStyle(
+                        style: AppFonts.ui(
                             fontSize: AppTextStyles.sm,
                             color: AppColors.primary),
                         decoration: InputDecoration(
                           hintText: 'Search…',
                           hintStyle:
-                              TextStyle(color: AppColors.muted),
+                              AppFonts.ui(color: AppColors.muted),
                           filled: true,
                           fillColor: AppColors.surface,
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(
-                                AppSpacing.sm),
+                                AppRadius.md),
                             borderSide: BorderSide.none,
                           ),
                           contentPadding: const EdgeInsets.symmetric(
@@ -514,13 +512,13 @@ class _VariationsPanel extends StatelessWidget {
                     child: Column(
                       children: [
                         Text('No variations yet',
-                            style: TextStyle(
+                            style: AppFonts.ui(
                                 fontSize: AppTextStyles.md,
                                 fontWeight: FontWeight.w600,
                                 color: AppColors.primary)),
                         SizedBox(height: AppSpacing.sm),
                         Text('Tap + to create your first variation.',
-                            style: TextStyle(
+                            style: AppFonts.ui(
                                 fontSize: AppTextStyles.sm,
                                 color: AppColors.muted)),
                       ],
@@ -529,27 +527,23 @@ class _VariationsPanel extends StatelessWidget {
                 )
               else if (state.filteredVariations.isEmpty)
                 Text('No results.',
-                    style: TextStyle(
+                    style: AppFonts.ui(
                         color: AppColors.muted,
                         fontSize: AppTextStyles.sm))
               else
-                ...state.filteredVariations.map((v) => PressSquash(
-                      onTap: () => onEdit(v),
-                      child: Container(
+                ...state.filteredVariations.map((v) => Padding(
+                      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                      child: AppCard(
+                        onTap: () => onEdit(v),
                         padding: const EdgeInsets.symmetric(
-                            vertical: AppSpacing.md),
-                        decoration: BoxDecoration(
-                          border: Border(
-                            bottom: BorderSide(
-                                color: AppColors.border, width: 0.5),
-                          ),
-                        ),
+                            horizontal: AppSpacing.md, vertical: AppSpacing.sm),
                         child: Row(
                           children: [
                             Expanded(
                               child: Text(toProperCase(v.name),
-                                  style: TextStyle(
+                                  style: AppFonts.ui(
                                       fontSize: AppTextStyles.md,
+                                      fontWeight: FontWeight.w600,
                                       color: AppColors.primary)),
                             ),
                             Icon(Icons.chevron_right,
@@ -589,9 +583,9 @@ class _CreateExerciseModal extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text('New Exercise',
-                    style: TextStyle(
+                    style: AppFonts.ui(
                         fontSize: AppTextStyles.lg,
-                        fontWeight: FontWeight.w700,
+                        fontWeight: FontWeight.w800,
                         color: AppColors.primary)),
                 const SizedBox(height: AppSpacing.md),
                 LambdaInput(
@@ -668,9 +662,9 @@ class _CreateVariationModal extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text('New Variation',
-                    style: TextStyle(
+                    style: AppFonts.ui(
                         fontSize: AppTextStyles.lg,
-                        fontWeight: FontWeight.w700,
+                        fontWeight: FontWeight.w800,
                         color: AppColors.primary)),
                 const SizedBox(height: AppSpacing.md),
                 LambdaInput(
@@ -753,9 +747,9 @@ class _EditExerciseModal extends StatelessWidget {
                   children: [
                     Expanded(
                       child: Text('Edit Exercise',
-                          style: TextStyle(
+                          style: AppFonts.ui(
                               fontSize: AppTextStyles.lg,
-                              fontWeight: FontWeight.w700,
+                              fontWeight: FontWeight.w800,
                               color: AppColors.primary)),
                     ),
                     GlassButton(
@@ -781,7 +775,7 @@ class _EditExerciseModal extends StatelessWidget {
                 Divider(color: AppColors.border),
                 const SizedBox(height: AppSpacing.sm),
                 Text('Assigned Variations',
-                    style: TextStyle(
+                    style: AppFonts.ui(
                         fontSize: AppTextStyles.md,
                         fontWeight: FontWeight.w600,
                         color: AppColors.primary)),
@@ -792,7 +786,7 @@ class _EditExerciseModal extends StatelessWidget {
                           color: AppColors.accent))
                 else if (state.editExAssignedVars.isEmpty)
                   Text('No variations assigned yet.',
-                      style: TextStyle(
+                      style: AppFonts.ui(
                           color: AppColors.muted,
                           fontSize: AppTextStyles.sm))
                 else
@@ -816,7 +810,7 @@ class _EditExerciseModal extends StatelessWidget {
                         children: [
                           Expanded(
                             child: Text(toProperCase(v.name),
-                                style: TextStyle(
+                                style: AppFonts.ui(
                                     fontSize: AppTextStyles.md,
                                     color: AppColors.primary)),
                           ),
@@ -910,9 +904,9 @@ class _EditVariationModal extends StatelessWidget {
                   children: [
                     Expanded(
                       child: Text('Edit Variation',
-                          style: TextStyle(
+                          style: AppFonts.ui(
                               fontSize: AppTextStyles.lg,
-                              fontWeight: FontWeight.w700,
+                              fontWeight: FontWeight.w800,
                               color: AppColors.primary)),
                     ),
                     GlassButton(
@@ -938,7 +932,7 @@ class _EditVariationModal extends StatelessWidget {
                 Divider(color: AppColors.border),
                 const SizedBox(height: AppSpacing.sm),
                 Text('Assigned Exercises',
-                    style: TextStyle(
+                    style: AppFonts.ui(
                         fontSize: AppTextStyles.md,
                         fontWeight: FontWeight.w600,
                         color: AppColors.primary)),
@@ -949,7 +943,7 @@ class _EditVariationModal extends StatelessWidget {
                           color: AppColors.accent))
                 else if (state.editVarAssignedExs.isEmpty)
                   Text('No exercises assigned yet.',
-                      style: TextStyle(
+                      style: AppFonts.ui(
                           color: AppColors.muted,
                           fontSize: AppTextStyles.sm))
                 else
@@ -973,7 +967,7 @@ class _EditVariationModal extends StatelessWidget {
                         children: [
                           Expanded(
                             child: Text(toProperCase(ex.name),
-                                style: TextStyle(
+                                style: AppFonts.ui(
                                     fontSize: AppTextStyles.md,
                                     color: AppColors.primary)),
                           ),

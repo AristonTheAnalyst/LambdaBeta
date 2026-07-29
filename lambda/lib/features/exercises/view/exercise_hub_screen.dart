@@ -1,8 +1,9 @@
 ﻿import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/styles/app_colors.dart';
+import '../../../../core/styles/app_fonts.dart';
+import '../../../../core/styles/app_radius.dart';
 import '../../../../core/styles/app_spacing.dart';
-import '../../../../core/styles/app_text_styles.dart';
 import '../../../../shared/widgets/app_card.dart';
 import '../../../../shared/widgets/page_header.dart';
 
@@ -55,7 +56,7 @@ class ExerciseHubScreen extends StatelessWidget {
                                   height: 44,
                                   decoration: BoxDecoration(
                                     color: AppColors.accentBg,
-                                    borderRadius: BorderRadius.circular(8),
+                                    borderRadius: BorderRadius.circular(AppRadius.md),
                                   ),
                                   child: Icon(s.icon,
                                       color: AppColors.accent, size: 22),
@@ -67,14 +68,14 @@ class ExerciseHubScreen extends StatelessWidget {
                                         CrossAxisAlignment.start,
                                     children: [
                                       Text(s.label,
-                                          style: TextStyle(
-                                              fontSize: AppTextStyles.lg,
-                                              fontWeight: FontWeight.w600,
+                                          style: AppFonts.ui(
+                                              fontSize: 15,
+                                              fontWeight: FontWeight.w800,
                                               color: AppColors.primary)),
                                       const SizedBox(height: 2),
                                       Text(s.description,
-                                          style: TextStyle(
-                                              fontSize: AppTextStyles.sm,
+                                          style: AppFonts.ui(
+                                              fontSize: 12,
                                               color: AppColors.muted)),
                                     ],
                                   ),
