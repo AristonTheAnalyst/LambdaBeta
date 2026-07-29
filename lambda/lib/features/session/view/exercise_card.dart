@@ -152,7 +152,17 @@ class _ExerciseCardState extends State<ExerciseCard> {
 
   Widget _lessonBar(Lesson lesson, String exerciseId, String exerciseName) {
     return GestureDetector(
-      onTap: () => showLessonsModal(context, vm: widget.vm, exerciseId: exerciseId, exerciseName: exerciseName),
+      onTap: () => showLessonsModal(
+              context,
+              listenable: widget.vm,
+              lessonsFor: widget.vm.lessonsFor,
+              loadLessonsFor: widget.vm.loadLessonsFor,
+              addLesson: widget.vm.addLesson,
+              toggleLessonPin: widget.vm.toggleLessonPin,
+              deleteLesson: widget.vm.deleteLesson,
+              exerciseId: exerciseId,
+              exerciseName: exerciseName,
+            ),
       child: Container(
         width: double.infinity,
         color: AppColors.accentBg,
@@ -239,7 +249,17 @@ class _ExerciseCardState extends State<ExerciseCard> {
                 label: lessonsCount > 0 ? '$lessonsCount Lessons' : 'Lessons',
                 active: lessonsCount > 0,
                 color: AppColors.accent,
-                onTap: () => showLessonsModal(context, vm: widget.vm, exerciseId: exerciseId, exerciseName: name),
+                onTap: () => showLessonsModal(
+                    context,
+                    listenable: widget.vm,
+                    lessonsFor: widget.vm.lessonsFor,
+                    loadLessonsFor: widget.vm.loadLessonsFor,
+                    addLesson: widget.vm.addLesson,
+                    toggleLessonPin: widget.vm.toggleLessonPin,
+                    deleteLesson: widget.vm.deleteLesson,
+                    exerciseId: exerciseId,
+                    exerciseName: name,
+                  ),
               ),
               if (historyCount > 0) ...[
                 const SizedBox(height: 6),

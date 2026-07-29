@@ -7,21 +7,58 @@ import '../../../core/styles/app_spacing.dart';
 import '../../../data/models/lesson.dart';
 import '../../../shared/widgets/glass_button.dart';
 import '../../../shared/widgets/slide_up_modal.dart';
-import '../viewmodel/session_viewmodel.dart';
 
-void showLessonsModal(BuildContext context, {required SessionViewModel vm, required String exerciseId, required String exerciseName}) {
+/// Bound to a [Listenable] + a handful of callbacks rather than a concrete
+/// viewmodel type, so both `SessionViewModel` (a `ChangeNotifier`) and
+/// `ProgramDetailViewModel` (a `ValueNotifier<ProgramDetailState>`) can
+/// reuse this same modal for the exact same `fact_lesson` data — lessons are
+/// per-exercise and cross-session, not tied to either feature.
+void showLessonsModal(
+  BuildContext context, {
+  required Listenable listenable,
+  required List<Lesson> Function(String exerciseId) lessonsFor,
+  required Future<void> Function(String exerciseId) loadLessonsFor,
+  required Future<void> Function(String exerciseId, String text) addLesson,
+  required Future<void> Function(String exerciseId, String lessonId) toggleLessonPin,
+  required Future<void> Function(String exerciseId, String lessonId) deleteLesson,
+  required String exerciseId,
+  required String exerciseName,
+}) {
   showLambdaModal(
     context,
     fitContent: true,
     keyboardAware: true,
-    child: _LessonsModalContent(vm: vm, exerciseId: exerciseId, exerciseName: exerciseName),
+    child: _LessonsModalContent(
+      listenable: listenable,
+      lessonsFor: lessonsFor,
+      loadLessonsFor: loadLessonsFor,
+      addLesson: addLesson,
+      toggleLessonPin: toggleLessonPin,
+      deleteLesson: deleteLesson,
+      exerciseId: exerciseId,
+      exerciseName: exerciseName,
+    ),
   );
 }
 
 class _LessonsModalContent extends StatefulWidget {
-  const _LessonsModalContent({required this.vm, required this.exerciseId, required this.exerciseName});
+  const _LessonsModalContent({
+    required this.listenable,
+    required this.lessonsFor,
+    required this.loadLessonsFor,
+    required this.addLesson,
+    required this.toggleLessonPin,
+    required this.deleteLesson,
+    required this.exerciseId,
+    required this.exerciseName,
+  });
 
-  final SessionViewModel vm;
+  final Listenable listenable;
+  final List<Lesson> Function(String exerciseId) lessonsFor;
+  final Future<void> Function(String exerciseId) loadLessonsFor;
+  final Future<void> Function(String exerciseId, String text) addLesson;
+  final Future<void> Function(String exerciseId, String lessonId) toggleLessonPin;
+  final Future<void> Function(String exerciseId, String lessonId) deleteLesson;
   final String exerciseId;
   final String exerciseName;
 
@@ -36,7 +73,7 @@ class _LessonsModalContentState extends State<_LessonsModalContent> {
   @override
   void initState() {
     super.initState();
-    widget.vm.loadLessonsFor(widget.exerciseId);
+    widget.loadLessonsFor(widget.exerciseId);
   }
 
   @override
@@ -47,7 +84,7 @@ class _LessonsModalContentState extends State<_LessonsModalContent> {
 
   void _addLesson() {
     if (_draftCtrl.text.trim().isEmpty) return;
-    widget.vm.addLesson(widget.exerciseId, _draftCtrl.text);
+    widget.addLesson(widget.exerciseId, _draftCtrl.text);
     _draftCtrl.clear();
     setState(() => _adding = false);
   }
@@ -55,9 +92,9 @@ class _LessonsModalContentState extends State<_LessonsModalContent> {
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: widget.vm,
+      listenable: widget.listenable,
       builder: (context, _) {
-        final lessons = widget.vm.lessonsFor(widget.exerciseId);
+        final lessons = widget.lessonsFor(widget.exerciseId);
         final ordered = [...lessons]..sort((a, b) => (b.pinned ? 1 : 0).compareTo(a.pinned ? 1 : 0));
         return SafeArea(
           child: Padding(
@@ -143,9 +180,9 @@ class _LessonsModalContentState extends State<_LessonsModalContent> {
                             return _LessonRow(
                               lesson: lesson,
                               onTogglePin: () =>
-                                  widget.vm.toggleLessonPin(widget.exerciseId, lesson.lessonId),
+                                  widget.toggleLessonPin(widget.exerciseId, lesson.lessonId),
                               onDelete: () =>
-                                  widget.vm.deleteLesson(widget.exerciseId, lesson.lessonId),
+                                  widget.deleteLesson(widget.exerciseId, lesson.lessonId),
                             );
                           },
                         ),
