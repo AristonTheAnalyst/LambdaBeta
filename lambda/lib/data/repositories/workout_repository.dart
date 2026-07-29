@@ -28,7 +28,11 @@ class WorkoutRepository {
         workoutId,
         userId,
         preNotes?.isNotEmpty == true ? preNotes : null,
-        DateTime.now().toIso8601String(),
+        // .toUtc() is required — a bare DateTime.now().toIso8601String() has
+        // no timezone offset, so Postgres's timestamptz column silently
+        // reinterprets local wall-clock time as UTC, skewing every elapsed-
+        // time comparison by the device's UTC offset.
+        DateTime.now().toUtc().toIso8601String(),
         1,
         programId,
         programRunId,
@@ -76,6 +80,7 @@ class WorkoutRepository {
     String? notes,
     String? programId,
     String? plannedSetId,
+    int? supersetGroupNumber,
   }) async {
     final setId = _uuid.v4();
     await ps.db.execute(
@@ -83,8 +88,8 @@ class WorkoutRepository {
       INSERT INTO fact_workout_set
         (id, workout_set_id, user_workout_id, custom_exercise_id, custom_variation_id,
          workout_set_number, workout_set_weight, workout_set_reps, workout_set_duration_seconds,
-         workout_set_notes, program_id, planned_set_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         workout_set_notes, program_id, planned_set_id, superset_group_number)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ''',
       [
         setId,
@@ -99,6 +104,7 @@ class WorkoutRepository {
         notes?.isNotEmpty == true ? notes : null,
         programId,
         plannedSetId,
+        supersetGroupNumber,
       ],
     );
     return WorkoutSet(
@@ -111,6 +117,7 @@ class WorkoutRepository {
       reps: reps,
       duration: duration,
       notes: notes?.isNotEmpty == true ? notes : null,
+      supersetGroupNumber: supersetGroupNumber,
     );
   }
 
@@ -273,6 +280,28 @@ class WorkoutRepository {
       LIMIT 1
       ''',
       [userId, exerciseId],
+    );
+    if (rows.isEmpty) return null;
+    return WorkoutSet.fromMap(rows.first);
+  }
+
+  /// The most recently logged set for this exact exercise+variation pair
+  /// (spanning all sessions, including the active one) — the
+  /// progressive-overload reference shown in the Log Set composer. `IS ?`
+  /// instead of `= ?` so a null variationId matches sets logged with no
+  /// variation, rather than matching nothing.
+  Future<WorkoutSet?> findLastSetForExerciseVariation(
+      String userId, String exerciseId, String? variationId) async {
+    final rows = await ps.db.getAll(
+      '''
+      SELECT s.*
+      FROM fact_workout_set s
+      INNER JOIN fact_workout w ON w.user_workout_id = s.user_workout_id
+      WHERE w.user_id = ? AND s.custom_exercise_id = ? AND s.custom_variation_id IS ?
+      ORDER BY w.user_workout_created_date DESC, s.workout_set_number DESC
+      LIMIT 1
+      ''',
+      [userId, exerciseId, variationId],
     );
     if (rows.isEmpty) return null;
     return WorkoutSet.fromMap(rows.first);

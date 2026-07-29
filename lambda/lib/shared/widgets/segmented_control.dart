@@ -15,36 +15,50 @@ class SegmentedControl<T> extends StatelessWidget {
     required this.options,
     required this.value,
     required this.onChange,
+    this.subtle = false,
   });
 
   final List<SegmentOption<T>> options;
   final T value;
   final ValueChanged<T> onChange;
+  // Low-contrast outlined treatment for secondary mode switches that
+  // shouldn't compete with a nearby primary CTA.
+  final bool subtle;
 
   @override
   Widget build(BuildContext context) {
     return Row(
       children: options.map((opt) {
         final isActive = opt.value == value;
+        final Color bg;
+        final Color borderColor;
+        final Color fg;
+        if (subtle) {
+          bg = Colors.transparent;
+          borderColor = isActive ? AppColors.accent : AppColors.border;
+          fg = isActive ? AppColors.accent : AppColors.muted;
+        } else {
+          bg = isActive ? AppColors.accent : AppColors.surface;
+          borderColor = isActive ? AppColors.accent : AppColors.border;
+          fg = isActive ? AppColors.accentText : AppColors.muted;
+        }
         return Expanded(
           child: GestureDetector(
             onTap: () => onChange(opt.value),
             child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 10),
+              padding: EdgeInsets.symmetric(vertical: subtle ? 6 : 10),
               decoration: BoxDecoration(
-                color: isActive ? AppColors.accent : AppColors.surface,
+                color: bg,
                 borderRadius: BorderRadius.circular(AppRadius.md),
-                border: Border.all(
-                  color: isActive ? AppColors.accent : AppColors.border,
-                ),
+                border: Border.all(color: borderColor),
               ),
               child: Center(
                 child: Text(
                   opt.label,
                   style: TextStyle(
-                    fontSize: AppTextStyles.sm,
+                    fontSize: subtle ? AppTextStyles.xs : AppTextStyles.sm,
                     fontWeight: FontWeight.w600,
-                    color: isActive ? AppColors.accentText : AppColors.muted,
+                    color: fg,
                   ),
                 ),
               ),

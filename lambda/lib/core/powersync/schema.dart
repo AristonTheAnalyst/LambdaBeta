@@ -63,6 +63,7 @@ const schema = Schema([
     Column.integer('deleted_locally'),
     Column.text('program_id'),
     Column.text('planned_set_id'),
+    Column.integer('superset_group_number'),
   ]),
   Table('dim_program', [
     Column.text('program_id'),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_radius.dart';
+import '../../core/styles/app_spacing.dart';
 import '../../core/styles/app_text_styles.dart';
 import 'slide_up_modal.dart';
 
@@ -63,6 +64,7 @@ class DropdownSelect<T> extends StatelessWidget {
     this.searchable = false,
     this.onCreateNew,
     this.createNewLabel = 'Create new',
+    this.compact = false,
   });
 
   final List<DropdownOption<T>> options;
@@ -75,6 +77,10 @@ class DropdownSelect<T> extends StatelessWidget {
   // instead of asking the user to type the name a second time.
   final ValueChanged<String>? onCreateNew;
   final String createNewLabel;
+  // Minimal, borderless inline-text look (still fully tappable, opens the
+  // same picker) — for a field that's dependent on/subordinate to another
+  // one nearby, e.g. a variation breadcrumbed off its exercise.
+  final bool compact;
 
   String get _displayLabel {
     if (value == null) return placeholder;
@@ -115,30 +121,46 @@ class DropdownSelect<T> extends StatelessWidget {
           );
         }
       },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(AppRadius.md),
-          border: Border.all(color: AppColors.border),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                _displayLabel,
-                style: TextStyle(
-                  fontSize: AppTextStyles.md,
-                  color: hasValue ? AppColors.primary : AppColors.muted,
+      child: compact
+          ? Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  _displayLabel,
+                  style: TextStyle(
+                    fontSize: AppTextStyles.sm,
+                    fontWeight: FontWeight.w500,
+                    color: hasValue ? AppColors.accent : AppColors.muted,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
-                overflow: TextOverflow.ellipsis,
+                Icon(Icons.keyboard_arrow_down, size: 14, color: AppColors.muted),
+              ],
+            )
+          : Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(AppRadius.md),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      _displayLabel,
+                      style: TextStyle(
+                        fontSize: AppTextStyles.md,
+                        color: hasValue ? AppColors.primary : AppColors.muted,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  Icon(Icons.keyboard_arrow_down,
+                      size: 18, color: AppColors.muted),
+                ],
               ),
             ),
-            Icon(Icons.keyboard_arrow_down,
-                size: 18, color: AppColors.muted),
-          ],
-        ),
-      ),
     );
   }
 }
@@ -350,6 +372,41 @@ class _SheetRow extends StatelessWidget {
               Icon(Icons.check, size: 18, color: AppColors.accent),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Stands in for a [DropdownSelect] while a quick-create is in flight —
+/// matches its container styling exactly so the field doesn't jump.
+class DropdownLoadingField extends StatelessWidget {
+  const DropdownLoadingField({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 14,
+            height: 14,
+            child: CircularProgressIndicator(
+                strokeWidth: 1.5, color: AppColors.accent),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Text('Creating…',
+                style: TextStyle(
+                    fontSize: AppTextStyles.md, color: AppColors.muted),
+                overflow: TextOverflow.ellipsis),
+          ),
+        ],
       ),
     );
   }

@@ -36,6 +36,7 @@ dependencies:
   go_router: ^14.6.3
   sign_in_with_apple: ^6.1.4
   font_awesome_flutter: ^11.0.0
+  google_fonts: ^6.2.1
   app_links: ^6.4.0
   flutter_animate: ^4.5.0
   intl: ^0.20.2

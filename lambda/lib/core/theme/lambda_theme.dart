@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../styles/app_fonts.dart';
 import '../styles/app_text_styles.dart';
 
 enum LambdaThemeVariant { primary, monoLight }
@@ -16,6 +17,10 @@ class LambdaColors {
   final Color danger;
   final Color dangerBg;
   final Color dangerBorder;
+  final Color success;
+  final Color successBg;
+  final Color history;
+  final Color historyBg;
 
   const LambdaColors({
     required this.bg,
@@ -30,6 +35,10 @@ class LambdaColors {
     required this.danger,
     required this.dangerBg,
     required this.dangerBorder,
+    required this.success,
+    required this.successBg,
+    required this.history,
+    required this.historyBg,
   });
 
   static const dark = LambdaColors(
@@ -45,6 +54,10 @@ class LambdaColors {
     danger:       Color(0xFFC0392B),
     dangerBg:     Color(0xFF3A1A1A),
     dangerBorder: Color(0xFF7A2020),
+    success:      Color(0xFF4ADE80),
+    successBg:    Color(0xFF16321F),
+    history:      Color(0xFFA78BFA),
+    historyBg:    Color(0xFF2C2440),
   );
 
   static const monoLight = LambdaColors(
@@ -60,6 +73,10 @@ class LambdaColors {
     danger:       Color(0xFFC0392B),
     dangerBg:     Color(0xFFFFEEEE),
     dangerBorder: Color(0xFFE8A8A8),
+    success:      Color(0xFF2E7D46),
+    successBg:    Color(0xFFEAF6EE),
+    history:      Color(0xFF6D4FC7),
+    historyBg:    Color(0xFFF1ECFB),
   );
 
   ThemeData toThemeData() {
@@ -80,13 +97,13 @@ class LambdaColors {
         onError:     accentText,
         onSurface:   primary,
       ),
-      textTheme: TextTheme(
+      textTheme: AppFonts.uiTextTheme(TextTheme(
         bodyMedium: TextStyle(
           fontSize: AppTextStyles.md,
           color: primary,
           fontWeight: FontWeight.w400,
         ),
-      ),
+      )),
       snackBarTheme: SnackBarThemeData(
         backgroundColor: surfaceHigh,
         contentTextStyle: TextStyle(color: primary),

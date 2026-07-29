@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../../core/styles/app_colors.dart';
-import '../../core/styles/app_radius.dart';
 import '../../core/styles/app_spacing.dart';
 import '../../core/styles/app_text_styles.dart';
 import 'dropdown_select.dart';
@@ -140,7 +139,7 @@ class SetFormSheet extends StatelessWidget {
                               color: AppColors.primary)),
                       const SizedBox(height: AppSpacing.xs),
                       if (exerciseCreating)
-                        const _CreatingField()
+                        const DropdownLoadingField()
                       else
                         DropdownSelect<String>(
                           options: exerciseOptions,
@@ -167,7 +166,7 @@ class SetFormSheet extends StatelessWidget {
                               color: AppColors.primary)),
                       const SizedBox(height: AppSpacing.xs),
                       if (variationCreating)
-                        const _CreatingField()
+                        const DropdownLoadingField()
                       else
                         DropdownSelect<String?>(
                           options: variationOptions,
@@ -240,41 +239,6 @@ class SetFormSheet extends StatelessWidget {
             const SizedBox(height: AppSpacing.xxl),
           ],
         ),
-      ),
-    );
-  }
-}
-
-/// Stands in for a [DropdownSelect] while a quick-create is in flight —
-/// matches its container styling exactly so the field doesn't jump.
-class _CreatingField extends StatelessWidget {
-  const _CreatingField();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 14,
-            height: 14,
-            child: CircularProgressIndicator(
-                strokeWidth: 1.5, color: AppColors.accent),
-          ),
-          const SizedBox(width: AppSpacing.sm),
-          Expanded(
-            child: Text('Creating…',
-                style: TextStyle(
-                    fontSize: AppTextStyles.md, color: AppColors.muted),
-                overflow: TextOverflow.ellipsis),
-          ),
-        ],
       ),
     );
   }

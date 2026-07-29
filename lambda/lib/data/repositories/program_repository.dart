@@ -48,7 +48,9 @@ class ProgramRepository {
     String progressionMode = 'sequential',
   }) async {
     final id = _uuid.v4();
-    final createdDate = DateTime.now();
+    // .toUtc() avoids a naive local-time string being reinterpreted as UTC
+    // by Postgres's timestamptz column (see WorkoutRepository.createWorkout).
+    final createdDate = DateTime.now().toUtc();
     await ps.db.execute(
       '''
       INSERT INTO dim_program
@@ -366,7 +368,7 @@ class ProgramRepository {
           source.program.lengthWeeks,
           source.program.progressionMode,
           1,
-          DateTime.now().toIso8601String(),
+          DateTime.now().toUtc().toIso8601String(),
         ],
       );
 

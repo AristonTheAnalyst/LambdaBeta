@@ -13,6 +13,7 @@ class WorkoutSet {
     this.notes,
     this.exerciseName,
     this.variationName,
+    this.supersetGroupNumber,
   });
 
   final String setId;
@@ -26,6 +27,7 @@ class WorkoutSet {
   final String? notes;
   final String? exerciseName;
   final String? variationName;
+  final int? supersetGroupNumber;
 
   factory WorkoutSet.fromMap(Map<String, dynamic> map) => WorkoutSet(
         setId: map['workout_set_id'] as String,
@@ -39,6 +41,7 @@ class WorkoutSet {
         notes: map['workout_set_notes'] as String?,
         exerciseName: map['exercise_name'] as String?,
         variationName: map['variation_name'] as String?,
+        supersetGroupNumber: map['superset_group_number'] as int?,
       );
 
   Map<String, dynamic> toMap() => {
@@ -51,6 +54,7 @@ class WorkoutSet {
         'workout_set_reps': reps,
         'workout_set_duration_seconds': duration,
         'workout_set_notes': notes,
+        'superset_group_number': supersetGroupNumber,
       };
 
   static double? _toDouble(dynamic v) {
@@ -88,6 +92,7 @@ class PastSetRow extends WorkoutSet {
     super.notes,
     super.exerciseName,
     super.variationName,
+    super.supersetGroupNumber,
   });
 
   final DateTime workoutCreatedDate;
@@ -105,5 +110,6 @@ class PastSetRow extends WorkoutSet {
         workoutCreatedDate: DateTime.parse(map['user_workout_created_date'] as String),
         exerciseName: map['exercise_name'] as String?,
         variationName: map['variation_name'] as String?,
+        supersetGroupNumber: map['superset_group_number'] as int?,
       );
 }

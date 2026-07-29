@@ -153,8 +153,9 @@ class _GroupedSetsList extends StatelessWidget {
                       fontWeight: FontWeight.w600,
                       color: AppColors.accent)),
             ),
-            ...entry.value.map((s) => SetRow(
-                  set: s,
+            ...entry.value.asMap().entries.map((e) => SetRow(
+                  setIndex: e.key + 1,
+                  set: e.value,
                   detail: detail,
                   interactive: interactive,
                   onEdit: onEditSet,
@@ -233,6 +234,7 @@ class SetRow extends StatelessWidget {
     this.interactive = false,
     this.onEdit,
     this.showExerciseName = false,
+    this.setIndex,
   });
 
   final WorkoutSet set;
@@ -240,6 +242,9 @@ class SetRow extends StatelessWidget {
   final bool interactive;
   final ValueChanged<WorkoutSet>? onEdit;
   final bool showExerciseName;
+  // Position of this set within its exercise group (1-based) — shown as a
+  // small numbered badge. Null (e.g. in the chrono/timeline view) hides it.
+  final int? setIndex;
 
   String _volumeLabel() {
     final isReps = set.duration.isEmpty;
@@ -281,6 +286,24 @@ class SetRow extends StatelessWidget {
       ),
       child: Row(
         children: [
+          if (setIndex != null) ...[
+            Container(
+              width: 24,
+              height: 24,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: Text('$setIndex',
+                  style: TextStyle(
+                      fontSize: AppTextStyles.xs,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.muted)),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+          ],
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,

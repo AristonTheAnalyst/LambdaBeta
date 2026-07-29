@@ -112,9 +112,15 @@ class ExerciseRepository {
   }
 
   /// No unique index backs (custom_exercise_id, custom_variation_id) locally,
-  /// so this is a manual check-then-write instead of a real SQL upsert.
+  /// so this is a manual check-then-write instead of a real SQL upsert. The
+  /// row's id is the '-'-joined composite key — matching exactly how the
+  /// PowerSync sync-rules compute id for this table
+  /// (custom_exercise_id || '-' || custom_variation_id) — so a locally
+  /// created row and its eventual downloaded copy resolve to the same local
+  /// row instead of duplicating.
   Future<void> addBridge(
       String userId, String exerciseId, String variationId) async {
+    final id = '$exerciseId-$variationId';
     final existing = await ps.db.getAll(
       'SELECT id FROM dim_exercise_variation_bridge WHERE custom_exercise_id = ? AND custom_variation_id = ?',
       [exerciseId, variationId],
@@ -126,7 +132,6 @@ class ExerciseRepository {
       );
       return;
     }
-    final id = _uuid.v4();
     await ps.db.execute(
       'INSERT INTO dim_exercise_variation_bridge (id, custom_exercise_id, custom_variation_id, user_id, deleted_locally) VALUES (?, ?, ?, ?, ?)',
       [id, exerciseId, variationId, userId, 0],
@@ -161,9 +166,14 @@ class ExerciseRepository {
     );
   }
 
+  /// Soft-delete via deleted_locally rather than a hard DELETE — this table
+  /// has no single-column primary key (its real PK is the composite
+  /// (custom_exercise_id, custom_variation_id)), which the generic
+  /// id-based upload path in SupabaseConnector.uploadData() can't target
+  /// for a DELETE. PATCHing deleted_locally instead sidesteps that entirely.
   Future<void> removeBridge(String exerciseId, String variationId) async {
     await ps.db.execute(
-      'DELETE FROM dim_exercise_variation_bridge WHERE custom_exercise_id = ? AND custom_variation_id = ?',
+      'UPDATE dim_exercise_variation_bridge SET deleted_locally = 1 WHERE custom_exercise_id = ? AND custom_variation_id = ?',
       [exerciseId, variationId],
     );
   }
