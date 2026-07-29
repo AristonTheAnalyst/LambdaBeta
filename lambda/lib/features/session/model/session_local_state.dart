@@ -1,24 +1,9 @@
 import '../../../data/models/workout_set.dart';
 
 /// Pure local/in-memory state for the session screen — never persisted.
-/// Lessons have no backing table; a history "session" is a display-only
-/// grouping of already-persisted [PastSetRow]s.
-
-class SessionLesson {
-  SessionLesson({
-    required this.id,
-    required this.exerciseId,
-    required this.text,
-    required this.date,
-    this.pinned = false,
-  });
-
-  final String id;
-  final String exerciseId;
-  String text;
-  final String date;
-  bool pinned;
-}
+/// A history "session" is a display-only grouping of already-persisted
+/// [PastSetRow]s. (Lessons used to live here too, before they got a real
+/// backing table — see data/models/lesson.dart.)
 
 class ExerciseHistorySession {
   const ExerciseHistorySession({required this.date, required this.sets});

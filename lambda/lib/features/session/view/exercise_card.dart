@@ -5,6 +5,7 @@ import '../../../core/styles/app_fonts.dart';
 import '../../../core/styles/app_radius.dart';
 import '../../../core/styles/app_spacing.dart';
 import '../../../core/utils/workout_format.dart';
+import '../../../data/models/lesson.dart';
 import '../../../data/models/workout_set.dart';
 import '../../../shared/widgets/glass_button.dart';
 import '../model/session_local_state.dart';
@@ -149,7 +150,7 @@ class _ExerciseCardState extends State<ExerciseCard> {
     );
   }
 
-  Widget _lessonBar(SessionLesson lesson, String exerciseId, String exerciseName) {
+  Widget _lessonBar(Lesson lesson, String exerciseId, String exerciseName) {
     return GestureDetector(
       onTap: () => showLessonsModal(context, vm: widget.vm, exerciseId: exerciseId, exerciseName: exerciseName),
       child: Container(
@@ -167,7 +168,8 @@ class _ExerciseCardState extends State<ExerciseCard> {
                   overflow: TextOverflow.ellipsis,
                   style: AppFonts.ui(fontSize: 11, color: AppColors.muted)),
             ),
-            Text(lesson.date, style: AppFonts.mono(fontSize: 9, color: AppColors.muted)),
+            Text(DateFormat('MMM d').format(lesson.createdDate),
+                style: AppFonts.mono(fontSize: 9, color: AppColors.muted)),
           ],
         ),
       ),
@@ -309,6 +311,7 @@ class _ExerciseCardState extends State<ExerciseCard> {
                   onTap: () => setState(() {
                     _viewingSession = session;
                     _historyOpen = false;
+                    widget.vm.historyEditConfirmed = false;
                   }),
                   child: Container(
                     width: 84,
@@ -342,48 +345,10 @@ class _ExerciseCardState extends State<ExerciseCard> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Read-only — from a completed workout.',
+        Text('From a completed workout — tap a value to edit.',
             style: AppFonts.ui(fontSize: 11, color: AppColors.muted)),
         const SizedBox(height: 8),
-        ...session.sets.map((s) => Container(
-              margin: const EdgeInsets.only(bottom: 6),
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              decoration: BoxDecoration(
-                color: AppColors.historyBg,
-                borderRadius: BorderRadius.circular(AppRadius.md),
-                border: Border.all(color: AppColors.history.withValues(alpha: 0.2)),
-              ),
-              child: Row(
-                children: [
-                  SizedBox(
-                      width: 26,
-                      child: Text('${s.setNumber}',
-                          textAlign: TextAlign.center,
-                          style: AppFonts.mono(fontSize: 11, color: AppColors.muted))),
-                  Expanded(
-                    child: Text(
-                      s.weight != null ? '${s.weight}kg' : '—',
-                      textAlign: TextAlign.center,
-                      style: AppFonts.mono(fontSize: 13, color: AppColors.history),
-                    ),
-                  ),
-                  Expanded(
-                    child: Text(
-                      s.reps.isNotEmpty ? s.reps.join(', ') : (s.duration.isNotEmpty ? '${s.duration.join(', ')}s' : '—'),
-                      textAlign: TextAlign.center,
-                      style: AppFonts.mono(fontSize: 13, color: AppColors.history),
-                    ),
-                  ),
-                  Expanded(
-                    child: Text(
-                      s.variationName != null ? toProperCase(s.variationName!) : '—',
-                      textAlign: TextAlign.center,
-                      style: AppFonts.ui(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.muted),
-                    ),
-                  ),
-                ],
-              ),
-            )),
+        ...session.sets.map((s) => _HistorySetRow(vm: widget.vm, set: s)),
       ],
     );
   }
@@ -483,6 +448,153 @@ class _SupersetPill extends StatelessWidget {
                 fontSize: 10,
                 fontWeight: isActive ? FontWeight.w700 : FontWeight.w400,
                 color: isActive ? AppColors.accent : AppColors.muted)),
+      ),
+    );
+  }
+}
+
+/// One row in the history viewer's set list. Weight/reps are editable, but
+/// gated behind a one-time-per-viewing "you're editing past data" confirm —
+/// fields render read-only (`TextField.readOnly`) until `vm.historyEditConfirmed`
+/// flips true, at which point a rebuild (triggered by the ancestor
+/// `ListenableBuilder` in `ExerciseCard.build`) makes them genuinely
+/// editable. Duration-only sets and variation stay display-only — editing
+/// those wasn't requested.
+class _HistorySetRow extends StatefulWidget {
+  const _HistorySetRow({required this.vm, required this.set});
+
+  final SessionViewModel vm;
+  final PastSetRow set;
+
+  @override
+  State<_HistorySetRow> createState() => _HistorySetRowState();
+}
+
+class _HistorySetRowState extends State<_HistorySetRow> {
+  late final TextEditingController _weightCtrl;
+  late final TextEditingController _repsCtrl;
+  final _weightFocus = FocusNode();
+  final _repsFocus = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    final s = widget.set;
+    _weightCtrl = TextEditingController(text: s.weight != null ? _fmtNum(s.weight!) : '');
+    _repsCtrl =
+        TextEditingController(text: s.reps.isNotEmpty ? _fmtNum(s.reps.first) : '');
+    _weightFocus.addListener(() {
+      if (!_weightFocus.hasFocus) _commit();
+    });
+    _repsFocus.addListener(() {
+      if (!_repsFocus.hasFocus) _commit();
+    });
+  }
+
+  @override
+  void dispose() {
+    _weightCtrl.dispose();
+    _repsCtrl.dispose();
+    _weightFocus.dispose();
+    _repsFocus.dispose();
+    super.dispose();
+  }
+
+  static String _fmtNum(num n) => n == n.roundToDouble() ? n.toInt().toString() : n.toString();
+
+  Future<void> _commit() async {
+    final weightText = _weightCtrl.text.trim();
+    final repsText = _repsCtrl.text.trim();
+    final weight = weightText.isEmpty ? null : double.tryParse(weightText);
+    final reps = repsText.isEmpty ? null : num.tryParse(repsText);
+    final s = widget.set;
+    final currentWeight = s.weight;
+    final currentReps = s.reps.isNotEmpty ? s.reps.first : null;
+    if (weight == currentWeight && reps == currentReps) return;
+    await widget.vm.updateHistoricalSetField(
+      s,
+      weight: weight,
+      clearWeight: weight == null,
+      reps: reps != null ? [reps] : null,
+    );
+  }
+
+  Future<void> _requestEdit(FocusNode focus) async {
+    if (widget.vm.historyEditConfirmed) {
+      focus.requestFocus();
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: Text('Edit past data?', style: TextStyle(color: AppColors.primary)),
+        content: Text(
+          "You're about to update past data — this changes your historical record for this workout, including any PRs based on it.",
+          style: TextStyle(color: AppColors.muted),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: Text('Cancel', style: TextStyle(color: AppColors.muted))),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text('Continue', style: TextStyle(color: AppColors.history, fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    widget.vm.confirmHistoryEdit();
+    focus.requestFocus();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = widget.set;
+    final confirmed = widget.vm.historyEditConfirmed;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppColors.historyBg,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(color: AppColors.history.withValues(alpha: 0.2)),
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+              width: 26,
+              child: Text('${s.setNumber}',
+                  textAlign: TextAlign.center,
+                  style: AppFonts.mono(fontSize: 11, color: AppColors.muted))),
+          Expanded(child: _editableCell(_weightCtrl, _weightFocus, confirmed)),
+          Expanded(child: _editableCell(_repsCtrl, _repsFocus, confirmed)),
+          Expanded(
+            child: Text(
+              s.variationName != null ? toProperCase(s.variationName!) : '—',
+              textAlign: TextAlign.center,
+              style: AppFonts.ui(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.muted),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _editableCell(TextEditingController ctrl, FocusNode focus, bool confirmed) {
+    return TextField(
+      controller: ctrl,
+      focusNode: focus,
+      readOnly: !confirmed,
+      textAlign: TextAlign.center,
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      style: AppFonts.mono(fontSize: 13, color: AppColors.history),
+      onTap: () => _requestEdit(focus),
+      decoration: const InputDecoration(
+        isDense: true,
+        border: InputBorder.none,
+        contentPadding: EdgeInsets.zero,
       ),
     );
   }

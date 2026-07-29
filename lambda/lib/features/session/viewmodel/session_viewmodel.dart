@@ -1,17 +1,19 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/utils/workout_format.dart';
 import '../../../data/models/custom_variation.dart';
 import '../../../data/models/exercise_detail.dart';
+import '../../../data/models/lesson.dart';
 import '../../../data/models/planned_set.dart';
 import '../../../data/models/program_progress.dart';
 import '../../../data/models/workout_set.dart';
 import '../../../data/repositories/exercise_repository.dart';
+import '../../../data/repositories/lesson_repository.dart';
 import '../../../data/repositories/program_repository.dart';
 import '../../../data/repositories/program_run_repository.dart';
+import '../../../data/repositories/rest_period_repository.dart';
 import '../../../data/repositories/workout_repository.dart';
 import '../../../shared/widgets/slide_pages.dart';
 import '../model/session_local_state.dart';
@@ -25,10 +27,14 @@ class SessionViewModel extends ChangeNotifier {
     ExerciseRepository? exerciseRepo,
     ProgramRepository? programRepo,
     ProgramRunRepository? programRunRepo,
+    LessonRepository? lessonRepo,
+    RestPeriodRepository? restPeriodRepo,
   })  : _workoutRepo = workoutRepo ?? WorkoutRepository(),
         _exerciseRepo = exerciseRepo ?? ExerciseRepository(),
         _programRepo = programRepo ?? ProgramRepository(),
-        _programRunRepo = programRunRepo ?? ProgramRunRepository() {
+        _programRunRepo = programRunRepo ?? ProgramRunRepository(),
+        _lessonRepo = lessonRepo ?? LessonRepository(),
+        _restPeriodRepo = restPeriodRepo ?? RestPeriodRepository() {
     slidePagesController = SlidePagesController();
     _init();
   }
@@ -37,6 +43,8 @@ class SessionViewModel extends ChangeNotifier {
   final ExerciseRepository _exerciseRepo;
   final ProgramRepository _programRepo;
   final ProgramRunRepository _programRunRepo;
+  final LessonRepository _lessonRepo;
+  final RestPeriodRepository _restPeriodRepo;
   late final SlidePagesController slidePagesController;
 
   String get _userId => Supabase.instance.client.auth.currentUser!.id;
@@ -59,6 +67,7 @@ class SessionViewModel extends ChangeNotifier {
 
   // ── End workout ────────────────────────────────────────────────────────────
   String endNotes = '';
+  int? endFeeling;
   bool endLoading = false;
 
   // ── Error ──────────────────────────────────────────────────────────────────
@@ -82,9 +91,8 @@ class SessionViewModel extends ChangeNotifier {
   Map<String, List<int>> draftSlotsByExercise = {};
   int _nextDraftId = 1;
 
-  // ── Lessons (local only — no backing table) ───────────────────────────────
-  Map<String, List<SessionLesson>> lessonsByExercise = {};
-  int _nextLessonId = 1;
+  // ── Lessons (persisted — per-exercise, cross-session) ─────────────────────
+  Map<String, List<Lesson>> lessonsByExercise = {};
 
   // ── History / PR baseline (read-only reuse of past-sets timeline) ────────
   List<PastSetRow> _pastSets = [];
@@ -92,12 +100,21 @@ class SessionViewModel extends ChangeNotifier {
   Map<String, List<ExerciseHistorySession>> historyByExercise = {};
   Map<String, ({num weight, num reps})?> prevBestByExercise = {};
 
+  // ── Historical set editing ─────────────────────────────────────────────────
+  bool historyEditConfirmed = false;
+
+  void confirmHistoryEdit() {
+    historyEditConfirmed = true;
+    notifyListeners();
+  }
+
   // ── Rest timer ─────────────────────────────────────────────────────────────
   int? restRemaining;
   int restTotal = restDefaultSeconds;
   bool restRunning = false;
   Timer? _restTimer;
   List<int> restDurationsThisSession = [];
+  String? _restExerciseId;
 
   // ── Derived ───────────────────────────────────────────────────────────────
   bool get hasActiveWorkout => currentWorkoutId != null;
@@ -232,6 +249,7 @@ class SessionViewModel extends ChangeNotifier {
         slots.add(SessionExerciseSlot(
             id: _nextSlotId++, type: SessionSlotType.single, exerciseIds: [exId], planned: true));
         draftSlotsByExercise.putIfAbsent(exId, () => [_nextDraftId++]);
+        loadLessonsFor(exId);
       }
     }
     for (final s in sets) {
@@ -239,6 +257,7 @@ class SessionViewModel extends ChangeNotifier {
         slots.add(SessionExerciseSlot(
             id: _nextSlotId++, type: SessionSlotType.single, exerciseIds: [s.exerciseId], planned: false));
         draftSlotsByExercise.putIfAbsent(s.exerciseId, () => [_nextDraftId++]);
+        loadLessonsFor(s.exerciseId);
       }
     }
     exerciseSlots = slots;
@@ -262,12 +281,28 @@ class SessionViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  void addExerciseSlot(String exerciseId) {
+  /// If [exerciseId] is already active in some tab (plain or inside a
+  /// superset), adding it again would create a confusing duplicate slot with
+  /// its own separate set history — instead this just navigates to the
+  /// existing tab (and the right superset sub-index) and reports that it did
+  /// so, so the caller doesn't also treat it as "added."
+  bool addExerciseSlot(String exerciseId) {
+    final existingIndex = exerciseSlots.indexWhere((s) => s.exerciseIds.contains(exerciseId));
+    if (existingIndex != -1) {
+      activeSlotIndex = existingIndex;
+      final slot = exerciseSlots[existingIndex];
+      final subIndex = slot.exerciseIds.indexOf(exerciseId);
+      if (subIndex != -1) slot.activeIndex = subIndex;
+      notifyListeners();
+      return false;
+    }
     exerciseSlots.add(SessionExerciseSlot(
         id: _nextSlotId++, type: SessionSlotType.single, exerciseIds: [exerciseId]));
     draftSlotsByExercise.putIfAbsent(exerciseId, () => [_nextDraftId++]);
+    loadLessonsFor(exerciseId);
     activeSlotIndex = exerciseSlots.length - 1;
     notifyListeners();
+    return true;
   }
 
   void addSupersetSlot(List<String> exerciseIds) {
@@ -275,6 +310,7 @@ class SessionViewModel extends ChangeNotifier {
         id: _nextSlotId++, type: SessionSlotType.superset, exerciseIds: exerciseIds));
     for (final id in exerciseIds) {
       draftSlotsByExercise.putIfAbsent(id, () => [_nextDraftId++]);
+      loadLessonsFor(id);
     }
     activeSlotIndex = exerciseSlots.length - 1;
     notifyListeners();
@@ -374,6 +410,30 @@ class SessionViewModel extends ChangeNotifier {
     }
   }
 
+  /// Edits a set from a *completed* workout — the history viewer's editable
+  /// grid. Reuses the same `updateSet` write as the live session (it isn't
+  /// gated by workout status), but reloads past-sets/PR-baseline state
+  /// instead of the live `sets` list, since the edited row lives there.
+  Future<void> updateHistoricalSetField(
+    PastSetRow set, {
+    double? weight,
+    bool clearWeight = false,
+    List<num>? reps,
+  }) async {
+    try {
+      await _workoutRepo.updateSet(
+        set.setId,
+        weight: weight,
+        clearWeight: clearWeight,
+        reps: reps,
+      );
+      await _loadPastSets();
+    } catch (e) {
+      error = e.toString();
+      notifyListeners();
+    }
+  }
+
   Future<void> deleteSetById(String setId) async {
     await _workoutRepo.deleteSet(setId);
     await _loadSets();
@@ -405,35 +465,56 @@ class SessionViewModel extends ChangeNotifier {
     }
   }
 
-  // ── Lessons (local only) ──────────────────────────────────────────────────
+  // ── Lessons (persisted — per-exercise, cross-session) ─────────────────────
 
-  List<SessionLesson> lessonsFor(String exerciseId) =>
+  List<Lesson> lessonsFor(String exerciseId) =>
       lessonsByExercise[exerciseId] ?? const [];
 
-  void addLesson(String exerciseId, String text) {
-    if (text.trim().isEmpty) return;
-    final lesson = SessionLesson(
-      id: '${_nextLessonId++}',
-      exerciseId: exerciseId,
-      text: text.trim(),
-      date: DateFormat('MMM d').format(DateTime.now()),
-    );
-    lessonsByExercise.putIfAbsent(exerciseId, () => []).add(lesson);
-    notifyListeners();
-  }
-
-  void toggleLessonPin(String exerciseId, String lessonId) {
-    final lesson =
-        lessonsByExercise[exerciseId]?.firstWhereOrNull((l) => l.id == lessonId);
-    if (lesson != null) {
-      lesson.pinned = !lesson.pinned;
+  /// Loads (or refreshes) the persisted lessons for one exercise — called
+  /// whenever an exercise slot is created so the card's lesson preview/count
+  /// is populated without requiring the Lessons modal to be opened first.
+  Future<void> loadLessonsFor(String exerciseId) async {
+    try {
+      lessonsByExercise[exerciseId] = await _lessonRepo.fetchLessons(_userId, exerciseId);
+      notifyListeners();
+    } catch (e) {
+      error = e.toString();
       notifyListeners();
     }
   }
 
-  void deleteLesson(String exerciseId, String lessonId) {
-    lessonsByExercise[exerciseId]?.removeWhere((l) => l.id == lessonId);
-    notifyListeners();
+  Future<void> addLesson(String exerciseId, String text) async {
+    if (text.trim().isEmpty) return;
+    try {
+      await _lessonRepo.createLesson(_userId, exerciseId, text.trim());
+      await loadLessonsFor(exerciseId);
+    } catch (e) {
+      error = e.toString();
+      notifyListeners();
+    }
+  }
+
+  Future<void> toggleLessonPin(String exerciseId, String lessonId) async {
+    final lesson =
+        lessonsByExercise[exerciseId]?.firstWhereOrNull((l) => l.lessonId == lessonId);
+    if (lesson == null) return;
+    try {
+      await _lessonRepo.toggleLessonPin(lessonId, !lesson.pinned);
+      await loadLessonsFor(exerciseId);
+    } catch (e) {
+      error = e.toString();
+      notifyListeners();
+    }
+  }
+
+  Future<void> deleteLesson(String exerciseId, String lessonId) async {
+    try {
+      await _lessonRepo.deleteLesson(lessonId);
+      await loadLessonsFor(exerciseId);
+    } catch (e) {
+      error = e.toString();
+      notifyListeners();
+    }
   }
 
   // ── History / PR baseline ─────────────────────────────────────────────────
@@ -449,6 +530,10 @@ class SessionViewModel extends ChangeNotifier {
       .length;
 
   // ── Rest timer ─────────────────────────────────────────────────────────────
+  // Every rest period is logged to fact_rest as its own event
+  // (planned vs. actual seconds) once it ends — whether it completes
+  // naturally, is stopped early, or is discarded via Restart. Pausing alone
+  // never logs, since the rest is still in progress.
 
   void startRest(int seconds) {
     if (seconds <= 0) return;
@@ -456,6 +541,7 @@ class SessionViewModel extends ChangeNotifier {
     restTotal = seconds;
     restRemaining = seconds;
     restRunning = true;
+    _restExerciseId = activeSlot?.activeExerciseId;
     _tickRest();
     notifyListeners();
   }
@@ -473,24 +559,67 @@ class SessionViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  void restartRest() => startRest(restTotal);
+  Future<void> restartRest() async {
+    await _logRestIfInProgress();
+    startRest(restTotal);
+  }
 
-  void endRest() {
+  /// Explicit "End" — stops the timer and, if it was cut short, logs the
+  /// partial rest. A naturally-completed rest is already logged by
+  /// `_tickRest`, so `_logRestIfInProgress` is a no-op in that case.
+  Future<void> endRest() async {
+    await _logRestIfInProgress();
+    _stopRestTimer();
+    notifyListeners();
+  }
+
+  /// Cancels the ticking timer and clears rest state without logging —
+  /// used when the whole workout is being torn down (`cancelWorkout`), where
+  /// the workout row (and any of its rest_period rows) is about to be
+  /// deleted, so logging here would just create instantly-orphaned data.
+  void _stopRestTimer() {
     _restTimer?.cancel();
     restRemaining = null;
     restRunning = false;
-    notifyListeners();
+    _restExerciseId = null;
+  }
+
+  Future<void> _logRestIfInProgress() async {
+    final remaining = restRemaining;
+    final workoutId = currentWorkoutId;
+    if (workoutId == null || remaining == null || remaining <= 0) return;
+    try {
+      await _restPeriodRepo.logRestPeriod(
+        _userId,
+        workoutId,
+        exerciseId: _restExerciseId,
+        plannedSeconds: restTotal,
+        actualSeconds: restTotal - remaining,
+      );
+    } catch (_) {}
   }
 
   void _tickRest() {
     _restTimer?.cancel();
-    _restTimer = Timer.periodic(const Duration(seconds: 1), (t) {
+    _restTimer = Timer.periodic(const Duration(seconds: 1), (t) async {
       final r = restRemaining;
       if (r == null || r <= 1) {
         t.cancel();
         restRunning = false;
         restRemaining = 0;
         restDurationsThisSession.add(restTotal);
+        final workoutId = currentWorkoutId;
+        if (workoutId != null) {
+          try {
+            await _restPeriodRepo.logRestPeriod(
+              _userId,
+              workoutId,
+              exerciseId: _restExerciseId,
+              plannedSeconds: restTotal,
+              actualSeconds: restTotal,
+            );
+          } catch (_) {}
+        }
       } else {
         restRemaining = r - 1;
       }
@@ -511,6 +640,7 @@ class SessionViewModel extends ChangeNotifier {
         programId: programProgress?.program.programId,
         programRunId: programProgress?.run.programRunId,
         plannedWorkoutId: programProgress?.nextPlannedWorkout?.plannedWorkoutId,
+        preFeeling: sessionFeeling,
       );
       currentWorkoutId = id;
       workoutStartedAt = DateTime.now();
@@ -531,9 +661,14 @@ class SessionViewModel extends ChangeNotifier {
     endLoading = true;
     notifyListeners();
     try {
+      // A rest still in progress when the workout ends is a real, meaningful
+      // partial rest (unlike cancelWorkout, this workout isn't being
+      // deleted) — log it before resetting state.
+      await _logRestIfInProgress();
       await _workoutRepo.endWorkout(
           currentWorkoutId!,
-          postNotes: endNotes.trim().isEmpty ? null : endNotes.trim());
+          postNotes: endNotes.trim().isEmpty ? null : endNotes.trim(),
+          feeling: endFeeling);
       _resetActiveWorkoutState();
       slidePagesController.slideOut();
     } catch (e) {
@@ -557,12 +692,15 @@ class SessionViewModel extends ChangeNotifier {
     workoutStartedAt = null;
     sets = [];
     endNotes = '';
+    endFeeling = null;
     exerciseSlots = [];
     activeSlotIndex = 0;
     draftSlotsByExercise = {};
-    lessonsByExercise = {};
+    // lessonsByExercise is intentionally NOT cleared — lessons are durable,
+    // cross-session data now, not reset per workout.
     restDurationsThisSession = [];
-    endRest();
+    historyEditConfirmed = false;
+    _stopRestTimer();
   }
 
   // ── New exercise / variation ──────────────────────────────────────────────
@@ -647,6 +785,11 @@ class SessionViewModel extends ChangeNotifier {
 
   void setSessionFeeling(int? n) {
     sessionFeeling = sessionFeeling == n ? null : n;
+    notifyListeners();
+  }
+
+  void setEndFeeling(int? n) {
+    endFeeling = endFeeling == n ? null : n;
     notifyListeners();
   }
 

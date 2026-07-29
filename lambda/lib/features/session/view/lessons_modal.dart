@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
 import '../../../core/styles/app_radius.dart';
 import '../../../core/styles/app_spacing.dart';
+import '../../../data/models/lesson.dart';
 import '../../../shared/widgets/glass_button.dart';
 import '../../../shared/widgets/slide_up_modal.dart';
-import '../model/session_local_state.dart';
 import '../viewmodel/session_viewmodel.dart';
 
 void showLessonsModal(BuildContext context, {required SessionViewModel vm, required String exerciseId, required String exerciseName}) {
@@ -31,6 +32,12 @@ class _LessonsModalContent extends StatefulWidget {
 class _LessonsModalContentState extends State<_LessonsModalContent> {
   bool _adding = false;
   final _draftCtrl = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    widget.vm.loadLessonsFor(widget.exerciseId);
+  }
 
   @override
   void dispose() {
@@ -136,8 +143,9 @@ class _LessonsModalContentState extends State<_LessonsModalContent> {
                             return _LessonRow(
                               lesson: lesson,
                               onTogglePin: () =>
-                                  widget.vm.toggleLessonPin(widget.exerciseId, lesson.id),
-                              onDelete: () => widget.vm.deleteLesson(widget.exerciseId, lesson.id),
+                                  widget.vm.toggleLessonPin(widget.exerciseId, lesson.lessonId),
+                              onDelete: () =>
+                                  widget.vm.deleteLesson(widget.exerciseId, lesson.lessonId),
                             );
                           },
                         ),
@@ -154,7 +162,7 @@ class _LessonsModalContentState extends State<_LessonsModalContent> {
 class _LessonRow extends StatelessWidget {
   const _LessonRow({required this.lesson, required this.onTogglePin, required this.onDelete});
 
-  final SessionLesson lesson;
+  final Lesson lesson;
   final VoidCallback onTogglePin;
   final VoidCallback onDelete;
 
@@ -194,7 +202,7 @@ class _LessonRow extends StatelessWidget {
               children: [
                 Text(lesson.text, style: AppFonts.ui(fontSize: 13, color: AppColors.primary)),
                 const SizedBox(height: 4),
-                Text(lesson.date,
+                Text(DateFormat('MMM d').format(lesson.createdDate),
                     style: AppFonts.mono(
                         fontSize: 9,
                         color: lesson.pinned ? AppColors.accent : AppColors.muted)),

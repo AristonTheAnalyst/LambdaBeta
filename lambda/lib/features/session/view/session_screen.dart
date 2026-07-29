@@ -395,49 +395,83 @@ class _EndWorkoutModal extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.xl),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text('End Workout',
-                style: TextStyle(fontSize: AppTextStyles.lg, fontWeight: FontWeight.w700, color: AppColors.primary)),
-            const SizedBox(height: AppSpacing.md),
-            LambdaInput(
-              controller: notesCtrl,
-              label: 'Post-workout notes (optional)',
-              placeholder: 'Notes…',
-              onChanged: (v) => vm.endNotes = v,
-            ),
-            const SizedBox(height: AppSpacing.lg),
-            Row(
-              children: [
-                Expanded(
-                  child: GlassButton(
-                    label: 'Cancel',
-                    color: AppColors.danger,
-                    compact: true,
-                    onPressed: () => Navigator.of(context, rootNavigator: true).pop(),
+    return ListenableBuilder(
+      listenable: vm,
+      builder: (context, _) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.xl),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('End Workout',
+                  style: TextStyle(fontSize: AppTextStyles.lg, fontWeight: FontWeight.w700, color: AppColors.primary)),
+              const SizedBox(height: AppSpacing.md),
+              Text('How did it feel?',
+                  style: TextStyle(fontSize: AppTextStyles.sm, fontWeight: FontWeight.w600, color: AppColors.primary)),
+              const SizedBox(height: AppSpacing.sm),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.start,
+                children: List.generate(5, (i) {
+                  final n = i + 1;
+                  final selected = vm.endFeeling == n;
+                  return GestureDetector(
+                    onTap: () => vm.setEndFeeling(n),
+                    child: Container(
+                      width: 52,
+                      height: 52,
+                      margin: const EdgeInsets.only(right: AppSpacing.sm),
+                      decoration: BoxDecoration(
+                        color: selected ? AppColors.accent : AppColors.surface,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: selected ? AppColors.accent : AppColors.border),
+                      ),
+                      child: Center(
+                        child: Text('$n',
+                            style: TextStyle(
+                                fontSize: AppTextStyles.lg,
+                                fontWeight: FontWeight.w700,
+                                color: selected ? AppColors.accentText : AppColors.primary)),
+                      ),
+                    ),
+                  );
+                }),
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              LambdaInput(
+                controller: notesCtrl,
+                label: 'Post-workout notes (optional)',
+                placeholder: 'Notes…',
+                onChanged: (v) => vm.endNotes = v,
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              Row(
+                children: [
+                  Expanded(
+                    child: GlassButton(
+                      label: 'Cancel',
+                      color: AppColors.danger,
+                      compact: true,
+                      onPressed: () => Navigator.of(context, rootNavigator: true).pop(),
+                    ),
                   ),
-                ),
-                const SizedBox(width: AppSpacing.sm),
-                Expanded(
-                  child: GlassButton(
-                    label: 'End Workout',
-                    compact: true,
-                    loading: vm.endLoading,
-                    disabled: vm.endLoading,
-                    onPressed: () async {
-                      Navigator.of(context, rootNavigator: true).pop();
-                      await vm.endWorkout();
-                    },
+                  const SizedBox(width: AppSpacing.sm),
+                  Expanded(
+                    child: GlassButton(
+                      label: 'End Workout',
+                      compact: true,
+                      loading: vm.endLoading,
+                      disabled: vm.endLoading,
+                      onPressed: () async {
+                        Navigator.of(context, rootNavigator: true).pop();
+                        await vm.endWorkout();
+                      },
+                    ),
                   ),
-                ),
-              ],
-            ),
-          ],
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );

@@ -14,14 +14,15 @@ class WorkoutRepository {
     String? programId,
     String? programRunId,
     String? plannedWorkoutId,
+    int? preFeeling,
   }) async {
     final workoutId = _uuid.v4();
     await ps.db.execute(
       '''
       INSERT INTO fact_workout
         (id, user_workout_id, user_id, user_pre_workout_notes, user_workout_created_date,
-         is_active, program_id, program_run_id, planned_workout_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         is_active, program_id, program_run_id, planned_workout_id, pre_workout_feeling)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ''',
       [
         workoutId,
@@ -37,6 +38,7 @@ class WorkoutRepository {
         programId,
         programRunId,
         plannedWorkoutId,
+        preFeeling,
       ],
     );
     return workoutId;
@@ -52,6 +54,10 @@ class WorkoutRepository {
   Future<void> cancelWorkout(String workoutId) async {
     await ps.db.execute(
       'DELETE FROM fact_workout_set WHERE user_workout_id = ?',
+      [workoutId],
+    );
+    await ps.db.execute(
+      'DELETE FROM fact_rest WHERE user_workout_id = ?',
       [workoutId],
     );
     await ps.db.execute(
