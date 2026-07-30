@@ -427,9 +427,9 @@ class ProgramDetailViewModel {
       state.value = s.copyWith(activeSlotIndex: existingIndex);
       return;
     }
-    final nextOrder = s.workoutPlannedSets.isEmpty
+    final nextOrder = s.workoutExerciseSlots.isEmpty
         ? 1
-        : s.workoutPlannedSets.map((ps) => ps.exerciseSequenceOrder).reduce((a, b) => a > b ? a : b) + 1;
+        : s.workoutExerciseSlots.map((sl) => sl.exerciseSequenceOrder).reduce((a, b) => a > b ? a : b) + 1;
     final slots = [...s.workoutExerciseSlots, PlanExerciseSlot(exerciseSequenceOrder: nextOrder, exerciseId: exerciseId)];
     final drafts = Map<int, List<int>>.from(s.workoutSetDrafts);
     drafts.putIfAbsent(nextOrder, () => []).add(_nextDraftId++);

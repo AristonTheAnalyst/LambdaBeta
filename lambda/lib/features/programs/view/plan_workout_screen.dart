@@ -10,7 +10,6 @@ import '../../../data/models/planned_set.dart';
 import '../../../data/models/planned_workout.dart';
 import '../../../data/models/workout_set.dart' show PastSetRow;
 import '../../../shared/widgets/glass_button.dart';
-import '../../../shared/widgets/page_header.dart';
 import '../../../shared/widgets/segmented_control.dart';
 import '../../../shared/widgets/slide_up_modal.dart';
 import '../../session/model/session_local_state.dart' show ExerciseHistorySession;
@@ -96,30 +95,13 @@ class _PlanWorkoutScreenState extends State<PlanWorkoutScreen> {
           backgroundColor: AppColors.bg,
           body: Column(
             children: [
-              PageHeader(
-                title: toProperCase(workout.name),
-                left: GestureDetector(
-                  onTap: () {
-                    widget.viewModel.commitWorkoutName();
-                    widget.viewModel.commitWorkoutNotes();
-                    widget.viewModel.closeWorkoutEditor();
-                    Navigator.of(context, rootNavigator: true).pop();
-                  },
-                  child: Icon(Icons.arrow_back_ios_new, size: 18, color: AppColors.accent),
-                ),
-                right: GestureDetector(
-                  onTap: _confirmDelete,
-                  child: Icon(Icons.delete_outline, size: 20, color: AppColors.danger),
-                ),
-              ),
+              _editableHeader(),
               Expanded(
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.xxl),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      _nameField(state.workoutNameDraft),
-                      const SizedBox(height: AppSpacing.md),
                       _notesField(state.workoutNotesDraft),
                       if (state.isCalendarMode) ...[
                         const SizedBox(height: AppSpacing.md),
@@ -177,31 +159,61 @@ class _PlanWorkoutScreenState extends State<PlanWorkoutScreen> {
     );
   }
 
-  Widget _nameField(String draft) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('Workout name',
-            style: AppFonts.ui(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.primary)),
-        const SizedBox(height: 6),
-        TextField(
-          controller: _nameCtrl,
-          focusNode: _nameFocus,
-          textCapitalization: TextCapitalization.words,
-          style: AppFonts.ui(fontSize: 15, color: AppColors.primary),
-          decoration: InputDecoration(
-            hintText: 'e.g. Push Day',
-            hintStyle: AppFonts.ui(color: AppColors.muted),
-            filled: true,
-            fillColor: AppColors.surface,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color: AppColors.border),
+  Widget _editableHeader() {
+    final topPadding = MediaQuery.of(context).padding.top;
+    return Container(
+      padding: EdgeInsets.only(top: topPadding),
+      decoration: BoxDecoration(
+        color: AppColors.bg,
+        border: Border(bottom: BorderSide(color: AppColors.border, width: 1)),
+      ),
+      child: SizedBox(
+        height: 52,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Positioned(left: 16,
+              child: GestureDetector(
+                onTap: () {
+                  widget.viewModel.commitWorkoutName();
+                  widget.viewModel.commitWorkoutNotes();
+                  widget.viewModel.closeWorkoutEditor();
+                  Navigator.of(context, rootNavigator: true).pop();
+                },
+                child: Icon(Icons.arrow_back_ios_new, size: 18, color: AppColors.accent),
+              ),
             ),
-          ),
-          onChanged: widget.viewModel.setWorkoutNameDraft,
+            Positioned(
+              left: 88,
+              right: 88,
+              top: 0,
+              bottom: 0,
+              child: Center(
+                child: TextField(
+                  controller: _nameCtrl,
+                  focusNode: _nameFocus,
+                  textAlign: TextAlign.center,
+                  textCapitalization: TextCapitalization.words,
+                  style: AppFonts.ui(fontSize: 17, fontWeight: FontWeight.w600, color: AppColors.primary),
+                  decoration: const InputDecoration(
+                    border: InputBorder.none,
+                    hintText: 'Workout name',
+                    contentPadding: EdgeInsets.zero,
+                    isDense: true,
+                  ),
+                  onChanged: widget.viewModel.setWorkoutNameDraft,
+                ),
+              ),
+            ),
+            Positioned(right: 16,
+              child: GestureDetector(
+                onTap: _confirmDelete,
+                child: Icon(Icons.delete_outline, size: 20, color: AppColors.danger),
+              ),
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 
@@ -209,7 +221,7 @@ class _PlanWorkoutScreenState extends State<PlanWorkoutScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Focus / notes (optional)',
+        Text('Session Notes',
             style: AppFonts.ui(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.primary)),
         const SizedBox(height: 6),
         TextField(
