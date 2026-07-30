@@ -9,6 +9,7 @@ class Workout {
     this.preNotes,
     this.postNotes,
     this.preFeeling,
+    this.programId,
     this.plannedWorkoutId,
     this.plannedWorkoutName,
   });
@@ -20,6 +21,7 @@ class Workout {
   final DateTime createdDate;
   final bool isActive;
   final int? preFeeling;
+  final String? programId;
   final String? plannedWorkoutId;
   final String? plannedWorkoutName;
 
@@ -31,6 +33,7 @@ class Workout {
         createdDate: DateTime.parse(map['user_workout_created_date'] as String),
         isActive: _toBool(map['is_active']),
         preFeeling: map['pre_workout_feeling'] as int?,
+        programId: map['program_id'] as String?,
         plannedWorkoutId: map['planned_workout_id'] as String?,
         plannedWorkoutName: map['planned_workout_name'] as String?,
       );
