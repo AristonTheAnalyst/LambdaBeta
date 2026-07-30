@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
 import '../../../core/styles/app_radius.dart';
@@ -359,6 +360,7 @@ class _PlanSetRowState extends State<PlanSetRow> {
         focusNode: focusNode,
         textAlign: TextAlign.center,
         keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*$'))],
         style: AppFonts.mono(fontSize: 15, fontWeight: FontWeight.w500, color: AppColors.primary),
         decoration: InputDecoration(
           isDense: true,

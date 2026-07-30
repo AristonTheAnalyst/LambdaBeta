@@ -52,9 +52,11 @@ class _PlanWorkoutScreenState extends State<PlanWorkoutScreen> {
   @override
   void initState() {
     super.initState();
-    final s = widget.viewModel.state.value;
-    _nameCtrl = TextEditingController(text: s.workoutNameDraft);
-    _notesCtrl = TextEditingController(text: s.workoutNotesDraft);
+    // Initialize controllers from the workout param directly, NOT from the
+    // viewmodel state (which may be stale from a previous closeWorkoutEditor).
+    // This ensures the TextField shows the correct text from the start.
+    _nameCtrl = TextEditingController(text: widget.workout?.name ?? 'New Workout');
+    _notesCtrl = TextEditingController(text: widget.workout?.notes ?? '');
     _nameFocus.addListener(() {
       if (!_nameFocus.hasFocus) widget.viewModel.commitWorkoutName();
     });
@@ -62,11 +64,16 @@ class _PlanWorkoutScreenState extends State<PlanWorkoutScreen> {
       if (!_notesFocus.hasFocus) widget.viewModel.commitWorkoutNotes();
     });
     widget.viewModel.loadHistoryIfNeeded();
-    if (widget.workout != null) {
-      widget.viewModel.openEditWorkout(widget.workout!);
-    } else {
-      widget.viewModel.createWorkoutAndOpen();
-    }
+    // Defer viewmodel state mutations past the first frame so the
+    // ValueListenableBuilder doesn't try to rebuild during initState.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (widget.workout != null) {
+        widget.viewModel.openEditWorkout(widget.workout!);
+      } else {
+        widget.viewModel.createWorkoutAndOpen();
+      }
+    });
   }
 
   @override
@@ -97,7 +104,7 @@ class _PlanWorkoutScreenState extends State<PlanWorkoutScreen> {
           backgroundColor: AppColors.bg,
           body: Column(
             children: [
-              _editableHeader(),
+              _editableHeader(state.workoutUnsavedChanges),
               Expanded(
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.xxl),
@@ -161,7 +168,7 @@ class _PlanWorkoutScreenState extends State<PlanWorkoutScreen> {
     );
   }
 
-  Widget _editableHeader() {
+  Widget _editableHeader(bool unsaved) {
     final topPadding = MediaQuery.of(context).padding.top;
     return Container(
       padding: EdgeInsets.only(top: topPadding),
@@ -207,10 +214,30 @@ class _PlanWorkoutScreenState extends State<PlanWorkoutScreen> {
                 ),
               ),
             ),
-            Positioned(right: 16,
-              child: GestureDetector(
-                onTap: _confirmDelete,
-                child: Icon(Icons.delete_outline, size: 20, color: AppColors.danger),
+            Positioned(right: 6,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (unsaved)
+                    GestureDetector(
+                      onTap: () => widget.viewModel.saveWorkout(),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: AppColors.accentBg,
+                          borderRadius: BorderRadius.circular(AppRadius.md),
+                          border: Border.all(color: AppColors.accent),
+                        ),
+                        child: Text('Save',
+                            style: AppFonts.ui(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.accent)),
+                      ),
+                    ),
+                  const SizedBox(width: 10),
+                  GestureDetector(
+                    onTap: _confirmDelete,
+                    child: Icon(Icons.delete_outline, size: 20, color: AppColors.danger),
+                  ),
+                ],
               ),
             ),
           ],

@@ -51,6 +51,7 @@ class ProgramDetailState {
     this.activeSlotIndex = 0,
     this.workoutSetDrafts = const {},
     this.workoutSetsLoading = false,
+    this.workoutUnsavedChanges = false,
     // Catalog / create-new (mirrors SessionViewModel)
     this.allVariations = const [],
     this.variationExerciseCounts = const {},
@@ -86,6 +87,7 @@ class ProgramDetailState {
   final int activeSlotIndex;
   final Map<int, List<int>> workoutSetDrafts;
   final bool workoutSetsLoading;
+  final bool workoutUnsavedChanges;
 
   final List<CustomVariation> allVariations;
   final Map<String, int> variationExerciseCounts;
@@ -131,6 +133,7 @@ class ProgramDetailState {
     int? activeSlotIndex,
     Map<int, List<int>>? workoutSetDrafts,
     bool? workoutSetsLoading,
+    bool? workoutUnsavedChanges,
     List<CustomVariation>? allVariations,
     Map<String, int>? variationExerciseCounts,
     bool? newExCreating,
@@ -175,6 +178,9 @@ class ProgramDetailState {
             : (workoutSetDrafts ?? this.workoutSetDrafts),
         workoutSetsLoading:
             clearEditingWorkout ? false : (workoutSetsLoading ?? this.workoutSetsLoading),
+        workoutUnsavedChanges: clearEditingWorkout
+            ? false
+            : (workoutUnsavedChanges ?? this.workoutUnsavedChanges),
         allVariations: allVariations ?? this.allVariations,
         variationExerciseCounts: variationExerciseCounts ?? this.variationExerciseCounts,
         newExCreating: newExCreating ?? this.newExCreating,
@@ -359,6 +365,20 @@ class ProgramDetailViewModel {
     }
   }
 
+  void markWorkoutDirty() =>
+      state.value = state.value.copyWith(workoutUnsavedChanges: true);
+
+  Future<void> saveWorkout() async {
+    final s = state.value;
+    if (!s.workoutUnsavedChanges) return;
+    await Future.wait([
+      commitWorkoutName(),
+      commitWorkoutNotes(),
+    ]);
+    await _repo.fetchPlannedWorkouts(s.program?.programId ?? '');
+    state.value = state.value.copyWith(workoutUnsavedChanges: false);
+  }
+
   void closeWorkoutEditor() =>
       state.value = state.value.copyWith(clearEditingWorkout: true);
 
@@ -381,9 +401,9 @@ class ProgramDetailViewModel {
   // ── Workout name/notes/day-of-week — auto-commit on blur/change ─────────
 
   void setWorkoutNameDraft(String v) =>
-      state.value = state.value.copyWith(workoutNameDraft: v);
+      state.value = state.value.copyWith(workoutNameDraft: v, workoutUnsavedChanges: true);
   void setWorkoutNotesDraft(String v) =>
-      state.value = state.value.copyWith(workoutNotesDraft: v);
+      state.value = state.value.copyWith(workoutNotesDraft: v, workoutUnsavedChanges: true);
 
   Future<void> commitWorkoutName() async {
     final w = state.value.editingWorkout;
@@ -437,6 +457,7 @@ class ProgramDetailViewModel {
       workoutExerciseSlots: slots,
       workoutSetDrafts: drafts,
       activeSlotIndex: slots.length - 1,
+      workoutUnsavedChanges: true,
     );
     loadLessonsFor(exerciseId);
   }
@@ -448,13 +469,13 @@ class ProgramDetailViewModel {
   void addDraftPlannedSet(int exerciseSequenceOrder) {
     final drafts = Map<int, List<int>>.from(state.value.workoutSetDrafts);
     drafts.putIfAbsent(exerciseSequenceOrder, () => []).add(_nextDraftId++);
-    state.value = state.value.copyWith(workoutSetDrafts: drafts);
+    state.value = state.value.copyWith(workoutSetDrafts: drafts, workoutUnsavedChanges: true);
   }
 
   void removeDraftPlannedSet(int exerciseSequenceOrder, int draftId) {
     final drafts = Map<int, List<int>>.from(state.value.workoutSetDrafts);
     drafts[exerciseSequenceOrder]?.remove(draftId);
-    state.value = state.value.copyWith(workoutSetDrafts: drafts);
+    state.value = state.value.copyWith(workoutSetDrafts: drafts, workoutUnsavedChanges: true);
   }
 
   Future<bool> quickCreatePlannedSet({
@@ -521,7 +542,7 @@ class ProgramDetailViewModel {
         clearTargetNotes: clearNotes,
       );
       final sets = await _repo.fetchPlannedSets(workout.plannedWorkoutId);
-      state.value = state.value.copyWith(workoutPlannedSets: sets);
+      state.value = state.value.copyWith(workoutPlannedSets: sets, workoutUnsavedChanges: true);
     } catch (e) {
       state.value = state.value.copyWith(error: e.toString());
     }
@@ -546,7 +567,7 @@ class ProgramDetailViewModel {
         targetNotes: ps.targetNotes,
       );
       final sets = await _repo.fetchPlannedSets(workout.plannedWorkoutId);
-      state.value = state.value.copyWith(workoutPlannedSets: sets);
+      state.value = state.value.copyWith(workoutPlannedSets: sets, workoutUnsavedChanges: true);
     } catch (e) {
       state.value = state.value.copyWith(error: e.toString());
     }
@@ -557,7 +578,7 @@ class ProgramDetailViewModel {
     if (workout == null) return;
     await _repo.archivePlannedSet(plannedSetId);
     final sets = await _repo.fetchPlannedSets(workout.plannedWorkoutId);
-    state.value = state.value.copyWith(workoutPlannedSets: sets);
+    state.value = state.value.copyWith(workoutPlannedSets: sets, workoutUnsavedChanges: true);
   }
 
   // ── New exercise / variation (mirrors SessionViewModel) ───────────────────

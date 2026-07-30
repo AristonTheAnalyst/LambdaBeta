@@ -249,7 +249,11 @@ class _DropdownSheetContentState<T> extends State<_DropdownSheetContent<T>> {
           isSelected: opt.value == widget.value,
           onTap: () {
             widget.onClose();
-            widget.onSelect(opt.value);
+            // Defer selection past the frame so the picker dismiss
+            // completes before any parent rebuild from the selection.
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              widget.onSelect(opt.value);
+            });
           },
         );
       },
@@ -297,7 +301,10 @@ class _DropdownSheetContentState<T> extends State<_DropdownSheetContent<T>> {
           isSelected: false,
           onTap: () {
             widget.onClose();
-            widget.onCreateNew!(_query);
+            final query = _query;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              widget.onCreateNew!(query);
+            });
           },
         ),
       widget.fillHeight
