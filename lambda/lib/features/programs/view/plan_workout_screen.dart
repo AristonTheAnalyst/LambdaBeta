@@ -102,6 +102,7 @@ class _PlanWorkoutScreenState extends State<PlanWorkoutScreen> {
                   onTap: () {
                     widget.viewModel.commitWorkoutName();
                     widget.viewModel.commitWorkoutNotes();
+                    widget.viewModel.closeWorkoutEditor();
                     Navigator.of(context, rootNavigator: true).pop();
                   },
                   child: Icon(Icons.arrow_back_ios_new, size: 18, color: AppColors.accent),

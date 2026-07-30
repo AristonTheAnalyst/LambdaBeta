@@ -70,7 +70,7 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> {
   }
 
   void _openCreateWorkout() {
-    Navigator.of(context).push(
+    Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(
         builder: (_) => PlanWorkoutScreen(viewModel: _vm),
       ),
@@ -78,7 +78,7 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> {
   }
 
   void _openEditWorkout(PlannedWorkout w) {
-    Navigator.of(context).push(
+    Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(
         builder: (_) => PlanWorkoutScreen(viewModel: _vm, workout: w),
       ),
