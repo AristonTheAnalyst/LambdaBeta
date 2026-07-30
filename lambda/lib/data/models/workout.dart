@@ -9,6 +9,8 @@ class Workout {
     this.preNotes,
     this.postNotes,
     this.preFeeling,
+    this.plannedWorkoutId,
+    this.plannedWorkoutName,
   });
 
   final String workoutId;
@@ -18,6 +20,8 @@ class Workout {
   final DateTime createdDate;
   final bool isActive;
   final int? preFeeling;
+  final String? plannedWorkoutId;
+  final String? plannedWorkoutName;
 
   factory Workout.fromMap(Map<String, dynamic> map) => Workout(
         workoutId: map['user_workout_id'] as String,
@@ -27,6 +31,8 @@ class Workout {
         createdDate: DateTime.parse(map['user_workout_created_date'] as String),
         isActive: _toBool(map['is_active']),
         preFeeling: map['pre_workout_feeling'] as int?,
+        plannedWorkoutId: map['planned_workout_id'] as String?,
+        plannedWorkoutName: map['planned_workout_name'] as String?,
       );
 
   static bool _toBool(dynamic v) {

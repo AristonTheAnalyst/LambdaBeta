@@ -632,6 +632,24 @@ class _WorkoutsPanel extends StatelessWidget {
                           fontWeight: FontWeight.w700,
                           color: AppColors.accent),
                     ),
+                    if (w.workout.plannedWorkoutName != null) ...[
+                      const SizedBox(height: AppSpacing.xs),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: AppColors.successBg,
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(color: AppColors.success.withValues(alpha: 0.35)),
+                        ),
+                        child: Text(
+                          w.workout.plannedWorkoutName!,
+                          style: AppFonts.ui(
+                              fontSize: AppTextStyles.xs,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.success),
+                        ),
+                      ),
+                    ],
                     if (w.workout.preNotes?.isNotEmpty == true) ...[
                       const SizedBox(height: AppSpacing.xs),
                       Text(

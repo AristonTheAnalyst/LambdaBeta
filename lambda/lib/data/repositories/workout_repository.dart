@@ -211,7 +211,13 @@ class WorkoutRepository {
 
   Future<List<WorkoutWithSets>> loadWorkoutsWithSets(String userId) async {
     final workoutRows = await ps.db.getAll(
-      'SELECT * FROM fact_workout WHERE user_id = ? AND is_active = 0 ORDER BY user_workout_created_date DESC',
+      '''
+      SELECT fw.*, pp.planned_workout_name
+      FROM fact_workout fw
+      LEFT JOIN dim_planned_workout pp ON pp.planned_workout_id = fw.planned_workout_id
+      WHERE fw.user_id = ? AND fw.is_active = 0
+      ORDER BY fw.user_workout_created_date DESC
+      ''',
       [userId],
     );
     if (workoutRows.isEmpty) return [];
