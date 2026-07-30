@@ -9,9 +9,11 @@ import '../../../data/models/lesson.dart';
 import '../../../data/models/planned_set.dart';
 import '../../../data/models/planned_workout.dart';
 import '../../../data/models/workout_set.dart' show PastSetRow;
+import '../../../shared/widgets/exercise_tab_chip.dart';
 import '../../../shared/widgets/glass_button.dart';
 import '../../../shared/widgets/segmented_control.dart';
 import '../../../shared/widgets/slide_up_modal.dart';
+import '../../../shared/widgets/stats_row.dart';
 import '../../session/model/session_local_state.dart' show ExerciseHistorySession;
 import '../../session/view/lessons_modal.dart';
 import '../viewmodel/program_detail_viewmodel.dart';
@@ -292,39 +294,10 @@ class _PlanStatsBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(AppRadius.lg),
-        border: Border.all(color: AppColors.border),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Row(
-        children: [
-          Expanded(child: _tile(label: 'SETS', value: '$setCount')),
-          _divider(),
-          Expanded(child: _tile(label: 'EXERCISES', value: '$exerciseCount')),
-        ],
-      ),
-    );
-  }
-
-  Widget _divider() => Container(width: 1, color: AppColors.border);
-
-  Widget _tile({required String label, required String value}) {
-    return Container(
-      color: AppColors.surface,
-      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
-      child: Column(
-        children: [
-          Text(label,
-              textAlign: TextAlign.center,
-              style: AppFonts.mono(fontSize: 8, letterSpacing: 0.8, color: AppColors.muted)),
-          const SizedBox(height: 3),
-          Text(value,
-              style: AppFonts.mono(fontSize: 17, fontWeight: FontWeight.w500, color: AppColors.primary)),
-        ],
-      ),
-    );
+    return StatsRow(tiles: [
+      StatsTile(label: 'SETS', value: '$setCount'),
+      StatsTile(label: 'EXERCISES', value: '$exerciseCount'),
+    ]);
   }
 }
 
@@ -357,10 +330,10 @@ class _PlanExerciseTabBar extends StatelessWidget {
             child: Row(
               children: [
                 for (var i = 0; i < slots.length; i++) ...[
-                  _TabChip(
+                  ExerciseTabChip(
                     label: exerciseNames.length > i ? exerciseNames[i] : '',
                     isActive: i == activeIndex,
-                    setCount: setCounts.length > i ? setCounts[i] : 0,
+                    count: setCounts.length > i ? setCounts[i] : 0,
                     onTap: () => onTap(i),
                   ),
                   const SizedBox(width: 6),
@@ -369,72 +342,8 @@ class _PlanExerciseTabBar extends StatelessWidget {
             ),
           ),
         ),
-        GestureDetector(
-          onTap: onAdd,
-          child: Container(
-            width: 30,
-            height: 30,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(AppRadius.md),
-              border: Border.all(color: AppColors.border),
-            ),
-            child: Icon(Icons.add, size: 16, color: AppColors.muted),
-          ),
-        ),
+        AddExerciseButton(onTap: onAdd),
       ],
-    );
-  }
-}
-
-class _TabChip extends StatelessWidget {
-  const _TabChip({
-    required this.label,
-    required this.isActive,
-    required this.setCount,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool isActive;
-  final int setCount;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-          color: isActive ? AppColors.accentBg : AppColors.surface,
-          borderRadius: BorderRadius.circular(AppRadius.md),
-          border: Border.all(color: isActive ? AppColors.accent : AppColors.border),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(label,
-                style: AppFonts.ui(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: isActive ? AppColors.accent : AppColors.primary)),
-            if (setCount > 0) ...[
-              const SizedBox(width: 6),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                decoration: BoxDecoration(
-                  color: AppColors.accentBg,
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text('$setCount',
-                    style: AppFonts.mono(fontSize: 10, color: AppColors.accent)),
-              ),
-            ],
-          ],
-        ),
-      ),
     );
   }
 }
