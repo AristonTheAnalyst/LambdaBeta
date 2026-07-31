@@ -7,13 +7,14 @@ import '../../../../core/styles/app_radius.dart';
 import '../../../../core/styles/app_spacing.dart';
 import '../../../../core/styles/app_text_styles.dart';
 import '../../../../core/utils/workout_format.dart';
+import '../../../../data/models/custom_variation.dart';
 import '../../../../data/repositories/exercise_repository.dart';
 import '../../../../data/repositories/pr_repository.dart';
 import '../../../../shared/widgets/page_header.dart';
 import '../../session/model/pr_engine.dart';
 
-/// All PR types for one exercise: absolute, rep-max curve, weight-class,
-/// per-variation bests, and the chronological timeline.
+/// All PR types for one exercise, filterable by variation: best lift,
+/// rep-max curve, weight-class, and the chronological timeline.
 class PrExerciseDetailScreen extends StatefulWidget {
   const PrExerciseDetailScreen({super.key, required this.exerciseId});
   final String exerciseId;
@@ -23,10 +24,14 @@ class PrExerciseDetailScreen extends StatefulWidget {
 }
 
 class _PrExerciseDetailScreenState extends State<PrExerciseDetailScreen> {
+  static const _noVariation = '__none__'; // sentinel: PRs logged without a variation
+
   final _exerciseRepo = ExerciseRepository();
   final _prRepo = PrRepository();
   String? _exerciseName;
+  List<CustomVariation> _variations = const [];
   List<PrRecord> _prs = const [];
+  String? _filter; // null = all variations; _noVariation = no variation; else variationId
 
   String get _userId => Supabase.instance.client.auth.currentUser!.id;
 
@@ -43,6 +48,7 @@ class _PrExerciseDetailScreenState extends State<PrExerciseDetailScreen> {
       if (!mounted) return;
       setState(() {
         _exerciseName = map[widget.exerciseId]?.name;
+        _variations = map[widget.exerciseId]?.assignedVariations ?? const [];
         _prs = prs.where((p) => p.exerciseId == widget.exerciseId).toList();
       });
     } catch (_) {
@@ -50,14 +56,19 @@ class _PrExerciseDetailScreenState extends State<PrExerciseDetailScreen> {
     }
   }
 
+  bool _matches(PrRecord p) {
+    if (_filter == null) return true;
+    if (_filter == _noVariation) return p.variationId == null;
+    return p.variationId == _filter;
+  }
+
   @override
   Widget build(BuildContext context) {
     final name = toProperCase(_exerciseName ?? widget.exerciseId);
-    final prs = _prs;
+    final prs = _prs.where(_matches).toList();
 
-    // ── Current best absolute ──
-    final absolute = prs.where((p) => p.type == PrType.absolute).toList();
-    final currentAbs = absolute.isEmpty ? null : absolute.last;
+    // ── Best lift (best weight × reps for the current filter) ──
+    final bestLift = _bestLift(prs);
 
     // ── Rep-max curve (latest repMax record per targetReps) ──
     final curve = <int, PrRecord>{};
@@ -75,12 +86,6 @@ class _PrExerciseDetailScreenState extends State<PrExerciseDetailScreen> {
       }
     }
 
-    // ── Per-variation best (latest absolute record per variation) ──
-    final byVariation = <String?, PrRecord>{};
-    for (final p in absolute) {
-      byVariation[p.variationId] = p;
-    }
-
     return Scaffold(
       backgroundColor: AppColors.bg,
       body: Column(
@@ -92,25 +97,28 @@ class _PrExerciseDetailScreenState extends State<PrExerciseDetailScreen> {
               child: Icon(Icons.arrow_back_ios_new, size: 18, color: AppColors.accent),
             ),
           ),
+          _filterBar(),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.all(AppSpacing.lg),
               children: [
                 _sectionCard(
-                  title: 'ABSOLUTE',
+                  title: _filter == null ? 'BEST LIFT' : 'BEST LIFT (${_filterLabel(_filter!)})',
                   children: [
-                    if (currentAbs == null)
+                    if (bestLift == null)
                       _muted('No weighted PR yet')
                     else
                       Text(
-                        '${_fmt(currentAbs.weight)}kg × ${_fmt(currentAbs.reps)}',
+                        '${_fmt(bestLift.weight)}kg × ${_fmt(bestLift.reps)}',
                         style: AppFonts.mono(
                             fontSize: 20, fontWeight: FontWeight.w700, color: AppColors.accent),
                       ),
-                    if (currentAbs != null) ...[
+                    if (bestLift != null) ...[
                       const SizedBox(height: 2),
-                      _muted(_fmtDate(currentAbs.achievedDate)),
+                      _muted(_fmtDate(bestLift.achievedDate)),
                     ],
+                    const SizedBox(height: 6),
+                    _muted('Best weight × reps — any variation, any rep count.'),
                   ],
                 ),
                 const SizedBox(height: AppSpacing.md),
@@ -171,39 +179,6 @@ class _PrExerciseDetailScreenState extends State<PrExerciseDetailScreen> {
                 ),
                 const SizedBox(height: AppSpacing.md),
                 _sectionCard(
-                  title: 'PER VARIATION',
-                  children: [
-                    if (byVariation.isEmpty)
-                      _muted('No PRs yet')
-                    else
-                      for (final entry in byVariation.entries)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 6),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  entry.value.variationName != null
-                                      ? toProperCase(entry.value.variationName!)
-                                      : 'Default',
-                                  style: AppFonts.ui(
-                                      fontSize: AppTextStyles.sm,
-                                      fontWeight: FontWeight.w600,
-                                      color: AppColors.primary),
-                                ),
-                              ),
-                              Text(
-                                '${_fmt(entry.value.weight)}kg × ${_fmt(entry.value.reps)}',
-                                style: AppFonts.mono(
-                                    fontSize: 12, color: AppColors.accent),
-                              ),
-                            ],
-                          ),
-                        ),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.md),
-                _sectionCard(
                   title: 'TIMELINE (${prs.length} PRs)',
                   children: [
                     if (prs.isEmpty)
@@ -255,6 +230,65 @@ class _PrExerciseDetailScreenState extends State<PrExerciseDetailScreen> {
     );
   }
 
+  /// Best weight × reps among [prs] (ties broken by higher reps) — the
+  /// overall/absolute best for the current variation filter.
+  PrRecord? _bestLift(List<PrRecord> prs) {
+    PrRecord? best;
+    for (final p in prs) {
+      if (p.type != PrType.absolute) continue;
+      if (best == null ||
+          p.weight > best.weight ||
+          (p.weight == best.weight && p.reps > best.reps)) {
+        best = p;
+      }
+    }
+    return best;
+  }
+
+  // ── Variation filter bar ──────────────────────────────────────────────────
+
+  Widget _filterBar() {
+    final options = <(String, String?)>[
+      ('All', null),
+      if (_prs.any((p) => p.variationId == null)) (_noVariationLabel, _noVariation),
+      for (final v in _variations) (toProperCase(v.name), v.variationId),
+    ];
+    return SizedBox(
+      height: 48,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+        itemCount: options.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 6),
+        itemBuilder: (context, i) {
+          final (label, value) = options[i];
+          final active = value == _filter;
+          return GestureDetector(
+            onTap: () => setState(() => _filter = value),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: active ? AppColors.accentBg : AppColors.surface,
+                borderRadius: BorderRadius.circular(AppRadius.md),
+                border: Border.all(color: active ? AppColors.accent : AppColors.border),
+              ),
+              child: Text(label,
+                  style: AppFonts.ui(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: active ? AppColors.accent : AppColors.muted)),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  static const _noVariationLabel = 'No variation';
+
+  String _filterLabel(String value) => value == _noVariation ? _noVariationLabel : toProperCase(value);
+
   Widget _sectionCard({required String title, required List<Widget> children}) {
     return Container(
       padding: const EdgeInsets.all(AppSpacing.md),
@@ -282,6 +316,5 @@ class _PrExerciseDetailScreenState extends State<PrExerciseDetailScreen> {
   static String _fmt(num n) =>
       n == n.roundToDouble() ? n.toInt().toString() : n.toString();
 
-  static String _fmtDate(DateTime d) =>
-      '${d.day}/${d.month}/${d.year}';
+  static String _fmtDate(DateTime d) => '${d.day}/${d.month}/${d.year}';
 }
