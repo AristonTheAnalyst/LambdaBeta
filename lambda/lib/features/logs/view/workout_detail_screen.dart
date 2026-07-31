@@ -479,7 +479,11 @@ class _DetailExerciseCardState extends State<_DetailExerciseCard> {
             padding: const EdgeInsets.fromLTRB(10, 0, 10, 12),
             child: viewingHistory
                 ? _historyDetail(_viewingSession!)
-                : _setsGrid(sets, draftIds, exerciseId, order, detail),
+                : _setsGrid(sets, draftIds, exerciseId, order, detail,
+                      prSetIds: widget.viewModel.state.value.prRecords
+                          .where((r) => r.setId != null)
+                          .map((r) => r.setId!)
+                          .toSet()),
           ),
         ],
       ),
@@ -732,8 +736,9 @@ class _DetailExerciseCardState extends State<_DetailExerciseCard> {
     List<int> draftIds,
     String exerciseId,
     int order,
-    ExerciseDetail? detail,
-  ) {
+    ExerciseDetail? detail, {
+    Set<String> prSetIds = const {},
+  }) {
     final isEditing = widget.viewModel.state.value.isEditing;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -766,6 +771,7 @@ class _DetailExerciseCardState extends State<_DetailExerciseCard> {
             detail: detail,
             set: sets[i],
             readOnly: !isEditing,
+            isPr: prSetIds.contains(sets[i].setId),
           ),
         for (var i = 0; i < draftIds.length; i++)
           _DetailSetRow(
@@ -873,6 +879,7 @@ class _DetailSetRow extends StatefulWidget {
     this.set,
     this.draftId,
     this.readOnly = false,
+    this.isPr = false,
   }) : assert(set != null || draftId != null);
 
   final WorkoutDetailViewModel viewModel;
@@ -883,6 +890,7 @@ class _DetailSetRow extends StatefulWidget {
   final WorkoutSet? set;
   final int? draftId;
   final bool readOnly;
+  final bool isPr;
 
   @override
   State<_DetailSetRow> createState() => _DetailSetRowState();
@@ -1150,9 +1158,11 @@ class _DetailSetRowState extends State<_DetailSetRow> {
     Widget row = Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       decoration: BoxDecoration(
-        color: AppColors.surfaceHigh,
+        color: widget.isPr ? AppColors.accentBg : AppColors.surfaceHigh,
         borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(color: AppColors.border, width: 0.5),
+        border: Border.all(
+            color: widget.isPr ? AppColors.accent : AppColors.border,
+            width: widget.isPr ? 1.2 : 0.5),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
@@ -1162,8 +1172,13 @@ class _DetailSetRowState extends State<_DetailSetRow> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text('${widget.displayIndex}',
-                    style: AppFonts.mono(fontSize: 11, color: AppColors.muted)),
+                if (widget.isPr)
+                  Text('PR',
+                      style: AppFonts.mono(
+                          fontSize: 8, fontWeight: FontWeight.w800, color: AppColors.accent))
+                else
+                  Text('${widget.displayIndex}',
+                      style: AppFonts.mono(fontSize: 11, color: AppColors.muted)),
                 if (hasNotes)
                   Container(
                     margin: const EdgeInsets.only(top: 2),
