@@ -41,10 +41,11 @@ class PrRepository {
   Future<List<PrRecord>> loadAll(String userId) async {
     final rows = await ps.db.getAll(
       '''
-      SELECT p.*, e.exercise_name, v.variation_name
+      SELECT p.*, e.exercise_name, v.variation_name, fws.user_workout_id
       FROM fact_pr p
       LEFT JOIN dim_exercise e ON e.custom_exercise_id = p.custom_exercise_id
       LEFT JOIN dim_variation v ON v.custom_variation_id = p.custom_variation_id
+      LEFT JOIN fact_workout_set fws ON fws.workout_set_id = p.workout_set_id
       WHERE p.user_id = ? AND p.is_active = 1
       ORDER BY p.achieved_date
       ''',

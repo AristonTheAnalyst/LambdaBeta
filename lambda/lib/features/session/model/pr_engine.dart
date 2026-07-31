@@ -65,7 +65,7 @@ class PrRecord {
         weight: _toNum(map['weight']),
         reps: _toNum(map['reps']),
         achievedDate: DateTime.parse(map['achieved_date'] as String),
-        workoutId: _workoutIdFromSet(map['workout_set_id'] as String?),
+        workoutId: (map['user_workout_id'] as String?) ?? _workoutIdFromSet(map['workout_set_id'] as String?),
         setId: map['workout_set_id'] as String?,
         type: _typeFromString(map['pr_type'] as String),
         targetReps: _toInt(map['target_reps']),

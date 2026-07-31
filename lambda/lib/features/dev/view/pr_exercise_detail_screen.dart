@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/styles/app_colors.dart';
 import '../../../../core/styles/app_fonts.dart';
@@ -209,31 +210,39 @@ class _PrExerciseDetailScreenState extends State<PrExerciseDetailScreen> {
                       _muted('No PRs recorded')
                     else
                       for (final p in prs.reversed)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 6),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  '${_fmt(p.weight)}kg × ${_fmt(p.reps)}  ·  ${_fmtDate(p.achievedDate)}',
-                                  style: AppFonts.ui(
-                                      fontSize: AppTextStyles.sm, color: AppColors.primary),
+                        InkWell(
+                          onTap: p.workoutId.isNotEmpty
+                              ? () => context.push('/logs/${p.workoutId}')
+                              : null,
+                          borderRadius: BorderRadius.circular(AppRadius.md),
+                          child: Padding(
+                            padding: const EdgeInsets.all(4),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    '${_fmt(p.weight)}kg × ${_fmt(p.reps)}  ·  ${_fmtDate(p.achievedDate)}',
+                                    style: AppFonts.ui(
+                                        fontSize: AppTextStyles.sm, color: AppColors.primary),
+                                  ),
                                 ),
-                              ),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: AppColors.accentBg,
-                                  borderRadius: BorderRadius.circular(999),
-                                  border: Border.all(
-                                      color: AppColors.accent.withValues(alpha: 0.3)),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.accentBg,
+                                    borderRadius: BorderRadius.circular(999),
+                                    border: Border.all(
+                                        color: AppColors.accent.withValues(alpha: 0.3)),
+                                  ),
+                                  child: Text(p.typeLabel,
+                                      style: AppFonts.mono(
+                                          fontSize: 9, color: AppColors.accent)),
                                 ),
-                                child: Text(p.typeLabel,
-                                    style: AppFonts.mono(
-                                        fontSize: 9, color: AppColors.accent)),
-                              ),
-                            ],
+                                if (p.workoutId.isNotEmpty)
+                                  Icon(Icons.chevron_right, size: 14, color: AppColors.muted),
+                              ],
+                            ),
                           ),
                         ),
                   ],
