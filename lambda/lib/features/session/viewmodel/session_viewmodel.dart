@@ -363,9 +363,25 @@ class SessionViewModel extends ChangeNotifier {
 
   // ── Draft set rows ─────────────────────────────────────────────────────────
 
+  /// Tapping "+ ADD SET" pre-creates an empty set in the DB so it survives
+  /// hot restarts. Empty sets are purged on endWorkout.
   void addDraftSet(String exerciseId) {
-    draftSlotsByExercise.putIfAbsent(exerciseId, () => []).add(_nextDraftId++);
-    notifyListeners();
+    if (currentWorkoutId == null) return;
+    final nextNum = sets.isEmpty
+        ? 1
+        : sets.map((s) => s.setNumber).reduce((a, b) => a > b ? a : b) + 1;
+    _workoutRepo.insertSet(
+      workoutId: currentWorkoutId!,
+      exerciseId: exerciseId,
+      setNumber: nextNum,
+      weight: null,
+      reps: [],
+      duration: [],
+      supersetGroupNumber: _supersetGroupFor(exerciseId),
+    ).then((newSet) {
+      sets.add(newSet);
+      notifyListeners();
+    });
   }
 
   void removeDraftSet(String exerciseId, int draftId) {
@@ -373,6 +389,8 @@ class SessionViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Commits a set — if the last set for this exercise is empty, fills it in;
+  /// otherwise inserts a new row.
   Future<bool> commitDraftSet(
     String exerciseId,
     int draftId, {
@@ -383,26 +401,39 @@ class SessionViewModel extends ChangeNotifier {
     String? notes,
   }) async {
     if (currentWorkoutId == null) return false;
-    if (reps.isEmpty && duration.isEmpty) {
-      error = 'Enter reps to log this set.';
-      notifyListeners();
-      return false;
-    }
+    if (reps.isEmpty && duration.isEmpty) return false;
     final nextNum = sets.isEmpty
         ? 1
         : sets.map((s) => s.setNumber).reduce((a, b) => a > b ? a : b) + 1;
+    // Find an empty pre-created set for this exercise to fill in
+    final emptyIdx = sets.lastIndexWhere(
+      (s) => s.exerciseId == exerciseId && s.reps.isEmpty && s.duration.isEmpty);
     try {
-      await _workoutRepo.insertSet(
-        workoutId: currentWorkoutId!,
-        exerciseId: exerciseId,
-        variationId: variationId,
-        setNumber: nextNum,
-        weight: weight,
-        reps: reps,
-        duration: duration,
-        notes: notes,
-        supersetGroupNumber: _supersetGroupFor(exerciseId),
-      );
+      if (emptyIdx >= 0) {
+        await _workoutRepo.updateSet(
+          sets[emptyIdx].setId,
+          variationId: variationId,
+          clearVariation: variationId == null,
+          weight: weight,
+          clearWeight: weight == null,
+          reps: reps,
+          duration: duration,
+          notes: notes,
+          clearNotes: notes == null || notes.isEmpty,
+        );
+      } else {
+        await _workoutRepo.insertSet(
+          workoutId: currentWorkoutId!,
+          exerciseId: exerciseId,
+          variationId: variationId,
+          setNumber: nextNum,
+          weight: weight,
+          reps: reps,
+          duration: duration,
+          notes: notes,
+          supersetGroupNumber: _supersetGroupFor(exerciseId),
+        );
+      }
       draftSlotsByExercise[exerciseId]?.remove(draftId);
       await _loadSets();
       return true;
@@ -698,6 +729,7 @@ class SessionViewModel extends ChangeNotifier {
       // partial rest (unlike cancelWorkout, this workout isn't being
       // deleted) — log it before resetting state.
       await _logRestIfInProgress();
+      await _purgeEmptySets();
       await _workoutRepo.endWorkout(
           currentWorkoutId!,
           postNotes: endNotes.trim().isEmpty ? null : endNotes.trim(),
@@ -720,6 +752,16 @@ class SessionViewModel extends ChangeNotifier {
     notifyListeners();
     onWorkoutEnded?.call();
     await _workoutRepo.cancelWorkout(id);
+  }
+
+  Future<void> _purgeEmptySets() async {
+    if (currentWorkoutId == null) return;
+    final empty = sets.where((s) => s.reps.isEmpty && s.duration.isEmpty).toList();
+    for (final s in empty) {
+      try {
+        await _workoutRepo.deleteSet(s.setId);
+      } catch (_) {}
+    }
   }
 
   void _resetActiveWorkoutState() {

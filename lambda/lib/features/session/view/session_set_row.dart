@@ -136,7 +136,9 @@ class _SessionSetRowState extends State<SessionSetRow> {
 
   void _duplicate() {
     if (_isDraft) return; // nothing persisted yet to copy
-    widget.vm.duplicateSet(widget.set!);
+    final set = widget.set!;
+    if (set.reps.isEmpty && set.duration.isEmpty) return; // empty placeholder
+    widget.vm.duplicateSet(set);
   }
 
   /// Wired as the variation dropdown's create-new handler. [query] is
