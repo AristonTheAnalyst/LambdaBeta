@@ -43,11 +43,19 @@ class _SessionScreenState extends State<SessionScreen> {
       _cachedVm = _vm;
       _vm.onWorkoutEnded = _clearCachedVm;
     }
-    _vm.addListener(() => setState(() {}));
+    _vm.addListener(_onVmChanged);
+  }
+
+  void _onVmChanged() {
+    // The cached VM outlives this State (hot reload / navigation), so guard
+    // every notification with mounted — otherwise a VM event after dispose
+    // throws "setState() called after dispose()".
+    if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
+    _vm.removeListener(_onVmChanged);
     _startNotesCtrl.dispose();
     _endNotesCtrl.dispose();
     super.dispose();
