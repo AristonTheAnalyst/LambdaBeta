@@ -46,6 +46,7 @@ class _PrExerciseDetailScreenState extends State<PrExerciseDetailScreen> {
   String? _exerciseName;
   List<CustomVariation> _variations = const [];
   List<PrRecord> _prs = const [];
+  bool _loading = true;
 
   // Filters. Empty set = "all" for the multi-selects.
   Set<String> _selectedVariations = {}; // variationId, or _noVariation
@@ -60,18 +61,22 @@ class _PrExerciseDetailScreenState extends State<PrExerciseDetailScreen> {
   }
 
   Future<void> _load() async {
+    // PRs first (scoped query, fast) — the core of this screen. The
+    // exercise catalog is secondary; a failure there must not blank the PRs.
+    try {
+      final prs = await _prRepo.loadForExercise(_userId, widget.exerciseId);
+      if (mounted) setState(() => _prs = prs);
+    } catch (_) {}
     try {
       final map = await _exerciseRepo.fetchExerciseDetailMap(_userId);
-      final prs = await _prRepo.loadAll(_userId);
-      if (!mounted) return;
-      setState(() {
-        _exerciseName = map[widget.exerciseId]?.name;
-        _variations = map[widget.exerciseId]?.assignedVariations ?? const [];
-        _prs = prs.where((p) => p.exerciseId == widget.exerciseId).toList();
-      });
-    } catch (_) {
-      if (mounted) setState(() {});
-    }
+      if (mounted) {
+        setState(() {
+          _exerciseName = map[widget.exerciseId]?.name;
+          _variations = map[widget.exerciseId]?.assignedVariations ?? const [];
+        });
+      }
+    } catch (_) {}
+    if (mounted) setState(() => _loading = false);
   }
 
   bool _matchesVariation(PrRecord p) {
@@ -123,7 +128,9 @@ class _PrExerciseDetailScreenState extends State<PrExerciseDetailScreen> {
           ),
           _variationFilter(),
           Expanded(
-            child: ListView(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator())
+                : ListView(
               padding: const EdgeInsets.all(AppSpacing.lg),
               children: [
                 _sectionCard(

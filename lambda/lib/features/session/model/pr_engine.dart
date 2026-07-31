@@ -58,19 +58,25 @@ class PrRecord {
   static String _fmt(num n) => n == n.roundToDouble() ? n.toInt().toString() : n.toString();
 
   factory PrRecord.fromMap(Map<String, dynamic> map) => PrRecord(
-        exerciseId: map['custom_exercise_id'] as String,
+        exerciseId: map['custom_exercise_id'] as String? ?? '',
         exerciseName: map['exercise_name'] as String?,
         variationId: map['custom_variation_id'] as String?,
         variationName: map['variation_name'] as String?,
         weight: _toNum(map['weight']),
         reps: _toNum(map['reps']),
-        achievedDate: DateTime.parse(map['achieved_date'] as String),
+        achievedDate: _parseDate(map['achieved_date']),
         workoutId: (map['user_workout_id'] as String?) ?? _workoutIdFromSet(map['workout_set_id'] as String?),
         setId: map['workout_set_id'] as String?,
-        type: _typeFromString(map['pr_type'] as String),
+        type: _typeFromString(map['pr_type'] as String? ?? 'repMax'),
         targetReps: _toInt(map['target_reps']),
         targetWeight: _toNumNullable(map['target_weight']),
       );
+
+  static DateTime _parseDate(dynamic v) {
+    if (v == null) return DateTime.fromMillisecondsSinceEpoch(0);
+    final t = DateTime.tryParse('$v');
+    return t ?? DateTime.fromMillisecondsSinceEpoch(0);
+  }
 
   Map<String, dynamic> toMap() => {
         'workout_set_id': setId,

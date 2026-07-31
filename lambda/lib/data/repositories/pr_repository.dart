@@ -54,6 +54,25 @@ class PrRepository {
     return rows.map((r) => PrRecord.fromMap(r)).toList();
   }
 
+  /// Scoped to one exercise — used by the per-exercise detail screen so it
+  /// only fetches the records it needs (faster, and a bad row elsewhere can't
+  /// break one exercise's view).
+  Future<List<PrRecord>> loadForExercise(String userId, String exerciseId) async {
+    final rows = await ps.db.getAll(
+      '''
+      SELECT p.*, e.exercise_name, v.variation_name, fws.user_workout_id
+      FROM fact_pr p
+      LEFT JOIN dim_exercise e ON e.custom_exercise_id = p.custom_exercise_id
+      LEFT JOIN dim_variation v ON v.custom_variation_id = p.custom_variation_id
+      LEFT JOIN fact_workout_set fws ON fws.workout_set_id = p.workout_set_id
+      WHERE p.user_id = ? AND p.is_active = 1 AND p.custom_exercise_id = ?
+      ORDER BY p.achieved_date
+      ''',
+      [userId, exerciseId],
+    );
+    return rows.map((r) => PrRecord.fromMap(r)).toList();
+  }
+
   Future<List<PrRecord>> loadForWorkout(String userId, String workoutId) async {
     final rows = await ps.db.getAll(
       '''
