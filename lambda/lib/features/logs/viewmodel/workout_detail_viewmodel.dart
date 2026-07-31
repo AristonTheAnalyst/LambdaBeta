@@ -546,24 +546,18 @@ class WorkoutDetailViewModel {
     }
   }
 
-  /// PRs held by a set (snapshots in fact_pr). Non-empty means the set is a
-  /// recorded achievement.
-  Future<List<PrRecord>> prsForSet(String setId) async {
-    try {
-      return await _prRepo.loadForSets(_userId, [setId]);
-    } catch (_) {
-      return const [];
-    }
-  }
-
   /// Deletes the set but keeps its fact_pr records ("delete set only" —
   /// the achievement stands). Does NOT recompute; a correction would use
   /// [deleteSetAndItsPRs].
   Future<void> deleteSetKeepingPRs(String setId) async {
     final w = state.value.workout;
     if (w == null) return;
-    await _workoutRepo.deleteSet(setId);
-    await _reloadSets(w.workoutId);
+    try {
+      await _workoutRepo.deleteSet(setId);
+      await _reloadSets(w.workoutId);
+    } catch (e) {
+      state.value = state.value.copyWith(error: e.toString());
+    }
   }
 
   /// Deletes the set AND its fact_pr records, then recomputes the exercise
@@ -572,18 +566,26 @@ class WorkoutDetailViewModel {
   Future<void> deleteSetAndItsPRs(String setId, String exerciseId) async {
     final w = state.value.workout;
     if (w == null) return;
-    await _workoutRepo.deleteSet(setId);
-    await _prRepo.deleteForSets(_userId, [setId]);
-    await recomputeExercisePRs(exerciseId);
-    await _reloadSets(w.workoutId);
+    try {
+      await _workoutRepo.deleteSet(setId);
+      await _prRepo.deleteForSets(_userId, [setId]);
+      await recomputeExercisePRs(exerciseId);
+      await _reloadSets(w.workoutId);
+    } catch (e) {
+      state.value = state.value.copyWith(error: e.toString());
+    }
   }
 
   /// Plain delete (set has no PR records).
   Future<void> deleteSetById(String setId) async {
     final w = state.value.workout;
     if (w == null) return;
-    await _workoutRepo.deleteSet(setId);
-    await _reloadSets(w.workoutId);
+    try {
+      await _workoutRepo.deleteSet(setId);
+      await _reloadSets(w.workoutId);
+    } catch (e) {
+      state.value = state.value.copyWith(error: e.toString());
+    }
   }
 
   // ── New exercise / variation ───────────────────────────────────────────────
