@@ -32,10 +32,9 @@ class _PrExerciseDetailScreenState extends State<PrExerciseDetailScreen> {
   // Training rep-bands for grouping the rep-max curve.
   static const _repBands = [
     (label: 'STRENGTH', min: 1, max: 3),
-    (label: 'POWER', min: 4, max: 6),
-    (label: 'HYPERTROPHY', min: 7, max: 10),
-    (label: 'ENDURANCE', min: 11, max: 15),
-    (label: 'VOLUME', min: 16, max: null),
+    (label: 'STRENGTH ENDURANCE', min: 4, max: 6),
+    (label: 'HYPERTROPHY', min: 7, max: 15),
+    (label: 'ENDURANCE', min: 16, max: null),
   ];
 
   final _exerciseRepo = ExerciseRepository();
