@@ -10,6 +10,7 @@ import '../../../../core/utils/workout_format.dart';
 import '../../../../data/models/custom_variation.dart';
 import '../../../../data/repositories/exercise_repository.dart';
 import '../../../../data/repositories/pr_repository.dart';
+import '../../../../data/repositories/workout_repository.dart';
 import '../../../../shared/widgets/multi_select_sheet.dart';
 import '../../../../shared/widgets/page_header.dart';
 import '../../../../shared/widgets/slide_up_modal.dart';
@@ -43,6 +44,7 @@ class _PrExerciseDetailScreenState extends State<PrExerciseDetailScreen> {
 
   final _exerciseRepo = ExerciseRepository();
   final _prRepo = PrRepository();
+  final _workoutRepo = WorkoutRepository();
   String? _exerciseName;
   List<CustomVariation> _variations = const [];
   List<PrRecord> _prs = const [];
@@ -61,11 +63,17 @@ class _PrExerciseDetailScreenState extends State<PrExerciseDetailScreen> {
   }
 
   Future<void> _load() async {
-    // PRs first (scoped query, fast) — the core of this screen. The
-    // exercise catalog is secondary; a failure there must not blank the PRs.
+    // Backfill (if fact_pr is empty) then filter to this exercise in memory —
+    // mirrors the catalog's backfill so the detail is never blank even when
+    // reached directly. The exercise catalog is secondary; a failure there
+    // must not blank the PRs.
     try {
-      final prs = await _prRepo.loadForExercise(_userId, widget.exerciseId);
-      if (mounted) setState(() => _prs = prs);
+      final all = await _prRepo.loadAllWithBackfill(
+          _userId, () => _workoutRepo.loadPastSetsTimeline(_userId));
+      if (mounted) {
+        setState(() => _prs =
+            all.where((p) => p.exerciseId == widget.exerciseId).toList());
+      }
     } catch (_) {}
     try {
       final map = await _exerciseRepo.fetchExerciseDetailMap(_userId);
