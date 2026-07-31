@@ -8,6 +8,12 @@ import '../../../data/models/workout_set.dart';
 /// 1 or 2) — so one set can generate several [PrRecord]s.
 enum PrType { repMax, weightMax }
 
+/// The rep counts tracked for rep-max PRs. Anything above 30 is not a PR
+/// axis — a `500kg × 100` set improves only these rep counts (1–10, 12, 15,
+/// 20, 25, 30) plus the 500kg weight-max record. Kept in the engine so the
+/// restriction applies at record-creation time everywhere, not just in views.
+const kTrackedRepCounts = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 15, 20, 25, 30};
+
 /// One PR event — an improvement to the best weight for a specific rep
 /// count (repMax, e.g. a new 5RM), or an improvement to the most reps done
 /// at a specific weight (weightMax, e.g. most reps at 100kg).
@@ -148,8 +154,10 @@ List<PrRecord> fullPrTimeline(List<PastSetRow> sets) {
     final exCurve = curve.putIfAbsent(s.exerciseId, () => {});
     final exMaxReps = maxRepsAtWeight.putIfAbsent(s.exerciseId, () => {});
 
-    // Rep-max curve: one record per rep count N ≤ reps that this set improves
-    for (var n = 1; n <= reps; n++) {
+    // Rep-max curve: one record per tracked rep count N ≤ reps that this set
+    // improves. Rep counts outside kTrackedRepCounts never become PR records.
+    for (final n in kTrackedRepCounts) {
+      if (n > reps) break;
       final current = exCurve[n];
       if (current == null || weight > current) {
         exCurve[n] = weight;

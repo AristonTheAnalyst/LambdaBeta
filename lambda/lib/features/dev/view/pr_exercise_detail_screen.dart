@@ -38,9 +38,9 @@ class _PrExerciseDetailScreenState extends State<PrExerciseDetailScreen> {
     (label: 'ENDURANCE', min: 16, max: null),
   ];
 
-  // Only these rep counts are shown on the rep-max curve — weight-class
-  // already covers other rep maxes, so a sparse curve avoids redundancy.
-  static const _displayRepCounts = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 15, 20, 25, 30};
+  // The engine only creates rep-max records for kTrackedRepCounts, so the
+  // view filters to those (same source of truth, no mismatch).
+  static const _displayRepCounts = kTrackedRepCounts;
 
   final _exerciseRepo = ExerciseRepository();
   final _prRepo = PrRepository();
