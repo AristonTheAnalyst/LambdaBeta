@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../core/styles/app_colors.dart';
+import '../../core/styles/app_fonts.dart';
 import '../../core/styles/app_text_styles.dart';
 import '../../core/styles/app_spacing.dart';
 
@@ -61,7 +62,7 @@ class BottomNavBar extends StatelessWidget {
                       const SizedBox(height: 3),
                       Text(
                         item.label,
-                        style: TextStyle(
+                        style: AppFonts.ui(
                           fontSize: AppTextStyles.xs,
                           fontWeight: FontWeight.w500,
                           color: color,

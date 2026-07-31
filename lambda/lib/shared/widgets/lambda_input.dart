@@ -1,5 +1,6 @@
 ﻿import 'package:flutter/material.dart';
 import '../../core/styles/app_colors.dart';
+import '../../core/styles/app_fonts.dart';
 import '../../core/styles/app_text_styles.dart';
 
 class LambdaInput extends StatelessWidget {
@@ -38,7 +39,7 @@ class LambdaInput extends StatelessWidget {
         if (label != null) ...[
           Text(
             label!,
-            style: TextStyle(
+            style: AppFonts.ui(
               fontSize: AppTextStyles.sm,
               fontWeight: FontWeight.w600,
               color: AppColors.primary,
@@ -57,7 +58,7 @@ class LambdaInput extends StatelessWidget {
           onSubmitted: onSubmitted,
           autocorrect: false,
           enableSuggestions: !obscureText,
-          style: TextStyle(
+          style: AppFonts.ui(
             fontSize: AppTextStyles.md,
             color: AppColors.primary,
             fontWeight: FontWeight.w400,
@@ -65,7 +66,7 @@ class LambdaInput extends StatelessWidget {
           cursorColor: AppColors.primary,
           decoration: InputDecoration(
             hintText: placeholder,
-            hintStyle: TextStyle(
+            hintStyle: AppFonts.ui(
               color: AppColors.muted,
               fontSize: AppTextStyles.md,
             ),
@@ -99,7 +100,7 @@ class LambdaInput extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             error!,
-            style: TextStyle(
+            style: AppFonts.ui(
               fontSize: AppTextStyles.xs,
               color: AppColors.danger,
             ),

@@ -24,6 +24,7 @@ const schema = Schema([
     Column.text('program_run_id'),
     Column.text('planned_workout_id'),
     Column.integer('user_workout_feeling'),
+    Column.integer('pre_workout_feeling'),
   ]),
   Table('dim_exercise', [
     Column.text('custom_exercise_id'),
@@ -63,6 +64,7 @@ const schema = Schema([
     Column.integer('deleted_locally'),
     Column.text('program_id'),
     Column.text('planned_set_id'),
+    Column.integer('superset_group_number'),
   ]),
   Table('dim_program', [
     Column.text('program_id'),
@@ -105,5 +107,23 @@ const schema = Schema([
     Column.text('started_date'),
     Column.text('ended_date'),
     Column.integer('is_current'),
+  ]),
+  Table('fact_lesson', [
+    Column.text('lesson_id'),
+    Column.text('user_id'),
+    Column.text('custom_exercise_id'),
+    Column.text('lesson_text'),
+    Column.integer('pinned'),
+    Column.integer('is_active'),
+    Column.text('lesson_created_date'),
+  ]),
+  Table('fact_rest', [
+    Column.text('rest_id'),
+    Column.text('user_id'),
+    Column.text('user_workout_id'),
+    Column.text('custom_exercise_id'),
+    Column.integer('planned_seconds'),
+    Column.integer('actual_seconds'),
+    Column.text('rest_created_date'),
   ]),
 ]);

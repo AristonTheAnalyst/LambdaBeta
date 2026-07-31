@@ -1,19 +1,19 @@
-﻿import 'package:flutter/material.dart';
-import '../../../../core/styles/app_colors.dart';
-import '../../../../core/styles/app_spacing.dart';
-import '../../../../core/styles/app_text_styles.dart';
-import '../../../../core/utils/workout_format.dart';
-import '../../../../data/models/workout_set.dart';
-import '../../../../shared/widgets/dropdown_select.dart';
-import '../../../../shared/widgets/glass_button.dart';
-import '../../../../shared/widgets/lambda_button.dart';
-import '../../../../shared/widgets/lambda_input.dart';
-import '../../../../shared/widgets/page_header.dart';
-import '../../../../shared/widgets/set_form_sheet.dart';
-import '../../../../shared/widgets/slide_pages.dart';
-import '../../../../shared/widgets/slide_up_modal.dart';
-import '../../../../shared/widgets/workout_sets_list.dart';
+import 'package:flutter/material.dart';
+import '../../../core/styles/app_colors.dart';
+import '../../../core/styles/app_fonts.dart';
+import '../../../core/styles/app_spacing.dart';
+import '../../../core/styles/app_text_styles.dart';
+import '../../../shared/widgets/glass_button.dart';
+import '../../../shared/widgets/lambda_button.dart';
+import '../../../shared/widgets/lambda_input.dart';
+import '../../../shared/widgets/page_header.dart';
+import '../../../shared/widgets/slide_pages.dart';
+import '../../../shared/widgets/slide_up_modal.dart';
 import '../viewmodel/session_viewmodel.dart';
+import 'exercise_card.dart';
+import 'exercise_tab_bar.dart';
+import 'rest_timer_bar.dart';
+import 'session_stats_bar.dart';
 
 class SessionScreen extends StatefulWidget {
   const SessionScreen({super.key});
@@ -23,40 +23,33 @@ class SessionScreen extends StatefulWidget {
 }
 
 class _SessionScreenState extends State<SessionScreen> {
+  static SessionViewModel? _cachedVm;
+
+  static void _clearCachedVm() => _cachedVm = null;
+
   late final SessionViewModel _vm;
 
-  // Text controllers — reused across modal opens
-  final _startNotesCtrl  = TextEditingController();
-  final _endNotesCtrl    = TextEditingController();
-  final _logWeightCtrl   = TextEditingController();
-  final _logRepsCtrl     = TextEditingController();
-  final _logNotesCtrl    = TextEditingController();
-  final _editWeightCtrl  = TextEditingController();
-  final _editRepsCtrl    = TextEditingController();
-  final _editNotesCtrl   = TextEditingController();
-  final _newExNameCtrl   = TextEditingController();
-  final _newVarNameCtrl  = TextEditingController();
+  final _startNotesCtrl = TextEditingController();
+  final _endNotesCtrl = TextEditingController();
 
   @override
   void initState() {
     super.initState();
-    _vm = SessionViewModel();
+    if (_cachedVm != null) {
+      // Reuse across hot reload — workout state stays intact
+      _vm = _cachedVm!;
+    } else {
+      _vm = SessionViewModel();
+      _cachedVm = _vm;
+      _vm.onWorkoutEnded = _clearCachedVm;
+    }
     _vm.addListener(() => setState(() {}));
   }
 
   @override
   void dispose() {
-    _vm.dispose();
     _startNotesCtrl.dispose();
     _endNotesCtrl.dispose();
-    _logWeightCtrl.dispose();
-    _logRepsCtrl.dispose();
-    _logNotesCtrl.dispose();
-    _editWeightCtrl.dispose();
-    _editRepsCtrl.dispose();
-    _editNotesCtrl.dispose();
-    _newExNameCtrl.dispose();
-    _newVarNameCtrl.dispose();
     super.dispose();
   }
 
@@ -82,265 +75,16 @@ class _SessionScreenState extends State<SessionScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
-        title: Text('No Sets Logged',
-            style: TextStyle(color: AppColors.primary)),
+        title: Text('No Sets Logged', style: TextStyle(color: AppColors.primary)),
         content: Text(
             "You haven't logged any sets yet. Log at least one set before ending, or cancel the workout instead.",
             style: TextStyle(color: AppColors.muted)),
         actions: [
           TextButton(
               onPressed: () => Navigator.of(ctx).pop(),
-              child: Text('Got It',
-                  style: TextStyle(
-                      color: AppColors.accent,
-                      fontWeight: FontWeight.w600))),
+              child: Text('Got It', style: TextStyle(color: AppColors.accent, fontWeight: FontWeight.w600))),
         ],
       ),
-    );
-  }
-
-  void _openLogSetModal() {
-    _logWeightCtrl.clear();
-    _logRepsCtrl.clear();
-    _logNotesCtrl.clear();
-    showLambdaModal(
-      context,
-      fitContent: true,
-      keyboardAware: true,
-      child: ListenableBuilder(
-        listenable: _vm,
-        builder: (ctx, _) {
-          final detail = _vm.selectedExDetail;
-          return SetFormSheet(
-            title: 'Log Set',
-            exerciseOptions: _vm.exercises
-                .map((d) => DropdownOption(
-                    label: toProperCase(d.name), value: d.exerciseId))
-                .toList(),
-            selectedExerciseId: _vm.selectedExId,
-            onExerciseChanged: (id) {
-              _vm.selectExercise(id);
-              _logWeightCtrl.text = _vm.logWeight;
-              if (id != null) {
-                _vm.prefillLastUsedForLog(id).then((_) {
-                  if (mounted) _logWeightCtrl.text = _vm.logWeight;
-                });
-              }
-            },
-            variationOptions: [
-              const DropdownOption<String?>(label: 'None', value: null),
-              ...(detail?.assignedVariations ?? []).map((v) => DropdownOption(
-                  label: toProperCase(v.name), value: v.variationId)),
-            ],
-            selectedVariationId: _vm.selectedVarId,
-            onVariationChanged: _vm.selectVariation,
-            volumeType: _vm.logVolumeType,
-            onVolumeTypeChanged: _vm.setLogVolumeType,
-            weightCtrl: _logWeightCtrl,
-            repsCtrl: _logRepsCtrl,
-            notesCtrl: _logNotesCtrl,
-            onWeightChanged: (v) => _vm.logWeight = v,
-            onRepsChanged: (v) => _vm.logRepsOrDuration = v,
-            onNotesChanged: (v) => _vm.logNotes = v,
-            submitLabel: 'Log Set',
-            submitLoading: _vm.logLoading,
-            onSubmit: _vm.submitLogSet,
-            exerciseCreating: _vm.newExCreating,
-            variationCreating: _vm.newVarCreating,
-            onNewExercise: (query) {
-              if (query.trim().isEmpty) {
-                Navigator.of(context, rootNavigator: true).pop();
-                // submitNewExercise() already selects the new exercise for
-                // the log form, so just reopen it directly.
-                _openNewExerciseModal(forLog: true, onDone: _openLogSetModal);
-                return;
-              }
-              // Already typed a name while searching — create and select it
-              // directly instead of asking again in a separate modal.
-              _vm.prepareNewExercise(forLog: true);
-              _vm.newExName = query.trim();
-              _vm.submitNewExercise();
-            },
-            onNewVariation: (query) {
-              if (query.trim().isEmpty) {
-                Navigator.of(context, rootNavigator: true).pop();
-                _openNewVariationModal(forLog: true, onDone: _openLogSetModal);
-                return;
-              }
-              _vm.prepareNewVariation(forLog: true);
-              _vm.newVarName = query.trim();
-              _vm.submitNewVariation();
-            },
-          );
-        },
-      ),
-    );
-  }
-
-  void _openEditSetModal(WorkoutSet s) {
-    _vm.openEditSet(s);
-    _editWeightCtrl.text = _vm.editWeight;
-    _editRepsCtrl.text   = _vm.editRepsOrDuration;
-    _editNotesCtrl.text  = _vm.editNotes;
-    _showEditSetModal(s);
-  }
-
-  // Re-shown after creating a new exercise/variation mid-edit, without
-  // resetting the edit form fields (which _openEditSetModal would do).
-  void _showEditSetModal(WorkoutSet s) {
-    showLambdaModal(
-      context,
-      fitContent: true,
-      keyboardAware: true,
-      child: ListenableBuilder(
-        listenable: _vm,
-        builder: (ctx, _) {
-          final detail = _vm.editExDetail;
-          return SetFormSheet(
-            title: 'Edit Set',
-            exerciseOptions: _vm.exercises
-                .map((d) => DropdownOption(
-                    label: toProperCase(d.name), value: d.exerciseId))
-                .toList(),
-            selectedExerciseId: _vm.editExId,
-            onExerciseChanged: (id) {
-              _vm.setEditExId(id);
-              _editWeightCtrl.text = _vm.editWeight;
-              if (id != null) {
-                _vm.prefillLastUsedForEdit(id).then((_) {
-                  if (mounted) _editWeightCtrl.text = _vm.editWeight;
-                });
-              }
-            },
-            variationOptions: [
-              const DropdownOption<String?>(label: 'None', value: null),
-              ...(detail?.assignedVariations ?? []).map((v) => DropdownOption(
-                  label: toProperCase(v.name), value: v.variationId)),
-            ],
-            selectedVariationId: _vm.editVarId,
-            onVariationChanged: _vm.setEditVarId,
-            volumeType: _vm.editVolumeType,
-            onVolumeTypeChanged: _vm.setEditVolumeType,
-            weightCtrl: _editWeightCtrl,
-            repsCtrl: _editRepsCtrl,
-            notesCtrl: _editNotesCtrl,
-            onWeightChanged: (v) => _vm.editWeight = v,
-            onRepsChanged: (v) => _vm.editRepsOrDuration = v,
-            onNotesChanged: (v) => _vm.editNotes = v,
-            submitLabel: 'Save',
-            submitLoading: _vm.editLoading,
-            onSubmit: _vm.submitEditSet,
-            exerciseCreating: _vm.newExCreating,
-            variationCreating: _vm.newVarCreating,
-            onDelete: () {
-              Navigator.of(context, rootNavigator: true).pop();
-              _confirmDeleteSet(s.setId);
-            },
-            onNewExercise: (query) {
-              if (query.trim().isEmpty) {
-                final savedVolumeType = _vm.editVolumeType;
-                Navigator.of(context, rootNavigator: true).pop();
-                // submitNewExercise() already selects the new exercise for
-                // the edit form, so just restore the edit state and reopen.
-                _openNewExerciseModal(
-                  forLog: false,
-                  onDone: () {
-                    _restoreEditState(s, savedVolumeType);
-                    _showEditSetModal(s);
-                  },
-                );
-                return;
-              }
-              _vm.prepareNewExercise(forLog: false);
-              _vm.newExName = query.trim();
-              _vm.submitNewExercise();
-            },
-            onNewVariation: (query) {
-              if (query.trim().isEmpty) {
-                final savedVolumeType = _vm.editVolumeType;
-                Navigator.of(context, rootNavigator: true).pop();
-                _openNewVariationModal(
-                  forLog: false,
-                  onDone: () {
-                    _restoreEditState(s, savedVolumeType);
-                    _showEditSetModal(s);
-                  },
-                );
-                return;
-              }
-              _vm.prepareNewVariation(forLog: false);
-              _vm.newVarName = query.trim();
-              _vm.submitNewVariation();
-            },
-          );
-        },
-      ),
-    ).then((_) => _vm.clearEditSet());
-  }
-
-  // Popping the Edit Set sheet above (to step into New Exercise/Variation
-  // creation) fires the .then(clearEditSet) above immediately, since that
-  // fires on ANY close of the sheet, not just a deliberate Cancel. editExId/
-  // editVarId get reassigned correctly by submitNewExercise/submitNewVariation
-  // regardless, but editingSet, volume type, and the text fields need
-  // restoring by hand.
-  void _restoreEditState(WorkoutSet s, String volumeType) {
-    _vm.editingSet = s;
-    _vm.editWeight = _editWeightCtrl.text;
-    _vm.editRepsOrDuration = _editRepsCtrl.text;
-    _vm.editVolumeType = volumeType;
-    _vm.editNotes = _editNotesCtrl.text;
-  }
-
-  void _confirmDeleteSet(String setId) {
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        title: Text('Delete Set',
-            style: TextStyle(color: AppColors.primary)),
-        content: Text('Remove this set?',
-            style: TextStyle(color: AppColors.muted)),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: Text('Cancel',
-                  style: TextStyle(color: AppColors.muted))),
-          TextButton(
-              onPressed: () {
-                Navigator.of(ctx).pop();
-                _vm.deleteSet(setId);
-              },
-              child: Text('Delete',
-                  style: TextStyle(
-                      color: AppColors.danger,
-                      fontWeight: FontWeight.w600))),
-        ],
-      ),
-    );
-  }
-
-  void _openNewExerciseModal({required bool forLog, required VoidCallback onDone}) {
-    _vm.prepareNewExercise(forLog: forLog);
-    _newExNameCtrl.clear();
-    showLambdaModal(
-      context,
-      fitContent: true,
-      keyboardAware: true,
-      child: _NewExerciseModal(
-          vm: _vm, nameCtrl: _newExNameCtrl, onCreated: onDone),
-    );
-  }
-
-  void _openNewVariationModal({required bool forLog, required VoidCallback onDone}) {
-    _vm.prepareNewVariation(forLog: forLog);
-    _newVarNameCtrl.clear();
-    showLambdaModal(
-      context,
-      fitContent: true,
-      keyboardAware: true,
-      child: _NewVariationModal(
-          vm: _vm, nameCtrl: _newVarNameCtrl, onCreated: onDone),
     );
   }
 
@@ -349,25 +93,19 @@ class _SessionScreenState extends State<SessionScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
-        title: Text('Cancel Workout',
-            style: TextStyle(color: AppColors.danger)),
-        content: Text(
-            'Discard this workout and all logged sets?',
-            style: TextStyle(color: AppColors.muted)),
+        title: Text('Cancel Workout', style: TextStyle(color: AppColors.danger)),
+        content: Text('Discard this workout and all logged sets?', style: TextStyle(color: AppColors.muted)),
         actions: [
           TextButton(
               onPressed: () => Navigator.of(ctx).pop(),
-              child: Text('Keep Going',
-                  style: TextStyle(color: AppColors.muted))),
+              child: Text('Keep Going', style: TextStyle(color: AppColors.muted))),
           TextButton(
               onPressed: () {
                 Navigator.of(ctx).pop();
                 _vm.cancelWorkout();
               },
               child: Text('Discard',
-                  style: TextStyle(
-                      color: AppColors.danger,
-                      fontWeight: FontWeight.w600))),
+                  style: TextStyle(color: AppColors.danger, fontWeight: FontWeight.w600))),
         ],
       ),
     );
@@ -379,58 +117,37 @@ class _SessionScreenState extends State<SessionScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.bg,
-      body: Column(
-        children: [
-          PageHeader(
-            title: _vm.hasActiveWorkout
-                ? 'Training Session'
-                : 'Mental Prep and Planning',
-            left: _vm.hasActiveWorkout
-                ? GlassButton(
-                    label: 'Cancel',
-                    color: AppColors.danger,
-                    compact: true,
-                    onPressed: _confirmCancelWorkout)
-                : null,
-            right: _vm.hasActiveWorkout
-                ? GlassButton(
-                    label: 'End',
-                    compact: true,
-                    onPressed: _openEndWorkoutModal)
-                : null,
-          ),
-          if (_vm.error != null)
-            GestureDetector(
-              onTap: _vm.clearError,
-              child: Container(
-                width: double.infinity,
-                color: AppColors.dangerBg,
-                padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
-                child: Text(_vm.error!,
-                    style: TextStyle(
-                        color: AppColors.danger,
-                        fontSize: AppTextStyles.sm)),
-              ),
-            ),
-          Expanded(
-            child: SlidePages(
-              controller: _vm.slidePagesController,
+      body: _vm.initLoading
+          ? const Center(child: CircularProgressIndicator())
+          : Column(
               children: [
-                _StartPage(
-                  vm: _vm,
-                  startNotesCtrl: _startNotesCtrl,
+                PageHeader(
+                  title: _vm.hasActiveWorkout ? 'Training Session' : 'Mental Prep and Planning',
+                  left: _vm.hasActiveWorkout
+                      ? GlassButton(label: 'Cancel', color: AppColors.danger, compact: true, onPressed: _confirmCancelWorkout)
+                      : null,
                 ),
-                _ActivePage(
-                  vm: _vm,
-                  onLogSet: _openLogSetModal,
-                  onEditSet: _openEditSetModal,
+                if (_vm.error != null)
+                  GestureDetector(
+                    onTap: _vm.clearError,
+                    child: Container(
+                      width: double.infinity,
+                      color: AppColors.dangerBg,
+                      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
+                      child: Text(_vm.error!, style: TextStyle(color: AppColors.danger, fontSize: AppTextStyles.sm)),
+                    ),
+                  ),
+                Expanded(
+                  child: SlidePages(
+                    controller: _vm.slidePagesController,
+                    children: [
+                      _StartPage(vm: _vm, startNotesCtrl: _startNotesCtrl),
+                      _ActivePage(vm: _vm, onFinishWorkout: _openEndWorkoutModal),
+                    ],
+                  ),
                 ),
               ],
             ),
-          ),
-        ],
-      ),
     );
   }
 }
@@ -464,27 +181,46 @@ class _StartPage extends StatelessWidget {
                     children: [
                       Text('No exercises set up yet',
                           style: TextStyle(
-                              fontSize: AppTextStyles.md,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.primary),
+                              fontSize: AppTextStyles.md, fontWeight: FontWeight.w600, color: AppColors.primary),
                           textAlign: TextAlign.center),
                       SizedBox(height: AppSpacing.sm),
-                      Text(
-                          'Go to Exercises → Library to create your first exercise before logging a workout.',
-                          style: TextStyle(
-                              fontSize: AppTextStyles.sm,
-                              color: AppColors.muted),
+                      Text('Go to Exercises → Library to create your first exercise before logging a workout.',
+                          style: TextStyle(fontSize: AppTextStyles.sm, color: AppColors.muted),
                           textAlign: TextAlign.center),
                     ],
                   ),
                 ),
               if (vm.exercises.isNotEmpty) ...[
-                // Session feeling picker
+                if (vm.programProgress?.nextPlannedWorkout != null) ...[
+                  Container(
+                    padding: const EdgeInsets.all(AppSpacing.md),
+                    decoration: BoxDecoration(
+                      color: AppColors.successBg,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppColors.success.withValues(alpha: 0.3)),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Week ${vm.programProgress!.weekNumber} · ${vm.programProgress!.program.name}',
+                                  style: AppFonts.mono(fontSize: 9, letterSpacing: 0.6, color: AppColors.success)),
+                              const SizedBox(height: 2),
+                              Text(vm.programProgress!.nextPlannedWorkout!.name,
+                                  style: AppFonts.ui(
+                                      fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.primary)),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+                ],
                 Text('How do you expect to perform?',
-                    style: TextStyle(
-                        fontSize: AppTextStyles.sm,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.primary)),
+                    style: TextStyle(fontSize: AppTextStyles.sm, fontWeight: FontWeight.w600, color: AppColors.primary)),
                 const SizedBox(height: AppSpacing.sm),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.start,
@@ -496,26 +232,18 @@ class _StartPage extends StatelessWidget {
                       child: Container(
                         width: 52,
                         height: 52,
-                        margin:
-                            const EdgeInsets.only(right: AppSpacing.sm),
+                        margin: const EdgeInsets.only(right: AppSpacing.sm),
                         decoration: BoxDecoration(
-                          color: selected
-                              ? AppColors.accent
-                              : AppColors.surface,
+                          color: selected ? AppColors.accent : AppColors.surface,
                           borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                              color: selected
-                                  ? AppColors.accent
-                                  : AppColors.border),
+                          border: Border.all(color: selected ? AppColors.accent : AppColors.border),
                         ),
                         child: Center(
                           child: Text('$n',
                               style: TextStyle(
                                   fontSize: AppTextStyles.lg,
                                   fontWeight: FontWeight.w700,
-                                  color: selected
-                                      ? AppColors.accentText
-                                      : AppColors.primary)),
+                                  color: selected ? AppColors.accentText : AppColors.primary)),
                         ),
                       ),
                     );
@@ -534,12 +262,8 @@ class _StartPage extends StatelessWidget {
         ),
         if (vm.exercises.isNotEmpty)
           Container(
-            padding: EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.lg,
-                AppSpacing.lg, bottomInset + AppSpacing.lg),
-            decoration: BoxDecoration(
-              border: Border(
-                  top: BorderSide(color: AppColors.border, width: 0.5)),
-            ),
+            padding: EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.lg, AppSpacing.lg, bottomInset + AppSpacing.lg),
+            decoration: BoxDecoration(border: Border(top: BorderSide(color: AppColors.border, width: 0.5))),
             child: LambdaButton(
               label: 'Start Workout',
               onPressed: vm.startWorkout,
@@ -555,55 +279,119 @@ class _StartPage extends StatelessWidget {
 // ── Page 1: Active workout ─────────────────────────────────────────────────────
 
 class _ActivePage extends StatelessWidget {
-  const _ActivePage({
-    required this.vm,
-    required this.onLogSet,
-    required this.onEditSet,
-  });
+  const _ActivePage({required this.vm, required this.onFinishWorkout});
 
   final SessionViewModel vm;
-  final VoidCallback onLogSet;
-  final ValueChanged<WorkoutSet> onEditSet;
+  final VoidCallback onFinishWorkout;
+
+  String _elapsedLabel() {
+    final started = vm.workoutStartedAt;
+    if (started == null) return '0:00';
+    final elapsed = DateTime.now().difference(started);
+    final h = elapsed.inHours;
+    final m = elapsed.inMinutes.remainder(60);
+    final s = elapsed.inSeconds.remainder(60);
+    final ss = s.toString().padLeft(2, '0');
+    if (h > 0) return '$h:${m.toString().padLeft(2, '0')}:$ss';
+    return '$m:$ss';
+  }
 
   @override
   Widget build(BuildContext context) {
+    final plannedWorkout = vm.programProgress?.nextPlannedWorkout;
+    final subtitle = plannedWorkout != null
+        ? 'Week ${vm.programProgress!.weekNumber} · ${plannedWorkout.name}'
+        : 'Freestyle Workout';
+
     return Column(
       children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.md, AppSpacing.lg, 0),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Text(subtitle,
+                    style: AppFonts.mono(fontSize: 10, letterSpacing: 0.6, color: AppColors.muted)),
+              ),
+              _ElapsedTimer(label: _elapsedLabel),
+            ],
+          ),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+          child: SessionStatsBar(vm: vm),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+          child: ExerciseTabBar(vm: vm),
+        ),
+        const SizedBox(height: AppSpacing.sm),
         Expanded(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(AppSpacing.lg),
-            child: WorkoutSetsList(
-              sets: vm.sets,
-              exerciseDetailMap: vm.exerciseDetailMap,
-              setsLoading: vm.setsLoading,
-              viewMode: vm.viewMode,
-              onToggleViewMode: vm.toggleViewMode,
-              interactive: true,
-              onEditSet: onEditSet,
-              onReorderSets: (reordered, ids) =>
-                  vm.reorderSets(reordered, ids),
-              emptyHint: 'Tap "Log Set" below to record your first set.',
-            ),
+            padding: const EdgeInsets.fromLTRB(AppSpacing.lg, 0, AppSpacing.lg, AppSpacing.lg),
+            child: vm.activeSlot == null
+                ? _EmptySlotsHint(vm: vm)
+                : ExerciseCard(vm: vm, slot: vm.activeSlot!),
           ),
         ),
-        Container(
-          padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.lg, vertical: AppSpacing.md),
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            border: Border(
-                top: BorderSide(color: AppColors.border, width: 0.5)),
-          ),
-          child: SizedBox(
-            width: double.infinity,
-            child: GlassButton(
-              label: 'Log Set',
-              icon: Icons.add,
-              onPressed: onLogSet,
-            ),
-          ),
+        Padding(
+          padding: EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.sm, AppSpacing.lg,
+              MediaQuery.of(context).padding.bottom + AppSpacing.sm),
+          child: RestTimerBar(vm: vm, onFinish: onFinishWorkout),
         ),
       ],
+    );
+  }
+}
+
+class _ElapsedTimer extends StatefulWidget {
+  const _ElapsedTimer({required this.label});
+
+  final String Function() label;
+
+  @override
+  State<_ElapsedTimer> createState() => _ElapsedTimerState();
+}
+
+class _ElapsedTimerState extends State<_ElapsedTimer> {
+  @override
+  void initState() {
+    super.initState();
+    _tick();
+  }
+
+  void _tick() {
+    Future.delayed(const Duration(seconds: 1), () {
+      if (mounted) {
+        setState(() {});
+        _tick();
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(widget.label(),
+        style: AppFonts.mono(fontSize: 22, fontWeight: FontWeight.w500, color: AppColors.accent));
+  }
+}
+
+class _EmptySlotsHint extends StatelessWidget {
+  const _EmptySlotsHint({required this.vm});
+
+  final SessionViewModel vm;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxl),
+      child: Center(
+        child: Text('Tap + above to add your first exercise.',
+            style: TextStyle(color: AppColors.muted, fontSize: AppTextStyles.sm)),
+      ),
     );
   }
 }
@@ -618,95 +406,54 @@ class _EndWorkoutModal extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.xl),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text('End Workout',
-                style: TextStyle(
-                    fontSize: AppTextStyles.lg,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.primary)),
-            const SizedBox(height: AppSpacing.md),
-            LambdaInput(
-              controller: notesCtrl,
-              label: 'Post-workout notes (optional)',
-              placeholder: 'Notes…',
-              onChanged: (v) => vm.endNotes = v,
-            ),
-            const SizedBox(height: AppSpacing.lg),
-            Row(
-              children: [
-                Expanded(
-                  child: GlassButton(
-                    label: 'Cancel',
-                    color: AppColors.danger,
-                    compact: true,
-                    onPressed: () =>
-                        Navigator.of(context, rootNavigator: true).pop(),
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.sm),
-                Expanded(
-                  child: GlassButton(
-                    label: 'End Workout',
-                    compact: true,
-                    loading: vm.endLoading,
-                    disabled: vm.endLoading,
-                    onPressed: () async {
-                      Navigator.of(context, rootNavigator: true).pop();
-                      await vm.endWorkout();
-                    },
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ── New Exercise Modal ──────────────────────────────────────────────────────────
-
-class _NewExerciseModal extends StatelessWidget {
-  const _NewExerciseModal({
-    required this.vm,
-    required this.nameCtrl,
-    required this.onCreated,
-  });
-
-  final SessionViewModel vm;
-  final TextEditingController nameCtrl;
-  final VoidCallback onCreated;
-
-  @override
-  Widget build(BuildContext context) {
     return ListenableBuilder(
       listenable: vm,
-      builder: (ctx, _) => SafeArea(
+      builder: (context, _) => SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(AppSpacing.xl),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text('New Exercise',
-                  style: TextStyle(
-                      fontSize: AppTextStyles.lg,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.primary)),
+              Text('End Workout',
+                  style: TextStyle(fontSize: AppTextStyles.lg, fontWeight: FontWeight.w700, color: AppColors.primary)),
               const SizedBox(height: AppSpacing.md),
+              Text('How did it feel?',
+                  style: TextStyle(fontSize: AppTextStyles.sm, fontWeight: FontWeight.w600, color: AppColors.primary)),
+              const SizedBox(height: AppSpacing.sm),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.start,
+                children: List.generate(5, (i) {
+                  final n = i + 1;
+                  final selected = vm.endFeeling == n;
+                  return GestureDetector(
+                    onTap: () => vm.setEndFeeling(n),
+                    child: Container(
+                      width: 52,
+                      height: 52,
+                      margin: const EdgeInsets.only(right: AppSpacing.sm),
+                      decoration: BoxDecoration(
+                        color: selected ? AppColors.accent : AppColors.surface,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: selected ? AppColors.accent : AppColors.border),
+                      ),
+                      child: Center(
+                        child: Text('$n',
+                            style: TextStyle(
+                                fontSize: AppTextStyles.lg,
+                                fontWeight: FontWeight.w700,
+                                color: selected ? AppColors.accentText : AppColors.primary)),
+                      ),
+                    ),
+                  );
+                }),
+              ),
+              const SizedBox(height: AppSpacing.lg),
               LambdaInput(
-                controller: nameCtrl,
-                placeholder: 'Exercise name',
-                textCapitalization: TextCapitalization.words,
-                enabled: !vm.newExCreating,
-                onChanged: (v) => vm.newExName = v,
+                controller: notesCtrl,
+                label: 'Post-workout notes (optional)',
+                placeholder: 'Notes…',
+                onChanged: (v) => vm.endNotes = v,
               ),
               const SizedBox(height: AppSpacing.lg),
               Row(
@@ -716,98 +463,19 @@ class _NewExerciseModal extends StatelessWidget {
                       label: 'Cancel',
                       color: AppColors.danger,
                       compact: true,
-                      onPressed: () =>
-                          Navigator.of(ctx, rootNavigator: true).pop(),
+                      onPressed: () => Navigator.of(context, rootNavigator: true).pop(),
                     ),
                   ),
                   const SizedBox(width: AppSpacing.sm),
                   Expanded(
                     child: GlassButton(
-                      label: 'Create',
+                      label: 'End Workout',
                       compact: true,
-                      loading: vm.newExCreating,
-                      disabled: vm.newExCreating,
+                      loading: vm.endLoading,
+                      disabled: vm.endLoading,
                       onPressed: () async {
-                        final id = await vm.submitNewExercise();
-                        if (id != null && ctx.mounted) {
-                          Navigator.of(ctx, rootNavigator: true).pop();
-                          onCreated();
-                        }
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ── New Variation Modal ─────────────────────────────────────────────────────────
-
-class _NewVariationModal extends StatelessWidget {
-  const _NewVariationModal({
-    required this.vm,
-    required this.nameCtrl,
-    required this.onCreated,
-  });
-
-  final SessionViewModel vm;
-  final TextEditingController nameCtrl;
-  final VoidCallback onCreated;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: vm,
-      builder: (ctx, _) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.xl),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text('New Variation',
-                  style: TextStyle(
-                      fontSize: AppTextStyles.lg,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.primary)),
-              const SizedBox(height: AppSpacing.md),
-              LambdaInput(
-                controller: nameCtrl,
-                placeholder: 'Variation name',
-                textCapitalization: TextCapitalization.words,
-                enabled: !vm.newVarCreating,
-                onChanged: (v) => vm.newVarName = v,
-              ),
-              const SizedBox(height: AppSpacing.lg),
-              Row(
-                children: [
-                  Expanded(
-                    child: GlassButton(
-                      label: 'Cancel',
-                      color: AppColors.danger,
-                      compact: true,
-                      onPressed: () =>
-                          Navigator.of(ctx, rootNavigator: true).pop(),
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.sm),
-                  Expanded(
-                    child: GlassButton(
-                      label: 'Create',
-                      compact: true,
-                      loading: vm.newVarCreating,
-                      disabled: vm.newVarCreating,
-                      onPressed: () async {
-                        final id = await vm.submitNewVariation();
-                        if (id != null && ctx.mounted) {
-                          Navigator.of(ctx, rootNavigator: true).pop();
-                          onCreated();
-                        }
+                        Navigator.of(context, rootNavigator: true).pop();
+                        await vm.endWorkout();
                       },
                     ),
                   ),

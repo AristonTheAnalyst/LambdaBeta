@@ -1,0 +1,39 @@
+import 'package:flutter/material.dart';
+import '../../../shared/widgets/stats_row.dart';
+import '../viewmodel/session_viewmodel.dart';
+import 'pr_modal.dart';
+
+/// Sets / PRs / Exercises / Avg Rest — always visible atop the active
+/// workout. The PR tile is tappable once there's at least one PR.
+class SessionStatsBar extends StatelessWidget {
+  const SessionStatsBar({super.key, required this.vm});
+
+  final SessionViewModel vm;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: vm,
+      builder: (context, _) {
+        final prs = vm.totalPRsThisSession;
+        final avgRest = vm.avgRestSeconds;
+        return StatsRow(tiles: [
+          StatsTile(label: 'SETS', value: '${vm.sets.length}'),
+          StatsTile(
+            label: 'PRS',
+            value: '$prs',
+            accent: prs > 0,
+            onTap: prs > 0 ? () => showPrModal(context, vm: vm) : null,
+          ),
+          StatsTile(label: 'EXERCISES', value: '${vm.distinctExerciseCount}'),
+          StatsTile(
+            label: 'AVG REST',
+            value: avgRest != null
+                ? '${avgRest ~/ 60}:${(avgRest.round() % 60).toString().padLeft(2, '0')}'
+                : '—',
+          ),
+        ]);
+      },
+    );
+  }
+}

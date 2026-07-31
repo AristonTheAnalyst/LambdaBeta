@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/styles/app_colors.dart';
+import '../../../../core/styles/app_fonts.dart';
 import '../../../../core/styles/app_spacing.dart';
 import '../../../../core/styles/app_text_styles.dart';
 import '../../../../core/utils/workout_format.dart';
@@ -59,22 +60,22 @@ class _ProgramLibraryScreenState extends State<ProgramLibraryScreen> {
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
         title: Text('Archive Program',
-            style: TextStyle(color: AppColors.danger)),
+            style: AppFonts.ui(fontWeight: FontWeight.w800, color: AppColors.danger)),
         content: Text(
             'Archive "${toProperCase(p.name)}"? Past workouts logged from it stay intact.',
-            style: TextStyle(color: AppColors.muted)),
+            style: AppFonts.ui(color: AppColors.muted)),
         actions: [
           TextButton(
               onPressed: () => Navigator.of(ctx).pop(),
               child:
-                  Text('Cancel', style: TextStyle(color: AppColors.muted))),
+                  Text('Cancel', style: AppFonts.ui(color: AppColors.muted))),
           TextButton(
               onPressed: () {
                 Navigator.of(ctx).pop();
                 _viewModel.archiveProgram(p.programId);
               },
               child: Text('Archive',
-                  style: TextStyle(
+                  style: AppFonts.ui(
                       color: AppColors.danger, fontWeight: FontWeight.w600))),
         ],
       ),
@@ -107,7 +108,7 @@ class _ProgramLibraryScreenState extends State<ProgramLibraryScreen> {
                   padding: const EdgeInsets.symmetric(
                       horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
                   child: Text(state.error!,
-                      style: TextStyle(
+                      style: AppFonts.ui(
                           color: AppColors.danger, fontSize: AppTextStyles.sm)),
                 ),
               Expanded(
@@ -120,13 +121,13 @@ class _ProgramLibraryScreenState extends State<ProgramLibraryScreen> {
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Text('No programs yet',
-                                    style: TextStyle(
+                                    style: AppFonts.ui(
                                         fontSize: AppTextStyles.md,
-                                        fontWeight: FontWeight.w600,
+                                        fontWeight: FontWeight.w800,
                                         color: AppColors.primary)),
                                 const SizedBox(height: AppSpacing.sm),
                                 Text('Tap + to plan your first program.',
-                                    style: TextStyle(
+                                    style: AppFonts.ui(
                                         fontSize: AppTextStyles.sm,
                                         color: AppColors.muted)),
                               ],
@@ -202,9 +203,9 @@ class _ProgramCard extends StatelessWidget {
                         children: [
                           Flexible(
                             child: Text(toProperCase(program.name),
-                                style: TextStyle(
+                                style: AppFonts.ui(
                                     fontSize: AppTextStyles.md,
-                                    fontWeight: FontWeight.w700,
+                                    fontWeight: FontWeight.w800,
                                     color: AppColors.primary),
                                 overflow: TextOverflow.ellipsis),
                           ),
@@ -216,11 +217,13 @@ class _ProgramCard extends StatelessWidget {
                               decoration: BoxDecoration(
                                 color: AppColors.accentBg,
                                 borderRadius: BorderRadius.circular(999),
+                                border: Border.all(color: AppColors.accent),
                               ),
-                              child: Text('Current',
-                                  style: TextStyle(
-                                      fontSize: AppTextStyles.xs,
-                                      fontWeight: FontWeight.w600,
+                              child: Text('CURRENT',
+                                  style: AppFonts.ui(
+                                      fontSize: 10,
+                                      letterSpacing: 0.5,
+                                      fontWeight: FontWeight.w800,
                                       color: AppColors.accent)),
                             ),
                           ],
@@ -229,7 +232,7 @@ class _ProgramCard extends StatelessWidget {
                       if (program.description?.isNotEmpty == true) ...[
                         const SizedBox(height: 2),
                         Text(program.description!,
-                            style: TextStyle(
+                            style: AppFonts.ui(
                                 fontSize: AppTextStyles.sm,
                                 color: AppColors.muted),
                             maxLines: 1,
@@ -298,9 +301,9 @@ class _CreateProgramModal extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text('New Program',
-                    style: TextStyle(
+                    style: AppFonts.ui(
                         fontSize: AppTextStyles.lg,
-                        fontWeight: FontWeight.w700,
+                        fontWeight: FontWeight.w800,
                         color: AppColors.primary)),
                 const SizedBox(height: AppSpacing.md),
                 LambdaInput(

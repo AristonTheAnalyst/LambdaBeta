@@ -1,5 +1,6 @@
 ﻿import 'package:flutter/material.dart';
 import '../../core/styles/app_colors.dart';
+import '../../core/styles/app_fonts.dart';
 import '../../core/styles/app_radius.dart';
 import '../../core/styles/app_spacing.dart';
 import '../../core/styles/app_text_styles.dart';
@@ -100,9 +101,9 @@ class _MultiSelectSheetState<T> extends State<_MultiSelectSheet<T>> {
               children: [
                 Expanded(
                   child: Text(widget.title,
-                      style: TextStyle(
+                      style: AppFonts.ui(
                           fontSize: AppTextStyles.lg,
-                          fontWeight: FontWeight.w700,
+                          fontWeight: FontWeight.w800,
                           color: AppColors.primary)),
                 ),
                 if (widget.onCreateNew != null)
@@ -113,7 +114,7 @@ class _MultiSelectSheetState<T> extends State<_MultiSelectSheet<T>> {
                     },
                     child: Text(
                       '+ ${widget.createNewLabel}',
-                      style: TextStyle(
+                      style: AppFonts.ui(
                           fontSize: AppTextStyles.sm,
                           color: AppColors.accent,
                           fontWeight: FontWeight.w600),
@@ -126,11 +127,11 @@ class _MultiSelectSheetState<T> extends State<_MultiSelectSheet<T>> {
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
               child: TextField(
-                style: TextStyle(
+                style: AppFonts.ui(
                     fontSize: AppTextStyles.md, color: AppColors.primary),
                 decoration: InputDecoration(
                   hintText: 'Search…',
-                  hintStyle: TextStyle(color: AppColors.muted),
+                  hintStyle: AppFonts.ui(color: AppColors.muted),
                   filled: true,
                   fillColor: AppColors.surfaceHigh,
                   border: OutlineInputBorder(
@@ -176,7 +177,7 @@ class _MultiSelectSheetState<T> extends State<_MultiSelectSheet<T>> {
                         Expanded(
                           child: Text(
                             opt.label,
-                            style: TextStyle(
+                            style: AppFonts.ui(
                                 fontSize: AppTextStyles.md,
                                 color: isSelected
                                     ? AppColors.accent
@@ -211,7 +212,7 @@ class _MultiSelectSheetState<T> extends State<_MultiSelectSheet<T>> {
                 child: Center(
                   child: Text(
                     effectiveLabel,
-                    style: TextStyle(
+                    style: AppFonts.ui(
                         fontSize: AppTextStyles.md,
                         fontWeight: FontWeight.w600,
                         color: AppColors.accentText),

@@ -1,11 +1,28 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../../../core/utils/workout_format.dart';
+import '../../../data/models/custom_variation.dart';
 import '../../../data/models/exercise_detail.dart';
+import '../../../data/models/lesson.dart';
 import '../../../data/models/workout.dart';
 import '../../../data/models/workout_set.dart';
 import '../../../data/repositories/exercise_repository.dart';
+import '../../../data/repositories/lesson_repository.dart';
 import '../../../data/repositories/workout_repository.dart';
+import '../../session/model/session_local_state.dart'
+    show
+        ExerciseHistorySession,
+        groupHistoryByExercise,
+        isSimilarVariationName,
+        bestEverForExercise,
+        isPr;
+
+/// One tab in the workout-detail screen — a single exercise that was logged
+/// in this workout.
+class WorkoutDetailExerciseSlot {
+  const WorkoutDetailExerciseSlot({required this.groupOrder, required this.exerciseId});
+  final int groupOrder;
+  final String exerciseId;
+}
 
 class WorkoutDetailState {
   const WorkoutDetailState({
@@ -13,68 +30,58 @@ class WorkoutDetailState {
     this.isSaving = false,
     this.error,
     this.workout,
-    this.sets = const [],
     this.exerciseDetailMap = const {},
-    this.viewMode = 'grouped',
     this.isEditing = false,
     this.preNotesDraft = '',
     this.postNotesDraft = '',
-    // Edit set form
-    this.editingSet,
-    this.editExId,
-    this.editVarId,
-    this.editWeight = '',
-    this.editRepsOrDuration = '',
-    this.editVolumeType = 'reps',
-    this.editNotes = '',
-    this.editLoading = false,
-    // Log set form
-    this.logSetVisible = false,
-    this.selectedExId,
-    this.selectedVarId,
-    this.logWeight = '',
-    this.logRepsOrDuration = '',
-    this.logVolumeType = 'reps',
-    this.logNotes = '',
-    this.logLoading = false,
+    this.exerciseSlots = const [],
+    this.activeSlotIndex = 0,
+    this.setsByOrder = const {},
+    this.workoutSetDrafts = const {},
+    // Catalog / create-new
+    this.allVariations = const [],
+    this.variationExerciseCounts = const {},
+    this.newExCreating = false,
+    this.newVarCreating = false,
+    // Lessons and history
+    this.lessonsByExercise = const {},
+    this.historyByExercise = const {},
+    this.pastSetsLoaded = false,
+    this.prsByExercise = const {},
+    this.totalPRCount = 0,
   });
 
   final bool isLoading;
   final bool isSaving;
   final String? error;
   final Workout? workout;
-  final List<WorkoutSet> sets;
   final Map<String, ExerciseDetail> exerciseDetailMap;
-  final String viewMode;
   final bool isEditing;
   final String preNotesDraft;
   final String postNotesDraft;
 
-  final WorkoutSet? editingSet;
-  final String? editExId;
-  final String? editVarId;
-  final String editWeight;
-  final String editRepsOrDuration;
-  final String editVolumeType; // 'reps' | 'duration' — chosen per set
-  final String editNotes;
-  final bool editLoading;
+  final List<WorkoutDetailExerciseSlot> exerciseSlots;
+  final int activeSlotIndex;
+  final Map<int, List<WorkoutSet>> setsByOrder;
+  final Map<int, List<int>> workoutSetDrafts;
 
-  final bool logSetVisible;
-  final String? selectedExId;
-  final String? selectedVarId;
-  final String logWeight;
-  final String logRepsOrDuration;
-  final String logVolumeType;
-  final String logNotes;
-  final bool logLoading;
+  final List<CustomVariation> allVariations;
+  final Map<String, int> variationExerciseCounts;
+  final bool newExCreating;
+  final bool newVarCreating;
 
-  List<String> get exerciseOptions => exerciseDetailMap.keys.toList();
+  final Map<String, List<Lesson>> lessonsByExercise;
+  final Map<String, List<ExerciseHistorySession>> historyByExercise;
+  final bool pastSetsLoaded;
+  final Map<String, int> prsByExercise;
+  final int totalPRCount;
 
-  ExerciseDetail? get selectedExDetail =>
-      selectedExId != null ? exerciseDetailMap[selectedExId] : null;
+  WorkoutDetailExerciseSlot? get activeSlot => exerciseSlots.isEmpty
+      ? null
+      : exerciseSlots[activeSlotIndex.clamp(0, exerciseSlots.length - 1)];
 
-  ExerciseDetail? get editExDetail =>
-      editExId != null ? exerciseDetailMap[editExId] : null;
+  List<WorkoutSet> setsFor(int groupOrder) =>
+      setsByOrder[groupOrder] ?? [];
 
   WorkoutDetailState copyWith({
     bool? isLoading,
@@ -82,61 +89,49 @@ class WorkoutDetailState {
     String? error,
     bool clearError = false,
     Workout? workout,
-    List<WorkoutSet>? sets,
     Map<String, ExerciseDetail>? exerciseDetailMap,
-    String? viewMode,
     bool? isEditing,
     String? preNotesDraft,
     String? postNotesDraft,
-    WorkoutSet? editingSet,
-    bool clearEditingSet = false,
-    String? editExId,
-    bool clearEditExId = false,
-    String? editVarId,
-    bool clearEditVarId = false,
-    String? editWeight,
-    String? editRepsOrDuration,
-    String? editVolumeType,
-    String? editNotes,
-    bool? editLoading,
-    bool? logSetVisible,
-    String? selectedExId,
-    bool clearSelectedExId = false,
-    String? selectedVarId,
-    bool clearSelectedVarId = false,
-    String? logWeight,
-    String? logRepsOrDuration,
-    String? logVolumeType,
-    String? logNotes,
-    bool? logLoading,
+    List<WorkoutDetailExerciseSlot>? exerciseSlots,
+    int? activeSlotIndex,
+    Map<int, List<WorkoutSet>>? setsByOrder,
+    bool clearSetsByOrder = false,
+    Map<int, List<int>>? workoutSetDrafts,
+    bool clearWorkoutSetDrafts = false,
+    List<CustomVariation>? allVariations,
+    Map<String, int>? variationExerciseCounts,
+    bool? newExCreating,
+    bool? newVarCreating,
+    Map<String, List<Lesson>>? lessonsByExercise,
+    Map<String, List<ExerciseHistorySession>>? historyByExercise,
+    bool? pastSetsLoaded,
+    Map<String, int>? prsByExercise,
+    int? totalPRCount,
   }) =>
       WorkoutDetailState(
         isLoading: isLoading ?? this.isLoading,
         isSaving: isSaving ?? this.isSaving,
         error: clearError ? null : error ?? this.error,
         workout: workout ?? this.workout,
-        sets: sets ?? this.sets,
         exerciseDetailMap: exerciseDetailMap ?? this.exerciseDetailMap,
-        viewMode: viewMode ?? this.viewMode,
         isEditing: isEditing ?? this.isEditing,
         preNotesDraft: preNotesDraft ?? this.preNotesDraft,
         postNotesDraft: postNotesDraft ?? this.postNotesDraft,
-        editingSet: clearEditingSet ? null : (editingSet ?? this.editingSet),
-        editExId: clearEditExId ? null : (editExId ?? this.editExId),
-        editVarId: clearEditVarId ? null : (editVarId ?? this.editVarId),
-        editWeight: editWeight ?? this.editWeight,
-        editRepsOrDuration: editRepsOrDuration ?? this.editRepsOrDuration,
-        editVolumeType: editVolumeType ?? this.editVolumeType,
-        editNotes: editNotes ?? this.editNotes,
-        editLoading: editLoading ?? this.editLoading,
-        logSetVisible: logSetVisible ?? this.logSetVisible,
-        selectedExId: clearSelectedExId ? null : (selectedExId ?? this.selectedExId),
-        selectedVarId: clearSelectedVarId ? null : (selectedVarId ?? this.selectedVarId),
-        logWeight: logWeight ?? this.logWeight,
-        logRepsOrDuration: logRepsOrDuration ?? this.logRepsOrDuration,
-        logVolumeType: logVolumeType ?? this.logVolumeType,
-        logNotes: logNotes ?? this.logNotes,
-        logLoading: logLoading ?? this.logLoading,
+        exerciseSlots: exerciseSlots ?? this.exerciseSlots,
+        activeSlotIndex: activeSlotIndex ?? this.activeSlotIndex,
+        setsByOrder: clearSetsByOrder ? const {} : (setsByOrder ?? this.setsByOrder),
+        workoutSetDrafts:
+            clearWorkoutSetDrafts ? const {} : (workoutSetDrafts ?? this.workoutSetDrafts),
+        allVariations: allVariations ?? this.allVariations,
+        variationExerciseCounts: variationExerciseCounts ?? this.variationExerciseCounts,
+        newExCreating: newExCreating ?? this.newExCreating,
+        newVarCreating: newVarCreating ?? this.newVarCreating,
+        lessonsByExercise: lessonsByExercise ?? this.lessonsByExercise,
+        historyByExercise: historyByExercise ?? this.historyByExercise,
+        pastSetsLoaded: pastSetsLoaded ?? this.pastSetsLoaded,
+        prsByExercise: prsByExercise ?? this.prsByExercise,
+        totalPRCount: totalPRCount ?? this.totalPRCount,
       );
 }
 
@@ -144,14 +139,47 @@ class WorkoutDetailViewModel {
   WorkoutDetailViewModel({
     WorkoutRepository? workoutRepo,
     ExerciseRepository? exerciseRepo,
+    LessonRepository? lessonRepo,
   })  : _workoutRepo = workoutRepo ?? WorkoutRepository(),
-        _exerciseRepo = exerciseRepo ?? ExerciseRepository();
+        _exerciseRepo = exerciseRepo ?? ExerciseRepository(),
+        _lessonRepo = lessonRepo ?? LessonRepository();
 
   final WorkoutRepository _workoutRepo;
   final ExerciseRepository _exerciseRepo;
+  final LessonRepository _lessonRepo;
   final state = ValueNotifier(const WorkoutDetailState());
 
+  int _nextDraftId = 1;
+
   String get _userId => Supabase.instance.client.auth.currentUser!.id;
+
+  List<WorkoutDetailExerciseSlot> _buildSlots(List<WorkoutSet> sets) {
+    final seen = <String>{};
+    final slots = <WorkoutDetailExerciseSlot>[];
+    for (var i = 0; i < sets.length; i++) {
+      if (seen.add(sets[i].exerciseId)) {
+        slots.add(WorkoutDetailExerciseSlot(groupOrder: slots.length + 1, exerciseId: sets[i].exerciseId));
+      }
+    }
+    return slots;
+  }
+
+  Map<int, List<WorkoutSet>> _groupByOrder(List<WorkoutSet> sets, List<WorkoutDetailExerciseSlot> slots) {
+    final map = <int, List<WorkoutSet>>{};
+    for (final slot in slots) {
+      map[slot.groupOrder] = [];
+    }
+    for (final s in sets) {
+      final slot = slots.firstWhere(
+        (sl) => sl.exerciseId == s.exerciseId,
+        orElse: () => slots.last,
+      );
+      map[slot.groupOrder]?.add(s);
+    }
+    return map;
+  }
+
+  // ── Loading ────────────────────────────────────────────────────────────────
 
   Future<void> load(String workoutId) async {
     state.value = state.value.copyWith(isLoading: true, clearError: true);
@@ -160,32 +188,86 @@ class WorkoutDetailViewModel {
         _workoutRepo.fetchWorkout(workoutId),
         _workoutRepo.loadSetsForWorkout(workoutId),
         _exerciseRepo.fetchExerciseDetailMap(_userId),
+        _workoutRepo.loadPastSetsTimeline(_userId),
+        _exerciseRepo.fetchVariations(_userId),
+        _exerciseRepo.fetchBridges(_userId),
       ]);
+      final sets = results[1] as List<WorkoutSet>;
+      final slots = _buildSlots(sets);
+      final bridges = results[5] as List<Map<String, dynamic>>;
+      final counts = <String, int>{};
+      for (final b in bridges) {
+        final varId = b['custom_variation_id'] as String;
+        counts[varId] = (counts[varId] ?? 0) + 1;
+      }
       state.value = state.value.copyWith(
         isLoading: false,
         workout: results[0] as Workout?,
-        sets: results[1] as List<WorkoutSet>,
-        exerciseDetailMap:
-            results[2] as Map<String, ExerciseDetail>,
+        exerciseDetailMap: results[2] as Map<String, ExerciseDetail>,
+        historyByExercise: groupHistoryByExercise(results[3] as List<PastSetRow>),
+        pastSetsLoaded: true,
+        allVariations: results[4] as List<CustomVariation>,
+        variationExerciseCounts: counts,
+        exerciseSlots: slots,
+        setsByOrder: _groupByOrder(sets, slots),
       );
+      _computePRs();
     } catch (e) {
-      state.value =
-          state.value.copyWith(isLoading: false, error: e.toString());
+      state.value = state.value.copyWith(isLoading: false, error: e.toString());
     }
   }
 
+  void _computePRs() {
+    final s = state.value;
+    // Build prevBest from all history *except* this workout's sets
+    final exclusions = s.workout?.workoutId != null ? {s.workout!.workoutId} : <String>{};
+    final filtered = <PastSetRow>[];
+    for (final sessions in s.historyByExercise.values) {
+      for (final session in sessions) {
+        for (final set in session.sets) {
+          if (!exclusions.contains(set.workoutId)) {
+            filtered.add(set);
+          }
+        }
+      }
+    }
+    final byExercise = <String, List<PastSetRow>>{};
+    for (final set in filtered) {
+      byExercise.putIfAbsent(set.exerciseId, () => []).add(set);
+    }
+    final prevBest = <String, ({num weight, num reps})?>{};
+    for (final entry in byExercise.entries) {
+      final best = bestEverForExercise(entry.value);
+      if (best != null) prevBest[entry.key] = best;
+    }
+
+    final prs = <String, int>{};
+    var total = 0;
+    for (final e in s.setsByOrder.entries) {
+      for (final set in e.value) {
+        if (isPr(set, prevBest[set.exerciseId])) {
+          prs[set.exerciseId] = (prs[set.exerciseId] ?? 0) + 1;
+          total++;
+        }
+      }
+    }
+    state.value = state.value.copyWith(prsByExercise: prs, totalPRCount: total);
+  }
+
+  int prCountFor(String exerciseId) =>
+      state.value.prsByExercise[exerciseId] ?? 0;
+
   Future<void> _reloadSets(String workoutId) async {
     final sets = await _workoutRepo.loadSetsForWorkout(workoutId);
-    state.value = state.value.copyWith(sets: sets);
+    final existingSlots = state.value.exerciseSlots;
+    state.value = state.value.copyWith(
+      setsByOrder: _groupByOrder(sets, existingSlots),
+      clearWorkoutSetDrafts: true,
+    );
+    _computePRs();
   }
 
-  void toggleViewMode() {
-    final next =
-        state.value.viewMode == 'grouped' ? 'chrono' : 'grouped';
-    state.value = state.value.copyWith(viewMode: next);
-  }
-
-  // ── Notes editing ──────────────────────────────────────────────────────────
+  // ── Edit mode ──────────────────────────────────────────────────────────────
 
   void startEditing() {
     final w = state.value.workout;
@@ -212,205 +294,349 @@ class WorkoutDetailViewModel {
         workoutId,
         postNotes: state.value.postNotesDraft,
       );
-      // Reload the workout to reflect saved notes
       final updated = await _workoutRepo.fetchWorkout(workoutId);
       state.value = state.value.copyWith(
-          isSaving: false, isEditing: false, workout: updated);
+        isSaving: false,
+        isEditing: false,
+        workout: updated,
+      );
     } catch (e) {
-      state.value =
-          state.value.copyWith(isSaving: false, error: e.toString());
+      state.value = state.value.copyWith(isSaving: false, error: e.toString());
     }
   }
 
-  // ── Log set ────────────────────────────────────────────────────────────────
+  // ── Tabs ───────────────────────────────────────────────────────────────────
 
-  void openLogSet() =>
-      state.value = state.value.copyWith(logSetVisible: true);
+  void tapTab(int index) =>
+      state.value = state.value.copyWith(activeSlotIndex: index);
 
-  void closeLogSet() => state.value = state.value.copyWith(
-        logSetVisible: false,
-        clearSelectedExId: true,
-        clearSelectedVarId: true,
-        logWeight: '',
-        logRepsOrDuration: '',
-        logVolumeType: 'reps',
-        logNotes: '',
-      );
-
-  void selectExercise(String? exId) {
-    state.value = state.value.copyWith(
-      clearSelectedExId: exId == null,
-      selectedExId: exId,
-      clearSelectedVarId: true,
-      logWeight: '',
-      logRepsOrDuration: '',
-      logVolumeType: 'reps',
-    );
-  }
-
-  void selectVariation(String? varId) => state.value = varId == null
-      ? state.value.copyWith(clearSelectedVarId: true)
-      : state.value.copyWith(selectedVarId: varId);
-
-  void setLogWeight(String v) =>
-      state.value = state.value.copyWith(logWeight: v);
-  void setLogReps(String v) =>
-      state.value = state.value.copyWith(logRepsOrDuration: v);
-  void setLogVolumeType(String v) =>
-      state.value = state.value.copyWith(logVolumeType: v);
-  void setLogNotes(String v) =>
-      state.value = state.value.copyWith(logNotes: v);
-
-  /// Prefills weight/variation/volume-type from the most recently logged set
-  /// for this exercise. Guards against a stale result landing after the user
-  /// has already moved on to a different exercise.
-  Future<void> prefillLastUsedForLog(String exerciseId) async {
-    final last = await _workoutRepo.findLastSetForExercise(_userId, exerciseId);
-    if (last == null || state.value.selectedExId != exerciseId) return;
-    state.value = state.value.copyWith(
-      selectedVarId: last.variationId,
-      clearSelectedVarId: last.variationId == null,
-      logWeight: last.weight != null ? '${last.weight}' : '',
-      logVolumeType: last.duration.isNotEmpty ? 'duration' : 'reps',
-    );
-  }
-
-  Future<bool> submitLogSet(String workoutId) async {
+  void reorderExercises(int oldIndex, int newIndex) {
+    if (oldIndex == newIndex) return;
     final s = state.value;
-    final detail = s.selectedExDetail;
-    if (s.selectedExId == null || detail == null) return false;
-    final values = parseValues(s.logRepsOrDuration);
-    if (values.isEmpty) return false;
+    final slots = [...s.exerciseSlots];
+    final slot = slots.removeAt(oldIndex);
+    slots.insert(newIndex, slot);
+    int newActive = s.activeSlotIndex;
+    if (s.activeSlotIndex == oldIndex) {
+      newActive = newIndex;
+    } else if (oldIndex < s.activeSlotIndex && newIndex >= s.activeSlotIndex) {
+      newActive = s.activeSlotIndex - 1;
+    } else if (oldIndex > s.activeSlotIndex && newIndex <= s.activeSlotIndex) {
+      newActive = s.activeSlotIndex + 1;
+    }
+    state.value = s.copyWith(exerciseSlots: slots, activeSlotIndex: newActive);
+  }
 
-    final isReps = s.logVolumeType == 'reps';
-    final nextNum = s.sets.isEmpty
+  void addExerciseGroup(String exerciseId) {
+    final s = state.value;
+    final existingIndex = s.exerciseSlots.indexWhere((sl) => sl.exerciseId == exerciseId);
+    if (existingIndex != -1) {
+      state.value = s.copyWith(activeSlotIndex: existingIndex);
+      return;
+    }
+    final nextOrder = s.exerciseSlots.isEmpty
         ? 1
-        : s.sets.map((x) => x.setNumber).reduce((a, b) => a > b ? a : b) + 1;
+        : s.exerciseSlots.map((sl) => sl.groupOrder).reduce((a, b) => a > b ? a : b) + 1;
+    final slots = [...s.exerciseSlots, WorkoutDetailExerciseSlot(groupOrder: nextOrder, exerciseId: exerciseId)];
+    final drafts = Map<int, List<int>>.from(s.workoutSetDrafts);
+    drafts.putIfAbsent(nextOrder, () => []).add(_nextDraftId++);
+    state.value = s.copyWith(
+      exerciseSlots: slots,
+      workoutSetDrafts: drafts,
+      activeSlotIndex: slots.length - 1,
+    );
+    loadLessonsFor(exerciseId);
+  }
 
-    state.value = s.copyWith(logLoading: true);
+  // ── Draft set rows ─────────────────────────────────────────────────────────
+
+  /// "+ ADD SET" in edit mode pre-creates an empty set in the DB so it
+  /// survives hot restarts. Empty sets are NOT purged here — they were
+  /// intentionally added by the user editing a finished workout.
+  void addDraftSet(int groupOrder) {
+    final w = state.value.workout;
+    if (w == null) return;
+    final existing = state.value.setsFor(groupOrder);
+    final nextNum = existing.isEmpty ? 1 : existing.map((s) => s.setNumber).reduce((a, b) => a > b ? a : b) + 1;
+    final slot = state.value.exerciseSlots.firstWhere((s) => s.groupOrder == groupOrder);
+    _workoutRepo.insertSet(
+      workoutId: w.workoutId,
+      exerciseId: slot.exerciseId,
+      setNumber: nextNum,
+      weight: null,
+      reps: [],
+      duration: [],
+    ).then((_) => _reloadSets(w.workoutId));
+  }
+
+  void removeDraftSet(int groupOrder, int draftId) {
+    final drafts = Map<int, List<int>>.from(state.value.workoutSetDrafts);
+    drafts[groupOrder]?.remove(draftId);
+    state.value = state.value.copyWith(workoutSetDrafts: drafts);
+  }
+
+  /// Finds an existing empty set for this exercise and fills it in, or
+  /// inserts a new row. Allows empty reps for finished workouts (the user
+  /// explicitly added them in edit mode).
+  Future<bool> commitDraftSet(
+    String exerciseId,
+    int groupOrder,
+    int draftId, {
+    String? variationId,
+    double? weight,
+    required List<num> reps,
+    required List<num> duration,
+    String? notes,
+  }) async {
+    final w = state.value.workout;
+    if (w == null) return false;
+    final existing = state.value.setsFor(groupOrder);
+    final nextNum = existing.isEmpty ? 1 : existing.map((s) => s.setNumber).reduce((a, b) => a > b ? a : b) + 1;
+    // Find an empty pre-created set for this exercise
+    final emptyIdx = existing.lastIndexWhere((s) => s.reps.isEmpty && s.duration.isEmpty);
     try {
-      await _workoutRepo.insertSet(
-        workoutId: workoutId,
-        exerciseId: s.selectedExId!,
-        variationId: s.selectedVarId,
-        setNumber: nextNum,
-        weight: double.tryParse(s.logWeight),
-        reps: isReps ? values : [],
-        duration: isReps ? [] : values,
-        notes: s.logNotes.trim().isEmpty ? null : s.logNotes.trim(),
-      );
-      state.value = state.value.copyWith(logLoading: false);
-      WidgetsBinding.instance.addPostFrameCallback((_) => closeLogSet());
-      await _reloadSets(workoutId);
+      if (emptyIdx >= 0) {
+        await _workoutRepo.updateSet(
+          existing[emptyIdx].setId,
+          variationId: variationId,
+          clearVariation: variationId == null,
+          weight: weight,
+          clearWeight: weight == null,
+          reps: reps,
+          duration: duration,
+          notes: notes,
+          clearNotes: notes == null || notes.isEmpty,
+        );
+      } else {
+        await _workoutRepo.insertSet(
+          workoutId: w.workoutId,
+          exerciseId: exerciseId,
+          variationId: variationId,
+          setNumber: nextNum,
+          weight: weight,
+          reps: reps,
+          duration: duration,
+          notes: notes?.trim().isEmpty == true ? null : notes?.trim(),
+        );
+      }
+      removeDraftSet(groupOrder, draftId);
+      await _reloadSets(w.workoutId);
       return true;
     } catch (e) {
-      state.value = state.value.copyWith(
-          logLoading: false, error: e.toString());
+      state.value = state.value.copyWith(error: e.toString());
       return false;
     }
   }
 
-  // ── Edit set ───────────────────────────────────────────────────────────────
-
-  void openEditSet(WorkoutSet s) {
-    final vals = s.reps.isNotEmpty ? s.reps : s.duration;
-    state.value = state.value.copyWith(
-      editingSet: s,
-      editExId: s.exerciseId,
-      editVarId: s.variationId,
-      editWeight: s.weight != null ? '${s.weight}' : '',
-      editRepsOrDuration: vals.join(','),
-      editVolumeType: s.duration.isNotEmpty ? 'duration' : 'reps',
-      editNotes: s.notes ?? '',
-    );
-  }
-
-  void closeEditSet() => state.value = state.value.copyWith(
-        clearEditingSet: true,
-        clearEditExId: true,
-        clearEditVarId: true,
-        editWeight: '',
-        editRepsOrDuration: '',
-        editVolumeType: 'reps',
-        editNotes: '',
-      );
-
-  void setEditExId(String? id) => state.value = id == null
-      ? state.value.copyWith(
-          clearEditExId: true, clearEditVarId: true, editVolumeType: 'reps')
-      : state.value.copyWith(
-          editExId: id, clearEditVarId: true, editVolumeType: 'reps');
-
-  void setEditVarId(String? id) => state.value = id == null
-      ? state.value.copyWith(clearEditVarId: true)
-      : state.value.copyWith(editVarId: id);
-
-  void setEditWeight(String v) =>
-      state.value = state.value.copyWith(editWeight: v);
-  void setEditReps(String v) =>
-      state.value = state.value.copyWith(editRepsOrDuration: v);
-  void setEditVolumeType(String v) =>
-      state.value = state.value.copyWith(editVolumeType: v);
-  void setEditNotes(String v) =>
-      state.value = state.value.copyWith(editNotes: v);
-
-  /// Same as [prefillLastUsedForLog], for the edit form.
-  Future<void> prefillLastUsedForEdit(String exerciseId) async {
-    final last = await _workoutRepo.findLastSetForExercise(_userId, exerciseId);
-    if (last == null || state.value.editExId != exerciseId) return;
-    state.value = state.value.copyWith(
-      editVarId: last.variationId,
-      clearEditVarId: last.variationId == null,
-      editWeight: last.weight != null ? '${last.weight}' : '',
-      editVolumeType: last.duration.isNotEmpty ? 'duration' : 'reps',
-    );
-  }
-
-  Future<bool> submitEditSet(String workoutId) async {
-    final s = state.value;
-    final detail = s.editExDetail;
-    if (s.editingSet == null || s.editExId == null || detail == null) {
-      return false;
-    }
-    final values = parseValues(s.editRepsOrDuration);
-    if (values.isEmpty) return false;
-
-    final isReps = s.editVolumeType == 'reps';
-    state.value = s.copyWith(editLoading: true);
+  Future<void> quickUpdateSet(
+    WorkoutSet set, {
+    double? weight,
+    bool clearWeight = false,
+    List<num>? reps,
+    String? variationId,
+    bool clearVariation = false,
+    String? notes,
+    bool clearNotes = false,
+  }) async {
+    final w = state.value.workout;
+    if (w == null) return;
     try {
       await _workoutRepo.updateSet(
-        s.editingSet!.setId,
-        exerciseId: s.editExId,
-        variationId: s.editVarId,
-        clearVariation: s.editVarId == null,
-        weight: double.tryParse(s.editWeight),
-        clearWeight: s.editWeight.isEmpty,
-        reps: isReps ? values : [],
-        duration: isReps ? [] : values,
-        notes: s.editNotes.trim().isEmpty ? null : s.editNotes.trim(),
-        clearNotes: s.editNotes.trim().isEmpty,
+        set.setId,
+        weight: weight,
+        clearWeight: clearWeight,
+        reps: reps,
+        variationId: variationId,
+        clearVariation: clearVariation,
+        notes: notes,
+        clearNotes: clearNotes,
       );
-      closeEditSet();
-      await _reloadSets(workoutId);
-      return true;
+      await _reloadSets(w.workoutId);
     } catch (e) {
-      state.value = state.value.copyWith(
-          editLoading: false, error: e.toString());
-      return false;
+      state.value = state.value.copyWith(error: e.toString());
     }
   }
 
-  Future<void> deleteSet(String setId, String workoutId) async {
-    closeEditSet();
-    await _workoutRepo.deleteSet(setId);
-    await _reloadSets(workoutId);
+  Future<void> duplicateSet(WorkoutSet set) async {
+    final w = state.value.workout;
+    if (w == null) return;
+    final existing = state.value.setsFor(
+      state.value.exerciseSlots.firstWhere((sl) => sl.exerciseId == set.exerciseId).groupOrder,
+    );
+    final nextNum = existing.map((s) => s.setNumber).reduce((a, b) => a > b ? a : b) + 1;
+    try {
+      await _workoutRepo.insertSet(
+        workoutId: w.workoutId,
+        exerciseId: set.exerciseId,
+        variationId: set.variationId,
+        setNumber: nextNum,
+        weight: set.weight,
+        reps: set.reps,
+        duration: set.duration,
+        notes: set.notes,
+      );
+      await _reloadSets(w.workoutId);
+    } catch (e) {
+      state.value = state.value.copyWith(error: e.toString());
+    }
   }
 
-  Future<void> reorderSets(
-      String workoutId, List<WorkoutSet> reordered, List<String> ids) async {
-    state.value = state.value.copyWith(sets: reordered);
-    await _workoutRepo.reorderSets(workoutId, ids);
+  Future<void> deleteSetById(String setId) async {
+    final w = state.value.workout;
+    if (w == null) return;
+    await _workoutRepo.deleteSet(setId);
+    await _reloadSets(w.workoutId);
   }
+
+  // ── New exercise / variation ───────────────────────────────────────────────
+
+  List<({String id, String name, int exerciseCount})> findSimilarVariations(String name) {
+    final results = <({String id, String name, int exerciseCount})>[];
+    for (final v in state.value.allVariations) {
+      if (isSimilarVariationName(name, v.name)) {
+        results.add((id: v.variationId, name: v.name, exerciseCount: state.value.variationExerciseCounts[v.variationId] ?? 0));
+      }
+    }
+    return results;
+  }
+
+  Future<void> _reloadCatalog() async {
+    final map = await _exerciseRepo.fetchExerciseDetailMap(_userId);
+    final variations = await _exerciseRepo.fetchVariations(_userId);
+    final bridges = await _exerciseRepo.fetchBridges(_userId);
+    final counts = <String, int>{};
+    for (final b in bridges) {
+      final varId = b['custom_variation_id'] as String;
+      counts[varId] = (counts[varId] ?? 0) + 1;
+    }
+    state.value = state.value.copyWith(
+      exerciseDetailMap: map,
+      allVariations: variations,
+      variationExerciseCounts: counts,
+    );
+  }
+
+  Future<String?> submitNewExercise(String name) async {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) return null;
+    state.value = state.value.copyWith(newExCreating: true);
+    try {
+      final existing = await _exerciseRepo.findExerciseByName(_userId, trimmed);
+      String id;
+      if (existing != null) {
+        if (existing.isActive) {
+          state.value = state.value.copyWith(newExCreating: false, error: '"$trimmed" already exists.');
+          return null;
+        }
+        await _exerciseRepo.reactivateExercise(existing.exerciseId);
+        id = existing.exerciseId;
+      } else {
+        final exercise = await _exerciseRepo.createExercise(_userId, trimmed);
+        id = exercise.exerciseId;
+      }
+      await _reloadCatalog();
+      state.value = state.value.copyWith(newExCreating: false);
+      return id;
+    } catch (e) {
+      state.value = state.value.copyWith(newExCreating: false, error: e.toString());
+      return null;
+    }
+  }
+
+  Future<String?> submitNewVariation(String name, {required String exerciseId, String? useExistingId}) async {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty && useExistingId == null) return null;
+    state.value = state.value.copyWith(newVarCreating: true);
+    try {
+      String id;
+      if (useExistingId != null) {
+        id = useExistingId;
+        final existing = state.value.allVariations.where((v) => v.variationId == useExistingId).firstOrNull;
+        if (existing != null && !existing.isActive) {
+          await _exerciseRepo.reactivateVariation(id);
+        }
+      } else {
+        final existing = await _exerciseRepo.findVariationByName(_userId, trimmed);
+        if (existing != null) {
+          if (!existing.isActive) await _exerciseRepo.reactivateVariation(existing.variationId);
+          id = existing.variationId;
+        } else {
+          final variation = await _exerciseRepo.createVariation(_userId, trimmed);
+          id = variation.variationId;
+        }
+      }
+      await _exerciseRepo.addBridge(_userId, exerciseId, id);
+      await _reloadCatalog();
+      state.value = state.value.copyWith(newVarCreating: false);
+      return id;
+    } catch (e) {
+      state.value = state.value.copyWith(newVarCreating: false, error: e.toString());
+      return null;
+    }
+  }
+
+  // ── Lessons ────────────────────────────────────────────────────────────────
+
+  List<Lesson> lessonsFor(String exerciseId) =>
+      state.value.lessonsByExercise[exerciseId] ?? const [];
+
+  Future<void> loadLessonsFor(String exerciseId) async {
+    try {
+      final lessons = await _lessonRepo.fetchLessons(_userId, exerciseId);
+      final map = Map<String, List<Lesson>>.from(state.value.lessonsByExercise);
+      map[exerciseId] = lessons;
+      state.value = state.value.copyWith(lessonsByExercise: map);
+    } catch (e) {
+      state.value = state.value.copyWith(error: e.toString());
+    }
+  }
+
+  Future<void> addLesson(String exerciseId, String text) async {
+    if (text.trim().isEmpty) return;
+    try {
+      await _lessonRepo.createLesson(_userId, exerciseId, text.trim());
+      await loadLessonsFor(exerciseId);
+    } catch (e) {
+      state.value = state.value.copyWith(error: e.toString());
+    }
+  }
+
+  Future<void> toggleLessonPin(String exerciseId, String lessonId) async {
+    final lesson = lessonsFor(exerciseId).firstWhereOrNull((l) => l.lessonId == lessonId);
+    if (lesson == null) return;
+    try {
+      await _lessonRepo.toggleLessonPin(lessonId, !lesson.pinned);
+      await loadLessonsFor(exerciseId);
+    } catch (e) {
+      state.value = state.value.copyWith(error: e.toString());
+    }
+  }
+
+  Future<void> deleteLesson(String exerciseId, String lessonId) async {
+    try {
+      await _lessonRepo.deleteLesson(lessonId);
+      await loadLessonsFor(exerciseId);
+    } catch (e) {
+      state.value = state.value.copyWith(error: e.toString());
+    }
+  }
+
+  // ── History ────────────────────────────────────────────────────────────────
+
+  List<ExerciseHistorySession> historyFor(String exerciseId) =>
+      state.value.historyByExercise[exerciseId] ?? const [];
+
+  ExerciseDetail? getExerciseDetail(String exerciseId) =>
+      state.value.exerciseDetailMap[exerciseId];
 
   void dispose() => state.dispose();
+}
+
+extension _FirstWhereOrNull<T> on List<T> {
+  T? firstWhereOrNull(bool Function(T) test) {
+    for (final e in this) {
+      if (test(e)) return e;
+    }
+    return null;
+  }
 }

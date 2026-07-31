@@ -14,4 +14,8 @@ abstract final class AppColors {
   static Color get danger       => themeNotifier.colors.danger;
   static Color get dangerBg     => themeNotifier.colors.dangerBg;
   static Color get dangerBorder => themeNotifier.colors.dangerBorder;
+  static Color get success      => themeNotifier.colors.success;
+  static Color get successBg    => themeNotifier.colors.successBg;
+  static Color get history      => themeNotifier.colors.history;
+  static Color get historyBg    => themeNotifier.colors.historyBg;
 }

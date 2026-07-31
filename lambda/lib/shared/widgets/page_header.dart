@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../core/styles/app_colors.dart';
+import '../../core/styles/app_fonts.dart';
 import '../../core/styles/app_text_styles.dart';
 import '../../core/theme/lambda_theme.dart';
 
@@ -42,7 +43,7 @@ class PageHeader extends StatelessWidget {
                   child: Center(
                     child: Text(
                       title,
-                      style: TextStyle(
+                      style: AppFonts.ui(
                         fontSize: AppTextStyles.lg,
                         fontWeight: FontWeight.w600,
                         color: AppColors.primary,

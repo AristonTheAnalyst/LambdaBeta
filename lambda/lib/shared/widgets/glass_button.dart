@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../core/styles/app_colors.dart';
+import '../../core/styles/app_fonts.dart';
 import '../../core/styles/app_radius.dart';
 import '../../core/styles/app_text_styles.dart';
 
@@ -13,6 +14,7 @@ class GlassButton extends StatelessWidget {
     this.loading = false,
     this.disabled = false,
     this.compact = false,
+    this.solid = false,
   });
 
   final String label;
@@ -22,10 +24,14 @@ class GlassButton extends StatelessWidget {
   final bool loading;
   final bool disabled;
   final bool compact;
+  // Full-fill treatment for a primary CTA, instead of the default
+  // translucent "glass" look.
+  final bool solid;
 
   @override
   Widget build(BuildContext context) {
     final effectiveColor = color ?? AppColors.accent;
+    final fgColor = solid ? AppColors.accentText : effectiveColor;
     final isDisabled = disabled || loading;
 
     return Opacity(
@@ -38,9 +44,10 @@ class GlassButton extends StatelessWidget {
             vertical: compact ? 8 : 10,
           ),
           decoration: BoxDecoration(
-            color: effectiveColor.withAlpha(26),
+            color: solid ? effectiveColor : effectiveColor.withAlpha(26),
             borderRadius: BorderRadius.circular(AppRadius.md),
-            border: Border.all(color: effectiveColor.withAlpha(77)),
+            border: Border.all(
+                color: solid ? effectiveColor : effectiveColor.withAlpha(77)),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -51,20 +58,20 @@ class GlassButton extends StatelessWidget {
                   height: 14,
                   child: CircularProgressIndicator(
                     strokeWidth: 1.5,
-                    color: effectiveColor,
+                    color: fgColor,
                   ),
                 )
               else ...[
                 if (icon != null) ...[
-                  Icon(icon, size: 14, color: effectiveColor),
+                  Icon(icon, size: 14, color: fgColor),
                   const SizedBox(width: 6),
                 ],
                 Text(
                   label,
-                  style: TextStyle(
+                  style: AppFonts.ui(
                     fontSize: AppTextStyles.sm,
                     fontWeight: FontWeight.w600,
-                    color: effectiveColor,
+                    color: fgColor,
                   ),
                 ),
               ],

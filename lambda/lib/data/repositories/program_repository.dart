@@ -48,7 +48,9 @@ class ProgramRepository {
     String progressionMode = 'sequential',
   }) async {
     final id = _uuid.v4();
-    final createdDate = DateTime.now();
+    // .toUtc() avoids a naive local-time string being reinterpreted as UTC
+    // by Postgres's timestamptz column (see WorkoutRepository.createWorkout).
+    final createdDate = DateTime.now().toUtc();
     await ps.db.execute(
       '''
       INSERT INTO dim_program
@@ -312,6 +314,30 @@ class ProgramRepository {
     );
   }
 
+  /// Swaps exerciseSequenceOrder for all planned sets between two exercises
+  /// within the same workout, effectively reordering the exercise tabs.
+  Future<void> swapPlannedExerciseOrders(
+    String plannedWorkoutId,
+    int orderA,
+    int orderB,
+  ) async {
+    if (orderA == orderB) return;
+    // Use a temp value to avoid collisions during the swap
+    const temp = -9999;
+    await ps.db.execute(
+      'UPDATE dim_planned_set SET exercise_sequence_order = ? WHERE planned_workout_id = ? AND exercise_sequence_order = ?',
+      [temp, plannedWorkoutId, orderA],
+    );
+    await ps.db.execute(
+      'UPDATE dim_planned_set SET exercise_sequence_order = ? WHERE planned_workout_id = ? AND exercise_sequence_order = ?',
+      [orderA, plannedWorkoutId, orderB],
+    );
+    await ps.db.execute(
+      'UPDATE dim_planned_set SET exercise_sequence_order = ? WHERE planned_workout_id = ? AND exercise_sequence_order = ?',
+      [orderB, plannedWorkoutId, temp],
+    );
+  }
+
   Future<void> reorderPlannedSets(List<String> orderedIds) async {
     for (var i = 0; i < orderedIds.length; i++) {
       await ps.db.execute(
@@ -366,7 +392,7 @@ class ProgramRepository {
           source.program.lengthWeeks,
           source.program.progressionMode,
           1,
-          DateTime.now().toIso8601String(),
+          DateTime.now().toUtc().toIso8601String(),
         ],
       );
 

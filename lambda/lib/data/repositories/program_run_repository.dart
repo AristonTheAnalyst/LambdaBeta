@@ -30,7 +30,9 @@ class ProgramRunRepository {
     await endCurrentRun(userId);
 
     final id = _uuid.v4();
-    final startedDate = DateTime.now();
+    // .toUtc() avoids a naive local-time string being reinterpreted as UTC
+    // by Postgres's timestamptz column (see WorkoutRepository.createWorkout).
+    final startedDate = DateTime.now().toUtc();
     await ps.db.execute(
       'INSERT INTO fact_program_run (id, program_run_id, program_id, user_id, started_date, is_current) VALUES (?, ?, ?, ?, ?, ?)',
       [id, id, programId, userId, startedDate.toIso8601String(), 1],
@@ -47,7 +49,7 @@ class ProgramRunRepository {
   Future<void> endCurrentRun(String userId) async {
     await ps.db.execute(
       'UPDATE fact_program_run SET is_current = 0, ended_date = ? WHERE user_id = ? AND is_current = 1',
-      [DateTime.now().toIso8601String(), userId],
+      [DateTime.now().toUtc().toIso8601String(), userId],
     );
   }
 

@@ -1,5 +1,6 @@
 ﻿import 'package:flutter/material.dart';
 import '../../core/styles/app_colors.dart';
+import '../../core/styles/app_fonts.dart';
 import '../../core/styles/app_text_styles.dart';
 
 enum ButtonVariant { primary, ghost, danger }
@@ -70,7 +71,7 @@ class LambdaButton extends StatelessWidget {
                 )
               : Text(
                   label,
-                  style: TextStyle(
+                  style: AppFonts.ui(
                     fontSize: AppTextStyles.md,
                     fontWeight: FontWeight.w600,
                     color: _fg,

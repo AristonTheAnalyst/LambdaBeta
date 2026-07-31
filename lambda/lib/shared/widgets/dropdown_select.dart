@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../core/styles/app_colors.dart';
+import '../../core/styles/app_fonts.dart';
 import '../../core/styles/app_radius.dart';
+import '../../core/styles/app_spacing.dart';
 import '../../core/styles/app_text_styles.dart';
 import 'slide_up_modal.dart';
 
@@ -63,6 +65,7 @@ class DropdownSelect<T> extends StatelessWidget {
     this.searchable = false,
     this.onCreateNew,
     this.createNewLabel = 'Create new',
+    this.compact = false,
   });
 
   final List<DropdownOption<T>> options;
@@ -75,6 +78,10 @@ class DropdownSelect<T> extends StatelessWidget {
   // instead of asking the user to type the name a second time.
   final ValueChanged<String>? onCreateNew;
   final String createNewLabel;
+  // Minimal, borderless inline-text look (still fully tappable, opens the
+  // same picker) — for a field that's dependent on/subordinate to another
+  // one nearby, e.g. a variation breadcrumbed off its exercise.
+  final bool compact;
 
   String get _displayLabel {
     if (value == null) return placeholder;
@@ -91,54 +98,75 @@ class DropdownSelect<T> extends StatelessWidget {
     final hasValue = value != null;
     return GestureDetector(
       onTap: () {
-        final host = DropdownSheetHost.maybeOf(context);
-        if (host != null) {
-          host.showPicker((dismiss) => _DropdownSheetContent<T>(
-                options: options,
-                value: value,
-                searchable: searchable,
-                onCreateNew: onCreateNew,
-                createNewLabel: createNewLabel,
-                fillHeight: true,
-                onClose: dismiss,
-                onSelect: onChange,
-              ));
-        } else {
-          showDropdownPickerSheet<T>(
-            context,
-            options: options,
-            value: value,
-            searchable: searchable,
-            onCreateNew: onCreateNew,
-            createNewLabel: createNewLabel,
-            onSelect: onChange,
-          );
-        }
+        // Defer to next frame so any in-progress parent build finishes
+        // before we call setState on the DropdownSheetHost.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!context.mounted) return;
+          final host = DropdownSheetHost.maybeOf(context);
+          if (host != null) {
+            host.showPicker((dismiss) => _DropdownSheetContent<T>(
+                  options: options,
+                  value: value,
+                  searchable: searchable,
+                  onCreateNew: onCreateNew,
+                  createNewLabel: createNewLabel,
+                  fillHeight: true,
+                  onClose: dismiss,
+                  onSelect: onChange,
+                ));
+          } else {
+            showDropdownPickerSheet<T>(
+              context,
+              options: options,
+              value: value,
+              searchable: searchable,
+              onCreateNew: onCreateNew,
+              createNewLabel: createNewLabel,
+              onSelect: onChange,
+            );
+          }
+        });
       },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(AppRadius.md),
-          border: Border.all(color: AppColors.border),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                _displayLabel,
-                style: TextStyle(
-                  fontSize: AppTextStyles.md,
-                  color: hasValue ? AppColors.primary : AppColors.muted,
+      child: compact
+          ? Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  _displayLabel,
+                  style: AppFonts.ui(
+                    fontSize: AppTextStyles.sm,
+                    fontWeight: FontWeight.w500,
+                    color: hasValue ? AppColors.accent : AppColors.muted,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
-                overflow: TextOverflow.ellipsis,
+                Icon(Icons.keyboard_arrow_down, size: 14, color: AppColors.muted),
+              ],
+            )
+          : Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(AppRadius.md),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      _displayLabel,
+                      style: AppFonts.ui(
+                        fontSize: AppTextStyles.md,
+                        color: hasValue ? AppColors.primary : AppColors.muted,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  Icon(Icons.keyboard_arrow_down,
+                      size: 18, color: AppColors.muted),
+                ],
               ),
             ),
-            Icon(Icons.keyboard_arrow_down,
-                size: 18, color: AppColors.muted),
-          ],
-        ),
-      ),
     );
   }
 }
@@ -226,7 +254,11 @@ class _DropdownSheetContentState<T> extends State<_DropdownSheetContent<T>> {
           isSelected: opt.value == widget.value,
           onTap: () {
             widget.onClose();
-            widget.onSelect(opt.value);
+            // Defer selection past the frame so the picker dismiss
+            // completes before any parent rebuild from the selection.
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              widget.onSelect(opt.value);
+            });
           },
         );
       },
@@ -248,11 +280,11 @@ class _DropdownSheetContentState<T> extends State<_DropdownSheetContent<T>> {
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
           child: TextField(
             autofocus: true,
-            style: TextStyle(
+            style: AppFonts.ui(
                 fontSize: AppTextStyles.md, color: AppColors.primary),
             decoration: InputDecoration(
               hintText: 'Search…',
-              hintStyle: TextStyle(color: AppColors.muted),
+              hintStyle: AppFonts.ui(color: AppColors.muted),
               filled: true,
               fillColor: AppColors.surfaceHigh,
               border: OutlineInputBorder(
@@ -274,7 +306,10 @@ class _DropdownSheetContentState<T> extends State<_DropdownSheetContent<T>> {
           isSelected: false,
           onTap: () {
             widget.onClose();
-            widget.onCreateNew!(_query);
+            final query = _query;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              widget.onCreateNew!(query);
+            });
           },
         ),
       widget.fillHeight
@@ -338,7 +373,7 @@ class _SheetRow extends StatelessWidget {
             Expanded(
               child: Text(
                 label,
-                style: TextStyle(
+                style: AppFonts.ui(
                   fontSize: AppTextStyles.md,
                   color: effectiveColor,
                   fontWeight:
@@ -350,6 +385,41 @@ class _SheetRow extends StatelessWidget {
               Icon(Icons.check, size: 18, color: AppColors.accent),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Stands in for a [DropdownSelect] while a quick-create is in flight —
+/// matches its container styling exactly so the field doesn't jump.
+class DropdownLoadingField extends StatelessWidget {
+  const DropdownLoadingField({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 14,
+            height: 14,
+            child: CircularProgressIndicator(
+                strokeWidth: 1.5, color: AppColors.accent),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Text('Creating…',
+                style: AppFonts.ui(
+                    fontSize: AppTextStyles.md, color: AppColors.muted),
+                overflow: TextOverflow.ellipsis),
+          ),
+        ],
       ),
     );
   }

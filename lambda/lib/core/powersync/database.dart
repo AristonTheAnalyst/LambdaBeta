@@ -29,6 +29,17 @@ const _pkColumns = {
   'fact_program_run': 'program_run_id',
 };
 
+// dim_exercise_variation_bridge is the one table with no single-column PK —
+// its real Postgres primary key is the composite pair below (there's no 'id'
+// column server-side at all). PUT upserts on the pair instead of a pkCol;
+// PATCH needs the pair's actual values, which aren't in a PATCH's opData
+// (only changed columns are), so those get looked up locally by PowerSync's
+// internal id first. No DELETE case: bridge rows are soft-deleted via
+// deleted_locally instead of a hard delete, sidestepping this entirely.
+const _compositeKeyTables = {
+  'dim_exercise_variation_bridge': ['custom_exercise_id', 'custom_variation_id'],
+};
+
 // Postgres integer[] columns are mirrored locally as Column.text (written as
 // JSON-encoded strings, same as how they arrive via download sync). Undo that
 // encoding on the way back up, or PostgREST receives a string instead of an
@@ -101,12 +112,29 @@ class SupabaseConnector extends PowerSyncBackendConnector {
         final pkCol = _pkColumns[op.table] ?? 'id';
         final table = rest.from(op.table);
 
+        final compositeKey = _compositeKeyTables[op.table];
+
         if (op.op == UpdateType.put) {
           final data = _decodeArrayColumns(op.opData ?? {});
-          data[pkCol] = op.id;
-          await table.upsert(data);
+          if (compositeKey != null) {
+            await table.upsert(data, onConflict: compositeKey.join(','));
+          } else {
+            data[pkCol] = op.id;
+            await table.upsert(data);
+          }
         } else if (op.op == UpdateType.patch) {
-          await table.update(_decodeArrayColumns(op.opData!)).eq(pkCol, op.id);
+          if (compositeKey != null) {
+            final localRows = await database
+                .getAll('SELECT * FROM ${op.table} WHERE id = ?', [op.id]);
+            if (localRows.isEmpty) continue;
+            var query = table.update(_decodeArrayColumns(op.opData!));
+            for (final col in compositeKey) {
+              query = query.eq(col, localRows.first[col]);
+            }
+            await query;
+          } else {
+            await table.update(_decodeArrayColumns(op.opData!)).eq(pkCol, op.id);
+          }
         } else if (op.op == UpdateType.delete) {
           await table.delete().eq(pkCol, op.id);
         }
