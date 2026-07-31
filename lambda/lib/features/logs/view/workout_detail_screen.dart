@@ -124,10 +124,54 @@ class _WorkoutBody extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                if (state.workout?.plannedWorkoutName != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Text(state.workout!.plannedWorkoutName!,
+                        style: AppFonts.mono(fontSize: 10, letterSpacing: 0.6, color: AppColors.success)),
+                  ),
                 StatsRow(tiles: [
                   StatsTile(label: 'SETS', value: '${state.setsByOrder.values.expand((l) => l).length}'),
+                  StatsTile(
+                    label: 'PRS',
+                    value: '${state.totalPRCount}',
+                    accent: state.totalPRCount > 0,
+                  ),
                   StatsTile(label: 'EXERCISES', value: '${state.exerciseSlots.length}'),
+                  const StatsTile(label: 'AVG REST', value: '—'),
                 ]),
+                if (state.workout?.preFeeling != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: AppSpacing.sm, bottom: AppSpacing.xs),
+                    child: Row(
+                      children: [
+                        Text('Pre-workout feeling: ',
+                            style: AppFonts.ui(fontSize: 11, color: AppColors.muted)),
+                        ...List.generate(5, (i) {
+                          final n = i + 1;
+                          final selected = state.workout!.preFeeling! >= n;
+                          return Container(
+                            width: 20,
+                            height: 20,
+                            margin: const EdgeInsets.only(right: 4),
+                            decoration: BoxDecoration(
+                              color: selected ? AppColors.accent : AppColors.surfaceHigh,
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(
+                                  color: selected ? AppColors.accent : AppColors.border),
+                            ),
+                            child: Center(
+                              child: Text('$n',
+                                  style: AppFonts.ui(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w600,
+                                      color: selected ? AppColors.accentText : AppColors.muted)),
+                            ),
+                          );
+                        }),
+                      ],
+                    ),
+                  ),
                 const SizedBox(height: AppSpacing.md),
                 _DetailExerciseTabBar(
                   slots: state.exerciseSlots,
@@ -316,6 +360,8 @@ class _DetailExerciseCardState extends State<_DetailExerciseCard> {
     final name = toProperCase(detail?.name ?? '');
     final lessons = vm.lessonsFor(exerciseId);
     final history = vm.historyFor(exerciseId);
+    final planned = s.workout?.plannedWorkoutId != null;
+    final prCount = vm.prCountFor(exerciseId);
     final sets = s.setsFor(order);
     final draftIds = s.workoutSetDrafts[order] ?? const <int>[];
     final viewingHistory = _viewingSession != null;
@@ -339,6 +385,8 @@ class _DetailExerciseCardState extends State<_DetailExerciseCard> {
             _lessonBar(featuredLesson, exerciseId, name),
           _header(
             name: name,
+            planned: planned,
+            prCount: prCount,
             lessonsCount: lessons.length,
             historyCount: history.length,
             exerciseId: exerciseId,
@@ -410,6 +458,8 @@ class _DetailExerciseCardState extends State<_DetailExerciseCard> {
 
   Widget _header({
     required String name,
+    required bool planned,
+    required int prCount,
     required int lessonsCount,
     required int historyCount,
     required String exerciseId,
@@ -421,13 +471,46 @@ class _DetailExerciseCardState extends State<_DetailExerciseCard> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
-            child: Text(name,
-                style: AppFonts.ui(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
-                    color: viewingHistory ? AppColors.history : AppColors.primary)),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: planned ? AppColors.successBg : AppColors.accentBg,
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(color: planned ? AppColors.success.withValues(alpha: 0.35) : AppColors.accent.withValues(alpha: 0.35)),
+                      ),
+                      child: Text(planned ? 'PLANNED' : 'UNPLANNED',
+                          style: AppFonts.ui(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.5,
+                              color: planned ? AppColors.success : AppColors.accent)),
+                    ),
+                    if (prCount > 0) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1),
+                        decoration: BoxDecoration(color: AppColors.accent, borderRadius: BorderRadius.circular(999)),
+                        child: Text('$prCount PR${prCount > 1 ? 's' : ''}',
+                            style: AppFonts.ui(
+                                fontSize: 10, fontWeight: FontWeight.w800, color: AppColors.accentText)),
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(name,
+                    style: AppFonts.ui(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                        color: viewingHistory ? AppColors.history : AppColors.primary)),
+              ],
+            ),
           ),
-          const SizedBox(width: AppSpacing.sm),
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [

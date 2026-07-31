@@ -9,7 +9,12 @@ import '../../../data/repositories/exercise_repository.dart';
 import '../../../data/repositories/lesson_repository.dart';
 import '../../../data/repositories/workout_repository.dart';
 import '../../session/model/session_local_state.dart'
-    show ExerciseHistorySession, groupHistoryByExercise, isSimilarVariationName;
+    show
+        ExerciseHistorySession,
+        groupHistoryByExercise,
+        isSimilarVariationName,
+        bestEverForExercise,
+        isPr;
 
 /// One tab in the workout-detail screen — a single exercise that was logged
 /// in this workout.
@@ -42,6 +47,8 @@ class WorkoutDetailState {
     this.lessonsByExercise = const {},
     this.historyByExercise = const {},
     this.pastSetsLoaded = false,
+    this.prsByExercise = const {},
+    this.totalPRCount = 0,
   });
 
   final bool isLoading;
@@ -66,6 +73,8 @@ class WorkoutDetailState {
   final Map<String, List<Lesson>> lessonsByExercise;
   final Map<String, List<ExerciseHistorySession>> historyByExercise;
   final bool pastSetsLoaded;
+  final Map<String, int> prsByExercise;
+  final int totalPRCount;
 
   WorkoutDetailExerciseSlot? get activeSlot => exerciseSlots.isEmpty
       ? null
@@ -97,6 +106,8 @@ class WorkoutDetailState {
     Map<String, List<Lesson>>? lessonsByExercise,
     Map<String, List<ExerciseHistorySession>>? historyByExercise,
     bool? pastSetsLoaded,
+    Map<String, int>? prsByExercise,
+    int? totalPRCount,
   }) =>
       WorkoutDetailState(
         isLoading: isLoading ?? this.isLoading,
@@ -119,6 +130,8 @@ class WorkoutDetailState {
         lessonsByExercise: lessonsByExercise ?? this.lessonsByExercise,
         historyByExercise: historyByExercise ?? this.historyByExercise,
         pastSetsLoaded: pastSetsLoaded ?? this.pastSetsLoaded,
+        prsByExercise: prsByExercise ?? this.prsByExercise,
+        totalPRCount: totalPRCount ?? this.totalPRCount,
       );
 }
 
@@ -198,10 +211,51 @@ class WorkoutDetailViewModel {
         exerciseSlots: slots,
         setsByOrder: _groupByOrder(sets, slots),
       );
+      _computePRs();
     } catch (e) {
       state.value = state.value.copyWith(isLoading: false, error: e.toString());
     }
   }
+
+  void _computePRs() {
+    final s = state.value;
+    // Build prevBest from all history *except* this workout's sets
+    final exclusions = s.workout?.workoutId != null ? {s.workout!.workoutId} : <String>{};
+    final filtered = <PastSetRow>[];
+    for (final sessions in s.historyByExercise.values) {
+      for (final session in sessions) {
+        for (final set in session.sets) {
+          if (!exclusions.contains(set.workoutId)) {
+            filtered.add(set);
+          }
+        }
+      }
+    }
+    final byExercise = <String, List<PastSetRow>>{};
+    for (final set in filtered) {
+      byExercise.putIfAbsent(set.exerciseId, () => []).add(set);
+    }
+    final prevBest = <String, ({num weight, num reps})?>{};
+    for (final entry in byExercise.entries) {
+      final best = bestEverForExercise(entry.value);
+      if (best != null) prevBest[entry.key] = best;
+    }
+
+    final prs = <String, int>{};
+    var total = 0;
+    for (final e in s.setsByOrder.entries) {
+      for (final set in e.value) {
+        if (isPr(set, prevBest[set.exerciseId])) {
+          prs[set.exerciseId] = (prs[set.exerciseId] ?? 0) + 1;
+          total++;
+        }
+      }
+    }
+    state.value = state.value.copyWith(prsByExercise: prs, totalPRCount: total);
+  }
+
+  int prCountFor(String exerciseId) =>
+      state.value.prsByExercise[exerciseId] ?? 0;
 
   Future<void> _reloadSets(String workoutId) async {
     final sets = await _workoutRepo.loadSetsForWorkout(workoutId);
@@ -210,6 +264,7 @@ class WorkoutDetailViewModel {
       setsByOrder: _groupByOrder(sets, existingSlots),
       clearWorkoutSetDrafts: true,
     );
+    _computePRs();
   }
 
   // ── Edit mode ──────────────────────────────────────────────────────────────
