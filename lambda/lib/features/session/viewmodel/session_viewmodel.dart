@@ -49,6 +49,9 @@ class SessionViewModel extends ChangeNotifier {
 
   String get _userId => Supabase.instance.client.auth.currentUser!.id;
 
+  // ── Startup ─────────────────────────────────────────────────────────────────
+  bool initLoading = true;
+
   // ── Workout state ──────────────────────────────────────────────────────────
   String? currentWorkoutId;
   DateTime? workoutStartedAt;
@@ -142,6 +145,8 @@ class SessionViewModel extends ChangeNotifier {
     await _loadCatalog();
     await Future.wait([_loadPlannedWorkout(), _loadPastSets()]);
     await _restoreActiveWorkout();
+    initLoading = false;
+    notifyListeners();
   }
 
   Future<void> _loadCatalog() async {

@@ -27,6 +27,13 @@ class SlidePagesController {
   void resetToPage(int page) {
     if (_pageController.hasClients) {
       _pageController.jumpToPage(page);
+    } else {
+      // PageView hasn't been laid out yet — defer to next frame
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_pageController.hasClients) {
+          _pageController.jumpToPage(page);
+        }
+      });
     }
   }
 

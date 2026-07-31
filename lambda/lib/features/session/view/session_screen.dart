@@ -107,36 +107,37 @@ class _SessionScreenState extends State<SessionScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.bg,
-      body: Column(
-        children: [
-          PageHeader(
-            title: _vm.hasActiveWorkout ? 'Training Session' : 'Mental Prep and Planning',
-            left: _vm.hasActiveWorkout
-                ? GlassButton(
-                    label: 'Cancel', color: AppColors.danger, compact: true, onPressed: _confirmCancelWorkout)
-                : null,
-          ),
-          if (_vm.error != null)
-            GestureDetector(
-              onTap: _vm.clearError,
-              child: Container(
-                width: double.infinity,
-                color: AppColors.dangerBg,
-                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
-                child: Text(_vm.error!, style: TextStyle(color: AppColors.danger, fontSize: AppTextStyles.sm)),
-              ),
-            ),
-          Expanded(
-            child: SlidePages(
-              controller: _vm.slidePagesController,
+      body: _vm.initLoading
+          ? const Center(child: CircularProgressIndicator())
+          : Column(
               children: [
-                _StartPage(vm: _vm, startNotesCtrl: _startNotesCtrl),
-                _ActivePage(vm: _vm, onFinishWorkout: _openEndWorkoutModal),
+                PageHeader(
+                  title: _vm.hasActiveWorkout ? 'Training Session' : 'Mental Prep and Planning',
+                  left: _vm.hasActiveWorkout
+                      ? GlassButton(label: 'Cancel', color: AppColors.danger, compact: true, onPressed: _confirmCancelWorkout)
+                      : null,
+                ),
+                if (_vm.error != null)
+                  GestureDetector(
+                    onTap: _vm.clearError,
+                    child: Container(
+                      width: double.infinity,
+                      color: AppColors.dangerBg,
+                      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
+                      child: Text(_vm.error!, style: TextStyle(color: AppColors.danger, fontSize: AppTextStyles.sm)),
+                    ),
+                  ),
+                Expanded(
+                  child: SlidePages(
+                    controller: _vm.slidePagesController,
+                    children: [
+                      _StartPage(vm: _vm, startNotesCtrl: _startNotesCtrl),
+                      _ActivePage(vm: _vm, onFinishWorkout: _openEndWorkoutModal),
+                    ],
+                  ),
+                ),
               ],
             ),
-          ),
-        ],
-      ),
     );
   }
 }
