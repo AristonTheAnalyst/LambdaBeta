@@ -9,6 +9,7 @@ import '../../../core/utils/workout_format.dart';
 import '../../../data/models/exercise_detail.dart';
 import '../../../data/models/lesson.dart';
 import '../../../data/models/workout_set.dart';
+import '../../../shared/mixins/unsaved_changes_guard.dart';
 import '../../../shared/widgets/page_header.dart';
 import '../../../shared/widgets/exercise_tab_chip.dart';
 import '../../../shared/widgets/glass_button.dart';
@@ -29,7 +30,7 @@ class WorkoutDetailScreen extends StatefulWidget {
   State<WorkoutDetailScreen> createState() => _WorkoutDetailScreenState();
 }
 
-class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
+class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> with UnsavedChangesGuard<WorkoutDetailScreen> {
   late final WorkoutDetailViewModel _vm;
 
   @override
@@ -47,6 +48,21 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
     super.dispose();
   }
 
+  // ── UnsavedChangesGuard ─────────────────────────────────────────────────
+
+  @override
+  bool get hasUnsavedChanges => (_vm.state.value.isEditing || _vm.state.value.workoutSetDrafts.values.any((l) => l.isNotEmpty));
+
+  @override
+  Future<void> onSave() async {
+    await _vm.saveNotes(widget.workoutId);
+  }
+
+  @override
+  void onDiscard() {
+    _vm.cancelEditing();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -60,21 +76,18 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
               body: Center(child: CircularProgressIndicator(color: AppColors.accent)),
             );
           }
-          return PopScope(
-            canPop: !state.isEditing,
-            onPopInvokedWithResult: (didPop, _) {
-              if (!didPop) _confirmBack();
-            },
-            child: Scaffold(
+          return buildGuardedScaffold(
+            scaffold: Scaffold(
               backgroundColor: AppColors.bg,
               body: Column(
                 children: [
                   PageHeader(
                     title: state.isEditing ? 'Edit Session' : 'Past Session',
                     left: GestureDetector(
-                      onTap: () {
+                      onTap: () async {
                         if (state.isEditing) {
-                          _confirmBack();
+                          final didProceed = await confirmBack();
+                          if (didProceed && mounted) Navigator.of(this.context).pop();
                         } else {
                           Navigator.of(context).pop();
                         }
@@ -110,36 +123,6 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
     );
   }
 
-  Future<void> _confirmBack() async {
-    final choice = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        title: Text('Unsaved Changes',
-            style: AppFonts.ui(fontWeight: FontWeight.w800, color: AppColors.primary)),
-        content: Text('Save changes before leaving?',
-            style: AppFonts.ui(color: AppColors.muted)),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.of(ctx).pop('discard'),
-              child: Text('Discard', style: AppFonts.ui(color: AppColors.danger))),
-          TextButton(
-              onPressed: () => Navigator.of(ctx).pop('cancel'),
-              child: Text('Stay', style: AppFonts.ui(color: AppColors.muted))),
-          TextButton(
-              onPressed: () => Navigator.of(ctx).pop('save'),
-              child: Text('Save', style: AppFonts.ui(color: AppColors.accent, fontWeight: FontWeight.w600))),
-        ],
-      ),
-    );
-    if (choice == null || !mounted) return;
-    if (choice == 'cancel') return;
-    if (choice == 'save') {
-      _vm.saveNotes(widget.workoutId);
-    }
-    _vm.cancelEditing();
-    if (mounted) Navigator.of(context).pop();
-  }
 }
 
 // ── Body ─────────────────────────────────────────────────────────────────────

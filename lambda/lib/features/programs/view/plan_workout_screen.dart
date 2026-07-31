@@ -9,6 +9,7 @@ import '../../../data/models/lesson.dart';
 import '../../../data/models/planned_set.dart';
 import '../../../data/models/planned_workout.dart';
 import '../../../data/models/workout_set.dart' show PastSetRow;
+import '../../../shared/mixins/unsaved_changes_guard.dart';
 import '../../../shared/widgets/exercise_tab_chip.dart';
 import '../../../shared/widgets/glass_button.dart';
 import '../../../shared/widgets/segmented_control.dart';
@@ -43,7 +44,7 @@ class PlanWorkoutScreen extends StatefulWidget {
   State<PlanWorkoutScreen> createState() => _PlanWorkoutScreenState();
 }
 
-class _PlanWorkoutScreenState extends State<PlanWorkoutScreen> {
+class _PlanWorkoutScreenState extends State<PlanWorkoutScreen> with UnsavedChangesGuard<PlanWorkoutScreen> {
   late final TextEditingController _nameCtrl;
   late final TextEditingController _notesCtrl;
   final _nameFocus = FocusNode();
@@ -88,6 +89,21 @@ class _PlanWorkoutScreenState extends State<PlanWorkoutScreen> {
     super.dispose();
   }
 
+  // ── UnsavedChangesGuard ─────────────────────────────────────────────────
+
+  @override
+  bool get hasUnsavedChanges => widget.viewModel.state.value.workoutUnsavedChanges;
+
+  @override
+  Future<void> onSave() async {
+    await widget.viewModel.saveWorkout();
+  }
+
+  @override
+  void onDiscard() {
+    widget.viewModel.closeWorkoutEditor();
+  }
+
   @override
   Widget build(BuildContext context) {
     return ValueListenableBuilder<ProgramDetailState>(
@@ -100,12 +116,8 @@ class _PlanWorkoutScreenState extends State<PlanWorkoutScreen> {
             body: Center(child: CircularProgressIndicator(color: AppColors.accent)),
           );
         }
-        return PopScope(
-          canPop: !state.workoutUnsavedChanges,
-          onPopInvokedWithResult: (didPop, _) {
-            if (!didPop) _confirmBack();
-          },
-          child: Scaffold(
+        return buildGuardedScaffold(
+          scaffold: Scaffold(
             backgroundColor: AppColors.bg,
             body: Column(
               children: [
@@ -191,7 +203,11 @@ class _PlanWorkoutScreenState extends State<PlanWorkoutScreen> {
           children: [
             Positioned(left: 16,
               child: GestureDetector(
-                onTap: () => _confirmBack(),
+                onTap: () async {
+                  if (await confirmBack() && mounted) {
+                    Navigator.of(context, rootNavigator: true).pop();
+                  }
+                },
                 child: Icon(Icons.arrow_back_ios_new, size: 18, color: AppColors.accent),
               ),
             ),
@@ -275,42 +291,6 @@ class _PlanWorkoutScreenState extends State<PlanWorkoutScreen> {
         ),
       ],
     );
-  }
-
-  Future<void> _confirmBack() async {
-    if (!widget.viewModel.state.value.workoutUnsavedChanges) {
-      widget.viewModel.closeWorkoutEditor();
-      if (mounted) Navigator.of(context, rootNavigator: true).pop();
-      return;
-    }
-    final choice = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        title: Text('Unsaved Changes',
-            style: AppFonts.ui(fontWeight: FontWeight.w800, color: AppColors.primary)),
-        content: Text('Save changes before leaving?',
-            style: AppFonts.ui(color: AppColors.muted)),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.of(ctx).pop('discard'),
-              child: Text('Discard', style: AppFonts.ui(color: AppColors.danger))),
-          TextButton(
-              onPressed: () => Navigator.of(ctx).pop('cancel'),
-              child: Text('Stay', style: AppFonts.ui(color: AppColors.muted))),
-          TextButton(
-              onPressed: () => Navigator.of(ctx).pop('save'),
-              child: Text('Save', style: AppFonts.ui(color: AppColors.accent, fontWeight: FontWeight.w600))),
-        ],
-      ),
-    );
-    if (choice == null || !mounted) return;
-    if (choice == 'cancel') return;
-    if (choice == 'save') {
-      await widget.viewModel.saveWorkout();
-    }
-    widget.viewModel.closeWorkoutEditor();
-    if (mounted) Navigator.of(context, rootNavigator: true).pop();
   }
 
   void _confirmDelete() {
