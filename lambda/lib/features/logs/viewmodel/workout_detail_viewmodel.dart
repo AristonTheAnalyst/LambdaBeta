@@ -585,25 +585,11 @@ class WorkoutDetailViewModel {
     _computePRs();
   }
 
-  /// Deletes the set but keeps its fact_pr records ("delete set only" —
-  /// the achievement stands). Does NOT recompute; a correction would use
-  /// [deleteSetAndItsPRs].
-  Future<void> deleteSetKeepingPRs(String setId) async {
-    final w = state.value.workout;
-    if (w == null) return;
-    await _deleteSetFromState(setId);
-    try {
-      await _workoutRepo.deleteSet(setId);
-      await _reloadSets(w.workoutId);
-    } catch (e) {
-      state.value = state.value.copyWith(error: e.toString());
-    }
-  }
-
-  /// Deletes the set AND its fact_pr records, then recomputes the exercise
-  /// from remaining valid history ("delete set + its PRs" — data correction;
-  /// promotes the next-best record).
-  Future<void> deleteSetAndItsPRs(String setId, String exerciseId) async {
+  /// Deletes the set AND its fact_pr records (the set was the reason the PRs
+  /// existed), then recomputes the exercise from remaining valid history so
+  /// the next-best record is promoted (e.g. delete a 170 1RM → the 160 that
+  /// once beat 150 becomes the 1RM again).
+  Future<void> deleteSetCascade(String setId, String exerciseId) async {
     final w = state.value.workout;
     if (w == null) return;
     await _deleteSetFromState(setId);
@@ -611,19 +597,6 @@ class WorkoutDetailViewModel {
       await _workoutRepo.deleteSet(setId);
       await _prRepo.deleteForSets(_userId, [setId]);
       await recomputeExercisePRs(exerciseId);
-      await _reloadSets(w.workoutId);
-    } catch (e) {
-      state.value = state.value.copyWith(error: e.toString());
-    }
-  }
-
-  /// Plain delete (set has no PR records).
-  Future<void> deleteSetById(String setId) async {
-    final w = state.value.workout;
-    if (w == null) return;
-    await _deleteSetFromState(setId);
-    try {
-      await _workoutRepo.deleteSet(setId);
       await _reloadSets(w.workoutId);
     } catch (e) {
       state.value = state.value.copyWith(error: e.toString());

@@ -200,18 +200,24 @@ Each repository wraps PowerSync SQLite CRUD. Key methods:
 
 **See `docs/pr_methodology.md` for the full spec.** Summary:
 
-- PRs are persisted as **self-contained snapshots** in `fact_pr` (no FK to the
-  source set — achievements survive set deletion).
+- PRs are persisted as **self-contained snapshots** in `fact_pr` (`workout_set_id`
+  records which set caused the PR, but the row is a plain copy — no FK).
 - **One set can be a PR on multiple axes**: `105kg × 3` simultaneously improves
   1RM, 2RM, and 3RM (rep-max curve semantics). The engine
   (`lib/features/session/model/pr_engine.dart`) walks history chronologically
   maintaining `curve[N]` = best weight for ≥ N reps.
-- Axes: **absolute** (best weight×reps), **rep-max** (best weight for N reps),
-  **weight-class** (most reps at a weight), **per-exercise**, **exercise×variation**.
-- Written at `endWorkout`; past-session edits recompute the edited exercise.
-- Deleting a set that holds PRs prompts: **"Set only"** (keep achievement) or
-  **"Set + PRs"** (remove + recompute, promoting the next-best — the poison-cleanup
-  path for typos like a 2000kg squat).
+- Axes (only these): **rep-max** (best weight for N reps) and **weight-max**
+  (most reps at a weight). No "absolute" PR. Plus per-exercise and
+  exercise×variation filters.
+- Written at `endWorkout` (nothing commits until the workout is done); a
+  mid-session PR beaten later in the same session doesn't persist — only the
+  day's best matters.
+- Past-session edits recompute the edited exercise from current data (in-memory,
+  single-exercise, cheap) — instant PR highlighting on add/edit.
+- **Deleting a source set always deletes its PRs** (it was the reason they
+  existed), with a warning showing the count. The exercise then recomputes,
+  promoting the next-best (delete a 170 1RM → the 160 that beat 150 becomes
+  the 1RM).
 
 ## Design Tokens
 

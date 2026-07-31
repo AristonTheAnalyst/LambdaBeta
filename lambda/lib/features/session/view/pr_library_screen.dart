@@ -94,27 +94,32 @@ class _AllPrsView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Current best per exercise = the latest absolute record per exercise
+    // Group by exercise; within each, show the best 1RM and record count.
     final byExercise = <String, List<PrRecord>>{};
     for (final pr in prs) {
-      if (pr.type == PrType.absolute) {
-        byExercise.putIfAbsent(pr.exerciseId, () => []).add(pr);
-      }
+      byExercise.putIfAbsent(pr.exerciseId, () => []).add(pr);
     }
 
     return ListView(
       padding: const EdgeInsets.all(AppSpacing.lg),
       children: [
         StatsRow(tiles: [
-          StatsTile(label: 'PRS', value: '${byExercise.length}'),
           StatsTile(label: 'TOTAL', value: '${prs.length}'),
           StatsTile(label: 'EXERCISES', value: '${byExercise.length}'),
+          StatsTile(label: '1RM', value: '${_best1rm(prs)?.weight ?? 0}'),
         ]),
         const SizedBox(height: AppSpacing.lg),
         for (final entry in byExercise.entries)
           _ExercisePrCard(prs: entry.value),
       ],
     );
+  }
+
+  static PrRecord? _best1rm(List<PrRecord> prs) {
+    final repMaxes = prs.where((p) => p.type == PrType.repMax && p.targetReps == 1).toList();
+    if (repMaxes.isEmpty) return null;
+    repMaxes.sort((a, b) => a.weight.compareTo(b.weight));
+    return repMaxes.last;
   }
 }
 
@@ -124,8 +129,12 @@ class _ExercisePrCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final pr = prs.last; // chronological; last absolute = current best
+    final pr = prs.first;
     final name = toProperCase(pr.exerciseName ?? pr.exerciseId);
+    // Best 1RM, best weight-max reps, count
+    final repMaxes = prs.where((p) => p.type == PrType.repMax && p.targetReps == 1).toList()
+      ..sort((a, b) => a.weight.compareTo(b.weight));
+    final best1rm = repMaxes.isEmpty ? null : repMaxes.last;
     return Container(
       margin: const EdgeInsets.only(bottom: AppSpacing.md),
       padding: const EdgeInsets.all(AppSpacing.md),
@@ -141,8 +150,11 @@ class _ExercisePrCard extends StatelessWidget {
               style: AppFonts.ui(
                   fontSize: AppTextStyles.md, fontWeight: FontWeight.w800, color: AppColors.primary)),
           const SizedBox(height: AppSpacing.sm),
-          Text('Absolute PR: ${_fmt(pr.weight)}kg × ${_fmt(pr.reps)}',
-              style: AppFonts.mono(fontSize: 13, color: AppColors.accent)),
+          if (best1rm != null)
+            Text('1RM: ${_fmt(best1rm.weight)}kg',
+                style: AppFonts.mono(fontSize: 13, color: AppColors.accent)),
+          Text('${prs.length} record${prs.length == 1 ? '' : 's'}',
+              style: AppFonts.ui(fontSize: 12, color: AppColors.muted)),
         ],
       ),
     );

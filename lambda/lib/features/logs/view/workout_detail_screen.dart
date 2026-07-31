@@ -991,70 +991,37 @@ class _DetailSetRowState extends State<_DetailSetRow> {
       return;
     }
     final set = widget.set!;
-    // In-memory PR check from the already-computed workout PR records —
-    // no DB round-trip, works even if fact_pr hasn't synced locally yet.
-    final records = widget.viewModel.state.value.prRecords
+    // In-memory PR count from the already-computed workout PR records.
+    final prCount = widget.viewModel.state.value.prRecords
         .where((r) => r.setId == set.setId)
-        .toList();
+        .length;
 
-    if (records.isEmpty) {
-      final ok = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          backgroundColor: AppColors.surface,
-          title: Text('Delete Set',
-              style: AppFonts.ui(fontWeight: FontWeight.w800, color: AppColors.danger)),
-          content: Text('Remove this set from the workout?',
-              style: AppFonts.ui(color: AppColors.muted)),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.of(ctx).pop(false),
-                child: Text('Cancel', style: AppFonts.ui(color: AppColors.muted))),
-            TextButton(
-                onPressed: () => Navigator.of(ctx).pop(true),
-                child: Text('Delete',
-                    style: AppFonts.ui(color: AppColors.danger, fontWeight: FontWeight.w600))),
-          ],
-        ),
-      );
-      if (ok == true && mounted) {
-        await widget.viewModel.deleteSetById(set.setId);
-        _showDeleteErrorIfAny();
-      }
-      return;
-    }
-
-    final choice = await showDialog<String>(
+    final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
-        title: Text('This set holds PRs',
-            style: AppFonts.ui(fontWeight: FontWeight.w800, color: AppColors.primary)),
+        title: Text('Delete Set',
+            style: AppFonts.ui(fontWeight: FontWeight.w800, color: AppColors.danger)),
         content: Text(
-            '${records.length} PR record${records.length == 1 ? '' : 's'} (${records.map((r) => r.typeLabel).take(4).join(', ')}${records.length > 4 ? ', …' : ''}).\n\nDelete the set only, or also remove its PRs?',
+            prCount > 0
+                ? 'This set holds $prCount PR record${prCount == 1 ? '' : 's'}, which will be deleted too. Remove this set?'
+                : 'Remove this set from the workout?',
             style: AppFonts.ui(color: AppColors.muted)),
         actions: [
           TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
+              onPressed: () => Navigator.of(ctx).pop(false),
               child: Text('Cancel', style: AppFonts.ui(color: AppColors.muted))),
           TextButton(
-              onPressed: () => Navigator.of(ctx).pop('keep'),
-              child: Text('Set Only',
-                  style: AppFonts.ui(color: AppColors.primary, fontWeight: FontWeight.w600))),
-          TextButton(
-              onPressed: () => Navigator.of(ctx).pop('prs'),
-              child: Text('Set + PRs',
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: Text('Delete',
                   style: AppFonts.ui(color: AppColors.danger, fontWeight: FontWeight.w600))),
         ],
       ),
     );
-    if (choice == null || !mounted) return;
-    if (choice == 'keep') {
-      await widget.viewModel.deleteSetKeepingPRs(set.setId);
-    } else if (choice == 'prs') {
-      await widget.viewModel.deleteSetAndItsPRs(set.setId, set.exerciseId);
+    if (ok == true && mounted) {
+      await widget.viewModel.deleteSetCascade(set.setId, set.exerciseId);
+      _showDeleteErrorIfAny();
     }
-    _showDeleteErrorIfAny();
   }
 
   void _showDeleteErrorIfAny() {

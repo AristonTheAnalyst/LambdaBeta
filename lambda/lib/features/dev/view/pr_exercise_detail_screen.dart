@@ -15,9 +15,9 @@ import '../../../../shared/widgets/page_header.dart';
 import '../../../../shared/widgets/slide_up_modal.dart';
 import '../../session/model/pr_engine.dart';
 
-/// All PR types for one exercise: best lift, rep-max curve (grouped by rep
-/// range), weight-class (filterable by weight), and the chronological
-/// timeline. Variation is a multi-select filter at the top.
+/// All PR types for one exercise: rep-max curve (grouped by rep range),
+/// weight-max (filterable by weight), and the chronological timeline.
+/// Variation is a multi-select filter at the top.
 class PrExerciseDetailScreen extends StatefulWidget {
   const PrExerciseDetailScreen({super.key, required this.exerciseId});
   final String exerciseId;
@@ -50,7 +50,7 @@ class _PrExerciseDetailScreenState extends State<PrExerciseDetailScreen> {
 
   // Filters. Empty set = "all" for the multi-selects.
   Set<String> _selectedVariations = {}; // variationId, or _noVariation
-  Set<num> _selectedWeights = {}; // weightClass weights
+  Set<num> _selectedWeights = {}; // weightMax weights
 
   String get _userId => Supabase.instance.client.auth.currentUser!.id;
 
@@ -96,9 +96,6 @@ class _PrExerciseDetailScreenState extends State<PrExerciseDetailScreen> {
     final name = toProperCase(_exerciseName ?? widget.exerciseId);
     final prs = _prs.where(_matchesVariation).toList();
 
-    // ── Best lift (best weight × reps for the variation filter) ──
-    final bestLift = _bestLift(prs);
-
     // ── Rep-max curve (latest repMax record per display rep count) ──
     final curve = <int, PrRecord>{};
     for (final p in prs) {
@@ -107,11 +104,11 @@ class _PrExerciseDetailScreenState extends State<PrExerciseDetailScreen> {
       }
     }
 
-    // ── Weight-class (latest weightClass record per targetWeight) ──
-    final weightClass = <num, PrRecord>{};
+    // ── Weight-max (latest weightMax record per targetWeight) ──
+    final weightMax = <num, PrRecord>{};
     for (final p in prs) {
-      if (p.type == PrType.weightClass && p.targetWeight != null) {
-        weightClass[p.targetWeight!] = p;
+      if (p.type == PrType.weightMax && p.targetWeight != null) {
+        weightMax[p.targetWeight!] = p;
       }
     }
 
@@ -134,26 +131,6 @@ class _PrExerciseDetailScreenState extends State<PrExerciseDetailScreen> {
               padding: const EdgeInsets.all(AppSpacing.lg),
               children: [
                 _sectionCard(
-                  title: 'BEST LIFT',
-                  children: [
-                    if (bestLift == null)
-                      _muted('No weighted PR yet')
-                    else
-                      Text(
-                        '${_fmt(bestLift.weight)}kg × ${_fmt(bestLift.reps)}',
-                        style: AppFonts.mono(
-                            fontSize: 20, fontWeight: FontWeight.w700, color: AppColors.accent),
-                      ),
-                    if (bestLift != null) ...[
-                      const SizedBox(height: 2),
-                      _muted(_fmtDate(bestLift.achievedDate)),
-                    ],
-                    const SizedBox(height: 6),
-                    _muted('Best weight × reps — any variation, any rep count.'),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.md),
-                _sectionCard(
                   title: 'REP-MAX CURVE',
                   children: [
                     if (curve.isEmpty)
@@ -164,21 +141,21 @@ class _PrExerciseDetailScreenState extends State<PrExerciseDetailScreen> {
                 ),
                 const SizedBox(height: AppSpacing.md),
                 _sectionCard(
-                  title: 'WEIGHT-CLASS (most reps)',
+                  title: 'WEIGHT MAX',
                   children: [
-                    if (weightClass.isEmpty)
+                    if (weightMax.isEmpty)
                       _muted('No weighted PRs yet')
                     else ...[
-                      _weightClassDropdown(weightClass),
+                      _weightMaxDropdown(weightMax),
                       const SizedBox(height: AppSpacing.sm),
-                      for (final entry in _filteredWeightClass(weightClass).entries)
+                      for (final entry in _filteredWeightMax(weightMax).entries)
                         InkWell(
                           onTap: () => _showAxisHistorySheet(
                             context,
                             title: '${_fmt(entry.key)}kg history',
                             records: _prs
                                 .where((p) =>
-                                    p.type == PrType.weightClass &&
+                                    p.type == PrType.weightMax &&
                                     p.targetWeight == entry.key)
                                 .toList(),
                           ),
@@ -257,20 +234,6 @@ class _PrExerciseDetailScreenState extends State<PrExerciseDetailScreen> {
         ],
       ),
     );
-  }
-
-  /// Best weight × reps among [prs] (ties broken by higher reps).
-  PrRecord? _bestLift(List<PrRecord> prs) {
-    PrRecord? best;
-    for (final p in prs) {
-      if (p.type != PrType.absolute) continue;
-      if (best == null ||
-          p.weight > best.weight ||
-          (p.weight == best.weight && p.reps > best.reps)) {
-        best = p;
-      }
-    }
-    return best;
   }
 
   // ── Variation multi-select filter ─────────────────────────────────────────
@@ -397,10 +360,10 @@ class _PrExerciseDetailScreenState extends State<PrExerciseDetailScreen> {
 
   // ── Weight-class multi-select + helpers ───────────────────────────────────
 
-  Widget _weightClassDropdown(Map<num, PrRecord> weightClass) {
+  Widget _weightMaxDropdown(Map<num, PrRecord> weightMax) {
     return GestureDetector(
       onTap: () async {
-        final sorted = weightClass.keys.toList()..sort((a, b) => b.compareTo(a));
+        final sorted = weightMax.keys.toList()..sort((a, b) => b.compareTo(a));
         final result = await showMultiSelectSheet<num>(
           context,
           options: sorted
@@ -440,9 +403,9 @@ class _PrExerciseDetailScreenState extends State<PrExerciseDetailScreen> {
     );
   }
 
-  Map<num, PrRecord> _filteredWeightClass(Map<num, PrRecord> weightClass) {
-    if (_selectedWeights.isEmpty) return weightClass;
-    return Map.fromEntries(weightClass.entries.where((e) => _selectedWeights.contains(e.key)));
+  Map<num, PrRecord> _filteredWeightMax(Map<num, PrRecord> weightMax) {
+    if (_selectedWeights.isEmpty) return weightMax;
+    return Map.fromEntries(weightMax.entries.where((e) => _selectedWeights.contains(e.key)));
   }
 
   // ── Axis history sheet ────────────────────────────────────────────────────
