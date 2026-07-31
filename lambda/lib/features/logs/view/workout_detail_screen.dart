@@ -228,9 +228,9 @@ class _WorkoutBody extends StatelessWidget {
             ),
             child: Row(
               children: [
-                Expanded(child: _notesButton(context, 'Pre-Notes', state.workout?.preNotes ?? '', 'pre')),
+                Expanded(child: _notesButton(context, 'Pre-Notes', state.workout?.preNotes ?? '', 'pre', state.isEditing)),
                 const SizedBox(width: AppSpacing.sm),
-                Expanded(child: _notesButton(context, 'Post-Notes', state.workout?.postNotes ?? '', 'post')),
+                Expanded(child: _notesButton(context, 'Post-Notes', state.workout?.postNotes ?? '', 'post', state.isEditing)),
               ],
             ),
           ),
@@ -238,16 +238,22 @@ class _WorkoutBody extends StatelessWidget {
     );
   }
 
-  Widget _notesButton(BuildContext context, String label, String content, String target) {
+  Widget _notesButton(BuildContext context, String label, String content, String target, bool editing) {
     final filled = content.isNotEmpty;
+    final tappable = editing || filled;
     return GestureDetector(
-      onTap: () => _showNotesModal(context, target),
+      onTap: tappable ? () => _showNotesModal(context, target) : null,
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 10),
         decoration: BoxDecoration(
-          color: filled ? AppColors.accentBg : Colors.transparent,
+          color: filled
+              ? AppColors.accentBg
+              : editing
+                  ? AppColors.surfaceHigh
+                  : Colors.transparent,
           borderRadius: BorderRadius.circular(AppRadius.md),
-          border: Border.all(color: filled ? AppColors.accent.withValues(alpha: 0.4) : AppColors.border),
+          border: Border.all(
+              color: editing ? AppColors.border : filled ? AppColors.accent.withValues(alpha: 0.4) : AppColors.border),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -729,7 +735,7 @@ class _DetailExerciseCardState extends State<_DetailExerciseCard> {
       children: [
         if (sets.isNotEmpty || draftIds.isNotEmpty)
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 2),
+            padding: const EdgeInsets.symmetric(horizontal: 8),
             child: Row(
               children: [
                 const SizedBox(width: 26),

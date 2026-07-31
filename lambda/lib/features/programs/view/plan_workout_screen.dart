@@ -1,22 +1,16 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
 import '../../../core/styles/app_radius.dart';
 import '../../../core/styles/app_spacing.dart';
 import '../../../core/utils/workout_format.dart';
-import '../../../data/models/lesson.dart';
 import '../../../data/models/planned_set.dart';
 import '../../../data/models/planned_workout.dart';
-import '../../../data/models/workout_set.dart' show PastSetRow;
 import '../../../shared/mixins/unsaved_changes_guard.dart';
 import '../../../shared/widgets/exercise_tab_chip.dart';
-import '../../../shared/widgets/glass_button.dart';
 import '../../../shared/widgets/segmented_control.dart';
 import '../../../shared/widgets/slide_up_modal.dart';
 import '../../../shared/widgets/stats_row.dart';
-import '../../session/model/session_local_state.dart' show ExerciseHistorySession;
-import '../../session/view/lessons_modal.dart';
 import '../viewmodel/program_detail_viewmodel.dart';
 import 'plan_set_row.dart';
 
@@ -440,14 +434,6 @@ class _PlanExerciseCard extends StatefulWidget {
 }
 
 class _PlanExerciseCardState extends State<_PlanExerciseCard> {
-  bool _historyOpen = false;
-  ExerciseHistorySession? _viewingSession;
-
-  void _exitHistory() => setState(() {
-        _historyOpen = false;
-        _viewingSession = null;
-      });
-
   @override
   Widget build(BuildContext context) {
     final vm = widget.viewModel;
@@ -456,256 +442,30 @@ class _PlanExerciseCardState extends State<_PlanExerciseCard> {
     final order = widget.slot.exerciseSequenceOrder;
     final detail = s.exerciseDetailMap[exerciseId];
     final name = toProperCase(detail?.name ?? '');
-    final lessons = vm.lessonsFor(exerciseId);
-    final history = vm.historyFor(exerciseId);
     final sets = s.plannedSetsFor(order);
     final draftIds = s.workoutSetDrafts[order] ?? const <int>[];
-    final viewingHistory = _viewingSession != null;
-    final featuredLesson = lessons.isEmpty
-        ? null
-        : (lessons.where((l) => l.pinned).isNotEmpty ? lessons.firstWhere((l) => l.pinned) : lessons.last);
 
     return Container(
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(AppRadius.lg),
-        border: Border.all(color: viewingHistory ? AppColors.history : AppColors.border),
+        border: Border.all(color: AppColors.border),
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (viewingHistory)
-            _historyBanner(_viewingSession!)
-          else if (featuredLesson != null)
-            _lessonBar(featuredLesson, exerciseId, name),
-          _header(
-            name: name,
-            lessonsCount: lessons.length,
-            historyCount: history.length,
-            exerciseId: exerciseId,
-            viewingHistory: viewingHistory,
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+            child: Text(name,
+                style: AppFonts.ui(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.primary)),
           ),
-          if (_historyOpen && !viewingHistory) _historyPicker(history),
           Padding(
             padding: const EdgeInsets.fromLTRB(10, 0, 10, 12),
-            child: viewingHistory
-                ? _historyDetail(_viewingSession!)
-                : _setsGrid(sets, draftIds, exerciseId, order, detail),
+            child: _setsGrid(sets, draftIds, exerciseId, order, detail),
           ),
         ],
       ),
-    );
-  }
-
-  Widget _historyBanner(ExerciseHistorySession session) {
-    return Container(
-      color: AppColors.historyBg,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-      child: Row(
-        children: [
-          Icon(Icons.history, size: 14, color: AppColors.history),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text('Viewing — ${DateFormat('MMM d').format(session.date)}',
-                style: AppFonts.mono(fontSize: 9, letterSpacing: 0.8, color: AppColors.history)),
-          ),
-          GlassButton(
-              label: 'Back', color: AppColors.history, compact: true, onPressed: _exitHistory),
-        ],
-      ),
-    );
-  }
-
-  Widget _lessonBar(Lesson lesson, String exerciseId, String exerciseName) {
-    return GestureDetector(
-      onTap: () => showLessonsModal(
-        context,
-        listenable: widget.viewModel.state,
-        lessonsFor: widget.viewModel.lessonsFor,
-        loadLessonsFor: widget.viewModel.loadLessonsFor,
-        addLesson: widget.viewModel.addLesson,
-        toggleLessonPin: widget.viewModel.toggleLessonPin,
-        deleteLesson: widget.viewModel.deleteLesson,
-        exerciseId: exerciseId,
-        exerciseName: exerciseName,
-      ),
-      child: Container(
-        width: double.infinity,
-        color: AppColors.accentBg,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-        child: Row(
-          children: [
-            Text('LESSON',
-                style: AppFonts.mono(fontSize: 9, letterSpacing: 0.8, color: AppColors.accent)),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(lesson.text,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppFonts.ui(fontSize: 11, color: AppColors.muted)),
-            ),
-            Text(DateFormat('MMM d').format(lesson.createdDate),
-                style: AppFonts.mono(fontSize: 9, color: AppColors.muted)),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _header({
-    required String name,
-    required int lessonsCount,
-    required int historyCount,
-    required String exerciseId,
-    required bool viewingHistory,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Text(name,
-                style: AppFonts.ui(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
-                    color: viewingHistory ? AppColors.history : AppColors.primary)),
-          ),
-          const SizedBox(width: AppSpacing.sm),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              _pillButton(
-                icon: Icons.emoji_objects_outlined,
-                label: lessonsCount > 0 ? '$lessonsCount Lessons' : 'Lessons',
-                active: lessonsCount > 0,
-                onTap: () => showLessonsModal(
-                  context,
-                  listenable: widget.viewModel.state,
-                  lessonsFor: widget.viewModel.lessonsFor,
-                  loadLessonsFor: widget.viewModel.loadLessonsFor,
-                  addLesson: widget.viewModel.addLesson,
-                  toggleLessonPin: widget.viewModel.toggleLessonPin,
-                  deleteLesson: widget.viewModel.deleteLesson,
-                  exerciseId: exerciseId,
-                  exerciseName: name,
-                ),
-              ),
-              if (historyCount > 0) ...[
-                const SizedBox(height: 6),
-                _pillButton(
-                  icon: Icons.history,
-                  label: 'History',
-                  active: _historyOpen || viewingHistory,
-                  onTap: () {
-                    if (viewingHistory) {
-                      _exitHistory();
-                    } else {
-                      setState(() => _historyOpen = !_historyOpen);
-                    }
-                  },
-                ),
-              ],
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _pillButton({
-    required IconData icon,
-    required String label,
-    required bool active,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(
-          color: active ? AppColors.accent.withValues(alpha: 0.1) : Colors.transparent,
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(
-              color: active ? AppColors.accent.withValues(alpha: 0.3) : AppColors.border),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 11, color: active ? AppColors.accent : AppColors.muted),
-            const SizedBox(width: 4),
-            Text(label,
-                style: AppFonts.mono(
-                    fontSize: 9, letterSpacing: 0.4, color: active ? AppColors.accent : AppColors.muted)),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _historyPicker(List<ExerciseHistorySession> history) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Divider(color: AppColors.border, height: 1),
-          const SizedBox(height: 10),
-          Text('PAST SESSIONS',
-              style:
-                  AppFonts.mono(fontSize: 8, letterSpacing: 0.8, color: AppColors.muted)),
-          const SizedBox(height: 8),
-          SizedBox(
-            height: 68,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: history.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 8),
-              itemBuilder: (context, i) {
-                final session = history[i];
-                return GestureDetector(
-                  onTap: () => setState(() {
-                    _viewingSession = session;
-                    _historyOpen = false;
-                  }),
-                  child: Container(
-                    width: 84,
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: AppColors.surfaceHigh,
-                      borderRadius: BorderRadius.circular(AppRadius.md),
-                      border: Border.all(color: AppColors.border),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(DateFormat('MMM d').format(session.date),
-                            style: AppFonts.mono(fontSize: 10, color: AppColors.history)),
-                        const SizedBox(height: 6),
-                        Text('${session.sets.length} sets',
-                            style: AppFonts.mono(fontSize: 10, color: AppColors.muted)),
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _historyDetail(ExerciseHistorySession session) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('Past performance for reference.',
-            style: AppFonts.ui(fontSize: 11, color: AppColors.muted)),
-        const SizedBox(height: 8),
-        ...session.sets.map((s) => _PlanHistorySetRow(set: s)),
-      ],
     );
   }
 
@@ -720,7 +480,7 @@ class _PlanExerciseCardState extends State<_PlanExerciseCard> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 2),
+          padding: const EdgeInsets.symmetric(horizontal: 8),
           child: Row(
             children: [
               const SizedBox(width: 26),
@@ -784,59 +544,6 @@ class _PlanExerciseCardState extends State<_PlanExerciseCard> {
       Text(text,
           textAlign: TextAlign.start,
           style: AppFonts.mono(fontSize: 8, letterSpacing: 0.6, color: AppColors.muted));
-}
-
-// ── Read-only history set row ──────────────────────────────────────────────────
-
-class _PlanHistorySetRow extends StatelessWidget {
-  const _PlanHistorySetRow({required this.set});
-
-  final PastSetRow set;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 6),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: AppColors.historyBg,
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(color: AppColors.history.withValues(alpha: 0.2)),
-      ),
-      child: Row(
-        children: [
-          SizedBox(
-              width: 26,
-              child: Text('${set.setNumber}',
-                  textAlign: TextAlign.center,
-                  style: AppFonts.mono(fontSize: 11, color: AppColors.muted))),
-          Expanded(
-            child: Text(
-              set.weight != null ? _fmtNum(set.weight!) : '—',
-              textAlign: TextAlign.center,
-              style: AppFonts.mono(fontSize: 13, color: AppColors.history),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              set.reps.isNotEmpty ? _fmtNum(set.reps.first) : '—',
-              textAlign: TextAlign.center,
-              style: AppFonts.mono(fontSize: 13, color: AppColors.history),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              set.variationName != null ? toProperCase(set.variationName!) : '—',
-              textAlign: TextAlign.center,
-              style: AppFonts.ui(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.muted),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  static String _fmtNum(num n) => n == n.roundToDouble() ? n.toInt().toString() : n.toString();
 }
 
 // ── Add Exercise Modal ────────────────────────────────────────────────────────

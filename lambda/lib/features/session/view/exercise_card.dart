@@ -385,7 +385,7 @@ class _ExerciseCardState extends State<ExerciseCard> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 2),
+          padding: const EdgeInsets.symmetric(horizontal: 8),
           child: Row(
             children: [
               const SizedBox(width: 26),
