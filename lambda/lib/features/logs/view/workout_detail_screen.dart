@@ -292,10 +292,11 @@ class _WorkoutBody extends StatelessWidget {
               const SizedBox(height: AppSpacing.md),
               TextField(
                 controller: target == 'pre' ? preCtrl : postCtrl,
+                readOnly: !state.isEditing,
                 maxLines: 3,
                 style: AppFonts.ui(fontSize: 14, color: AppColors.primary),
                 decoration: InputDecoration(
-                  hintText: 'Notes…',
+                  hintText: !state.isEditing ? '' : 'Notes…',
                   hintStyle: AppFonts.ui(color: AppColors.muted),
                   filled: true,
                   fillColor: AppColors.surfaceHigh,
@@ -304,7 +305,7 @@ class _WorkoutBody extends StatelessWidget {
                     borderSide: BorderSide(color: AppColors.border),
                   ),
                 ),
-                onChanged: target == 'pre' ? viewModel.setPreNotesDraft : viewModel.setPostNotesDraft,
+                onChanged: state.isEditing ? (target == 'pre' ? viewModel.setPreNotesDraft : viewModel.setPostNotesDraft) : null,
               ),
               const SizedBox(height: AppSpacing.md),
               GlassButton(
@@ -798,7 +799,7 @@ class _DetailExerciseCardState extends State<_DetailExerciseCard> {
 
   Widget _colLabel(String text) =>
       Text(text,
-          textAlign: TextAlign.start,
+          textAlign: TextAlign.center,
           style: AppFonts.mono(fontSize: 8, letterSpacing: 0.6, color: AppColors.muted));
 }
 
@@ -959,6 +960,7 @@ class _DetailSetRowState extends State<_DetailSetRow> {
       context,
       setIndex: widget.displayIndex,
       initialValue: _isDraft ? (_draftNotes ?? '') : (widget.set!.notes ?? ''),
+      readOnly: widget.readOnly,
       onSave: (value) {
         if (_isDraft) {
           setState(() => _draftNotes = value);
@@ -1171,22 +1173,22 @@ class _DetailSetRowState extends State<_DetailSetRow> {
           ),
           const SizedBox(width: 6),
           GestureDetector(
-            onTap: widget.readOnly ? null : _openNotes,
+            onTap: (widget.readOnly && !hasNotes) ? null : _openNotes,
             child: Container(
               width: 32,
               height: 32,
               alignment: Alignment.center,
               decoration: BoxDecoration(
-                color: hasNotes && !widget.readOnly ? AppColors.accentBg : Colors.transparent,
+                color: hasNotes ? AppColors.accentBg : Colors.transparent,
                 borderRadius: BorderRadius.circular(6),
                 border: Border.all(
-                    color: hasNotes && !widget.readOnly
+                    color: hasNotes
                         ? AppColors.accent.withValues(alpha: 0.4)
                         : AppColors.border),
               ),
               child: Icon(Icons.sticky_note_2_outlined,
                   size: 15,
-                  color: hasNotes && !widget.readOnly ? AppColors.accent : AppColors.muted),
+                  color: hasNotes ? AppColors.accent : AppColors.muted),
             ),
           ),
         ],

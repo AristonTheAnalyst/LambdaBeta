@@ -98,29 +98,34 @@ class DropdownSelect<T> extends StatelessWidget {
     final hasValue = value != null;
     return GestureDetector(
       onTap: () {
-        final host = DropdownSheetHost.maybeOf(context);
-        if (host != null) {
-          host.showPicker((dismiss) => _DropdownSheetContent<T>(
-                options: options,
-                value: value,
-                searchable: searchable,
-                onCreateNew: onCreateNew,
-                createNewLabel: createNewLabel,
-                fillHeight: true,
-                onClose: dismiss,
-                onSelect: onChange,
-              ));
-        } else {
-          showDropdownPickerSheet<T>(
-            context,
-            options: options,
-            value: value,
-            searchable: searchable,
-            onCreateNew: onCreateNew,
-            createNewLabel: createNewLabel,
-            onSelect: onChange,
-          );
-        }
+        // Defer to next frame so any in-progress parent build finishes
+        // before we call setState on the DropdownSheetHost.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!context.mounted) return;
+          final host = DropdownSheetHost.maybeOf(context);
+          if (host != null) {
+            host.showPicker((dismiss) => _DropdownSheetContent<T>(
+                  options: options,
+                  value: value,
+                  searchable: searchable,
+                  onCreateNew: onCreateNew,
+                  createNewLabel: createNewLabel,
+                  fillHeight: true,
+                  onClose: dismiss,
+                  onSelect: onChange,
+                ));
+          } else {
+            showDropdownPickerSheet<T>(
+              context,
+              options: options,
+              value: value,
+              searchable: searchable,
+              onCreateNew: onCreateNew,
+              createNewLabel: createNewLabel,
+              onSelect: onChange,
+            );
+          }
+        });
       },
       child: compact
           ? Row(

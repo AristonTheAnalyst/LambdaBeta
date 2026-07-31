@@ -45,7 +45,7 @@ class ExerciseTabBar extends StatelessWidget {
                           for (var i = 0; i < vm.exerciseSlots.length; i++)
                             SizedBox(
                               key: ValueKey('ex-${vm.exerciseSlots[i].id}'),
-                              child: ReorderableDelayedDragStartListener(
+                              child: ReorderableDragStartListener(
                                 index: i,
                                 child: Padding(
                                   padding: const EdgeInsets.only(right: 6),

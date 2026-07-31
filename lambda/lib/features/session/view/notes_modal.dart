@@ -12,6 +12,7 @@ void showNotesModal(
   required String initialValue,
   String? plannedNote,
   required ValueChanged<String> onSave,
+  bool readOnly = false,
 }) {
   showLambdaModal(
     context,
@@ -22,6 +23,7 @@ void showNotesModal(
       initialValue: initialValue,
       plannedNote: plannedNote,
       onSave: onSave,
+      readOnly: readOnly,
     ),
   );
 }
@@ -32,12 +34,14 @@ class _NotesModalContent extends StatefulWidget {
     required this.initialValue,
     required this.onSave,
     this.plannedNote,
+    this.readOnly = false,
   });
 
   final int setIndex;
   final String initialValue;
   final String? plannedNote;
   final ValueChanged<String> onSave;
+  final bool readOnly;
 
   @override
   State<_NotesModalContent> createState() => _NotesModalContentState();
@@ -79,7 +83,7 @@ class _NotesModalContentState extends State<_NotesModalContent> {
                       style: AppFonts.ui(
                           fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.primary)),
                 ),
-                GlassButton(label: 'Save', compact: true, onPressed: _save),
+                GlassButton(label: widget.readOnly ? 'Done' : 'Save', compact: true, onPressed: widget.readOnly ? () => Navigator.of(context, rootNavigator: true).pop() : _save),
               ],
             ),
             const SizedBox(height: AppSpacing.md),
@@ -108,7 +112,8 @@ class _NotesModalContentState extends State<_NotesModalContent> {
             ],
             TextField(
               controller: _ctrl,
-              autofocus: true,
+              readOnly: widget.readOnly,
+              autofocus: !widget.readOnly,
               maxLines: 5,
               style: AppFonts.ui(fontSize: 14, color: AppColors.primary),
               decoration: InputDecoration(
@@ -122,7 +127,7 @@ class _NotesModalContentState extends State<_NotesModalContent> {
                 ),
               ),
             ),
-            if (_ctrl.text.trim().isNotEmpty) ...[
+            if (_ctrl.text.trim().isNotEmpty && !widget.readOnly) ...[
               const SizedBox(height: AppSpacing.sm),
               GlassButton(
                 label: 'Delete Note',

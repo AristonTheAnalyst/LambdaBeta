@@ -542,7 +542,7 @@ class _PlanExerciseCardState extends State<_PlanExerciseCard> {
 
   Widget _colLabel(String text) =>
       Text(text,
-          textAlign: TextAlign.start,
+          textAlign: TextAlign.center,
           style: AppFonts.mono(fontSize: 8, letterSpacing: 0.6, color: AppColors.muted));
 }
 

@@ -442,7 +442,7 @@ class _ExerciseCardState extends State<ExerciseCard> {
   }
 
   Widget _colLabel(String text) =>
-      Text(text, textAlign: TextAlign.start, style: AppFonts.mono(fontSize: 8, letterSpacing: 0.6, color: AppColors.muted));
+      Text(text, textAlign: TextAlign.center, style: AppFonts.mono(fontSize: 8, letterSpacing: 0.6, color: AppColors.muted));
 }
 
 class _SupersetPill extends StatelessWidget {
