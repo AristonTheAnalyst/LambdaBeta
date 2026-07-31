@@ -272,6 +272,21 @@ class SessionViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Long-press drag reorder of the exercise tab bar.
+  void reorderExercises(int oldIndex, int newIndex) {
+    if (oldIndex == newIndex) return;
+    final slot = exerciseSlots.removeAt(oldIndex);
+    exerciseSlots.insert(newIndex, slot);
+    if (activeSlotIndex == oldIndex) {
+      activeSlotIndex = newIndex;
+    } else if (oldIndex < activeSlotIndex && newIndex >= activeSlotIndex) {
+      activeSlotIndex--;
+    } else if (oldIndex > activeSlotIndex && newIndex <= activeSlotIndex) {
+      activeSlotIndex++;
+    }
+    notifyListeners();
+  }
+
   /// Jumps a superset tab straight to one of its exercises — the in-card
   /// superset nav's tap handler. More discoverable than the old "tap the
   /// tab again to cycle" gesture.

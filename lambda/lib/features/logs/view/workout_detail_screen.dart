@@ -182,6 +182,7 @@ class _WorkoutBody extends StatelessWidget {
                   }).toList(),
                   onTap: (i) => viewModel.tapTab(i),
                   onAdd: state.isEditing ? () => _showAddExercise(context) : null,
+                  onReorder: state.isEditing ? viewModel.reorderExercises : null,
                 ),
                 const SizedBox(height: AppSpacing.md),
                 if (state.activeSlot != null)
@@ -292,6 +293,7 @@ class _DetailExerciseTabBar extends StatelessWidget {
     required this.exerciseNames,
     required this.onTap,
     this.onAdd,
+    this.onReorder,
   });
 
   final List<WorkoutDetailExerciseSlot> slots;
@@ -299,27 +301,58 @@ class _DetailExerciseTabBar extends StatelessWidget {
   final List<String> exerciseNames;
   final ValueChanged<int> onTap;
   final VoidCallback? onAdd;
+  final void Function(int oldIndex, int newIndex)? onReorder;
 
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
         Expanded(
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                for (var i = 0; i < slots.length; i++) ...[
-                  ExerciseTabChip(
-                    label: exerciseNames.length > i ? exerciseNames[i] : '',
-                    isActive: i == activeIndex,
-                    onTap: () => onTap(i),
+          child: slots.length > 2 && onReorder != null
+              ? SizedBox(
+                  height: 42,
+                  child: ReorderableListView(
+                    scrollDirection: Axis.horizontal,
+                    onReorderItem: onReorder!,
+                    buildDefaultDragHandles: false,
+                    proxyDecorator: (child, index, _) => Material(
+                      color: Colors.transparent,
+                      child: Opacity(opacity: 0.85, child: child),
+                    ),
+                    children: [
+                      for (var i = 0; i < slots.length; i++)
+                        SizedBox(
+                          key: ValueKey('ex-${slots[i].exerciseId}'),
+                          child: ReorderableDelayedDragStartListener(
+                            index: i,
+                            child: Padding(
+                              padding: const EdgeInsets.only(right: 6),
+                              child: ExerciseTabChip(
+                                label: exerciseNames.length > i ? exerciseNames[i] : '',
+                                isActive: i == activeIndex,
+                                onTap: () => onTap(i),
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
-                  const SizedBox(width: 6),
-                ],
-              ],
-            ),
-          ),
+                )
+              : SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      for (var i = 0; i < slots.length; i++) ...[
+                        ExerciseTabChip(
+                          label: exerciseNames.length > i ? exerciseNames[i] : '',
+                          isActive: i == activeIndex,
+                          onTap: () => onTap(i),
+                        ),
+                        const SizedBox(width: 6),
+                      ],
+                    ],
+                  ),
+                ),
         ),
         if (onAdd != null) ...[
           AddExerciseButton(onTap: onAdd!),

@@ -314,6 +314,30 @@ class ProgramRepository {
     );
   }
 
+  /// Swaps exerciseSequenceOrder for all planned sets between two exercises
+  /// within the same workout, effectively reordering the exercise tabs.
+  Future<void> swapPlannedExerciseOrders(
+    String plannedWorkoutId,
+    int orderA,
+    int orderB,
+  ) async {
+    if (orderA == orderB) return;
+    // Use a temp value to avoid collisions during the swap
+    const temp = -9999;
+    await ps.db.execute(
+      'UPDATE dim_planned_set SET exercise_sequence_order = ? WHERE planned_workout_id = ? AND exercise_sequence_order = ?',
+      [temp, plannedWorkoutId, orderA],
+    );
+    await ps.db.execute(
+      'UPDATE dim_planned_set SET exercise_sequence_order = ? WHERE planned_workout_id = ? AND exercise_sequence_order = ?',
+      [orderA, plannedWorkoutId, orderB],
+    );
+    await ps.db.execute(
+      'UPDATE dim_planned_set SET exercise_sequence_order = ? WHERE planned_workout_id = ? AND exercise_sequence_order = ?',
+      [orderB, plannedWorkoutId, temp],
+    );
+  }
+
   Future<void> reorderPlannedSets(List<String> orderedIds) async {
     for (var i = 0; i < orderedIds.length; i++) {
       await ps.db.execute(

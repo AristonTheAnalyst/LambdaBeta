@@ -464,6 +464,29 @@ class ProgramDetailViewModel {
 
   void tapTab(int index) => state.value = state.value.copyWith(activeSlotIndex: index);
 
+  Future<void> reorderExercises(int oldIndex, int newIndex) async {
+    if (oldIndex == newIndex || state.value.editingWorkout == null) return;
+    final s = state.value;
+    final slots = [...s.workoutExerciseSlots];
+    final slot = slots.removeAt(oldIndex);
+    slots.insert(newIndex, slot);
+    int newActive = s.activeSlotIndex;
+    if (s.activeSlotIndex == oldIndex) {
+      newActive = newIndex;
+    } else if (oldIndex < s.activeSlotIndex && newIndex >= s.activeSlotIndex) {
+      newActive = s.activeSlotIndex - 1;
+    } else if (oldIndex > s.activeSlotIndex && newIndex <= s.activeSlotIndex) {
+      newActive = s.activeSlotIndex + 1;
+    }
+    state.value = s.copyWith(workoutExerciseSlots: slots, activeSlotIndex: newActive);
+    // Persist: swap exerciseSequenceOrder for both exercises' planned sets
+    final orderA = slot.exerciseSequenceOrder;
+    final orderB = s.workoutExerciseSlots[oldIndex == newActive ? oldIndex : newIndex].exerciseSequenceOrder;
+    await _repo.swapPlannedExerciseOrders(s.editingWorkout!.plannedWorkoutId, orderA, orderB);
+    final sets = await _repo.fetchPlannedSets(s.editingWorkout!.plannedWorkoutId);
+    state.value = state.value.copyWith(workoutPlannedSets: sets);
+  }
+
   // ── Draft (unsaved) planned-set rows ──────────────────────────────────────
 
   void addDraftPlannedSet(int exerciseSequenceOrder) {

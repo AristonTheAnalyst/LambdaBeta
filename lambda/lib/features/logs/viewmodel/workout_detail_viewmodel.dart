@@ -310,6 +310,23 @@ class WorkoutDetailViewModel {
   void tapTab(int index) =>
       state.value = state.value.copyWith(activeSlotIndex: index);
 
+  void reorderExercises(int oldIndex, int newIndex) {
+    if (oldIndex == newIndex) return;
+    final s = state.value;
+    final slots = [...s.exerciseSlots];
+    final slot = slots.removeAt(oldIndex);
+    slots.insert(newIndex, slot);
+    int newActive = s.activeSlotIndex;
+    if (s.activeSlotIndex == oldIndex) {
+      newActive = newIndex;
+    } else if (oldIndex < s.activeSlotIndex && newIndex >= s.activeSlotIndex) {
+      newActive = s.activeSlotIndex - 1;
+    } else if (oldIndex > s.activeSlotIndex && newIndex <= s.activeSlotIndex) {
+      newActive = s.activeSlotIndex + 1;
+    }
+    state.value = s.copyWith(exerciseSlots: slots, activeSlotIndex: newActive);
+  }
+
   void addExerciseGroup(String exerciseId) {
     final s = state.value;
     final existingIndex = s.exerciseSlots.indexWhere((sl) => sl.exerciseId == exerciseId);

@@ -30,30 +30,68 @@ class ExerciseTabBar extends StatelessWidget {
         return Row(
           children: [
             Expanded(
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: [
-                    for (var i = 0; i < vm.exerciseSlots.length; i++) ...[
-                      ExerciseTabChip(
-                        label: _label(vm.exerciseSlots[i], supersetNumbers[i]),
-                        isActive: i == vm.activeSlotIndex,
-                        count: vm.exerciseSlots[i].type == SessionSlotType.superset
-                            ? null
-                            : vm.sets
-                                .where((s) => s.exerciseId == vm.exerciseSlots[i].activeExerciseId)
-                                .length,
-                        prefixIcon: vm.exerciseSlots[i].type == SessionSlotType.superset
-                            ? Icons.hexagon_outlined
-                            : null,
-                        onTap: () => vm.tapTab(i),
+              child: vm.exerciseSlots.length > 2
+                  ? SizedBox(
+                      height: 42,
+                      child: ReorderableListView(
+                        scrollDirection: Axis.horizontal,
+                        onReorderItem: (oldIndex, newIndex) => vm.reorderExercises(oldIndex, newIndex),
+                        buildDefaultDragHandles: false,
+                        proxyDecorator: (child, index, _) => Material(
+                          color: Colors.transparent,
+                          child: Opacity(opacity: 0.85, child: child),
+                        ),
+                        children: [
+                          for (var i = 0; i < vm.exerciseSlots.length; i++)
+                            SizedBox(
+                              key: ValueKey('ex-${vm.exerciseSlots[i].id}'),
+                              child: ReorderableDelayedDragStartListener(
+                                index: i,
+                                child: Padding(
+                                  padding: const EdgeInsets.only(right: 6),
+                                  child: ExerciseTabChip(
+                                    label: _label(vm.exerciseSlots[i], supersetNumbers[i]),
+                                    isActive: i == vm.activeSlotIndex,
+                                    count: vm.exerciseSlots[i].type == SessionSlotType.superset
+                                        ? null
+                                        : vm.sets
+                                            .where((s) => s.exerciseId == vm.exerciseSlots[i].activeExerciseId)
+                                            .length,
+                                    prefixIcon: vm.exerciseSlots[i].type == SessionSlotType.superset
+                                        ? Icons.hexagon_outlined
+                                        : null,
+                                    onTap: () => vm.tapTab(i),
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
-                      const SizedBox(width: 6),
-                    ],
-                  ],
-                ),
+                    )
+                  : SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: [
+                          for (var i = 0; i < vm.exerciseSlots.length; i++) ...[
+                            ExerciseTabChip(
+                              label: _label(vm.exerciseSlots[i], supersetNumbers[i]),
+                              isActive: i == vm.activeSlotIndex,
+                              count: vm.exerciseSlots[i].type == SessionSlotType.superset
+                                  ? null
+                                  : vm.sets
+                                      .where((s) => s.exerciseId == vm.exerciseSlots[i].activeExerciseId)
+                                      .length,
+                              prefixIcon: vm.exerciseSlots[i].type == SessionSlotType.superset
+                                  ? Icons.hexagon_outlined
+                                  : null,
+                              onTap: () => vm.tapTab(i),
+                            ),
+                            const SizedBox(width: 6),
+                          ],
+                        ],
+                      ),
+                    ),
               ),
-            ),
             AddExerciseButton(onTap: () => showAddExerciseModal(context, vm: vm)),
           ],
         );
