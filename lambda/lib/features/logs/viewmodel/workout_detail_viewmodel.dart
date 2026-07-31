@@ -303,30 +303,56 @@ class WorkoutDetailViewModel {
     _computePRs();
   }
 
-  /// Re-derives fact_pr for the edited exercise from remaining valid history,
-  /// so edited past sets keep the PR table truthful. Deletes then re-inserts
-  /// that exercise's records (promoting the next-best from the remaining sets).
+  /// Re-derives fact_pr for the edited exercise from current, accurate data —
+  /// this workout's in-state sets (which reflect the edit/delete just made)
+  /// plus other workouts' loaded history. Deletes then re-inserts that
+  /// exercise's records (promoting the next-best from the remaining sets).
+  ///
+  /// If the full past-sets history hasn't loaded yet, the recompute is
+  /// skipped entirely — otherwise an empty baseline would wipe every PR
+  /// record for the exercise.
   Future<void> recomputeExercisePRs(String exerciseId) async {
-    try {
-      final userId = _userId;
-      final history = _allHistoryPastSets();
-      final exerciseHistory =
-          history.where((s) => s.exerciseId == exerciseId).toList();
-      final timeline = fullPrTimeline(exerciseHistory);
-      await _prRepo.deleteForExercise(userId, exerciseId);
-      await _prRepo.insertPrs(userId, timeline);
-    } catch (_) {}
-  }
+    final s = state.value;
+    if (!s.pastSetsLoaded) return;
 
-  /// Flattens the loaded historyByExercise into a plain PastSetRow list.
-  List<PastSetRow> _allHistoryPastSets() {
-    final result = <PastSetRow>[];
-    for (final sessions in state.value.historyByExercise.values) {
+    final thisWorkoutId = s.workout?.workoutId;
+    final combined = <PastSetRow>[];
+    // Other workouts' history (accurate — this workout isn't in it)
+    for (final sessions in s.historyByExercise.values) {
       for (final session in sessions) {
-        result.addAll(session.sets);
+        for (final set in session.sets) {
+          if (set.workoutId != thisWorkoutId) combined.add(set);
+        }
       }
     }
-    return result;
+    // This workout's CURRENT sets — reflects the optimistic delete already
+    // applied to setsByOrder, so the deleted set is not included.
+    for (final sets in s.setsByOrder.values) {
+      for (final set in sets) {
+        combined.add(PastSetRow(
+          setId: set.setId,
+          workoutId: set.workoutId,
+          exerciseId: set.exerciseId,
+          setNumber: set.setNumber,
+          reps: set.reps,
+          duration: set.duration,
+          workoutCreatedDate: s.workout?.createdDate ?? DateTime.now(),
+          variationId: set.variationId,
+          weight: set.weight,
+          notes: set.notes,
+          exerciseName: set.exerciseName,
+          variationName: set.variationName,
+          supersetGroupNumber: set.supersetGroupNumber,
+        ));
+      }
+    }
+
+    final exerciseSets = combined.where((x) => x.exerciseId == exerciseId).toList();
+    final timeline = fullPrTimeline(exerciseSets);
+    try {
+      await _prRepo.deleteForExercise(_userId, exerciseId);
+      if (timeline.isNotEmpty) await _prRepo.insertPrs(_userId, timeline);
+    } catch (_) {}
   }
 
   // ── Edit mode ──────────────────────────────────────────────────────────────
