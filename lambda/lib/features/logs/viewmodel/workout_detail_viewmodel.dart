@@ -546,12 +546,26 @@ class WorkoutDetailViewModel {
     }
   }
 
+  /// Removes [setId] from the in-memory setsByOrder immediately so the UI
+  /// reflects the delete without depending on a reload round-trip, then
+  /// deletes from the DB and reloads as the source of truth.
+  Future<void> _deleteSetFromState(String setId) async {
+    final s = state.value;
+    final newSetsByOrder = <int, List<WorkoutSet>>{};
+    for (final e in s.setsByOrder.entries) {
+      newSetsByOrder[e.key] = e.value.where((x) => x.setId != setId).toList();
+    }
+    state.value = s.copyWith(setsByOrder: newSetsByOrder);
+    _computePRs();
+  }
+
   /// Deletes the set but keeps its fact_pr records ("delete set only" —
   /// the achievement stands). Does NOT recompute; a correction would use
   /// [deleteSetAndItsPRs].
   Future<void> deleteSetKeepingPRs(String setId) async {
     final w = state.value.workout;
     if (w == null) return;
+    await _deleteSetFromState(setId);
     try {
       await _workoutRepo.deleteSet(setId);
       await _reloadSets(w.workoutId);
@@ -566,6 +580,7 @@ class WorkoutDetailViewModel {
   Future<void> deleteSetAndItsPRs(String setId, String exerciseId) async {
     final w = state.value.workout;
     if (w == null) return;
+    await _deleteSetFromState(setId);
     try {
       await _workoutRepo.deleteSet(setId);
       await _prRepo.deleteForSets(_userId, [setId]);
@@ -580,6 +595,7 @@ class WorkoutDetailViewModel {
   Future<void> deleteSetById(String setId) async {
     final w = state.value.workout;
     if (w == null) return;
+    await _deleteSetFromState(setId);
     try {
       await _workoutRepo.deleteSet(setId);
       await _reloadSets(w.workoutId);
