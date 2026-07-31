@@ -261,7 +261,9 @@ class _SessionSetRowState extends State<SessionSetRow> {
   Widget build(BuildContext context) {
     final vm = widget.vm;
     final set = widget.set;
-    final bestEver = vm.prevBestFor(widget.exerciseId);
+    final bestEver = set != null
+        ? vm.baselineFor(widget.exerciseId, excludingSetId: set.setId)
+        : vm.prevBestFor(widget.exerciseId);
     final pr = set != null && local.isPr(set, bestEver);
     final hasNotes = _isDraft ? (_draftNotes?.trim().isNotEmpty ?? false) : (set!.notes?.isNotEmpty ?? false);
     final plannedWeight = widget.plannedTarget?.targetWeight;

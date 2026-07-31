@@ -132,7 +132,7 @@ class SessionViewModel extends ChangeNotifier {
   int get distinctExerciseCount => sets.map((s) => s.exerciseId).toSet().length;
 
   int get totalPRsThisSession =>
-      sets.where((s) => isPr(s, prevBestByExercise[s.exerciseId])).length;
+      sets.where((s) => isPr(s, baselineFor(s.exerciseId, excludingSetId: s.setId))).length;
 
   double? get avgRestSeconds => restDurationsThisSession.isEmpty
       ? null
@@ -611,8 +611,37 @@ class SessionViewModel extends ChangeNotifier {
   ({num weight, num reps})? prevBestFor(String exerciseId) =>
       prevBestByExercise[exerciseId];
 
+  /// The PR baseline for [exerciseId]: the better of the past-best and the
+  /// best set logged earlier in the current session (excluding [excludingSetId],
+  /// so a set isn't compared against itself). Lets a set that beats something
+  /// done earlier in the same workout highlight as a PR, matching what the
+  /// engine persists at endWorkout (the day's best).
+  ({num weight, num reps})? baselineFor(String exerciseId, {String? excludingSetId}) {
+    final pastBest = prevBestByExercise[exerciseId];
+    ({num weight, num reps})? sessionBest;
+    for (final s in sets) {
+      if (s.exerciseId != exerciseId) continue;
+      if (excludingSetId != null && s.setId == excludingSetId) continue;
+      final weight = s.weight ?? 0;
+      final reps = s.reps.isNotEmpty ? s.reps.first : (s.duration.isNotEmpty ? s.duration.first : null);
+      if (reps == null) continue;
+      if (sessionBest == null ||
+          weight > sessionBest.weight ||
+          (weight == sessionBest.weight && reps > sessionBest.reps)) {
+        sessionBest = (weight: weight, reps: reps);
+      }
+    }
+    if (pastBest == null) return sessionBest;
+    if (sessionBest == null) return pastBest;
+    if (sessionBest.weight > pastBest.weight ||
+        (sessionBest.weight == pastBest.weight && sessionBest.reps > pastBest.reps)) {
+      return sessionBest;
+    }
+    return pastBest;
+  }
+
   int prCountFor(String exerciseId) => sets
-      .where((s) => s.exerciseId == exerciseId && isPr(s, prevBestFor(exerciseId)))
+      .where((s) => s.exerciseId == exerciseId && isPr(s, baselineFor(exerciseId, excludingSetId: s.setId)))
       .length;
 
   // ── Rest timer ─────────────────────────────────────────────────────────────
