@@ -100,70 +100,76 @@ class _PlanWorkoutScreenState extends State<PlanWorkoutScreen> {
             body: Center(child: CircularProgressIndicator(color: AppColors.accent)),
           );
         }
-        return Scaffold(
-          backgroundColor: AppColors.bg,
-          body: Column(
-            children: [
-              _editableHeader(state.workoutUnsavedChanges),
-              Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.xxl),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _notesField(state.workoutNotesDraft),
-                      if (state.isCalendarMode) ...[
-                        const SizedBox(height: AppSpacing.md),
-                        Text('Day of week',
-                            style: AppFonts.ui(
-                                fontSize: 13, fontWeight: FontWeight.w500, color: AppColors.primary)),
-                        const SizedBox(height: 6),
-                        SegmentedControl<int?>(
-                          options: _dayOfWeekOptions,
-                          value: state.workoutDayOfWeekDraft,
-                          onChange: (v) => widget.viewModel.commitWorkoutDayOfWeek(v),
-                        ),
-                      ],
-                      const SizedBox(height: AppSpacing.lg),
-                      _PlanStatsBar(
-                        setCount: state.workoutPlannedSets.length,
-                        exerciseCount: state.workoutExerciseSlots.length,
-                      ),
-                      const SizedBox(height: AppSpacing.md),
-                      if (state.workoutSetsLoading)
-                        Center(
-                            child: Padding(
-                          padding: const EdgeInsets.all(AppSpacing.lg),
-                          child: CircularProgressIndicator(color: AppColors.accent),
-                        ))
-                      else ...[
-                        _PlanExerciseTabBar(
-                          slots: state.workoutExerciseSlots,
-                          activeIndex: state.activeSlotIndex,
-                          setCounts: state.workoutExerciseSlots
-                              .map((slot) => state.plannedSetsFor(slot.exerciseSequenceOrder).length)
-                              .toList(),
-                          exerciseNames: state.workoutExerciseSlots.map((slot) {
-                            final detail = state.exerciseDetailMap[slot.exerciseId];
-                            return toProperCase(detail?.name ?? '');
-                          }).toList(),
-                          onTap: (i) => widget.viewModel.tapTab(i),
-                          onAdd: _showAddExercise,
-                          onReorder: (oldIndex, newIndex) =>
-                              widget.viewModel.reorderExercises(oldIndex, newIndex),
-                        ),
-                        const SizedBox(height: AppSpacing.md),
-                        if (state.activeSlot != null)
-                          _PlanExerciseCard(
-                            viewModel: widget.viewModel,
-                            slot: state.activeSlot!,
+        return PopScope(
+          canPop: !state.workoutUnsavedChanges,
+          onPopInvokedWithResult: (didPop, _) {
+            if (!didPop) _confirmBack();
+          },
+          child: Scaffold(
+            backgroundColor: AppColors.bg,
+            body: Column(
+              children: [
+                _editableHeader(state.workoutUnsavedChanges),
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.xxl),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _notesField(state.workoutNotesDraft),
+                        if (state.isCalendarMode) ...[
+                          const SizedBox(height: AppSpacing.md),
+                          Text('Day of week',
+                              style: AppFonts.ui(
+                                  fontSize: 13, fontWeight: FontWeight.w500, color: AppColors.primary)),
+                          const SizedBox(height: 6),
+                          SegmentedControl<int?>(
+                            options: _dayOfWeekOptions,
+                            value: state.workoutDayOfWeekDraft,
+                            onChange: (v) => widget.viewModel.commitWorkoutDayOfWeek(v),
                           ),
+                        ],
+                        const SizedBox(height: AppSpacing.lg),
+                        _PlanStatsBar(
+                          setCount: state.workoutPlannedSets.length,
+                          exerciseCount: state.workoutExerciseSlots.length,
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+                        if (state.workoutSetsLoading)
+                          Center(
+                              child: Padding(
+                            padding: const EdgeInsets.all(AppSpacing.lg),
+                            child: CircularProgressIndicator(color: AppColors.accent),
+                          ))
+                        else ...[
+                          _PlanExerciseTabBar(
+                            slots: state.workoutExerciseSlots,
+                            activeIndex: state.activeSlotIndex,
+                            setCounts: state.workoutExerciseSlots
+                                .map((slot) => state.plannedSetsFor(slot.exerciseSequenceOrder).length)
+                                .toList(),
+                            exerciseNames: state.workoutExerciseSlots.map((slot) {
+                              final detail = state.exerciseDetailMap[slot.exerciseId];
+                              return toProperCase(detail?.name ?? '');
+                            }).toList(),
+                            onTap: (i) => widget.viewModel.tapTab(i),
+                            onAdd: _showAddExercise,
+                            onReorder: (oldIndex, newIndex) =>
+                                widget.viewModel.reorderExercises(oldIndex, newIndex),
+                          ),
+                          const SizedBox(height: AppSpacing.md),
+                          if (state.activeSlot != null)
+                            _PlanExerciseCard(
+                              viewModel: widget.viewModel,
+                              slot: state.activeSlot!,
+                            ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         );
       },
@@ -185,12 +191,7 @@ class _PlanWorkoutScreenState extends State<PlanWorkoutScreen> {
           children: [
             Positioned(left: 16,
               child: GestureDetector(
-                onTap: () {
-                  widget.viewModel.commitWorkoutName();
-                  widget.viewModel.commitWorkoutNotes();
-                  widget.viewModel.closeWorkoutEditor();
-                  Navigator.of(context, rootNavigator: true).pop();
-                },
+                onTap: () => _confirmBack(),
                 child: Icon(Icons.arrow_back_ios_new, size: 18, color: AppColors.accent),
               ),
             ),
@@ -274,6 +275,42 @@ class _PlanWorkoutScreenState extends State<PlanWorkoutScreen> {
         ),
       ],
     );
+  }
+
+  Future<void> _confirmBack() async {
+    if (!widget.viewModel.state.value.workoutUnsavedChanges) {
+      widget.viewModel.closeWorkoutEditor();
+      if (mounted) Navigator.of(context, rootNavigator: true).pop();
+      return;
+    }
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: Text('Unsaved Changes',
+            style: AppFonts.ui(fontWeight: FontWeight.w800, color: AppColors.primary)),
+        content: Text('Save changes before leaving?',
+            style: AppFonts.ui(color: AppColors.muted)),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop('discard'),
+              child: Text('Discard', style: AppFonts.ui(color: AppColors.danger))),
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop('cancel'),
+              child: Text('Stay', style: AppFonts.ui(color: AppColors.muted))),
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop('save'),
+              child: Text('Save', style: AppFonts.ui(color: AppColors.accent, fontWeight: FontWeight.w600))),
+        ],
+      ),
+    );
+    if (choice == null || !mounted) return;
+    if (choice == 'cancel') return;
+    if (choice == 'save') {
+      await widget.viewModel.saveWorkout();
+    }
+    widget.viewModel.closeWorkoutEditor();
+    if (mounted) Navigator.of(context, rootNavigator: true).pop();
   }
 
   void _confirmDelete() {
@@ -371,7 +408,7 @@ class _PlanExerciseTabBar extends StatelessWidget {
                       for (var i = 0; i < slots.length; i++)
                         SizedBox(
                           key: ValueKey('ex-${slots[i].exerciseId}'),
-                          child: ReorderableDelayedDragStartListener(
+                          child: ReorderableDragStartListener(
                             index: i,
                             child: Padding(
                               padding: const EdgeInsets.only(right: 6),

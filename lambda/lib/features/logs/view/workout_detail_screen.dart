@@ -60,42 +60,85 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
               body: Center(child: CircularProgressIndicator(color: AppColors.accent)),
             );
           }
-          return Scaffold(
-            backgroundColor: AppColors.bg,
-            body: Column(
-              children: [
-                PageHeader(
-                  title: state.isEditing ? 'Edit Session' : 'Past Session',
-                  left: GestureDetector(
-                    onTap: () => Navigator.of(context).pop(),
-                    child: Icon(Icons.arrow_back_ios_new, size: 18, color: AppColors.accent),
+          return PopScope(
+            canPop: !state.isEditing,
+            onPopInvokedWithResult: (didPop, _) {
+              if (!didPop) _confirmBack();
+            },
+            child: Scaffold(
+              backgroundColor: AppColors.bg,
+              body: Column(
+                children: [
+                  PageHeader(
+                    title: state.isEditing ? 'Edit Session' : 'Past Session',
+                    left: GestureDetector(
+                      onTap: () {
+                        if (state.isEditing) {
+                          _confirmBack();
+                        } else {
+                          Navigator.of(context).pop();
+                        }
+                      },
+                      child: Icon(Icons.arrow_back_ios_new, size: 18, color: AppColors.accent),
+                    ),
+                    right: state.isEditing
+                        ? GlassButton(
+                            label: 'Done',
+                            compact: true,
+                            loading: state.isSaving,
+                            disabled: state.isSaving,
+                            onPressed: () => _vm.saveNotes(widget.workoutId),
+                          )
+                        : GlassButton(
+                            label: 'Edit',
+                            compact: true,
+                            onPressed: _vm.startEditing,
+                          ),
                   ),
-                  right: state.isEditing
-                      ? GlassButton(
-                          label: 'Done',
-                          compact: true,
-                          loading: state.isSaving,
-                          disabled: state.isSaving,
-                          onPressed: () => _vm.saveNotes(widget.workoutId),
-                        )
-                      : GlassButton(
-                          label: 'Edit',
-                          compact: true,
-                          onPressed: _vm.startEditing,
-                        ),
-                ),
-                Expanded(
-                  child: _WorkoutBody(
-                    viewModel: _vm,
-                    state: state,
+                  Expanded(
+                    child: _WorkoutBody(
+                      viewModel: _vm,
+                      state: state,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           );
         },
       ),
     );
+  }
+
+  Future<void> _confirmBack() async {
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: Text('Unsaved Changes',
+            style: AppFonts.ui(fontWeight: FontWeight.w800, color: AppColors.primary)),
+        content: Text('Save changes before leaving?',
+            style: AppFonts.ui(color: AppColors.muted)),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop('discard'),
+              child: Text('Discard', style: AppFonts.ui(color: AppColors.danger))),
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop('cancel'),
+              child: Text('Stay', style: AppFonts.ui(color: AppColors.muted))),
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop('save'),
+              child: Text('Save', style: AppFonts.ui(color: AppColors.accent, fontWeight: FontWeight.w600))),
+        ],
+      ),
+    );
+    if (choice == null || !mounted) return;
+    if (choice == 'cancel') return;
+    if (choice == 'save') {
+      _vm.saveNotes(widget.workoutId);
+    }
+    _vm.cancelEditing();
+    if (mounted) Navigator.of(context).pop();
   }
 }
 
@@ -323,7 +366,7 @@ class _DetailExerciseTabBar extends StatelessWidget {
                       for (var i = 0; i < slots.length; i++)
                         SizedBox(
                           key: ValueKey('ex-${slots[i].exerciseId}'),
-                          child: ReorderableDelayedDragStartListener(
+                          child: ReorderableDragStartListener(
                             index: i,
                             child: Padding(
                               padding: const EdgeInsets.only(right: 6),
