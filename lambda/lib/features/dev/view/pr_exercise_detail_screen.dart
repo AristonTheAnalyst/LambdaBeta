@@ -349,45 +349,15 @@ class _PrExerciseDetailScreenState extends State<PrExerciseDetailScreen> {
       );
     }
 
-    // All ranges → grouped band tiles.
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        for (final b in _repBands) ...[
-          _repBandTile(b, curve),
-          const SizedBox(height: 6),
-        ],
-      ],
-    );
-  }
-
-  Widget _repBandTile(({String label, int min, int? max}) band, Map<int, PrRecord> curve) {
-    final inBand = curve.entries.where((e) => _inBand(e.value, band)).toList()
-      ..sort((a, b) => a.key.compareTo(b.key));
-    if (inBand.isEmpty) return const SizedBox.shrink();
-    final bestInBand = inBand.reduce((a, b) => b.value.weight > a.value.weight ? b : a);
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceHigh,
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text('${band.label} · ${_rangeLabel(band)}',
-                style: AppFonts.mono(
-                    fontSize: 10, letterSpacing: 0.6, color: AppColors.muted)),
-          ),
-          Text('${_fmt(bestInBand.value.weight)}kg',
-              style: AppFonts.mono(
-                  fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.accent)),
-          const SizedBox(width: 4),
-          Icon(Icons.chevron_right, size: 16, color: AppColors.muted),
-        ],
-      ),
+    // All ranges → the full per-rep curve (1RM, 2RM, 3RM, …).
+    final entries = curve.entries.toList()..sort((a, b) => a.key.compareTo(b.key));
+    if (entries.isEmpty) return _muted('No weighted PRs yet');
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      children: entries
+          .map((e) => _repChip('${e.key}RM', _fmt(e.value.weight)))
+          .toList(),
     );
   }
 
