@@ -53,6 +53,9 @@ class SessionViewModel extends ChangeNotifier {
   bool initLoading = true;
 
   // ── Workout state ──────────────────────────────────────────────────────────
+  /// Called when the workout fully ends (endWorkout or cancelWorkout) so the
+  /// session screen can clear its static cache and create a fresh VM next time.
+  VoidCallback? onWorkoutEnded;
   String? currentWorkoutId;
   DateTime? workoutStartedAt;
   List<WorkoutSet> sets = [];
@@ -691,6 +694,7 @@ class SessionViewModel extends ChangeNotifier {
           feeling: endFeeling);
       _resetActiveWorkoutState();
       slidePagesController.slideOut();
+      onWorkoutEnded?.call();
     } catch (e) {
       error = e.toString();
     }
@@ -704,6 +708,7 @@ class SessionViewModel extends ChangeNotifier {
     _resetActiveWorkoutState();
     slidePagesController.slideOut();
     notifyListeners();
+    onWorkoutEnded?.call();
     await _workoutRepo.cancelWorkout(id);
   }
 

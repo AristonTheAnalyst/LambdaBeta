@@ -23,6 +23,10 @@ class SessionScreen extends StatefulWidget {
 }
 
 class _SessionScreenState extends State<SessionScreen> {
+  static SessionViewModel? _cachedVm;
+
+  static void _clearCachedVm() => _cachedVm = null;
+
   late final SessionViewModel _vm;
 
   final _startNotesCtrl = TextEditingController();
@@ -31,13 +35,19 @@ class _SessionScreenState extends State<SessionScreen> {
   @override
   void initState() {
     super.initState();
-    _vm = SessionViewModel();
+    if (_cachedVm != null) {
+      // Reuse across hot reload — workout state stays intact
+      _vm = _cachedVm!;
+    } else {
+      _vm = SessionViewModel();
+      _cachedVm = _vm;
+      _vm.onWorkoutEnded = _clearCachedVm;
+    }
     _vm.addListener(() => setState(() {}));
   }
 
   @override
   void dispose() {
-    _vm.dispose();
     _startNotesCtrl.dispose();
     _endNotesCtrl.dispose();
     super.dispose();
