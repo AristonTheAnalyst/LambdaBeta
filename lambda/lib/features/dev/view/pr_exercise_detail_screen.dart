@@ -26,12 +26,23 @@ class PrExerciseDetailScreen extends StatefulWidget {
 class _PrExerciseDetailScreenState extends State<PrExerciseDetailScreen> {
   static const _noVariation = '__none__'; // sentinel: PRs logged without a variation
 
+  // Training rep-bands for grouping the rep-max curve.
+  static const _repBands = [
+    (label: 'STRENGTH', min: 1, max: 3),
+    (label: 'POWER', min: 4, max: 6),
+    (label: 'HYPERTROPHY', min: 7, max: 10),
+    (label: 'ENDURANCE', min: 11, max: 15),
+    (label: 'VOLUME', min: 16, max: null),
+  ];
+
   final _exerciseRepo = ExerciseRepository();
   final _prRepo = PrRepository();
   String? _exerciseName;
   List<CustomVariation> _variations = const [];
   List<PrRecord> _prs = const [];
   String? _filter; // null = all variations; _noVariation = no variation; else variationId
+  final Set<String> _expandedBands = {}; // which rep-bands are expanded
+  Set<num>? _selectedWeights; // null = all weights shown; else only these
 
   String get _userId => Supabase.instance.client.auth.currentUser!.id;
 
@@ -128,25 +139,10 @@ class _PrExerciseDetailScreenState extends State<PrExerciseDetailScreen> {
                     if (curve.isEmpty)
                       _muted('No weighted PRs yet')
                     else
-                      Wrap(
-                        spacing: 6,
-                        runSpacing: 6,
-                        children: curve.entries
-                            .map((e) => Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 10, vertical: 5),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.accentBg,
-                                    borderRadius: BorderRadius.circular(AppRadius.md),
-                                    border: Border.all(
-                                        color: AppColors.accent.withValues(alpha: 0.3)),
-                                  ),
-                                  child: Text('${e.key}RM ${_fmt(e.value.weight)}kg',
-                                      style: AppFonts.mono(
-                                          fontSize: 12, color: AppColors.accent)),
-                                ))
-                            .toList(),
-                      ),
+                      for (final band in _repBands) ...[
+                        _repBandTile(band, curve),
+                        const SizedBox(height: 6),
+                      ],
                   ],
                 ),
                 const SizedBox(height: AppSpacing.md),
@@ -155,26 +151,28 @@ class _PrExerciseDetailScreenState extends State<PrExerciseDetailScreen> {
                   children: [
                     if (weightClass.isEmpty)
                       _muted('No weighted PRs yet')
-                    else
-                      Wrap(
-                        spacing: 6,
-                        runSpacing: 6,
-                        children: weightClass.entries
-                            .map((e) => Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 10, vertical: 5),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.accentBg,
-                                    borderRadius: BorderRadius.circular(AppRadius.md),
-                                    border: Border.all(
-                                        color: AppColors.accent.withValues(alpha: 0.3)),
-                                  ),
-                                  child: Text('${_fmt(e.key)}kg × ${_fmt(e.value.reps)}',
-                                      style: AppFonts.mono(
-                                          fontSize: 12, color: AppColors.accent)),
-                                ))
-                            .toList(),
-                      ),
+                    else ...[
+                      _weightClassFilter(weightClass),
+                      const SizedBox(height: AppSpacing.sm),
+                      for (final entry in _filteredWeightClass(weightClass).entries)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 6),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text('${_fmt(entry.key)}kg',
+                                    style: AppFonts.ui(
+                                        fontSize: AppTextStyles.sm,
+                                        fontWeight: FontWeight.w600,
+                                        color: AppColors.primary)),
+                              ),
+                              Text('${_fmt(entry.value.reps)} reps',
+                                  style: AppFonts.mono(
+                                      fontSize: 12, color: AppColors.accent)),
+                            ],
+                          ),
+                        ),
+                    ],
                   ],
                 ),
                 const SizedBox(height: AppSpacing.md),
@@ -288,6 +286,128 @@ class _PrExerciseDetailScreenState extends State<PrExerciseDetailScreen> {
   static const _noVariationLabel = 'No variation';
 
   String _filterLabel(String value) => value == _noVariation ? _noVariationLabel : toProperCase(value);
+
+  // ── Rep-max band tile ─────────────────────────────────────────────────────
+
+  Widget _repBandTile(
+    ({String label, int min, int? max}) band,
+    Map<int, PrRecord> curve,
+  ) {
+    final inBand = curve.entries.where((e) {
+      if (e.key < band.min) return false;
+      return band.max == null || e.key <= band.max!;
+    }).toList()..sort((a, b) => a.key.compareTo(b.key));
+    if (inBand.isEmpty) return const SizedBox.shrink();
+
+    final bestInBand = inBand.reduce((a, b) => b.value.weight > a.value.weight ? b : a);
+    final expanded = _expandedBands.contains(band.label);
+    final rangeLabel = band.max == null
+        ? '${band.min}+RM'
+        : band.min == band.max
+            ? '${band.min}RM'
+            : '${band.min}–${band.max}RM';
+
+    return GestureDetector(
+      onTap: () => setState(() {
+        if (!_expandedBands.add(band.label)) _expandedBands.remove(band.label);
+      }),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: AppColors.surfaceHigh,
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text('${band.label} · $rangeLabel',
+                      style: AppFonts.mono(
+                          fontSize: 10, letterSpacing: 0.6, color: AppColors.muted)),
+                ),
+                Text('${_fmt(bestInBand.value.weight)}kg',
+                    style: AppFonts.mono(
+                        fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.accent)),
+                Icon(expanded ? Icons.expand_less : Icons.expand_more,
+                    size: 16, color: AppColors.muted),
+              ],
+            ),
+            if (expanded)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: inBand
+                      .map((e) => Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: AppColors.accentBg,
+                              borderRadius: BorderRadius.circular(AppRadius.md),
+                              border: Border.all(
+                                  color: AppColors.accent.withValues(alpha: 0.3)),
+                            ),
+                            child: Text('${e.key}RM ${_fmt(e.value.weight)}kg',
+                                style: AppFonts.mono(
+                                    fontSize: 11, color: AppColors.accent)),
+                          ))
+                      .toList(),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Weight-class filter + helpers ─────────────────────────────────────────
+
+  Map<num, PrRecord> _filteredWeightClass(Map<num, PrRecord> weightClass) {
+    final sel = _selectedWeights;
+    if (sel == null) return weightClass;
+    return Map.fromEntries(weightClass.entries.where((e) => sel.contains(e.key)));
+  }
+
+  Widget _weightClassFilter(Map<num, PrRecord> weightClass) {
+    final allSelected = _selectedWeights == null;
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      children: [
+        _weightChip('All', allSelected, () => setState(() => _selectedWeights = null)),
+        for (final w in weightClass.keys.toList()..sort((a, b) => b.compareTo(a)))
+          _weightChip('${_fmt(w)}kg', !allSelected && _selectedWeights!.contains(w),
+              () => setState(() {
+                    final sel = {...?_selectedWeights};
+                    if (!sel.add(w)) sel.remove(w);
+                    _selectedWeights = sel.isEmpty ? null : sel;
+                  })),
+      ],
+    );
+  }
+
+  Widget _weightChip(String label, bool active, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: active ? AppColors.accentBg : AppColors.surfaceHigh,
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          border: Border.all(color: active ? AppColors.accent : AppColors.border),
+        ),
+        child: Text(label,
+            style: AppFonts.mono(
+                fontSize: 11,
+                fontWeight: active ? FontWeight.w700 : FontWeight.w400,
+                color: active ? AppColors.accent : AppColors.muted)),
+      ),
+    );
+  }
 
   Widget _sectionCard({required String title, required List<Widget> children}) {
     return Container(
