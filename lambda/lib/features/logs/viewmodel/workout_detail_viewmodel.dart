@@ -350,10 +350,23 @@ class WorkoutDetailViewModel {
 
   // ── Draft set rows ─────────────────────────────────────────────────────────
 
+  /// "+ ADD SET" in edit mode pre-creates an empty set in the DB so it
+  /// survives hot restarts. Empty sets are NOT purged here — they were
+  /// intentionally added by the user editing a finished workout.
   void addDraftSet(int groupOrder) {
-    final drafts = Map<int, List<int>>.from(state.value.workoutSetDrafts);
-    drafts.putIfAbsent(groupOrder, () => []).add(_nextDraftId++);
-    state.value = state.value.copyWith(workoutSetDrafts: drafts);
+    final w = state.value.workout;
+    if (w == null) return;
+    final existing = state.value.setsFor(groupOrder);
+    final nextNum = existing.isEmpty ? 1 : existing.map((s) => s.setNumber).reduce((a, b) => a > b ? a : b) + 1;
+    final slot = state.value.exerciseSlots.firstWhere((s) => s.groupOrder == groupOrder);
+    _workoutRepo.insertSet(
+      workoutId: w.workoutId,
+      exerciseId: slot.exerciseId,
+      setNumber: nextNum,
+      weight: null,
+      reps: [],
+      duration: [],
+    ).then((_) => _reloadSets(w.workoutId));
   }
 
   void removeDraftSet(int groupOrder, int draftId) {
@@ -362,6 +375,9 @@ class WorkoutDetailViewModel {
     state.value = state.value.copyWith(workoutSetDrafts: drafts);
   }
 
+  /// Finds an existing empty set for this exercise and fills it in, or
+  /// inserts a new row. Allows empty reps for finished workouts (the user
+  /// explicitly added them in edit mode).
   Future<bool> commitDraftSet(
     String exerciseId,
     int groupOrder,
@@ -374,20 +390,35 @@ class WorkoutDetailViewModel {
   }) async {
     final w = state.value.workout;
     if (w == null) return false;
-    if (reps.isEmpty && duration.isEmpty) return false;
     final existing = state.value.setsFor(groupOrder);
     final nextNum = existing.isEmpty ? 1 : existing.map((s) => s.setNumber).reduce((a, b) => a > b ? a : b) + 1;
+    // Find an empty pre-created set for this exercise
+    final emptyIdx = existing.lastIndexWhere((s) => s.reps.isEmpty && s.duration.isEmpty);
     try {
-      await _workoutRepo.insertSet(
-        workoutId: w.workoutId,
-        exerciseId: exerciseId,
-        variationId: variationId,
-        setNumber: nextNum,
-        weight: weight,
-        reps: reps,
-        duration: duration,
-        notes: notes?.trim().isEmpty == true ? null : notes?.trim(),
-      );
+      if (emptyIdx >= 0) {
+        await _workoutRepo.updateSet(
+          existing[emptyIdx].setId,
+          variationId: variationId,
+          clearVariation: variationId == null,
+          weight: weight,
+          clearWeight: weight == null,
+          reps: reps,
+          duration: duration,
+          notes: notes,
+          clearNotes: notes == null || notes.isEmpty,
+        );
+      } else {
+        await _workoutRepo.insertSet(
+          workoutId: w.workoutId,
+          exerciseId: exerciseId,
+          variationId: variationId,
+          setNumber: nextNum,
+          weight: weight,
+          reps: reps,
+          duration: duration,
+          notes: notes?.trim().isEmpty == true ? null : notes?.trim(),
+        );
+      }
       removeDraftSet(groupOrder, draftId);
       await _reloadSets(w.workoutId);
       return true;
