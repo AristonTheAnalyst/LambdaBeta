@@ -332,7 +332,7 @@ class _PrExerciseDetailScreenState extends State<PrExerciseDetailScreen> {
   }
 
   Widget _repMaxContent(Map<int, PrRecord> curve) {
-    // Selected band → show that band's per-rep chips.
+    // Selected band → show just that band's per-rep chips.
     final band = _repBands.where((b) => b.label == _repRange).firstOrNull;
     if (band != null) {
       final entries = curve.entries
@@ -349,15 +349,37 @@ class _PrExerciseDetailScreenState extends State<PrExerciseDetailScreen> {
       );
     }
 
-    // All ranges → the full per-rep curve (1RM, 2RM, 3RM, …).
-    final entries = curve.entries.toList()..sort((a, b) => a.key.compareTo(b.key));
-    if (entries.isEmpty) return _muted('No weighted PRs yet');
-    return Wrap(
-      spacing: 6,
-      runSpacing: 6,
-      children: entries
-          .map((e) => _repChip('${e.key}RM', _fmt(e.value.weight)))
-          .toList(),
+    // All ranges → group the per-rep chips under each training band.
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final b in _repBands) ?_repBandContent(b, curve),
+      ],
+    );
+  }
+
+  /// Chips for one training band, or null if the band has no records.
+  Widget? _repBandContent(({String label, int min, int? max}) band, Map<int, PrRecord> curve) {
+    final entries = curve.entries.where((e) => _inBand(e.value, band)).toList()
+      ..sort((a, b) => a.key.compareTo(b.key));
+    if (entries.isEmpty) return null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: 6),
+          child: Text('${band.label} · ${_rangeLabel(band)}',
+              style: AppFonts.mono(fontSize: 10, letterSpacing: 0.6, color: AppColors.muted)),
+        ),
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: entries
+              .map((e) => _repChip('${e.key}RM', _fmt(e.value.weight)))
+              .toList(),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+      ],
     );
   }
 
