@@ -145,9 +145,19 @@ class SessionViewModel extends ChangeNotifier {
       .toList();
 
   Future<void> _init() async {
-    await _loadCatalog();
-    await Future.wait([_loadPlannedWorkout(), _loadPastSets()]);
-    await _restoreActiveWorkout();
+    // Each stage is individually guarded so one transient failure (e.g.
+    // PowerSync not synced on cold start) doesn't block the others.
+    // In particular, _restoreActiveWorkout must run even if catalog fetch
+    // fails, otherwise the active workout is invisible after a hot restart.
+    try {
+      await _loadCatalog();
+    } catch (_) {}
+    try {
+      await Future.wait([_loadPlannedWorkout(), _loadPastSets()]);
+    } catch (_) {}
+    try {
+      await _restoreActiveWorkout();
+    } catch (_) {}
     initLoading = false;
     notifyListeners();
   }

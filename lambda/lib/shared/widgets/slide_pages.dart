@@ -1,15 +1,18 @@
 import 'package:flutter/material.dart';
 
 class SlidePagesController {
-  SlidePagesController() {
-    _pageController = PageController(initialPage: 0);
+  SlidePagesController();
+
+  int _initialPage = 0;
+  PageController? _pageController;
+
+  PageController get pageController {
+    _pageController ??= PageController(initialPage: _initialPage);
+    return _pageController!;
   }
 
-  late final PageController _pageController;
-  PageController get pageController => _pageController;
-
   void slideIn() {
-    _pageController.animateToPage(
+    pageController.animateToPage(
       1,
       duration: const Duration(milliseconds: 300),
       curve: Curves.easeInOut,
@@ -17,27 +20,23 @@ class SlidePagesController {
   }
 
   void slideOut() {
-    _pageController.animateToPage(
+    pageController.animateToPage(
       0,
       duration: const Duration(milliseconds: 300),
       curve: Curves.easeInOut,
     );
   }
 
+  /// Jumps to [page]. If the PageView hasn't been laid out yet, stores the
+  /// target so the next PageController construction picks it up.
   void resetToPage(int page) {
-    if (_pageController.hasClients) {
-      _pageController.jumpToPage(page);
-    } else {
-      // PageView hasn't been laid out yet — defer to next frame
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (_pageController.hasClients) {
-          _pageController.jumpToPage(page);
-        }
-      });
+    _initialPage = page;
+    if (_pageController != null && _pageController!.hasClients) {
+      _pageController!.jumpToPage(page);
     }
   }
 
-  void dispose() => _pageController.dispose();
+  void dispose() => _pageController?.dispose();
 }
 
 class SlidePages extends StatelessWidget {
