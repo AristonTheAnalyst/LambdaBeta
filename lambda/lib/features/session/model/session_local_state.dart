@@ -39,9 +39,9 @@ Map<String, List<ExerciseHistorySession>> groupHistoryByExercise(
 ({num weight, num reps})? bestEverForExercise(List<PastSetRow> pastSets) {
   ({num weight, num reps})? best;
   for (final s in pastSets) {
-    final weight = s.weight;
+    final weight = s.weight ?? 0; // bodyweight sets count as 0kg
     final reps = s.reps.isNotEmpty ? s.reps.first : (s.duration.isNotEmpty ? s.duration.first : null);
-    if (weight == null || reps == null) continue;
+    if (reps == null) continue;
     if (best == null || weight > best.weight || (weight == best.weight && reps > best.reps)) {
       best = (weight: weight, reps: reps);
     }
@@ -53,9 +53,9 @@ Map<String, List<ExerciseHistorySession>> groupHistoryByExercise(
 /// baseline, or ties it with more reps. A null/absent baseline means "no
 /// history yet," and the first-ever lift is by definition a PR.
 bool isPr(WorkoutSet set, ({num weight, num reps})? bestEver) {
-  final weight = set.weight;
+  final weight = set.weight ?? 0; // bodyweight sets count as 0kg
   final reps = set.reps.isNotEmpty ? set.reps.first : (set.duration.isNotEmpty ? set.duration.first : null);
-  if (weight == null || reps == null) return false;
+  if (reps == null) return false;
   if (bestEver == null || (bestEver.weight == 0 && bestEver.reps == 0)) return true;
   return weight > bestEver.weight || (weight >= bestEver.weight && reps > bestEver.reps);
 }

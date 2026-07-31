@@ -147,9 +147,10 @@ List<PrRecord> fullPrTimeline(List<PastSetRow> sets) {
   final prs = <PrRecord>[];
 
   for (final s in ordered) {
-    final weight = s.weight;
+    // Null weight = bodyweight (0kg) — only reps are mandatory for a PR.
+    final weight = s.weight ?? 0;
     final reps = _effectiveReps(s);
-    if (weight == null || reps == null) continue;
+    if (reps == null) continue;
 
     final exCurve = curve.putIfAbsent(s.exerciseId, () => {});
     final exMaxReps = maxRepsAtWeight.putIfAbsent(s.exerciseId, () => {});
@@ -220,9 +221,9 @@ List<PrRecord> variationPrs(List<PastSetRow> sets, String variationId) {
 ({num weight, num reps})? bestEverForExercise(List<PastSetRow> pastSets) {
   ({num weight, num reps})? best;
   for (final s in pastSets) {
-    final weight = s.weight;
+    final weight = s.weight ?? 0; // bodyweight sets count as 0kg
     final reps = _effectiveReps(s);
-    if (weight == null || reps == null) continue;
+    if (reps == null) continue;
     if (best == null || weight > best.weight || (weight == best.weight && reps > best.reps)) {
       best = (weight: weight, reps: reps);
     }
