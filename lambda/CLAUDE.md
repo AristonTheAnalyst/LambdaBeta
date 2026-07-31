@@ -194,6 +194,24 @@ Each repository wraps PowerSync SQLite CRUD. Key methods:
 - `ProgramRepository`: fetchProgram, fetchPlannedWorkouts, createPlannedWorkout, updatePlannedWorkout, archivePlannedWorkout, fetchPlannedSets, createPlannedSet, updatePlannedSet, archivePlannedSet, swapPlannedExerciseOrders, reorderPlannedWorkouts
 - `ExerciseRepository`: fetchExerciseDetailMap, findExerciseByName, createExercise, reactivateExercise, fetchVariations, findVariationByName, createVariation, reactivateVariation, addBridge, fetchBridges
 - `LessonRepository`: fetchLessons, createLesson, toggleLessonPin, deleteLesson
+- `PrRepository`: insertPrs, loadAll, loadForWorkout, loadForSets, deleteForSets, deleteForExercise, count
+
+## PR Methodology
+
+**See `docs/pr_methodology.md` for the full spec.** Summary:
+
+- PRs are persisted as **self-contained snapshots** in `fact_pr` (no FK to the
+  source set — achievements survive set deletion).
+- **One set can be a PR on multiple axes**: `105kg × 3` simultaneously improves
+  1RM, 2RM, and 3RM (rep-max curve semantics). The engine
+  (`lib/features/session/model/pr_engine.dart`) walks history chronologically
+  maintaining `curve[N]` = best weight for ≥ N reps.
+- Axes: **absolute** (best weight×reps), **rep-max** (best weight for N reps),
+  **weight-class** (most reps at a weight), **per-exercise**, **exercise×variation**.
+- Written at `endWorkout`; past-session edits recompute the edited exercise.
+- Deleting a set that holds PRs prompts: **"Set only"** (keep achievement) or
+  **"Set + PRs"** (remove + recompute, promoting the next-best — the poison-cleanup
+  path for typos like a 2000kg squat).
 
 ## Design Tokens
 

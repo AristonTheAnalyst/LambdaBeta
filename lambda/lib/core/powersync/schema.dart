@@ -126,4 +126,18 @@ const schema = Schema([
     Column.integer('actual_seconds'),
     Column.text('rest_created_date'),
   ]),
+  Table('fact_pr', [
+    Column.text('pr_id'),
+    Column.text('user_id'),
+    Column.text('workout_set_id'),
+    Column.text('custom_exercise_id'),
+    Column.text('custom_variation_id'),
+    Column.text('weight'),
+    Column.integer('reps'),
+    Column.text('achieved_date'),
+    Column.text('pr_type'),
+    Column.integer('target_reps'),
+    Column.text('target_weight'),
+    Column.integer('is_active'),
+  ]),
 ]);

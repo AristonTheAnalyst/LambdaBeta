@@ -6,7 +6,7 @@ import '../../../core/styles/app_radius.dart';
 import '../../../core/styles/app_spacing.dart';
 import '../../../core/styles/app_text_styles.dart';
 import '../../../core/utils/workout_format.dart';
-import '../../../data/models/workout_set.dart';
+import '../../../data/repositories/pr_repository.dart';
 import '../../../data/repositories/workout_repository.dart';
 import '../../../shared/widgets/page_header.dart';
 import '../../../shared/widgets/slide_tab_bar.dart';
@@ -22,7 +22,8 @@ class PrLibraryScreen extends StatefulWidget {
 
 class _PrLibraryScreenState extends State<PrLibraryScreen> {
   final _workoutRepo = WorkoutRepository();
-  List<PastSetRow>? _pastSets;
+  final _prRepo = PrRepository();
+  List<PrRecord>? _prs;
   int _tab = 0;
 
   String get _userId => Supabase.instance.client.auth.currentUser!.id;
@@ -34,13 +35,27 @@ class _PrLibraryScreenState extends State<PrLibraryScreen> {
   }
 
   Future<void> _load() async {
-    final sets = await _workoutRepo.loadPastSetsTimeline(_userId);
-    if (mounted) setState(() => _pastSets = sets);
+    try {
+      var prs = await _prRepo.loadAll(_userId);
+      // Backfill: existing users with no fact_pr yet — derive once from
+      // full set history and persist.
+      if (prs.isEmpty) {
+        final sets = await _workoutRepo.loadPastSetsTimeline(_userId);
+        final timeline = fullPrTimeline(sets);
+        if (timeline.isNotEmpty) {
+          await _prRepo.insertPrs(_userId, timeline);
+          prs = await _prRepo.loadAll(_userId);
+        }
+      }
+      if (mounted) setState(() => _prs = prs);
+    } catch (_) {
+      if (mounted) setState(() => _prs = const []);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final sets = _pastSets;
+    final prs = _prs;
     return Scaffold(
       backgroundColor: AppColors.bg,
       body: Column(
@@ -52,14 +67,14 @@ class _PrLibraryScreenState extends State<PrLibraryScreen> {
             onTap: (i) => setState(() => _tab = i),
           ),
           Expanded(
-            child: sets == null
+            child: prs == null
                 ? const Center(child: CircularProgressIndicator())
-                : sets.isEmpty
+                : prs.isEmpty
                     ? _EmptyPRs()
                     : switch (_tab) {
-                        0 => _AllPrsView(sets: sets),
-                        1 => _ByExerciseView(sets: sets),
-                        _ => _TimelineView(sets: sets),
+                        0 => _AllPrsView(prs: prs),
+                        1 => _ByExerciseView(prs: prs),
+                        _ => _TimelineView(prs: prs),
                       },
           ),
         ],
@@ -83,46 +98,43 @@ class _EmptyPRs extends StatelessWidget {
 // ── All PRs tab ───────────────────────────────────────────────────────────────
 
 class _AllPrsView extends StatelessWidget {
-  const _AllPrsView({required this.sets});
-  final List<PastSetRow> sets;
+  const _AllPrsView({required this.prs});
+  final List<PrRecord> prs;
 
   @override
   Widget build(BuildContext context) {
-    final allPrs = fullPrTimeline(sets);
-    final current = currentPrs(sets);
-    // Group by exercise
+    // Current best per exercise = the latest absolute record per exercise
     final byExercise = <String, List<PrRecord>>{};
-    for (final pr in current) {
-      byExercise.putIfAbsent(pr.exerciseId, () => []).add(pr);
+    for (final pr in prs) {
+      if (pr.type == PrType.absolute) {
+        byExercise.putIfAbsent(pr.exerciseId, () => []).add(pr);
+      }
     }
 
     return ListView(
       padding: const EdgeInsets.all(AppSpacing.lg),
       children: [
         StatsRow(tiles: [
-          StatsTile(label: 'PRS', value: '${current.length}'),
-          StatsTile(label: 'TOTAL', value: '${allPrs.length}'),
+          StatsTile(label: 'PRS', value: '${byExercise.length}'),
+          StatsTile(label: 'TOTAL', value: '${prs.length}'),
           StatsTile(label: 'EXERCISES', value: '${byExercise.length}'),
         ]),
         const SizedBox(height: AppSpacing.lg),
         for (final entry in byExercise.entries)
-          _ExercisePrCard(sets: sets, exerciseId: entry.key, prs: entry.value),
+          _ExercisePrCard(prs: entry.value),
       ],
     );
   }
 }
 
 class _ExercisePrCard extends StatelessWidget {
-  const _ExercisePrCard({required this.sets, required this.exerciseId, required this.prs});
-  final List<PastSetRow> sets;
-  final String exerciseId;
+  const _ExercisePrCard({required this.prs});
   final List<PrRecord> prs;
 
   @override
   Widget build(BuildContext context) {
-    final pr = prs.first;
-    final name = toProperCase(pr.exerciseName ?? exerciseId);
-    final curve = repMaxCurve(sets, exerciseId);
+    final pr = prs.last; // chronological; last absolute = current best
+    final name = toProperCase(pr.exerciseName ?? pr.exerciseId);
     return Container(
       margin: const EdgeInsets.only(bottom: AppSpacing.md),
       padding: const EdgeInsets.all(AppSpacing.md),
@@ -140,10 +152,6 @@ class _ExercisePrCard extends StatelessWidget {
           const SizedBox(height: AppSpacing.sm),
           Text('Absolute PR: ${_fmt(pr.weight)}kg × ${_fmt(pr.reps)}',
               style: AppFonts.mono(fontSize: 13, color: AppColors.accent)),
-          const SizedBox(height: AppSpacing.xs),
-          if (curve.isNotEmpty)
-            Text('Best: ${_fmt(curve[curve.keys.first]!)}kg (1RM)',
-                style: AppFonts.ui(fontSize: 12, color: AppColors.muted)),
         ],
       ),
     );
@@ -155,14 +163,13 @@ class _ExercisePrCard extends StatelessWidget {
 // ── By Exercise tab ───────────────────────────────────────────────────────────
 
 class _ByExerciseView extends StatelessWidget {
-  const _ByExerciseView({required this.sets});
-  final List<PastSetRow> sets;
+  const _ByExerciseView({required this.prs});
+  final List<PrRecord> prs;
 
   @override
   Widget build(BuildContext context) {
-    final all = fullPrTimeline(sets);
     final exercises = <String, String?>{};
-    for (final pr in all) {
+    for (final pr in prs) {
       exercises.putIfAbsent(pr.exerciseId, () => pr.exerciseName);
     }
     final sorted = exercises.keys.toList()..sort((a, b) => (exercises[a] ?? a).toLowerCase().compareTo((exercises[b] ?? b).toLowerCase()));
@@ -170,9 +177,15 @@ class _ByExerciseView extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(AppSpacing.lg),
       children: sorted.map((exId) {
-        final prs = prsForExercise(sets, exId);
-        final curve = repMaxCurve(sets, exId);
-        return _ExerciseDetailCard(exerciseId: exId, name: exercises[exId] ?? exId, prs: prs, curve: curve);
+        final exPrs = prs.where((p) => p.exerciseId == exId).toList();
+        // Build rep-max curve from repMax records
+        final curve = <int, num>{};
+        for (final p in exPrs) {
+          if (p.type == PrType.repMax && p.targetReps != null) {
+            curve[p.targetReps!] = p.weight;
+          }
+        }
+        return _ExerciseDetailCard(exerciseId: exId, name: exercises[exId] ?? exId, prs: exPrs, curve: curve);
       }).toList(),
     );
   }
@@ -244,12 +257,11 @@ class _ExerciseDetailCard extends StatelessWidget {
 // ── Timeline tab ──────────────────────────────────────────────────────────────
 
 class _TimelineView extends StatelessWidget {
-  const _TimelineView({required this.sets});
-  final List<PastSetRow> sets;
+  const _TimelineView({required this.prs});
+  final List<PrRecord> prs;
 
   @override
   Widget build(BuildContext context) {
-    final prs = fullPrTimeline(sets);
     // Group by workout (date)
     final byWorkout = <String, List<PrRecord>>{};
     for (final pr in prs) {

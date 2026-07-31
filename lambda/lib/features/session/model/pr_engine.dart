@@ -20,6 +20,7 @@ class PrRecord {
     required this.achievedDate,
     required this.workoutId,
     required this.type,
+    this.setId,
     this.exerciseName,
     this.variationId,
     this.variationName,
@@ -35,6 +36,10 @@ class PrRecord {
   final num reps;
   final DateTime achievedDate;
   final String workoutId;
+
+  /// The source set that produced this record. Plain reference (no FK) so
+  /// the snapshot survives the set being deleted.
+  final String? setId;
   final PrType type;
 
   /// For [PrType.repMax]: which rep count this improves (the N in "N-rep max").
@@ -51,6 +56,46 @@ class PrRecord {
       };
 
   static String _fmt(num n) => n == n.roundToDouble() ? n.toInt().toString() : n.toString();
+
+  factory PrRecord.fromMap(Map<String, dynamic> map) => PrRecord(
+        exerciseId: map['custom_exercise_id'] as String,
+        exerciseName: map['exercise_name'] as String?,
+        variationId: map['custom_variation_id'] as String?,
+        variationName: map['variation_name'] as String?,
+        weight: _toNum(map['weight']),
+        reps: _toNum(map['reps']),
+        achievedDate: DateTime.parse(map['achieved_date'] as String),
+        workoutId: _workoutIdFromSet(map['workout_set_id'] as String?),
+        setId: map['workout_set_id'] as String?,
+        type: _typeFromString(map['pr_type'] as String),
+        targetReps: _toInt(map['target_reps']),
+        targetWeight: _toNumNullable(map['target_weight']),
+      );
+
+  Map<String, dynamic> toMap() => {
+        'workout_set_id': setId,
+        'custom_exercise_id': exerciseId,
+        'custom_variation_id': variationId,
+        'weight': weight,
+        'reps': reps,
+        'achieved_date': achievedDate.toUtc().toIso8601String(),
+        'pr_type': type.name,
+        'target_reps': targetReps,
+        'target_weight': targetWeight,
+        'is_active': 1,
+      };
+
+  static String _workoutIdFromSet(String? setId) => setId ?? '';
+
+  static PrType _typeFromString(String s) => switch (s) {
+        'absolute' => PrType.absolute,
+        'weightClass' => PrType.weightClass,
+        _ => PrType.repMax,
+      };
+
+  static num _toNum(dynamic v) => v is num ? v : double.tryParse('$v') ?? 0;
+  static num? _toNumNullable(dynamic v) => v == null ? null : _toNum(v);
+  static int? _toInt(dynamic v) => v == null ? null : (v is int ? v : int.tryParse('$v'));
 }
 
 /// The effective rep/volume value for a set — first reps entry, or duration
@@ -117,6 +162,7 @@ List<PrRecord> fullPrTimeline(List<PastSetRow> sets) {
         reps: reps,
         achievedDate: s.workoutCreatedDate,
         workoutId: s.workoutId,
+        setId: s.setId,
         type: PrType.absolute,
       ));
     }
@@ -135,6 +181,7 @@ List<PrRecord> fullPrTimeline(List<PastSetRow> sets) {
           reps: reps,
           achievedDate: s.workoutCreatedDate,
           workoutId: s.workoutId,
+          setId: s.setId,
           type: PrType.repMax,
           targetReps: n,
         ));
@@ -154,6 +201,7 @@ List<PrRecord> fullPrTimeline(List<PastSetRow> sets) {
         reps: reps,
         achievedDate: s.workoutCreatedDate,
         workoutId: s.workoutId,
+        setId: s.setId,
         type: PrType.weightClass,
         targetWeight: weight,
       ));

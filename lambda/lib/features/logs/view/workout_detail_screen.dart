@@ -980,9 +980,46 @@ class _DetailSetRowState extends State<_DetailSetRow> {
   void _delete() {
     if (_isDraft) {
       widget.viewModel.removeDraftSet(widget.groupOrder, widget.draftId!);
-    } else {
-      widget.viewModel.deleteSetById(widget.set!.setId);
+      return;
     }
+    final set = widget.set!;
+    widget.viewModel.prsForSet(set.setId).then((records) {
+      if (!mounted) return;
+      if (records.isEmpty) {
+        widget.viewModel.deleteSetById(set.setId);
+        return;
+      }
+      showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: AppColors.surface,
+          title: Text('This set holds PRs',
+              style: AppFonts.ui(fontWeight: FontWeight.w800, color: AppColors.primary)),
+          content: Text(
+              '${records.length} PR record${records.length == 1 ? '' : 's'} (${records.map((r) => r.typeLabel).take(4).join(', ')}${records.length > 4 ? ', …' : ''}).\n\nDelete the set only, or also remove its PRs?',
+              style: AppFonts.ui(color: AppColors.muted)),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: Text('Cancel', style: AppFonts.ui(color: AppColors.muted))),
+            TextButton(
+                onPressed: () {
+                  Navigator.of(ctx).pop();
+                  widget.viewModel.deleteSetKeepingPRs(set.setId);
+                },
+                child: Text('Set Only',
+                    style: AppFonts.ui(color: AppColors.primary, fontWeight: FontWeight.w600))),
+            TextButton(
+                onPressed: () {
+                  Navigator.of(ctx).pop();
+                  widget.viewModel.deleteSetAndItsPRs(set.setId, set.exerciseId);
+                },
+                child: Text('Set + PRs',
+                    style: AppFonts.ui(color: AppColors.danger, fontWeight: FontWeight.w600))),
+          ],
+        ),
+      );
+    });
   }
 
   void _duplicate() {

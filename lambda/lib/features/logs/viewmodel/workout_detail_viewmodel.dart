@@ -7,6 +7,7 @@ import '../../../data/models/workout.dart';
 import '../../../data/models/workout_set.dart';
 import '../../../data/repositories/exercise_repository.dart';
 import '../../../data/repositories/lesson_repository.dart';
+import '../../../data/repositories/pr_repository.dart';
 import '../../../data/repositories/workout_repository.dart';
 import '../../session/model/pr_engine.dart';
 import '../../session/model/session_local_state.dart'
@@ -140,13 +141,16 @@ class WorkoutDetailViewModel {
     WorkoutRepository? workoutRepo,
     ExerciseRepository? exerciseRepo,
     LessonRepository? lessonRepo,
+    PrRepository? prRepo,
   })  : _workoutRepo = workoutRepo ?? WorkoutRepository(),
         _exerciseRepo = exerciseRepo ?? ExerciseRepository(),
-        _lessonRepo = lessonRepo ?? LessonRepository();
+        _lessonRepo = lessonRepo ?? LessonRepository(),
+        _prRepo = prRepo ?? PrRepository();
 
   final WorkoutRepository _workoutRepo;
   final ExerciseRepository _exerciseRepo;
   final LessonRepository _lessonRepo;
+  final PrRepository _prRepo;
   final state = ValueNotifier(const WorkoutDetailState());
 
   int _nextDraftId = 1;
@@ -279,6 +283,32 @@ class WorkoutDetailViewModel {
       clearWorkoutSetDrafts: true,
     );
     _computePRs();
+  }
+
+  /// Re-derives fact_pr for the edited exercise from remaining valid history,
+  /// so edited past sets keep the PR table truthful. Deletes then re-inserts
+  /// that exercise's records (promoting the next-best from the remaining sets).
+  Future<void> recomputeExercisePRs(String exerciseId) async {
+    try {
+      final userId = _userId;
+      final history = _allHistoryPastSets();
+      final exerciseHistory =
+          history.where((s) => s.exerciseId == exerciseId).toList();
+      final timeline = fullPrTimeline(exerciseHistory);
+      await _prRepo.deleteForExercise(userId, exerciseId);
+      await _prRepo.insertPrs(userId, timeline);
+    } catch (_) {}
+  }
+
+  /// Flattens the loaded historyByExercise into a plain PastSetRow list.
+  List<PastSetRow> _allHistoryPastSets() {
+    final result = <PastSetRow>[];
+    for (final sessions in state.value.historyByExercise.values) {
+      for (final session in sessions) {
+        result.addAll(session.sets);
+      }
+    }
+    return result;
   }
 
   // ── Edit mode ──────────────────────────────────────────────────────────────
@@ -435,6 +465,7 @@ class WorkoutDetailViewModel {
       }
       removeDraftSet(groupOrder, draftId);
       await _reloadSets(w.workoutId);
+      await recomputeExercisePRs(exerciseId);
       return true;
     } catch (e) {
       state.value = state.value.copyWith(error: e.toString());
@@ -466,6 +497,7 @@ class WorkoutDetailViewModel {
         clearNotes: clearNotes,
       );
       await _reloadSets(w.workoutId);
+      await recomputeExercisePRs(set.exerciseId);
     } catch (e) {
       state.value = state.value.copyWith(error: e.toString());
     }
@@ -490,11 +522,45 @@ class WorkoutDetailViewModel {
         notes: set.notes,
       );
       await _reloadSets(w.workoutId);
+      await recomputeExercisePRs(set.exerciseId);
     } catch (e) {
       state.value = state.value.copyWith(error: e.toString());
     }
   }
 
+  /// PRs held by a set (snapshots in fact_pr). Non-empty means the set is a
+  /// recorded achievement.
+  Future<List<PrRecord>> prsForSet(String setId) async {
+    try {
+      return await _prRepo.loadForSets(_userId, [setId]);
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  /// Deletes the set but keeps its fact_pr records ("delete set only" —
+  /// the achievement stands). Does NOT recompute; a correction would use
+  /// [deleteSetAndItsPRs].
+  Future<void> deleteSetKeepingPRs(String setId) async {
+    final w = state.value.workout;
+    if (w == null) return;
+    await _workoutRepo.deleteSet(setId);
+    await _reloadSets(w.workoutId);
+  }
+
+  /// Deletes the set AND its fact_pr records, then recomputes the exercise
+  /// from remaining valid history ("delete set + its PRs" — data correction;
+  /// promotes the next-best record).
+  Future<void> deleteSetAndItsPRs(String setId, String exerciseId) async {
+    final w = state.value.workout;
+    if (w == null) return;
+    await _workoutRepo.deleteSet(setId);
+    await _prRepo.deleteForSets(_userId, [setId]);
+    await recomputeExercisePRs(exerciseId);
+    await _reloadSets(w.workoutId);
+  }
+
+  /// Plain delete (set has no PR records).
   Future<void> deleteSetById(String setId) async {
     final w = state.value.workout;
     if (w == null) return;

@@ -10,6 +10,7 @@ import '../../../data/models/program_progress.dart';
 import '../../../data/models/workout_set.dart';
 import '../../../data/repositories/exercise_repository.dart';
 import '../../../data/repositories/lesson_repository.dart';
+import '../../../data/repositories/pr_repository.dart';
 import '../../../data/repositories/program_repository.dart';
 import '../../../data/repositories/program_run_repository.dart';
 import '../../../data/repositories/rest_period_repository.dart';
@@ -29,12 +30,14 @@ class SessionViewModel extends ChangeNotifier {
     ProgramRunRepository? programRunRepo,
     LessonRepository? lessonRepo,
     RestPeriodRepository? restPeriodRepo,
+    PrRepository? prRepo,
   })  : _workoutRepo = workoutRepo ?? WorkoutRepository(),
         _exerciseRepo = exerciseRepo ?? ExerciseRepository(),
         _programRepo = programRepo ?? ProgramRepository(),
         _programRunRepo = programRunRepo ?? ProgramRunRepository(),
         _lessonRepo = lessonRepo ?? LessonRepository(),
-        _restPeriodRepo = restPeriodRepo ?? RestPeriodRepository() {
+        _restPeriodRepo = restPeriodRepo ?? RestPeriodRepository(),
+        _prRepo = prRepo ?? PrRepository() {
     slidePagesController = SlidePagesController();
     _init();
   }
@@ -45,6 +48,7 @@ class SessionViewModel extends ChangeNotifier {
   final ProgramRunRepository _programRunRepo;
   final LessonRepository _lessonRepo;
   final RestPeriodRepository _restPeriodRepo;
+  final PrRepository _prRepo;
   late final SlidePagesController slidePagesController;
 
   String get _userId => Supabase.instance.client.auth.currentUser!.id;
@@ -748,6 +752,7 @@ class SessionViewModel extends ChangeNotifier {
       // deleted) — log it before resetting state.
       await _logRestIfInProgress();
       await _purgeEmptySets();
+      await _persistPRs();
       await _workoutRepo.endWorkout(
           currentWorkoutId!,
           postNotes: endNotes.trim().isEmpty ? null : endNotes.trim(),
@@ -780,6 +785,38 @@ class SessionViewModel extends ChangeNotifier {
         await _workoutRepo.deleteSet(s.setId);
       } catch (_) {}
     }
+  }
+
+  /// Snapshots this session's PRs into fact_pr. Runs at endWorkout.
+  Future<void> _persistPRs() async {
+    if (currentWorkoutId == null) return;
+    try {
+      final workoutId = currentWorkoutId!;
+      // History (excluding this workout) + this session's committed sets
+      final history = _pastSets.where((s) => s.workoutId != workoutId).toList();
+      final combined = [...history];
+      for (final s in sets) {
+        combined.add(PastSetRow(
+          setId: s.setId,
+          workoutId: s.workoutId,
+          exerciseId: s.exerciseId,
+          setNumber: s.setNumber,
+          reps: s.reps,
+          duration: s.duration,
+          workoutCreatedDate: DateTime.now(),
+          variationId: s.variationId,
+          weight: s.weight,
+          notes: s.notes,
+          exerciseName: s.exerciseName,
+          variationName: s.variationName,
+          supersetGroupNumber: s.supersetGroupNumber,
+        ));
+      }
+      final records = prsForWorkout(combined, workoutId);
+      if (records.isNotEmpty) {
+        await _prRepo.insertPrs(_userId, records);
+      }
+    } catch (_) {}
   }
 
   void _resetActiveWorkoutState() {
