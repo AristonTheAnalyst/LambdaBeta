@@ -102,13 +102,13 @@ class _SwipeActionsState extends State<SwipeActions> with SingleTickerProviderSt
                   ],
                 ),
               ),
-              GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onHorizontalDragUpdate: _handleDragUpdate,
-                onHorizontalDragEnd: _handleDragEnd,
-                onTap: _ctrl.value > 0 ? _close : null,
-                child: Transform.translate(
-                  offset: Offset(-_ctrl.value * _drawerWidth, 0),
+              Transform.translate(
+                offset: Offset(-_ctrl.value * _drawerWidth, 0),
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onHorizontalDragUpdate: _handleDragUpdate,
+                  onHorizontalDragEnd: _handleDragEnd,
+                  onTap: _ctrl.value > 0 ? _close : null,
                   child: widget.child,
                 ),
               ),
