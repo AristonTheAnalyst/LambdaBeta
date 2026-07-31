@@ -49,13 +49,14 @@ Map<String, List<ExerciseHistorySession>> groupHistoryByExercise(
   return best;
 }
 
-/// Whether [set] beats the PR baseline — mirrors the Figma prototype's
-/// `isPR()`. A zero/absent baseline means "no history yet," never a PR.
+/// Whether [set] beats the PR baseline — a PR when the weight exceeds the
+/// baseline, or ties it with more reps. A null/absent baseline means "no
+/// history yet," and the first-ever lift is by definition a PR.
 bool isPr(WorkoutSet set, ({num weight, num reps})? bestEver) {
   final weight = set.weight;
   final reps = set.reps.isNotEmpty ? set.reps.first : (set.duration.isNotEmpty ? set.duration.first : null);
   if (weight == null || reps == null) return false;
-  if (bestEver == null || (bestEver.weight == 0 && bestEver.reps == 0)) return false;
+  if (bestEver == null || (bestEver.weight == 0 && bestEver.reps == 0)) return true;
   return weight > bestEver.weight || (weight >= bestEver.weight && reps > bestEver.reps);
 }
 

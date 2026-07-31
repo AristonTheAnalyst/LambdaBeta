@@ -308,12 +308,13 @@ class WorkoutDetailViewModel {
   /// plus other workouts' loaded history. Deletes then re-inserts that
   /// exercise's records (promoting the next-best from the remaining sets).
   ///
-  /// If the full past-sets history hasn't loaded yet, the recompute is
-  /// skipped entirely — otherwise an empty baseline would wipe every PR
-  /// record for the exercise.
+  /// If the combined source (other workouts' history + this workout's sets)
+  /// has no data for the exercise, the recompute is skipped — otherwise an
+  /// empty baseline would wipe every PR record for the exercise. Editing
+  /// before history loads is fine: in-state sets alone still re-derive this
+  /// workout's PRs, and there's no loaded history to lose.
   Future<void> recomputeExercisePRs(String exerciseId) async {
     final s = state.value;
-    if (!s.pastSetsLoaded) return;
 
     final thisWorkoutId = s.workout?.workoutId;
     final combined = <PastSetRow>[];
@@ -348,6 +349,9 @@ class WorkoutDetailViewModel {
     }
 
     final exerciseSets = combined.where((x) => x.exerciseId == exerciseId).toList();
+    // Nothing to derive from — skip entirely so we never wipe existing PRs
+    // with an empty baseline.
+    if (exerciseSets.isEmpty) return;
     final timeline = fullPrTimeline(exerciseSets);
     try {
       await _prRepo.deleteForExercise(_userId, exerciseId);
