@@ -10,9 +10,9 @@ import '../../../../core/utils/workout_format.dart';
 import '../../../../data/models/custom_variation.dart';
 import '../../../../data/repositories/exercise_repository.dart';
 import '../../../../data/repositories/pr_repository.dart';
-import '../../../../shared/widgets/dropdown_select.dart';
 import '../../../../shared/widgets/multi_select_sheet.dart';
 import '../../../../shared/widgets/page_header.dart';
+import '../../../../shared/widgets/slide_up_modal.dart';
 import '../../session/model/pr_engine.dart';
 
 /// All PR types for one exercise: best lift, rep-max curve (grouped by rep
@@ -45,7 +45,6 @@ class _PrExerciseDetailScreenState extends State<PrExerciseDetailScreen> {
 
   // Filters. Empty set = "all" for the multi-selects.
   Set<String> _selectedVariations = {}; // variationId, or _noVariation
-  String? _repRange; // null = all ranges
   Set<num> _selectedWeights = {}; // weightClass weights
 
   String get _userId => Supabase.instance.client.auth.currentUser!.id;
@@ -148,11 +147,8 @@ class _PrExerciseDetailScreenState extends State<PrExerciseDetailScreen> {
                   children: [
                     if (curve.isEmpty)
                       _muted('No weighted PRs yet')
-                    else ...[
-                      _repRangeDropdown(),
-                      const SizedBox(height: AppSpacing.sm),
+                    else
                       _repMaxContent(curve),
-                    ],
                   ],
                 ),
                 const SizedBox(height: AppSpacing.md),
@@ -165,21 +161,35 @@ class _PrExerciseDetailScreenState extends State<PrExerciseDetailScreen> {
                       _weightClassDropdown(weightClass),
                       const SizedBox(height: AppSpacing.sm),
                       for (final entry in _filteredWeightClass(weightClass).entries)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 6),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: Text('${_fmt(entry.key)}kg',
-                                    style: AppFonts.ui(
-                                        fontSize: AppTextStyles.sm,
-                                        fontWeight: FontWeight.w600,
-                                        color: AppColors.primary)),
-                              ),
-                              Text('${_fmt(entry.value.reps)} reps',
-                                  style: AppFonts.mono(
-                                      fontSize: 12, color: AppColors.accent)),
-                            ],
+                        InkWell(
+                          onTap: () => _showAxisHistorySheet(
+                            context,
+                            title: '${_fmt(entry.key)}kg history',
+                            records: _prs
+                                .where((p) =>
+                                    p.type == PrType.weightClass &&
+                                    p.targetWeight == entry.key)
+                                .toList(),
+                          ),
+                          borderRadius: BorderRadius.circular(AppRadius.md),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 6),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text('${_fmt(entry.key)}kg',
+                                      style: AppFonts.ui(
+                                          fontSize: AppTextStyles.sm,
+                                          fontWeight: FontWeight.w600,
+                                          color: AppColors.primary)),
+                                ),
+                                Text('${_fmt(entry.value.reps)} reps',
+                                    style: AppFonts.mono(
+                                        fontSize: 12, color: AppColors.accent)),
+                                Icon(Icons.chevron_right,
+                                    size: 16, color: AppColors.muted),
+                              ],
+                            ),
                           ),
                         ),
                     ],
@@ -314,42 +324,10 @@ class _PrExerciseDetailScreenState extends State<PrExerciseDetailScreen> {
     );
   }
 
-  // ── Rep-max dropdown + content ────────────────────────────────────────────
-
-  Widget _repRangeDropdown() {
-    return DropdownSelect<String?>(
-      options: [
-        const DropdownOption<String?>(label: 'All ranges', value: null),
-        for (final band in _repBands)
-          DropdownOption<String?>(
-              label: '${band.label} · ${_rangeLabel(band)}', value: band.label),
-      ],
-      value: _repRange,
-      onChange: (v) => setState(() => _repRange = v),
-      placeholder: 'Rep range',
-      compact: true,
-    );
-  }
+  // ── Rep-max content ───────────────────────────────────────────────────────
 
   Widget _repMaxContent(Map<int, PrRecord> curve) {
-    // Selected band → show just that band's per-rep chips.
-    final band = _repBands.where((b) => b.label == _repRange).firstOrNull;
-    if (band != null) {
-      final entries = curve.entries
-          .where((e) => _inBand(e.value, band))
-          .toList()
-        ..sort((a, b) => a.key.compareTo(b.key));
-      if (entries.isEmpty) return _muted('No records in ${band.label.toLowerCase()} range.');
-      return Wrap(
-        spacing: 6,
-        runSpacing: 6,
-        children: entries
-            .map((e) => _repChip('${e.key}RM', _fmt(e.value.weight)))
-            .toList(),
-      );
-    }
-
-    // All ranges → group the per-rep chips under each training band.
+    // Group the per-rep chips under each training band.
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -375,7 +353,7 @@ class _PrExerciseDetailScreenState extends State<PrExerciseDetailScreen> {
           spacing: 6,
           runSpacing: 6,
           children: entries
-              .map((e) => _repChip('${e.key}RM', _fmt(e.value.weight)))
+              .map((e) => _repChip(e.key, e.value))
               .toList(),
         ),
         const SizedBox(height: AppSpacing.sm),
@@ -383,16 +361,23 @@ class _PrExerciseDetailScreenState extends State<PrExerciseDetailScreen> {
     );
   }
 
-  Widget _repChip(String label, String weight) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: AppColors.accentBg,
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(color: AppColors.accent.withValues(alpha: 0.3)),
+  Widget _repChip(int repCount, PrRecord record) {
+    return GestureDetector(
+      onTap: () => _showAxisHistorySheet(
+        context,
+        title: '${repCount}RM history',
+        records: _prs.where((p) => p.type == PrType.repMax && p.targetReps == repCount).toList(),
       ),
-      child: Text('$label $weight',
-          style: AppFonts.mono(fontSize: 11, color: AppColors.accent)),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: AppColors.accentBg,
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          border: Border.all(color: AppColors.accent.withValues(alpha: 0.3)),
+        ),
+        child: Text('${repCount}RM ${_fmt(record.weight)}',
+            style: AppFonts.mono(fontSize: 11, color: AppColors.accent)),
+      ),
     );
   }
 
@@ -447,6 +432,70 @@ class _PrExerciseDetailScreenState extends State<PrExerciseDetailScreen> {
   Map<num, PrRecord> _filteredWeightClass(Map<num, PrRecord> weightClass) {
     if (_selectedWeights.isEmpty) return weightClass;
     return Map.fromEntries(weightClass.entries.where((e) => _selectedWeights.contains(e.key)));
+  }
+
+  // ── Axis history sheet ────────────────────────────────────────────────────
+
+  /// Bottom sheet showing the full PR history for one axis — e.g. every
+  /// 5RM record ever hit, or every record at 100kg. Each row opens the
+  /// past session it came from.
+  void _showAxisHistorySheet(BuildContext context,
+      {required String title, required List<PrRecord> records}) {
+    final sorted = [...records]
+      ..sort((a, b) => b.achievedDate.compareTo(a.achievedDate));
+    showLambdaModal(
+      context,
+      fitContent: true,
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.xl),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(title,
+                  style: AppFonts.ui(
+                      fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.primary)),
+              const SizedBox(height: AppSpacing.lg),
+              if (sorted.isEmpty)
+                _muted('No history for this PR.')
+              else
+                for (final p in sorted)
+                  InkWell(
+                    onTap: p.workoutId.isNotEmpty
+                        ? () => context.push('/logs/${p.workoutId}')
+                        : null,
+                    borderRadius: BorderRadius.circular(AppRadius.md),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('${_fmt(p.weight)}kg × ${_fmt(p.reps)}',
+                                    style: AppFonts.mono(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppColors.primary)),
+                                Text(_fmtDate(p.achievedDate),
+                                    style: AppFonts.mono(
+                                        fontSize: 10, color: AppColors.muted)),
+                              ],
+                            ),
+                          ),
+                          if (p.workoutId.isNotEmpty)
+                            Icon(Icons.chevron_right, size: 16, color: AppColors.muted),
+                        ],
+                      ),
+                    ),
+                  ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _sectionCard({required String title, required List<Widget> children}) {
