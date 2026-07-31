@@ -98,13 +98,15 @@ class DropdownSelect<T> extends StatelessWidget {
     final hasValue = value != null;
     return GestureDetector(
       onTap: () {
-        // Defer to next frame so any in-progress parent build finishes
-        // before we call setState on the DropdownSheetHost.
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!context.mounted) return;
-          final host = DropdownSheetHost.maybeOf(context);
-          if (host != null) {
-            host.showPicker((dismiss) => _DropdownSheetContent<T>(
+        final host = DropdownSheetHost.maybeOf(context);
+        if (host != null) {
+          // In-modal path: defer to next frame so the host's setState
+          // doesn't run during the parent's build.
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!context.mounted) return;
+            final h = DropdownSheetHost.maybeOf(context);
+            if (h == null) return;
+            h.showPicker((dismiss) => _DropdownSheetContent<T>(
                   options: options,
                   value: value,
                   searchable: searchable,
@@ -114,18 +116,20 @@ class DropdownSelect<T> extends StatelessWidget {
                   onClose: dismiss,
                   onSelect: onChange,
                 ));
-          } else {
-            showDropdownPickerSheet<T>(
-              context,
-              options: options,
-              value: value,
-              searchable: searchable,
-              onCreateNew: onCreateNew,
-              createNewLabel: createNewLabel,
-              onSelect: onChange,
-            );
-          }
-        });
+          });
+        } else {
+          // Plain-page path: open the bottom sheet immediately — deferring
+          // here makes it require a second tap to appear.
+          showDropdownPickerSheet<T>(
+            context,
+            options: options,
+            value: value,
+            searchable: searchable,
+            onCreateNew: onCreateNew,
+            createNewLabel: createNewLabel,
+            onSelect: onChange,
+          );
+        }
       },
       child: compact
           ? Row(
