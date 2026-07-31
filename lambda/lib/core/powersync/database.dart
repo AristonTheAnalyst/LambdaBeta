@@ -28,6 +28,8 @@ const _pkColumns = {
   'dim_planned_set': 'planned_set_id',
   'fact_program_run': 'program_run_id',
   'fact_pr': 'pr_id',
+  'fact_lesson': 'lesson_id',
+  'fact_rest': 'rest_id',
 };
 
 // dim_exercise_variation_bridge is the one table with no single-column PK —
