@@ -187,37 +187,55 @@ class WorkoutDetailViewModel {
 
   Future<void> load(String workoutId) async {
     state.value = state.value.copyWith(isLoading: true, clearError: true);
+    // Fast path: the workout + its own sets are all the screen needs to render.
+    // The heavy queries (full past-sets timeline, exercise catalog) load in
+    // the background and populate lessons/history/PR data without blocking.
     try {
       final results = await Future.wait([
         _workoutRepo.fetchWorkout(workoutId),
         _workoutRepo.loadSetsForWorkout(workoutId),
+      ]);
+      final sets = results[1] as List<WorkoutSet>;
+      final slots = _buildSlots(sets);
+      state.value = state.value.copyWith(
+        isLoading: false,
+        workout: results[0] as Workout?,
+        exerciseSlots: slots,
+        setsByOrder: _groupByOrder(sets, slots),
+      );
+      _loadHeavyContext();
+    } catch (e) {
+      state.value = state.value.copyWith(isLoading: false, error: e.toString());
+    }
+  }
+
+  /// Loads the heavier cross-session context in the background: full history
+  /// (for PRs + the history picker), the exercise catalog, variations, and
+  /// bridge counts. Renders whatever's ready; the screen doesn't block on it.
+  Future<void> _loadHeavyContext() async {
+    try {
+      final results = await Future.wait([
         _exerciseRepo.fetchExerciseDetailMap(_userId),
         _workoutRepo.loadPastSetsTimeline(_userId),
         _exerciseRepo.fetchVariations(_userId),
         _exerciseRepo.fetchBridges(_userId),
       ]);
-      final sets = results[1] as List<WorkoutSet>;
-      final slots = _buildSlots(sets);
-      final bridges = results[5] as List<Map<String, dynamic>>;
+      final bridges = results[3] as List<Map<String, dynamic>>;
       final counts = <String, int>{};
       for (final b in bridges) {
         final varId = b['custom_variation_id'] as String;
         counts[varId] = (counts[varId] ?? 0) + 1;
       }
       state.value = state.value.copyWith(
-        isLoading: false,
-        workout: results[0] as Workout?,
-        exerciseDetailMap: results[2] as Map<String, ExerciseDetail>,
-        historyByExercise: groupHistoryByExercise(results[3] as List<PastSetRow>),
+        exerciseDetailMap: results[0] as Map<String, ExerciseDetail>,
+        historyByExercise: groupHistoryByExercise(results[1] as List<PastSetRow>),
         pastSetsLoaded: true,
-        allVariations: results[4] as List<CustomVariation>,
+        allVariations: results[2] as List<CustomVariation>,
         variationExerciseCounts: counts,
-        exerciseSlots: slots,
-        setsByOrder: _groupByOrder(sets, slots),
       );
       _computePRs();
-    } catch (e) {
-      state.value = state.value.copyWith(isLoading: false, error: e.toString());
+    } catch (_) {
+      // Background context is best-effort; core workout already rendered.
     }
   }
 
