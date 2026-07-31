@@ -10,11 +10,14 @@ import '../../../../core/utils/workout_format.dart';
 import '../../../../data/models/custom_variation.dart';
 import '../../../../data/repositories/exercise_repository.dart';
 import '../../../../data/repositories/pr_repository.dart';
+import '../../../../shared/widgets/dropdown_select.dart';
+import '../../../../shared/widgets/multi_select_sheet.dart';
 import '../../../../shared/widgets/page_header.dart';
 import '../../session/model/pr_engine.dart';
 
-/// All PR types for one exercise, filterable by variation: best lift,
-/// rep-max curve, weight-class, and the chronological timeline.
+/// All PR types for one exercise: best lift, rep-max curve (grouped by rep
+/// range), weight-class (filterable by weight), and the chronological
+/// timeline. Variation is a multi-select filter at the top.
 class PrExerciseDetailScreen extends StatefulWidget {
   const PrExerciseDetailScreen({super.key, required this.exerciseId});
   final String exerciseId;
@@ -40,9 +43,11 @@ class _PrExerciseDetailScreenState extends State<PrExerciseDetailScreen> {
   String? _exerciseName;
   List<CustomVariation> _variations = const [];
   List<PrRecord> _prs = const [];
-  String? _filter; // null = all variations; _noVariation = no variation; else variationId
-  final Set<String> _expandedBands = {}; // which rep-bands are expanded
-  Set<num>? _selectedWeights; // null = all weights shown; else only these
+
+  // Filters. Empty set = "all" for the multi-selects.
+  Set<String> _selectedVariations = {}; // variationId, or _noVariation
+  String? _repRange; // null = all ranges
+  Set<num> _selectedWeights = {}; // weightClass weights
 
   String get _userId => Supabase.instance.client.auth.currentUser!.id;
 
@@ -67,18 +72,24 @@ class _PrExerciseDetailScreenState extends State<PrExerciseDetailScreen> {
     }
   }
 
-  bool _matches(PrRecord p) {
-    if (_filter == null) return true;
-    if (_filter == _noVariation) return p.variationId == null;
-    return p.variationId == _filter;
+  bool _matchesVariation(PrRecord p) {
+    if (_selectedVariations.isEmpty) return true;
+    final key = p.variationId ?? _noVariation;
+    return _selectedVariations.contains(key);
+  }
+
+  bool _inBand(PrRecord p, ({String label, int min, int? max}) band) {
+    if (p.type != PrType.repMax || p.targetReps == null) return false;
+    if (p.targetReps! < band.min) return false;
+    return band.max == null || p.targetReps! <= band.max!;
   }
 
   @override
   Widget build(BuildContext context) {
     final name = toProperCase(_exerciseName ?? widget.exerciseId);
-    final prs = _prs.where(_matches).toList();
+    final prs = _prs.where(_matchesVariation).toList();
 
-    // ── Best lift (best weight × reps for the current filter) ──
+    // ── Best lift (best weight × reps for the variation filter) ──
     final bestLift = _bestLift(prs);
 
     // ── Rep-max curve (latest repMax record per targetReps) ──
@@ -108,13 +119,13 @@ class _PrExerciseDetailScreenState extends State<PrExerciseDetailScreen> {
               child: Icon(Icons.arrow_back_ios_new, size: 18, color: AppColors.accent),
             ),
           ),
-          _filterBar(),
+          _variationFilter(),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.all(AppSpacing.lg),
               children: [
                 _sectionCard(
-                  title: _filter == null ? 'BEST LIFT' : 'BEST LIFT (${_filterLabel(_filter!)})',
+                  title: 'BEST LIFT',
                   children: [
                     if (bestLift == null)
                       _muted('No weighted PR yet')
@@ -138,11 +149,11 @@ class _PrExerciseDetailScreenState extends State<PrExerciseDetailScreen> {
                   children: [
                     if (curve.isEmpty)
                       _muted('No weighted PRs yet')
-                    else
-                      for (final band in _repBands) ...[
-                        _repBandTile(band, curve),
-                        const SizedBox(height: 6),
-                      ],
+                    else ...[
+                      _repRangeDropdown(),
+                      const SizedBox(height: AppSpacing.sm),
+                      _repMaxContent(curve),
+                    ],
                   ],
                 ),
                 const SizedBox(height: AppSpacing.md),
@@ -152,7 +163,7 @@ class _PrExerciseDetailScreenState extends State<PrExerciseDetailScreen> {
                     if (weightClass.isEmpty)
                       _muted('No weighted PRs yet')
                     else ...[
-                      _weightClassFilter(weightClass),
+                      _weightClassDropdown(weightClass),
                       const SizedBox(height: AppSpacing.sm),
                       for (final entry in _filteredWeightClass(weightClass).entries)
                         Padding(
@@ -228,8 +239,7 @@ class _PrExerciseDetailScreenState extends State<PrExerciseDetailScreen> {
     );
   }
 
-  /// Best weight × reps among [prs] (ties broken by higher reps) — the
-  /// overall/absolute best for the current variation filter.
+  /// Best weight × reps among [prs] (ties broken by higher reps).
   PrRecord? _bestLift(List<PrRecord> prs) {
     PrRecord? best;
     for (final p in prs) {
@@ -243,170 +253,209 @@ class _PrExerciseDetailScreenState extends State<PrExerciseDetailScreen> {
     return best;
   }
 
-  // ── Variation filter bar ──────────────────────────────────────────────────
+  // ── Variation multi-select filter ─────────────────────────────────────────
 
-  Widget _filterBar() {
-    final options = <(String, String?)>[
-      ('All', null),
-      if (_prs.any((p) => p.variationId == null)) (_noVariationLabel, _noVariation),
-      for (final v in _variations) (toProperCase(v.name), v.variationId),
+  Widget _variationFilter() {
+    final options = <MultiSelectOption<String>>[
+      if (_prs.any((p) => p.variationId == null))
+        const MultiSelectOption(label: 'No variation', value: _noVariation),
+      for (final v in _variations)
+        MultiSelectOption(label: toProperCase(v.name), value: v.variationId),
     ];
-    return SizedBox(
-      height: 48,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-        itemCount: options.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 6),
-        itemBuilder: (context, i) {
-          final (label, value) = options[i];
-          final active = value == _filter;
-          return GestureDetector(
-            onTap: () => setState(() => _filter = value),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: active ? AppColors.accentBg : AppColors.surface,
-                borderRadius: BorderRadius.circular(AppRadius.md),
-                border: Border.all(color: active ? AppColors.accent : AppColors.border),
-              ),
-              child: Text(label,
-                  style: AppFonts.ui(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: active ? AppColors.accent : AppColors.muted)),
-            ),
+    final label = _selectedVariations.isEmpty
+        ? 'All variations'
+        : _selectedVariations
+            .map((k) => k == _noVariation
+                ? 'No variation'
+                : toProperCase(_variations.firstWhere((v) => v.variationId == k, orElse: () => CustomVariation(variationId: k, userId: '', name: k, isActive: true)).name))
+            .join(' · ');
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, AppSpacing.xs),
+      child: GestureDetector(
+        onTap: () async {
+          final result = await showMultiSelectSheet<String>(
+            context,
+            options: options,
+            selected: _selectedVariations.toList(),
+            title: 'Variations',
+            confirmLabel: 'Done',
           );
+          if (result != null) {
+            setState(() => _selectedVariations = result.toSet());
+          }
         },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(AppRadius.md),
+            border: Border.all(
+                color: _selectedVariations.isEmpty ? AppColors.border : AppColors.accent),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.filter_list, size: 16,
+                  color: _selectedVariations.isEmpty ? AppColors.muted : AppColors.accent),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(label,
+                    style: AppFonts.ui(
+                        fontSize: AppTextStyles.sm,
+                        fontWeight: FontWeight.w600,
+                        color: _selectedVariations.isEmpty ? AppColors.muted : AppColors.accent),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis),
+              ),
+              Icon(Icons.arrow_drop_down, size: 18, color: AppColors.muted),
+            ],
+          ),
+        ),
       ),
     );
   }
 
-  static const _noVariationLabel = 'No variation';
+  // ── Rep-max dropdown + content ────────────────────────────────────────────
 
-  String _filterLabel(String value) => value == _noVariation ? _noVariationLabel : toProperCase(value);
+  Widget _repRangeDropdown() {
+    return DropdownSelect<String?>(
+      options: [
+        const DropdownOption<String?>(label: 'All ranges', value: null),
+        for (final band in _repBands)
+          DropdownOption<String?>(
+              label: '${band.label} · ${_rangeLabel(band)}', value: band.label),
+      ],
+      value: _repRange,
+      onChange: (v) => setState(() => _repRange = v),
+      placeholder: 'Rep range',
+      compact: true,
+    );
+  }
 
-  // ── Rep-max band tile ─────────────────────────────────────────────────────
+  Widget _repMaxContent(Map<int, PrRecord> curve) {
+    // Selected band → show that band's per-rep chips.
+    final band = _repBands.where((b) => b.label == _repRange).firstOrNull;
+    if (band != null) {
+      final entries = curve.entries
+          .where((e) => _inBand(e.value, band))
+          .toList()
+        ..sort((a, b) => a.key.compareTo(b.key));
+      if (entries.isEmpty) return _muted('No records in ${band.label.toLowerCase()} range.');
+      return Wrap(
+        spacing: 6,
+        runSpacing: 6,
+        children: entries
+            .map((e) => _repChip('${e.key}RM', _fmt(e.value.weight)))
+            .toList(),
+      );
+    }
 
-  Widget _repBandTile(
-    ({String label, int min, int? max}) band,
-    Map<int, PrRecord> curve,
-  ) {
-    final inBand = curve.entries.where((e) {
-      if (e.key < band.min) return false;
-      return band.max == null || e.key <= band.max!;
-    }).toList()..sort((a, b) => a.key.compareTo(b.key));
+    // All ranges → grouped band tiles.
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final b in _repBands) ...[
+          _repBandTile(b, curve),
+          const SizedBox(height: 6),
+        ],
+      ],
+    );
+  }
+
+  Widget _repBandTile(({String label, int min, int? max}) band, Map<int, PrRecord> curve) {
+    final inBand = curve.entries.where((e) => _inBand(e.value, band)).toList()
+      ..sort((a, b) => a.key.compareTo(b.key));
     if (inBand.isEmpty) return const SizedBox.shrink();
-
     final bestInBand = inBand.reduce((a, b) => b.value.weight > a.value.weight ? b : a);
-    final expanded = _expandedBands.contains(band.label);
-    final rangeLabel = band.max == null
-        ? '${band.min}+RM'
-        : band.min == band.max
-            ? '${band.min}RM'
-            : '${band.min}–${band.max}RM';
 
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceHigh,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text('${band.label} · ${_rangeLabel(band)}',
+                style: AppFonts.mono(
+                    fontSize: 10, letterSpacing: 0.6, color: AppColors.muted)),
+          ),
+          Text('${_fmt(bestInBand.value.weight)}kg',
+              style: AppFonts.mono(
+                  fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.accent)),
+          const SizedBox(width: 4),
+          Icon(Icons.chevron_right, size: 16, color: AppColors.muted),
+        ],
+      ),
+    );
+  }
+
+  Widget _repChip(String label, String weight) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: AppColors.accentBg,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(color: AppColors.accent.withValues(alpha: 0.3)),
+      ),
+      child: Text('$label $weight',
+          style: AppFonts.mono(fontSize: 11, color: AppColors.accent)),
+    );
+  }
+
+  String _rangeLabel(({String label, int min, int? max}) band) =>
+      band.max == null ? '${band.min}+RM' : '${band.min}–${band.max}RM';
+
+  // ── Weight-class multi-select + helpers ───────────────────────────────────
+
+  Widget _weightClassDropdown(Map<num, PrRecord> weightClass) {
     return GestureDetector(
-      onTap: () => setState(() {
-        if (!_expandedBands.add(band.label)) _expandedBands.remove(band.label);
-      }),
+      onTap: () async {
+        final sorted = weightClass.keys.toList()..sort((a, b) => b.compareTo(a));
+        final result = await showMultiSelectSheet<num>(
+          context,
+          options: sorted
+              .map((w) => MultiSelectOption(label: '${_fmt(w)}kg', value: w))
+              .toList(),
+          selected: _selectedWeights.toList(),
+          title: 'Weights',
+          confirmLabel: 'Done',
+        );
+        if (result != null) {
+          setState(() => _selectedWeights = result.toSet());
+        }
+      },
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
           color: AppColors.surfaceHigh,
           borderRadius: BorderRadius.circular(AppRadius.md),
           border: Border.all(color: AppColors.border),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Row(
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text('${band.label} · $rangeLabel',
-                      style: AppFonts.mono(
-                          fontSize: 10, letterSpacing: 0.6, color: AppColors.muted)),
-                ),
-                Text('${_fmt(bestInBand.value.weight)}kg',
-                    style: AppFonts.mono(
-                        fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.accent)),
-                Icon(expanded ? Icons.expand_less : Icons.expand_more,
-                    size: 16, color: AppColors.muted),
-              ],
-            ),
-            if (expanded)
-              Padding(
-                padding: const EdgeInsets.only(top: 6),
-                child: Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: inBand
-                      .map((e) => Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: AppColors.accentBg,
-                              borderRadius: BorderRadius.circular(AppRadius.md),
-                              border: Border.all(
-                                  color: AppColors.accent.withValues(alpha: 0.3)),
-                            ),
-                            child: Text('${e.key}RM ${_fmt(e.value.weight)}kg',
-                                style: AppFonts.mono(
-                                    fontSize: 11, color: AppColors.accent)),
-                          ))
-                      .toList(),
-                ),
+            Expanded(
+              child: Text(
+                _selectedWeights.isEmpty
+                    ? 'All weights'
+                    : _selectedWeights.map(_fmt).join(' · '),
+                style: AppFonts.mono(fontSize: 11, color: AppColors.primary),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
+            ),
+            Icon(Icons.arrow_drop_down, size: 18, color: AppColors.muted),
           ],
         ),
       ),
     );
   }
 
-  // ── Weight-class filter + helpers ─────────────────────────────────────────
-
   Map<num, PrRecord> _filteredWeightClass(Map<num, PrRecord> weightClass) {
-    final sel = _selectedWeights;
-    if (sel == null) return weightClass;
-    return Map.fromEntries(weightClass.entries.where((e) => sel.contains(e.key)));
-  }
-
-  Widget _weightClassFilter(Map<num, PrRecord> weightClass) {
-    final allSelected = _selectedWeights == null;
-    return Wrap(
-      spacing: 6,
-      runSpacing: 6,
-      children: [
-        _weightChip('All', allSelected, () => setState(() => _selectedWeights = null)),
-        for (final w in weightClass.keys.toList()..sort((a, b) => b.compareTo(a)))
-          _weightChip('${_fmt(w)}kg', !allSelected && _selectedWeights!.contains(w),
-              () => setState(() {
-                    final sel = {...?_selectedWeights};
-                    if (!sel.add(w)) sel.remove(w);
-                    _selectedWeights = sel.isEmpty ? null : sel;
-                  })),
-      ],
-    );
-  }
-
-  Widget _weightChip(String label, bool active, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-        decoration: BoxDecoration(
-          color: active ? AppColors.accentBg : AppColors.surfaceHigh,
-          borderRadius: BorderRadius.circular(AppRadius.md),
-          border: Border.all(color: active ? AppColors.accent : AppColors.border),
-        ),
-        child: Text(label,
-            style: AppFonts.mono(
-                fontSize: 11,
-                fontWeight: active ? FontWeight.w700 : FontWeight.w400,
-                color: active ? AppColors.accent : AppColors.muted)),
-      ),
-    );
+    if (_selectedWeights.isEmpty) return weightClass;
+    return Map.fromEntries(weightClass.entries.where((e) => _selectedWeights.contains(e.key)));
   }
 
   Widget _sectionCard({required String title, required List<Widget> children}) {
