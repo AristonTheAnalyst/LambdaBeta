@@ -9,6 +9,7 @@ import '../../../../core/utils/workout_format.dart';
 import '../../../../data/models/exercise_detail.dart';
 import '../../../../data/repositories/exercise_repository.dart';
 import '../../../../data/repositories/pr_repository.dart';
+import '../../../../data/repositories/workout_repository.dart';
 import '../../../../shared/widgets/app_card.dart';
 import '../../../../shared/widgets/page_header.dart';
 import '../../../../shared/widgets/press_squash.dart';
@@ -26,6 +27,7 @@ class PrCatalogScreen extends StatefulWidget {
 class _PrCatalogScreenState extends State<PrCatalogScreen> {
   final _exerciseRepo = ExerciseRepository();
   final _prRepo = PrRepository();
+  final _workoutRepo = WorkoutRepository();
   Map<String, ExerciseDetail>? _exerciseMap;
   List<PrRecord> _prs = const [];
 
@@ -39,14 +41,13 @@ class _PrCatalogScreenState extends State<PrCatalogScreen> {
 
   Future<void> _load() async {
     try {
-      final results = await Future.wait([
-        _exerciseRepo.fetchExerciseDetailMap(_userId),
-        _prRepo.loadAll(_userId),
-      ]);
+      final prs = await _prRepo.loadAllWithBackfill(
+          _userId, () => _workoutRepo.loadPastSetsTimeline(_userId));
+      final map = await _exerciseRepo.fetchExerciseDetailMap(_userId);
       if (!mounted) return;
       setState(() {
-        _exerciseMap = results[0] as Map<String, ExerciseDetail>;
-        _prs = results[1] as List<PrRecord>;
+        _exerciseMap = map;
+        _prs = prs;
       });
     } catch (_) {
       if (mounted) setState(() => _exerciseMap = {});

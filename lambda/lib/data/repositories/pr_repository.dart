@@ -1,5 +1,6 @@
 import 'package:uuid/uuid.dart';
 import '../../core/powersync/database.dart' as ps;
+import '../models/workout_set.dart';
 import '../../features/session/model/pr_engine.dart';
 
 const _uuid = Uuid();
@@ -8,6 +9,26 @@ const _uuid = Uuid();
 /// records — they copy their values at write time and never depend on the
 /// source set row to render, so a deleted/edited set doesn't erase the PR.
 class PrRepository {
+  /// Loads all PRs, backfilling from full set history the first time if
+  /// fact_pr is empty (existing users whose workouts predate PR tracking).
+  /// Callers pass a way to load the full past-sets timeline so this repo
+  /// doesn't take a hard dependency on WorkoutRepository.
+  Future<List<PrRecord>> loadAllWithBackfill(
+    String userId,
+    Future<List<PastSetRow>> Function() loadSets,
+  ) async {
+    var prs = await loadAll(userId);
+    if (prs.isEmpty) {
+      final sets = await loadSets();
+      final timeline = fullPrTimeline(sets);
+      if (timeline.isNotEmpty) {
+        await insertPrs(userId, timeline);
+        prs = await loadAll(userId);
+      }
+    }
+    return prs;
+  }
+
   Future<void> insertPrs(String userId, List<PrRecord> records) async {
     for (final pr in records) {
       final id = _uuid.v4();

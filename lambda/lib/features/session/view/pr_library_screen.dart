@@ -36,17 +36,8 @@ class _PrLibraryScreenState extends State<PrLibraryScreen> {
 
   Future<void> _load() async {
     try {
-      var prs = await _prRepo.loadAll(_userId);
-      // Backfill: existing users with no fact_pr yet — derive once from
-      // full set history and persist.
-      if (prs.isEmpty) {
-        final sets = await _workoutRepo.loadPastSetsTimeline(_userId);
-        final timeline = fullPrTimeline(sets);
-        if (timeline.isNotEmpty) {
-          await _prRepo.insertPrs(_userId, timeline);
-          prs = await _prRepo.loadAll(_userId);
-        }
-      }
+      final prs = await _prRepo.loadAllWithBackfill(
+          _userId, () => _workoutRepo.loadPastSetsTimeline(_userId));
       if (mounted) setState(() => _prs = prs);
     } catch (_) {
       if (mounted) setState(() => _prs = const []);
