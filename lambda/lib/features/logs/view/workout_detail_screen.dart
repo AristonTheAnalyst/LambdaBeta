@@ -220,8 +220,7 @@ class _WorkoutBody extends StatelessWidget {
             ),
           ),
         ),
-        if (state.isEditing)
-          Container(
+        Container(
             padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
             decoration: BoxDecoration(
               color: AppColors.surface,
@@ -229,27 +228,40 @@ class _WorkoutBody extends StatelessWidget {
             ),
             child: Row(
               children: [
-                Expanded(
-                  child: GlassButton(
-                    label: 'Pre-Notes',
-                    icon: Icons.notes_outlined,
-                    compact: true,
-                    onPressed: () => _showNotesModal(context, 'pre'),
-                  ),
-                ),
+                Expanded(child: _notesButton(context, 'Pre-Notes', state.workout?.preNotes ?? '', 'pre')),
                 const SizedBox(width: AppSpacing.sm),
-                Expanded(
-                  child: GlassButton(
-                    label: 'Post-Notes',
-                    icon: Icons.notes_outlined,
-                    compact: true,
-                    onPressed: () => _showNotesModal(context, 'post'),
-                  ),
-                ),
+                Expanded(child: _notesButton(context, 'Post-Notes', state.workout?.postNotes ?? '', 'post')),
               ],
             ),
           ),
       ],
+    );
+  }
+
+  Widget _notesButton(BuildContext context, String label, String content, String target) {
+    final filled = content.isNotEmpty;
+    return GestureDetector(
+      onTap: () => _showNotesModal(context, target),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 10),
+        decoration: BoxDecoration(
+          color: filled ? AppColors.accentBg : Colors.transparent,
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          border: Border.all(color: filled ? AppColors.accent.withValues(alpha: 0.4) : AppColors.border),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.notes_outlined, size: 15, color: filled ? AppColors.accent : AppColors.muted),
+            const SizedBox(width: 6),
+            Text(label,
+                style: AppFonts.ui(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: filled ? AppColors.accent : AppColors.muted)),
+          ],
+        ),
+      ),
     );
   }
 
