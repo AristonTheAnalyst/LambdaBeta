@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../../../core/utils/workout_format.dart';
 import '../../../data/models/custom_variation.dart';
 import '../../../data/models/exercise_detail.dart';
 import '../../../data/models/lesson.dart';
@@ -16,6 +15,7 @@ import '../../../data/repositories/program_run_repository.dart';
 import '../../../data/repositories/rest_period_repository.dart';
 import '../../../data/repositories/workout_repository.dart';
 import '../../../shared/widgets/slide_pages.dart';
+import '../model/pr_engine.dart' hide bestEverForExercise;
 import '../model/session_local_state.dart';
 
 const restDefaultSeconds = 90;
@@ -135,14 +135,32 @@ class SessionViewModel extends ChangeNotifier {
       : restDurationsThisSession.reduce((a, b) => a + b) /
           restDurationsThisSession.length;
 
-  List<({String exercise, num? weight, num? reps})> get prsThisSession => sets
-      .where((s) => isPr(s, prevBestByExercise[s.exerciseId]))
-      .map((s) => (
-            exercise: toProperCase(exerciseDetailMap[s.exerciseId]?.name ?? ''),
-            weight: s.weight,
-            reps: s.reps.isNotEmpty ? s.reps.first : (s.duration.isNotEmpty ? s.duration.first : null),
-          ))
-      .toList();
+  /// PRs achieved this session using the full rep-max timeline engine.
+  List<PrRecord> get prsThisSession {
+    // Combine history + current session sets, ordered by time
+    final all = [..._pastSets];
+    // Build PastSetRows for current session sets (no createdDate) — use now
+    final now = DateTime.now();
+    for (final s in sets) {
+      all.add(PastSetRow(
+        setId: s.setId,
+        workoutId: s.workoutId,
+        exerciseId: s.exerciseId,
+        setNumber: s.setNumber,
+        reps: s.reps,
+        duration: s.duration,
+        workoutCreatedDate: now,
+        variationId: s.variationId,
+        weight: s.weight,
+        notes: s.notes,
+        exerciseName: s.exerciseName,
+        variationName: s.variationName,
+        supersetGroupNumber: s.supersetGroupNumber,
+      ));
+    }
+    // PRs in the current workout are those whose workoutId is the active one
+    return prsForWorkout(all, currentWorkoutId ?? '');
+  }
 
   Future<void> _init() async {
     // Each stage is individually guarded so one transient failure (e.g.

@@ -23,7 +23,7 @@ class SessionStatsBar extends StatelessWidget {
             label: 'PRS',
             value: '$prs',
             accent: prs > 0,
-            onTap: prs > 0 ? () => showPrModal(context, vm: vm) : null,
+            onTap: prs > 0 ? () => showPrModal(context, prs: vm.prsThisSession) : null,
           ),
           StatsTile(label: 'EXERCISES', value: '${vm.distinctExerciseCount}'),
           StatsTile(

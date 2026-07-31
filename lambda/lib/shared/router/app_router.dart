@@ -19,8 +19,8 @@ import '../../features/programs/view/program_detail_screen.dart';
 import '../../features/programs/view/program_library_screen.dart';
 import '../../features/profile/view/profile_detail_screen.dart';
 import '../../features/profile/view/profile_hub_screen.dart';
+import '../../features/session/view/pr_library_screen.dart';
 import '../../features/session/view/session_screen.dart';
-import '../../features/statistics/view/statistics_screen.dart';
 import '../widgets/bottom_nav_bar.dart';
 import 'auth_notifier.dart';
 
@@ -127,7 +127,7 @@ abstract final class AppRouter {
               GoRoute(path: 'detail', builder: (_, _) => ProfileDetailScreen()),
             ],
           ),
-          GoRoute(path: '/statistics', builder: (_, _) => StatisticsScreen()),
+          GoRoute(path: '/statistics', builder: (_, _) => const PrLibraryScreen()),
           GoRoute(
             path: '/dev',
             builder: (_, _) => DevScreen(),

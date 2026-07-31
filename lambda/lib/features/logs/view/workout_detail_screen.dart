@@ -20,6 +20,7 @@ import '../../../shared/widgets/dropdown_select.dart';
 import '../../session/model/session_local_state.dart' show ExerciseHistorySession;
 import '../../session/view/lessons_modal.dart';
 import '../../session/view/notes_modal.dart';
+import '../../session/view/pr_modal.dart';
 import '../viewmodel/workout_detail_viewmodel.dart';
 
 class WorkoutDetailScreen extends StatefulWidget {
@@ -162,6 +163,9 @@ class _WorkoutBody extends StatelessWidget {
                     label: 'PRS',
                     value: '${state.totalPRCount}',
                     accent: state.totalPRCount > 0,
+                    onTap: state.totalPRCount > 0
+                        ? () => showPrModal(context, prs: state.prRecords)
+                        : null,
                   ),
                   StatsTile(label: 'EXERCISES', value: '${state.exerciseSlots.length}'),
                   const StatsTile(label: 'AVG REST', value: '—'),
