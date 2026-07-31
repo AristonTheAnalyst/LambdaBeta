@@ -9,6 +9,8 @@ import '../../features/auth/view/signup_screen.dart';
 import '../../features/dev/view/dev_screen.dart';
 import '../../features/dev/view/experimental_screen.dart';
 import '../../features/dev/view/gallery_screen.dart';
+import '../../features/dev/view/pr_catalog_screen.dart';
+import '../../features/dev/view/pr_exercise_detail_screen.dart';
 import '../../features/exercises/view/exercise_hub_screen.dart';
 import '../../features/exercises/view/exercise_library_screen.dart';
 import '../../features/exercises/view/guide_screen.dart';
@@ -134,6 +136,18 @@ abstract final class AppRouter {
             routes: [
               GoRoute(path: 'gallery',      builder: (_, _) => GalleryScreen()),
               GoRoute(path: 'experimental', builder: (_, _) => ExperimentalScreen()),
+              GoRoute(
+                path: 'prs',
+                builder: (_, _) => const PrCatalogScreen(),
+                routes: [
+                  GoRoute(
+                    path: ':id',
+                    builder: (_, state) => PrExerciseDetailScreen(
+                      exerciseId: state.pathParameters['id']!,
+                    ),
+                  ),
+                ],
+              ),
             ],
           ),
         ],

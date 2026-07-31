@@ -37,6 +37,13 @@ class DevScreen extends StatelessWidget {
                     subtitle: 'Theme picker and in-progress features',
                     onTap: () => context.push('/dev/experimental'),
                   ),
+                  const SizedBox(height: AppSpacing.sm),
+                  _NavCard(
+                    icon: Icons.emoji_events_outlined,
+                    label: 'Personal Records',
+                    subtitle: 'Exercise catalog with per-exercise PR breakdowns',
+                    onTap: () => context.push('/dev/prs'),
+                  ),
                   const SizedBox(height: AppSpacing.xl),
                   AppCard(
                     child: Column(
