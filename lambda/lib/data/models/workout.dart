@@ -12,6 +12,7 @@ class Workout {
     this.programId,
     this.plannedWorkoutId,
     this.plannedWorkoutName,
+    this.exerciseOrder,
   });
 
   final String workoutId;
@@ -25,6 +26,10 @@ class Workout {
   final String? plannedWorkoutId;
   final String? plannedWorkoutName;
 
+  /// JSON string of the session's exercise tab slots (order + superset
+  /// grouping), so the tab bar survives a hot restart.
+  final String? exerciseOrder;
+
   factory Workout.fromMap(Map<String, dynamic> map) => Workout(
         workoutId: map['user_workout_id'] as String,
         userId: map['user_id'] as String,
@@ -36,6 +41,7 @@ class Workout {
         programId: map['program_id'] as String?,
         plannedWorkoutId: map['planned_workout_id'] as String?,
         plannedWorkoutName: map['planned_workout_name'] as String?,
+        exerciseOrder: map['exercise_order'] as String?,
       );
 
   static bool _toBool(dynamic v) {

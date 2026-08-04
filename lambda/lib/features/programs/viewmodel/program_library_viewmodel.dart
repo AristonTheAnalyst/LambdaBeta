@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../data/models/program.dart';
+import '../../../data/models/program_progress.dart';
 import '../../../data/repositories/program_repository.dart';
 import '../../../data/repositories/program_run_repository.dart';
 
@@ -14,6 +15,7 @@ class ProgramLibraryState {
     this.showCreate = false,
     this.createName = '',
     this.isCreating = false,
+    this.currentProgress,
   });
 
   final bool isLoading;
@@ -25,6 +27,20 @@ class ProgramLibraryState {
   final bool showCreate;
   final String createName;
   final bool isCreating;
+
+  /// Progress of the current program (null when none is current).
+  final ProgramProgress? currentProgress;
+
+  /// Current program pinned to the top, rest by created-date desc.
+  List<Program> get sortedPrograms {
+    final sorted = [...programs];
+    sorted.sort((a, b) {
+      if (a.programId == currentProgramId) return -1;
+      if (b.programId == currentProgramId) return 1;
+      return b.createdDate.compareTo(a.createdDate);
+    });
+    return sorted;
+  }
 
   ProgramLibraryState copyWith({
     bool? isLoading,
@@ -38,6 +54,7 @@ class ProgramLibraryState {
     bool? showCreate,
     String? createName,
     bool? isCreating,
+    ProgramProgress? currentProgress,
   }) =>
       ProgramLibraryState(
         isLoading: isLoading ?? this.isLoading,
@@ -52,6 +69,7 @@ class ProgramLibraryState {
         showCreate: showCreate ?? this.showCreate,
         createName: createName ?? this.createName,
         isCreating: isCreating ?? this.isCreating,
+        currentProgress: currentProgress ?? this.currentProgress,
       );
 }
 
@@ -73,11 +91,18 @@ class ProgramLibraryViewModel {
     try {
       final programs = await _repo.fetchPrograms(_userId);
       final currentRun = await _runRepo.getCurrentRun(_userId);
+      ProgramProgress? progress;
+      if (currentRun != null) {
+        try {
+          progress = await _runRepo.getProgress(_userId);
+        } catch (_) {}
+      }
       state.value = state.value.copyWith(
         isLoading: false,
         programs: programs,
         currentProgramId: currentRun?.programId,
         clearCurrentProgramId: currentRun == null,
+        currentProgress: progress,
       );
     } catch (e) {
       state.value = state.value.copyWith(isLoading: false, error: e.toString());

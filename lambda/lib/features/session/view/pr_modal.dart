@@ -26,7 +26,7 @@ void showPrModal(BuildContext context, {required List<PrRecord> prs}) {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('PRs Achieved 🏆',
+                      Text('PRs Achieved',
                           style: AppFonts.ui(
                               fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.primary)),
                       if (prs.isEmpty)

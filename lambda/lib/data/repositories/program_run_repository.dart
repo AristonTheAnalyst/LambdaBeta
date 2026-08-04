@@ -120,14 +120,24 @@ class ProgramRunRepository {
       progressionMode: program.progressionMode,
     );
 
-    return ProgramProgress(
+    final progress = ProgramProgress(
       program: program,
       run: run,
       weekNumber: weekNumber,
       totalWeeks: program.lengthWeeks,
       workoutsCompletedInCycle: workoutsCompletedInCycle,
       totalWorkoutsInCycle: totalInCycle,
+      totalWorkoutsCompleted: completed,
       nextPlannedWorkout: next,
     );
+
+    // A completed program stops being "current" — end the run so the session
+    // stops offering it and the library can show it as finished.
+    final finished = progress.isFinished;
+    if (finished && run.isCurrent) {
+      await endCurrentRun(userId);
+    }
+
+    return progress;
   }
 }

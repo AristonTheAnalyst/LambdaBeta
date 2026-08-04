@@ -3,6 +3,7 @@ import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
 import '../../../core/styles/app_radius.dart';
 import '../../../core/styles/app_spacing.dart';
+import '../../../core/styles/app_text_styles.dart';
 import '../../../core/utils/workout_format.dart';
 import '../../../data/models/planned_set.dart';
 import '../../../data/models/planned_workout.dart';
@@ -116,6 +117,16 @@ class _PlanWorkoutScreenState extends State<PlanWorkoutScreen> with UnsavedChang
             body: Column(
               children: [
                 _editableHeader(state.workoutUnsavedChanges),
+                if (state.error != null)
+                  Container(
+                    width: double.infinity,
+                    color: AppColors.dangerBg,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
+                    child: Text(state.error!,
+                        style: AppFonts.ui(
+                            color: AppColors.danger, fontSize: AppTextStyles.sm)),
+                  ),
                 Expanded(
                   child: SingleChildScrollView(
                     padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.xxl),

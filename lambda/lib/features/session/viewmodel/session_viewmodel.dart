@@ -1,13 +1,18 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:logging/logging.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../data/models/custom_variation.dart';
 import '../../../data/models/exercise_detail.dart';
 import '../../../data/models/lesson.dart';
 import '../../../data/models/planned_set.dart';
 import '../../../data/models/program_progress.dart';
+import '../../../data/models/workout.dart';
+import '../../../data/models/exercise_usage.dart';
 import '../../../data/models/workout_set.dart';
+import '../../../core/powersync/database.dart' as ps;
 import '../../../data/repositories/exercise_repository.dart';
 import '../../../data/repositories/lesson_repository.dart';
 import '../../../data/repositories/pr_repository.dart';
@@ -50,6 +55,7 @@ class SessionViewModel extends ChangeNotifier {
   final RestPeriodRepository _restPeriodRepo;
   final PrRepository _prRepo;
   late final SlidePagesController slidePagesController;
+  static final _lessonLog = Logger('lessons');
 
   String get _userId => Supabase.instance.client.auth.currentUser!.id;
 
@@ -62,8 +68,19 @@ class SessionViewModel extends ChangeNotifier {
   VoidCallback? onWorkoutEnded;
   String? currentWorkoutId;
   DateTime? workoutStartedAt;
+
+  /// The active workout row fetched at restore — carries `exerciseOrder` so
+  /// the tab arrangement (incl. supersets) can be rebuilt after a hot restart.
+  Workout? _workout;
   List<WorkoutSet> sets = [];
   bool setsLoading = false;
+
+  /// Ids of sets that are PRs right now, per the engine's multi-axis model
+  /// (a set is a PR if it improves the rep-max curve at any tracked rep count,
+  /// or the weight-max for its weight). Recomputed from history + session sets
+  /// on every sets change so live highlighting matches what `_persistPRs`
+  /// records at endWorkout.
+  Set<String> prSetIds = {};
 
   // ── Exercise catalog ───────────────────────────────────────────────────────
   bool catalogLoading = false;
@@ -107,6 +124,9 @@ class SessionViewModel extends ChangeNotifier {
   // ── History / PR baseline (read-only reuse of past-sets timeline) ────────
   List<PastSetRow> _pastSets = [];
   bool pastSetsLoaded = false;
+
+  /// exerciseId → most recent workout date, for "most recently used" ordering.
+  Map<String, DateTime> lastUsedByExercise = {};
   Map<String, List<ExerciseHistorySession>> historyByExercise = {};
   Map<String, ({num weight, num reps})?> prevBestByExercise = {};
 
@@ -131,8 +151,7 @@ class SessionViewModel extends ChangeNotifier {
 
   int get distinctExerciseCount => sets.map((s) => s.exerciseId).toSet().length;
 
-  int get totalPRsThisSession =>
-      sets.where((s) => isPr(s, baselineFor(s.exerciseId, excludingSetId: s.setId))).length;
+  int get totalPRsThisSession => prSetIds.length;
 
   double? get avgRestSeconds => restDurationsThisSession.isEmpty
       ? null
@@ -167,6 +186,13 @@ class SessionViewModel extends ChangeNotifier {
   }
 
   Future<void> _init() async {
+    // On a cold start after login, PowerSync may not have finished its first
+    // sync yet — the local DB would read as empty. Wait briefly so the session
+    // reflects the user's real data instead of a stale/blank state. Falls back
+    // to the existing guarded stages if the wait times out or sync is offline.
+    try {
+      await ps.db.waitForFirstSync().timeout(const Duration(seconds: 10));
+    } catch (_) {}
     // Each stage is individually guarded so one transient failure (e.g.
     // PowerSync not synced on cold start) doesn't block the others.
     // In particular, _restoreActiveWorkout must run even if catalog fetch
@@ -247,6 +273,7 @@ class SessionViewModel extends ChangeNotifier {
     try {
       _pastSets = await _workoutRepo.loadPastSetsTimeline(_userId);
       historyByExercise = groupHistoryByExercise(_pastSets);
+      lastUsedByExercise = lastUsedByEntity(_pastSets);
       final byExercise = <String, List<PastSetRow>>{};
       for (final s in _pastSets) {
         byExercise.putIfAbsent(s.exerciseId, () => []).add(s);
@@ -263,6 +290,7 @@ class SessionViewModel extends ChangeNotifier {
     if (activeId != null) {
       currentWorkoutId = activeId;
       final workout = await _workoutRepo.fetchWorkout(activeId);
+      _workout = workout;
       workoutStartedAt = workout?.createdDate;
       slidePagesController.resetToPage(1);
       await _loadSets();
@@ -276,33 +304,149 @@ class SessionViewModel extends ChangeNotifier {
     notifyListeners();
     sets = await _workoutRepo.loadSetsForWorkout(currentWorkoutId!);
     setsLoading = false;
+    _recomputePRs();
     notifyListeners();
   }
+
+  /// Recomputes which sets are PRs using the engine's exact semantics (same
+  /// `fullPrTimeline` walk `_persistPRs` uses) — history first, then this
+  /// session's sets in set-number order, so a set that improves any rep-max
+  /// or weight-max axis highlights, not just the single best (weight,reps).
+  void _recomputePRs() {
+    final id = currentWorkoutId;
+    if (id == null) {
+      prSetIds = {};
+      return;
+    }
+    final combined = <PastSetRow>[
+      ..._pastSets.where((s) => s.workoutId != id),
+    ];
+    final sessionDate = workoutStartedAt ?? DateTime.now();
+    final ordered = [...sets]..sort((a, b) => a.setNumber.compareTo(b.setNumber));
+    for (final s in ordered) {
+      combined.add(PastSetRow(
+        setId: s.setId,
+        workoutId: s.workoutId,
+        exerciseId: s.exerciseId,
+        setNumber: s.setNumber,
+        reps: s.reps,
+        duration: s.duration,
+        workoutCreatedDate: sessionDate,
+        variationId: s.variationId,
+        weight: s.weight,
+        notes: s.notes,
+        exerciseName: s.exerciseName,
+        variationName: s.variationName,
+        supersetGroupNumber: s.supersetGroupNumber,
+      ));
+    }
+    final records = fullPrTimeline(combined);
+    prSetIds = {
+      for (final r in records)
+        if (r.setId != null && r.setId!.isNotEmpty) r.setId!,
+    };
+  }
+
+  bool isPrSet(String setId) => prSetIds.contains(setId);
 
   // ── Exercise tabs ──────────────────────────────────────────────────────────
 
   void _seedExerciseSlots() {
     final seen = <String>{};
     final slots = <SessionExerciseSlot>[];
-    for (final exId in plannedExerciseOrder) {
-      if (seen.add(exId)) {
-        slots.add(SessionExerciseSlot(
-            id: _nextSlotId++, type: SessionSlotType.single, exerciseIds: [exId], planned: true));
-        draftSlotsByExercise.putIfAbsent(exId, () => [_nextDraftId++]);
-        loadLessonsFor(exId);
+
+    // Supersets reconstructed from the sets' superset_group_number: exercises
+    // sharing a non-null group become one superset tab (in first-set order).
+    final supersetGroups = <int, List<String>>{};
+    for (final s in sets) {
+      final g = s.supersetGroupNumber;
+      if (g == null) continue;
+      supersetGroups.putIfAbsent(g, () => []).add(s.exerciseId);
+    }
+    final groupMembers = supersetGroups.values
+        .map((ids) => {for (final id in ids) id})
+        .toList();
+
+    bool isSuperseded(String exerciseId) =>
+        groupMembers.any((m) => m.contains(exerciseId));
+
+    void addSlot(List<String> ids, {bool planned = false}) {
+      final unique = <String>[];
+      for (final id in ids) {
+        if (unique.contains(id)) continue;
+        unique.add(id);
+        if (seen.add(id)) {
+          draftSlotsByExercise.putIfAbsent(id, () => [_nextDraftId++]);
+          loadLessonsFor(id);
+        }
       }
+      if (unique.isEmpty) return;
+      slots.add(SessionExerciseSlot(
+          id: _nextSlotId++,
+          type: unique.length > 1 ? SessionSlotType.superset : SessionSlotType.single,
+          exerciseIds: unique,
+          planned: planned));
+    }
+
+    for (final exId in plannedExerciseOrder) {
+      if (isSuperseded(exId)) continue;
+      addSlot([exId], planned: true);
     }
     for (final s in sets) {
-      if (seen.add(s.exerciseId)) {
-        slots.add(SessionExerciseSlot(
-            id: _nextSlotId++, type: SessionSlotType.single, exerciseIds: [s.exerciseId], planned: false));
-        draftSlotsByExercise.putIfAbsent(s.exerciseId, () => [_nextDraftId++]);
-        loadLessonsFor(s.exerciseId);
-      }
+      if (!seen.add(s.exerciseId)) continue;
+      final group = s.supersetGroupNumber;
+      if (group != null) continue; // handled by group slot below
+      // An empty trailing set (a freshly-added exercise that hasn't been
+      // filled yet) already serves as the next-set slot — don't add a ghost.
+      final exerciseSets = sets.where((x) => x.exerciseId == s.exerciseId).toList();
+      final last = exerciseSets.isEmpty ? null : exerciseSets.last;
+      final lastEmpty = last != null && last.reps.isEmpty && last.duration.isEmpty;
+      if (!lastEmpty) draftSlotsByExercise.putIfAbsent(s.exerciseId, () => [_nextDraftId++]);
+      loadLessonsFor(s.exerciseId);
+      addSlot([s.exerciseId]);
     }
+    for (final ids in groupMembers) {
+      addSlot(ids.toList());
+    }
+
     exerciseSlots = slots;
     activeSlotIndex = 0;
+    _applyPersistedOrder();
     notifyListeners();
+  }
+
+  /// Reorders the freshly-seeded slots to match the persisted
+  /// `fact_workout.exercise_order` (preserves the user's tab arrangement and
+  /// the superset grouping across a hot restart).
+  void _applyPersistedOrder() {
+    final order = _workout?.exerciseOrder;
+    if (order == null || order.isEmpty) return;
+    List<dynamic>? parsed;
+    try {
+      parsed = jsonDecode(order) as List<dynamic>;
+    } catch (_) {
+      return;
+    }
+    final byIds = {
+      for (final slot in exerciseSlots) slot.exerciseIds.join(','): slot,
+    };
+    final reordered = <SessionExerciseSlot>[];
+    for (final raw in parsed) {
+      final ids = ((raw as Map<String, dynamic>)['exerciseIds'] as List<dynamic>)
+          .cast<String>();
+      final match = byIds[ids.join(',')];
+      if (match != null) {
+        reordered.add(match);
+        byIds.remove(ids.join(','));
+      }
+    }
+    // Any slots not named in the persisted order keep their seeded position.
+    for (final slot in exerciseSlots) {
+      if (!reordered.contains(slot)) reordered.add(slot);
+    }
+    if (reordered.length == exerciseSlots.length) {
+      exerciseSlots = reordered;
+    }
   }
 
   /// Tapping the already-active superset tab cycles to its next exercise;
@@ -324,7 +468,24 @@ class SessionViewModel extends ChangeNotifier {
     } else if (oldIndex > activeSlotIndex && newIndex <= activeSlotIndex) {
       activeSlotIndex++;
     }
+    _persistExerciseOrder();
     notifyListeners();
+  }
+
+  /// Serializes the current tab slots (order + superset grouping) to
+  /// `fact_workout.exercise_order` so the tab bar survives a hot restart.
+  void _persistExerciseOrder() {
+    final id = currentWorkoutId;
+    if (id == null) return;
+    final payload = [
+      for (final slot in exerciseSlots)
+        {
+          'id': slot.id,
+          'type': slot.type.name,
+          'exerciseIds': slot.exerciseIds,
+        },
+    ];
+    _workoutRepo.saveExerciseOrder(id, jsonEncode(payload));
   }
 
   /// Jumps a superset tab straight to one of its exercises — the in-card
@@ -353,7 +514,10 @@ class SessionViewModel extends ChangeNotifier {
     }
     exerciseSlots.add(SessionExerciseSlot(
         id: _nextSlotId++, type: SessionSlotType.single, exerciseIds: [exerciseId]));
-    draftSlotsByExercise.putIfAbsent(exerciseId, () => [_nextDraftId++]);
+    // Persist an empty set row so the exercise survives a hot restart — the
+    // restore path only rediscovers exercises that exist in fact_workout_set.
+    addDraftSet(exerciseId);
+    _persistExerciseOrder();
     loadLessonsFor(exerciseId);
     activeSlotIndex = exerciseSlots.length - 1;
     notifyListeners();
@@ -364,9 +528,11 @@ class SessionViewModel extends ChangeNotifier {
     exerciseSlots.add(SessionExerciseSlot(
         id: _nextSlotId++, type: SessionSlotType.superset, exerciseIds: exerciseIds));
     for (final id in exerciseIds) {
-      draftSlotsByExercise.putIfAbsent(id, () => [_nextDraftId++]);
+      // Persist an empty set per exercise so supersets survive a hot restart.
+      addDraftSet(id);
       loadLessonsFor(id);
     }
+    _persistExerciseOrder();
     activeSlotIndex = exerciseSlots.length - 1;
     notifyListeners();
   }
@@ -383,6 +549,15 @@ class SessionViewModel extends ChangeNotifier {
     return slot?.id;
   }
 
+  String? _variationName(String exerciseId, String? variationId) {
+    if (variationId == null) return null;
+    return exerciseDetailMap[exerciseId]
+        ?.assignedVariations
+        .where((v) => v.variationId == variationId)
+        .map((v) => v.name)
+        .firstOrNull;
+  }
+
   // ── Draft set rows ─────────────────────────────────────────────────────────
 
   /// Tapping "+ ADD SET" pre-creates an empty set in the DB so it survives
@@ -394,7 +569,9 @@ class SessionViewModel extends ChangeNotifier {
         : sets.map((s) => s.setNumber).reduce((a, b) => a > b ? a : b) + 1;
     _workoutRepo.insertSet(
       workoutId: currentWorkoutId!,
+      userId: _userId,
       exerciseId: exerciseId,
+      exerciseName: exerciseDetailMap[exerciseId]?.name,
       setNumber: nextNum,
       weight: null,
       reps: [],
@@ -402,6 +579,7 @@ class SessionViewModel extends ChangeNotifier {
       supersetGroupNumber: _supersetGroupFor(exerciseId),
     ).then((newSet) {
       sets.add(newSet);
+      _recomputePRs();
       notifyListeners();
     });
   }
@@ -446,8 +624,11 @@ class SessionViewModel extends ChangeNotifier {
       } else {
         await _workoutRepo.insertSet(
           workoutId: currentWorkoutId!,
+          userId: _userId,
           exerciseId: exerciseId,
+          exerciseName: exerciseDetailMap[exerciseId]?.name,
           variationId: variationId,
+          variationName: _variationName(exerciseId, variationId),
           setNumber: nextNum,
           weight: weight,
           reps: reps,
@@ -535,8 +716,11 @@ class SessionViewModel extends ChangeNotifier {
     try {
       await _workoutRepo.insertSet(
         workoutId: currentWorkoutId!,
+        userId: _userId,
         exerciseId: set.exerciseId,
+        exerciseName: set.exerciseName ?? exerciseDetailMap[set.exerciseId]?.name,
         variationId: set.variationId,
+        variationName: set.variationName ?? _variationName(set.exerciseId, set.variationId),
         setNumber: nextNum,
         weight: set.weight,
         reps: set.reps,
@@ -562,6 +746,7 @@ class SessionViewModel extends ChangeNotifier {
   Future<void> loadLessonsFor(String exerciseId) async {
     try {
       lessonsByExercise[exerciseId] = await _lessonRepo.fetchLessons(_userId, exerciseId);
+      _lessonLog.info('loadLessonsFor($exerciseId) → ${lessonsByExercise[exerciseId]!.length}');
       notifyListeners();
     } catch (e) {
       error = e.toString();
@@ -585,7 +770,7 @@ class SessionViewModel extends ChangeNotifier {
         lessonsByExercise[exerciseId]?.firstWhereOrNull((l) => l.lessonId == lessonId);
     if (lesson == null) return;
     try {
-      await _lessonRepo.toggleLessonPin(lessonId, !lesson.pinned);
+      await _lessonRepo.setPinned(_userId, exerciseId, lessonId, !lesson.pinned);
       await loadLessonsFor(exerciseId);
     } catch (e) {
       error = e.toString();
@@ -640,9 +825,8 @@ class SessionViewModel extends ChangeNotifier {
     return pastBest;
   }
 
-  int prCountFor(String exerciseId) => sets
-      .where((s) => s.exerciseId == exerciseId && isPr(s, baselineFor(exerciseId, excludingSetId: s.setId)))
-      .length;
+  int prCountFor(String exerciseId) =>
+      sets.where((s) => s.exerciseId == exerciseId && prSetIds.contains(s.setId)).length;
 
   // ── Rest timer ─────────────────────────────────────────────────────────────
   // Every rest period is logged to fact_rest as its own event
@@ -851,6 +1035,7 @@ class SessionViewModel extends ChangeNotifier {
   void _resetActiveWorkoutState() {
     currentWorkoutId = null;
     workoutStartedAt = null;
+    _workout = null;
     sets = [];
     endNotes = '';
     endFeeling = null;

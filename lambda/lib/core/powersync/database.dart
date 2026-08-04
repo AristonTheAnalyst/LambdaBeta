@@ -41,6 +41,7 @@ const _pkColumns = {
 // deleted_locally instead of a hard delete, sidestepping this entirely.
 const _compositeKeyTables = {
   'dim_exercise_variation_bridge': ['custom_exercise_id', 'custom_variation_id'],
+  'coaching_relationship': ['coach_user_id', 'athlete_user_id'],
 };
 
 // Postgres integer[] columns are mirrored locally as Column.text (written as

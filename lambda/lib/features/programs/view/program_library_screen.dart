@@ -6,6 +6,7 @@ import '../../../../core/styles/app_spacing.dart';
 import '../../../../core/styles/app_text_styles.dart';
 import '../../../../core/utils/workout_format.dart';
 import '../../../../data/models/program.dart';
+import '../../../../data/models/program_progress.dart';
 import '../../../../shared/widgets/app_card.dart';
 import '../../../../shared/widgets/glass_button.dart';
 import '../../../../shared/widgets/lambda_button.dart';
@@ -82,6 +83,45 @@ class _ProgramLibraryScreenState extends State<ProgramLibraryScreen> {
     );
   }
 
+  Future<void> _confirmSetCurrent(Program p) async {
+    final currentId = _viewModel.state.value.currentProgramId;
+    final currentProgram = currentId != null && currentId != p.programId
+        ? _viewModel.state.value.programs
+            .where((x) => x.programId == currentId)
+            .firstOrNull
+        : null;
+
+    if (currentProgram == null) {
+      _viewModel.setCurrentProgram(p.programId);
+      return;
+    }
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: Text('Set as current?',
+            style: AppFonts.ui(fontWeight: FontWeight.w800, color: AppColors.primary)),
+        content: Text(
+            'Set "${toProperCase(p.name)}" as current? Your progress on '
+            '"${toProperCase(currentProgram.name)}" will reset.',
+            style: AppFonts.ui(color: AppColors.muted)),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: Text('Cancel', style: AppFonts.ui(color: AppColors.muted))),
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: Text('Set Current',
+                  style: AppFonts.ui(color: AppColors.accent, fontWeight: FontWeight.w600))),
+        ],
+      ),
+    );
+    if (ok == true && mounted) {
+      _viewModel.setCurrentProgram(p.programId);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -135,11 +175,11 @@ class _ProgramLibraryScreenState extends State<ProgramLibraryScreen> {
                           )
                         : ListView.separated(
                             padding: const EdgeInsets.all(AppSpacing.lg),
-                            itemCount: state.programs.length,
+                            itemCount: state.sortedPrograms.length,
                             separatorBuilder: (_, _) =>
                                 const SizedBox(height: AppSpacing.md),
                             itemBuilder: (context, i) {
-                              final p = state.programs[i];
+                              final p = state.sortedPrograms[i];
                               final isCurrent = p.programId == state.currentProgramId;
                               final settingCurrent =
                                   state.settingCurrentId == p.programId;
@@ -147,10 +187,11 @@ class _ProgramLibraryScreenState extends State<ProgramLibraryScreen> {
                                 program: p,
                                 isCurrent: isCurrent,
                                 settingCurrent: settingCurrent,
+                                progress: isCurrent ? state.currentProgress : null,
                                 onOpen: () =>
                                     context.push('/exercises/programs/${p.programId}'),
                                 onSetCurrent: () =>
-                                    _viewModel.setCurrentProgram(p.programId),
+                                    _confirmSetCurrent(p),
                                 onDuplicate: () =>
                                     _viewModel.duplicateProgram(p.programId),
                                 onArchive: () => _confirmArchive(p),
@@ -175,6 +216,7 @@ class _ProgramCard extends StatelessWidget {
     required this.onSetCurrent,
     required this.onDuplicate,
     required this.onArchive,
+    this.progress,
   });
 
   final Program program;
@@ -184,6 +226,9 @@ class _ProgramCard extends StatelessWidget {
   final VoidCallback onSetCurrent;
   final VoidCallback onDuplicate;
   final VoidCallback onArchive;
+
+  /// Progress of the current program — shown as a bar only on the current card.
+  final ProgramProgress? progress;
 
   @override
   Widget build(BuildContext context) {
@@ -245,6 +290,26 @@ class _ProgramCard extends StatelessWidget {
               ],
             ),
           ),
+          if (progress != null) ...[
+            const SizedBox(height: AppSpacing.sm),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(999),
+              child: LinearProgressIndicator(
+                value: progress!.progress,
+                minHeight: 6,
+                backgroundColor: AppColors.surfaceHigh,
+                valueColor: AlwaysStoppedAnimation<Color>(AppColors.accent),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              progress!.isFinished
+                  ? 'Finished'
+                  : 'Week ${progress!.weekNumber} of ${progress!.totalWeeks ?? '?'} · '
+                      '${progress!.workoutsCompletedInCycle}/${progress!.totalWorkoutsInCycle} workouts',
+              style: AppFonts.mono(fontSize: 9, color: AppColors.muted),
+            ),
+          ],
           const SizedBox(height: AppSpacing.sm),
           Divider(color: AppColors.border, height: 1),
           const SizedBox(height: AppSpacing.sm),

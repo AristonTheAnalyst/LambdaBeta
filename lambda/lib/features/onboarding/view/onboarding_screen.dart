@@ -33,7 +33,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       body: 'Create programs with planned workouts, schedule them by day, and let Lambda guide your training.',
     ),
     _SlideData(
-      icon: Icons.emoji_events_outlined,
+      icon: Icons.flag_outlined,
       title: 'Set PRs & Review',
       body: 'Every set is checked against your personal records. Review past sessions, edit history, and see what works.',
     ),

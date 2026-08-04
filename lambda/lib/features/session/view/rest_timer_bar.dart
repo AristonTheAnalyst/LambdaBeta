@@ -333,8 +333,8 @@ class _RestTimerModalState extends State<_RestTimerModal> {
                     const SizedBox(width: AppSpacing.sm),
                     Expanded(
                       child: GlassButton(
-                        label: 'Restart',
-                        color: AppColors.muted,
+                        label: remaining == null ? 'Start' : 'Restart',
+                        color: AppColors.success,
                         onPressed: vm.restartRest,
                       ),
                     ),

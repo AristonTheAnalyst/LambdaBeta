@@ -4,6 +4,7 @@ import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
 import '../../../core/styles/app_radius.dart';
 import '../../../core/utils/workout_format.dart';
+import '../../../data/models/custom_variation.dart';
 import '../../../data/models/exercise_detail.dart';
 import '../../../data/models/planned_set.dart';
 import '../../../shared/widgets/dropdown_select.dart';
@@ -258,9 +259,11 @@ class _PlanSetRowState extends State<PlanSetRow> {
     final set = widget.set;
     final hasNotes = _isDraft ? (_draftNotes?.trim().isNotEmpty ?? false) : (set!.targetNotes?.isNotEmpty ?? false);
     final variationId = _isDraft ? _draftVariationId : set!.variationId;
+    final List<CustomVariation> assigned = [...(widget.detail?.assignedVariations ?? const <CustomVariation>[])]
+      ..sort(CustomVariation.byRecency);
     final variationOptions = [
       const DropdownOption<String?>(label: '—', value: null),
-      ...(widget.detail?.assignedVariations ?? [])
+      ...assigned
           .map((v) => DropdownOption<String?>(label: toProperCase(v.name), value: v.variationId)),
     ];
 

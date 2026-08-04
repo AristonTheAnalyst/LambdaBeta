@@ -453,7 +453,9 @@ class WorkoutDetailViewModel {
     final slot = state.value.exerciseSlots.firstWhere((s) => s.groupOrder == groupOrder);
     _workoutRepo.insertSet(
       workoutId: w.workoutId,
+      userId: _userId,
       exerciseId: slot.exerciseId,
+      exerciseName: _exerciseName(slot.exerciseId),
       setNumber: nextNum,
       weight: null,
       reps: [],
@@ -502,8 +504,11 @@ class WorkoutDetailViewModel {
       } else {
         await _workoutRepo.insertSet(
           workoutId: w.workoutId,
+          userId: _userId,
           exerciseId: exerciseId,
+          exerciseName: _exerciseName(exerciseId),
           variationId: variationId,
+          variationName: _variationName(exerciseId, variationId),
           setNumber: nextNum,
           weight: weight,
           reps: reps,
@@ -561,8 +566,11 @@ class WorkoutDetailViewModel {
     try {
       await _workoutRepo.insertSet(
         workoutId: w.workoutId,
+        userId: _userId,
         exerciseId: set.exerciseId,
+        exerciseName: set.exerciseName ?? _exerciseName(set.exerciseId),
         variationId: set.variationId,
+        variationName: set.variationName ?? _variationName(set.exerciseId, set.variationId),
         setNumber: nextNum,
         weight: set.weight,
         reps: set.reps,
@@ -702,6 +710,7 @@ class WorkoutDetailViewModel {
   Future<void> loadLessonsFor(String exerciseId) async {
     try {
       final lessons = await _lessonRepo.fetchLessons(_userId, exerciseId);
+      debugPrint('lessons loadLessonsFor($exerciseId) → ${lessons.length}');
       final map = Map<String, List<Lesson>>.from(state.value.lessonsByExercise);
       map[exerciseId] = lessons;
       state.value = state.value.copyWith(lessonsByExercise: map);
@@ -724,7 +733,7 @@ class WorkoutDetailViewModel {
     final lesson = lessonsFor(exerciseId).firstWhereOrNull((l) => l.lessonId == lessonId);
     if (lesson == null) return;
     try {
-      await _lessonRepo.toggleLessonPin(lessonId, !lesson.pinned);
+      await _lessonRepo.setPinned(_userId, exerciseId, lessonId, !lesson.pinned);
       await loadLessonsFor(exerciseId);
     } catch (e) {
       state.value = state.value.copyWith(error: e.toString());
@@ -747,6 +756,18 @@ class WorkoutDetailViewModel {
 
   ExerciseDetail? getExerciseDetail(String exerciseId) =>
       state.value.exerciseDetailMap[exerciseId];
+
+  String? _exerciseName(String exerciseId) =>
+      state.value.exerciseDetailMap[exerciseId]?.name;
+
+  String? _variationName(String exerciseId, String? variationId) {
+    if (variationId == null) return null;
+    return state.value.exerciseDetailMap[exerciseId]
+        ?.assignedVariations
+        .where((v) => v.variationId == variationId)
+        .map((v) => v.name)
+        .firstOrNull;
+  }
 
   void dispose() => state.dispose();
 }

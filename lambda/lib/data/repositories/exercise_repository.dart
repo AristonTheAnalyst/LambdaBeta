@@ -3,10 +3,75 @@ import '../../core/powersync/database.dart' as ps;
 import '../models/custom_exercise.dart';
 import '../models/custom_variation.dart';
 import '../models/exercise_detail.dart';
+import '../models/exercise_usage.dart';
+import 'workout_repository.dart';
+
+// lastUsedByEntity is used by fetchExerciseDetailMap below.
 
 const _uuid = Uuid();
 
 class ExerciseRepository {
+  final _workoutRepo = WorkoutRepository();
+
+  /// Aggregate per-exercise and per-variation usage across the user's history
+  /// (sets, workouts, last used, and the distinct other-entity count). Derived
+  /// from the past-sets timeline so it stays consistent with what the library
+  /// and analytics show. Every exercise/variation gets an entry (zeros if
+  /// unused) so callers can sort the full list.
+  Future<Map<String, ExerciseUsage>> fetchUsage(String userId) async {
+    final timeline = await _workoutRepo.loadPastSetsTimeline(userId);
+    final exSets = <String, int>{};
+    final exWorkouts = <String, Set<String>>{};
+    final exVariations = <String, Set<String>>{};
+    final exLast = <String, DateTime>{};
+    final varSets = <String, int>{};
+    final varWorkouts = <String, Set<String>>{};
+    final varExercises = <String, Set<String>>{};
+    final varLast = <String, DateTime>{};
+
+    for (final s in timeline) {
+      final d = s.workoutCreatedDate;
+      // Exercise
+      exSets[s.exerciseId] = (exSets[s.exerciseId] ?? 0) + 1;
+      exWorkouts.putIfAbsent(s.exerciseId, () => {}).add(s.workoutId);
+      if (s.variationId != null) {
+        exVariations.putIfAbsent(s.exerciseId, () => {}).add(s.variationId!);
+      }
+      if (d.isAfter(exLast[s.exerciseId] ?? DateTime.fromMillisecondsSinceEpoch(0))) {
+        exLast[s.exerciseId] = d;
+      }
+      // Variation
+      if (s.variationId != null) {
+        final vid = s.variationId!;
+        varSets[vid] = (varSets[vid] ?? 0) + 1;
+        varWorkouts.putIfAbsent(vid, () => {}).add(s.workoutId);
+        varExercises.putIfAbsent(vid, () => {}).add(s.exerciseId);
+        if (d.isAfter(varLast[vid] ?? DateTime.fromMillisecondsSinceEpoch(0))) {
+          varLast[vid] = d;
+        }
+      }
+    }
+
+    final usage = <String, ExerciseUsage>{};
+    for (final e in await fetchExercises(userId)) {
+      usage[e.exerciseId] = ExerciseUsage(
+        sets: exSets[e.exerciseId] ?? 0,
+        workouts: exWorkouts[e.exerciseId]?.length ?? 0,
+        variationCount: exVariations[e.exerciseId]?.length ?? 0,
+        lastUsed: exLast[e.exerciseId],
+      );
+    }
+    for (final v in await fetchVariations(userId)) {
+      usage[v.variationId] = ExerciseUsage(
+        sets: varSets[v.variationId] ?? 0,
+        workouts: varWorkouts[v.variationId]?.length ?? 0,
+        exerciseCount: varExercises[v.variationId]?.length ?? 0,
+        lastUsed: varLast[v.variationId],
+      );
+    }
+    return usage;
+  }
+
   Future<List<CustomExercise>> fetchExercises(String userId) async {
     final rows = await ps.db.getAll(
       'SELECT * FROM dim_exercise WHERE user_id = ? AND is_active = 1 ORDER BY exercise_name',
@@ -37,7 +102,13 @@ class ExerciseRepository {
     final variations = await fetchVariations(userId);
     final bridges = await fetchBridges(userId);
 
-    final varMap = {for (final v in variations) v.variationId: v};
+    // Stamp each variation with its most-recent-use date so any surface
+    // rendering assigned variations can order them by recency.
+    final lastUsed = lastUsedByEntity(
+        await _workoutRepo.loadPastSetsTimeline(userId));
+    final varMap = {
+      for (final v in variations) v.variationId: v.copyWith(lastUsed: lastUsed[v.variationId]),
+    };
     final assignedMap = <String, List<CustomVariation>>{};
     for (final b in bridges) {
       final exId = b['custom_exercise_id'] as String;
@@ -177,4 +248,5 @@ class ExerciseRepository {
       [exerciseId, variationId],
     );
   }
+
 }

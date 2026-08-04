@@ -51,6 +51,13 @@ class WorkoutRepository {
     );
   }
 
+  Future<void> saveExerciseOrder(String workoutId, String orderJson) async {
+    await ps.db.execute(
+      'UPDATE fact_workout SET exercise_order = ? WHERE user_workout_id = ?',
+      [orderJson, workoutId],
+    );
+  }
+
   Future<void> cancelWorkout(String workoutId) async {
     await ps.db.execute(
       'DELETE FROM fact_workout_set WHERE user_workout_id = ?',
@@ -77,6 +84,7 @@ class WorkoutRepository {
 
   Future<WorkoutSet> insertSet({
     required String workoutId,
+    required String userId,
     required String exerciseId,
     String? variationId,
     required int setNumber,
@@ -87,20 +95,24 @@ class WorkoutRepository {
     String? programId,
     String? plannedSetId,
     int? supersetGroupNumber,
+    String? exerciseName,
+    String? variationName,
   }) async {
     final setId = _uuid.v4();
     await ps.db.execute(
       '''
       INSERT INTO fact_workout_set
-        (id, workout_set_id, user_workout_id, custom_exercise_id, custom_variation_id,
+        (id, workout_set_id, user_workout_id, user_id, custom_exercise_id, custom_variation_id,
          workout_set_number, workout_set_weight, workout_set_reps, workout_set_duration_seconds,
-         workout_set_notes, program_id, planned_set_id, superset_group_number)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         workout_set_notes, program_id, planned_set_id, superset_group_number,
+         exercise_name, variation_name)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ''',
       [
         setId,
         setId,
         workoutId,
+        userId,
         exerciseId,
         variationId,
         setNumber,
@@ -111,6 +123,8 @@ class WorkoutRepository {
         programId,
         plannedSetId,
         supersetGroupNumber,
+        exerciseName,
+        variationName,
       ],
     );
     return WorkoutSet(
@@ -138,6 +152,8 @@ class WorkoutRepository {
     bool clearVariation = false,
     bool clearWeight = false,
     bool clearNotes = false,
+    String? exerciseName,
+    String? variationName,
   }) async {
     final setClauses = <String>[];
     final params = <Object?>[];
@@ -146,12 +162,20 @@ class WorkoutRepository {
       setClauses.add('custom_exercise_id = ?');
       params.add(exerciseId);
     }
+    if (exerciseName != null) {
+      setClauses.add('exercise_name = ?');
+      params.add(exerciseName);
+    }
     if (clearVariation) {
       setClauses.add('custom_variation_id = ?');
       params.add(null);
     } else if (variationId != null) {
       setClauses.add('custom_variation_id = ?');
       params.add(variationId);
+    }
+    if (variationName != null) {
+      setClauses.add('variation_name = ?');
+      params.add(variationName);
     }
     if (clearWeight) {
       setClauses.add('workout_set_weight = ?');
@@ -226,7 +250,9 @@ class WorkoutRepository {
 
     final setRows = await ps.db.getAll(
       '''
-      SELECT s.*, e.exercise_name, v.variation_name
+      SELECT s.*,
+             COALESCE(s.exercise_name, e.exercise_name) AS exercise_name,
+             COALESCE(s.variation_name, v.variation_name) AS variation_name
       FROM fact_workout_set s
       LEFT JOIN dim_exercise e ON e.custom_exercise_id = s.custom_exercise_id
       LEFT JOIN dim_variation v ON v.custom_variation_id = s.custom_variation_id
@@ -255,7 +281,9 @@ class WorkoutRepository {
   Future<List<PastSetRow>> loadPastSetsTimeline(String userId) async {
     final rows = await ps.db.getAll(
       '''
-      SELECT s.*, w.user_workout_created_date, e.exercise_name, v.variation_name
+      SELECT s.*, w.user_workout_created_date,
+             COALESCE(s.exercise_name, e.exercise_name) AS exercise_name,
+             COALESCE(s.variation_name, v.variation_name) AS variation_name
       FROM fact_workout_set s
       INNER JOIN fact_workout w ON w.user_workout_id = s.user_workout_id
       LEFT JOIN dim_exercise e ON e.custom_exercise_id = s.custom_exercise_id

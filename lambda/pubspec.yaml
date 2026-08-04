@@ -49,9 +49,12 @@ dependencies:
   package_info_plus: ^8.1.2
   pub_semver: ^2.1.4
   url_launcher: ^6.3.1
+  fl_chart: ^1.2.0
 
 dev_dependencies:
   flutter_test:
+    sdk: flutter
+  integration_test:
     sdk: flutter
 
   # The "flutter_lints" package below contains a set of recommended lints to
@@ -71,6 +74,32 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  # Bundled typefaces — Manrope (UI) and JetBrains Mono (numeric/micro-labels)
+  # are shipped as assets so text renders locally, never from a runtime download.
+  fonts:
+    - family: Manrope
+      fonts:
+        - asset: assets/fonts/Manrope-400.ttf
+          weight: 400
+        - asset: assets/fonts/Manrope-500.ttf
+          weight: 500
+        - asset: assets/fonts/Manrope-600.ttf
+          weight: 600
+        - asset: assets/fonts/Manrope-700.ttf
+          weight: 700
+        - asset: assets/fonts/Manrope-800.ttf
+          weight: 800
+    - family: JetBrainsMono
+      fonts:
+        - asset: assets/fonts/JetBrainsMono-400.ttf
+          weight: 400
+        - asset: assets/fonts/JetBrainsMono-500.ttf
+          weight: 500
+        - asset: assets/fonts/JetBrainsMono-700.ttf
+          weight: 700
+        - asset: assets/fonts/JetBrainsMono-800.ttf
+          weight: 800
 
   # To add assets to your application, add an assets section, like this:
   # assets:

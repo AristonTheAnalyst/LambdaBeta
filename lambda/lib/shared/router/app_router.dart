@@ -9,8 +9,7 @@ import '../../features/auth/view/signup_screen.dart';
 import '../../features/dev/view/dev_screen.dart';
 import '../../features/dev/view/experimental_screen.dart';
 import '../../features/dev/view/gallery_screen.dart';
-import '../../features/dev/view/pr_catalog_screen.dart';
-import '../../features/dev/view/pr_exercise_detail_screen.dart';
+import '../../features/dev/view/lesson_debug_screen.dart';
 import '../../features/exercises/view/exercise_hub_screen.dart';
 import '../../features/exercises/view/exercise_library_screen.dart';
 import '../../features/exercises/view/guide_screen.dart';
@@ -21,8 +20,11 @@ import '../../features/programs/view/program_detail_screen.dart';
 import '../../features/programs/view/program_library_screen.dart';
 import '../../features/profile/view/profile_detail_screen.dart';
 import '../../features/profile/view/profile_hub_screen.dart';
-import '../../features/session/view/pr_library_screen.dart';
 import '../../features/session/view/session_screen.dart';
+import '../../features/statistics/view/insights_screen.dart';
+import '../../features/statistics/view/pr_catalog_screen.dart';
+import '../../features/statistics/view/pr_exercise_detail_screen.dart';
+import '../../features/statistics/view/statistics_screen.dart';
 import '../widgets/bottom_nav_bar.dart';
 import 'auth_notifier.dart';
 
@@ -129,13 +131,11 @@ abstract final class AppRouter {
               GoRoute(path: 'detail', builder: (_, _) => ProfileDetailScreen()),
             ],
           ),
-          GoRoute(path: '/statistics', builder: (_, _) => const PrLibraryScreen()),
           GoRoute(
-            path: '/dev',
-            builder: (_, _) => DevScreen(),
+            path: '/statistics',
+            builder: (_, _) => const StatisticsScreen(),
             routes: [
-              GoRoute(path: 'gallery',      builder: (_, _) => GalleryScreen()),
-              GoRoute(path: 'experimental', builder: (_, _) => ExperimentalScreen()),
+              GoRoute(path: 'insights', builder: (_, _) => const InsightsScreen()),
               GoRoute(
                 path: 'prs',
                 builder: (_, _) => const PrCatalogScreen(),
@@ -148,6 +148,15 @@ abstract final class AppRouter {
                   ),
                 ],
               ),
+            ],
+          ),
+          GoRoute(
+            path: '/dev',
+            builder: (_, _) => DevScreen(),
+            routes: [
+              GoRoute(path: 'gallery',      builder: (_, _) => GalleryScreen()),
+              GoRoute(path: 'experimental', builder: (_, _) => ExperimentalScreen()),
+              GoRoute(path: 'lesson-debug', builder: (_, _) => const LessonDebugScreen()),
             ],
           ),
         ],

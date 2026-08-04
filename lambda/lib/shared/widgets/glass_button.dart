@@ -51,6 +51,8 @@ class GlassButton extends StatelessWidget {
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               if (loading)
                 SizedBox(
@@ -62,18 +64,21 @@ class GlassButton extends StatelessWidget {
                   ),
                 )
               else ...[
-                if (icon != null) ...[
+                if (icon != null && label.isNotEmpty) ...[
                   Icon(icon, size: 14, color: fgColor),
                   const SizedBox(width: 6),
                 ],
-                Text(
-                  label,
-                  style: AppFonts.ui(
-                    fontSize: AppTextStyles.sm,
-                    fontWeight: FontWeight.w600,
-                    color: fgColor,
+                if (icon != null && label.isEmpty)
+                  Icon(icon, size: 14, color: fgColor)
+                else
+                  Text(
+                    label,
+                    style: AppFonts.ui(
+                      fontSize: AppTextStyles.sm,
+                      fontWeight: FontWeight.w600,
+                      color: fgColor,
+                    ),
                   ),
-                ),
               ],
             ],
           ),

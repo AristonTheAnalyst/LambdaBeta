@@ -37,11 +37,21 @@ class _AddExerciseModalContentState extends State<_AddExerciseModalContent> {
 
   List<MapEntry<String, String>> get _filtered {
     final already = _selectedIds.toSet();
-    return widget.vm.exercises
+    final results = widget.vm.exercises
         .where((e) => !already.contains(e.exerciseId))
         .where((e) => toProperCase(e.name).toLowerCase().contains(_query.toLowerCase()))
         .map((e) => MapEntry(e.exerciseId, toProperCase(e.name)))
         .toList();
+    // Most recently used first (unused last, then name).
+    results.sort((a, b) {
+      final da = widget.vm.lastUsedByExercise[a.key];
+      final db = widget.vm.lastUsedByExercise[b.key];
+      if (da != null && db != null) return db.compareTo(da);
+      if (da != null) return -1;
+      if (db != null) return 1;
+      return a.value.toLowerCase().compareTo(b.value.toLowerCase());
+    });
+    return results;
   }
 
   bool get _canCreate =>

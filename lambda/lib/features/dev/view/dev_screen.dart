@@ -39,10 +39,10 @@ class DevScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: AppSpacing.sm),
                   _NavCard(
-                    icon: Icons.emoji_events_outlined,
-                    label: 'Personal Records',
-                    subtitle: 'Exercise catalog with per-exercise PR breakdowns',
-                    onTap: () => context.push('/dev/prs'),
+                    icon: Icons.bug_report_outlined,
+                    label: 'Lesson Debug',
+                    subtitle: 'Raw fact_lesson rows + upload queue',
+                    onTap: () => context.push('/dev/lesson-debug'),
                   ),
                   const SizedBox(height: AppSpacing.xl),
                   AppCard(

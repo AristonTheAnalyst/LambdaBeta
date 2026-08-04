@@ -63,8 +63,11 @@ class AuthNotifier extends ChangeNotifier {
         );
         profile = await _userRepo.fetchProfile(_session!.user.id);
       }
-      _isOnboarded = profile?.onboarded ?? false;
+      final onboarded = profile?.onboarded ?? false;
+      if (onboarded == _isOnboarded) return; // no change — skip router refresh
+      _isOnboarded = onboarded;
     } catch (_) {
+      if (_isOnboarded != null) return; // unchanged — skip router refresh
       _isOnboarded = null;
     }
     notifyListeners();

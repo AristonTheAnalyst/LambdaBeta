@@ -3,10 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'core/powersync/database.dart';
+import 'core/styles/app_fonts.dart';
 import 'version_gate_app.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  AppFonts.init();
 
   await Supabase.initialize(
     url: 'https://dybluaeowmpdwsweawcq.supabase.co',

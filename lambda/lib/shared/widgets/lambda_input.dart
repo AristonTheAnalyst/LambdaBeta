@@ -17,6 +17,7 @@ class LambdaInput extends StatelessWidget {
     this.textInputAction,
     this.onChanged,
     this.onSubmitted,
+    this.required = false,
   });
 
   final TextEditingController controller;
@@ -31,19 +32,35 @@ class LambdaInput extends StatelessWidget {
   final ValueChanged<String>? onChanged;
   final ValueChanged<String>? onSubmitted;
 
+  /// Renders a small accent `*` after the label to mark the field required.
+  final bool required;
+
   @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (label != null) ...[
-          Text(
-            label!,
-            style: AppFonts.ui(
-              fontSize: AppTextStyles.sm,
-              fontWeight: FontWeight.w600,
-              color: AppColors.primary,
-            ),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label!,
+                style: AppFonts.ui(
+                  fontSize: AppTextStyles.sm,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.primary,
+                ),
+              ),
+              if (required) ...[
+                const SizedBox(width: 2),
+                Text('*',
+                    style: AppFonts.ui(
+                        fontSize: AppTextStyles.sm,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.accent)),
+              ],
+            ],
           ),
           const SizedBox(height: 6),
         ],

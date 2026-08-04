@@ -9,6 +9,7 @@ import '../../../../shared/widgets/app_card.dart';
 import '../../../../core/utils/workout_format.dart';
 import '../../../../data/models/custom_exercise.dart';
 import '../../../../data/models/custom_variation.dart';
+import '../../../../data/models/exercise_usage.dart';
 import '../../../../shared/widgets/glass_button.dart';
 import '../../../../shared/widgets/lambda_button.dart';
 import '../../../../shared/widgets/lambda_input.dart';
@@ -304,12 +305,16 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
                     searchController: _exSearchController,
                     onAdd: _openCreateExercise,
                     onEdit: _openEditExercise,
+                    onPrev: _viewModel.prevExPage,
+                    onNext: _viewModel.nextExPage,
                   ),
                   _VariationsPanel(
                     state: state,
                     searchController: _varSearchController,
                     onAdd: _openCreateVariation,
                     onEdit: _openEditVariation,
+                    onPrev: _viewModel.prevVarPage,
+                    onNext: _viewModel.nextVarPage,
                   ),
                 ],
                 controller: _tabController,
@@ -331,12 +336,16 @@ class _ExercisesPanel extends StatelessWidget {
     required this.searchController,
     required this.onAdd,
     required this.onEdit,
+    required this.onPrev,
+    required this.onNext,
   });
 
   final ExerciseState state;
   final TextEditingController searchController;
   final VoidCallback onAdd;
   final ValueChanged<CustomExercise> onEdit;
+  final VoidCallback onPrev;
+  final VoidCallback onNext;
 
   @override
   Widget build(BuildContext context) {
@@ -409,13 +418,13 @@ class _ExercisesPanel extends StatelessWidget {
                     ),
                   ),
                 )
-              else if (state.filteredExercises.isEmpty)
+              else if (state.pagedExercises.isEmpty)
                 Text('No results.',
                     style: AppFonts.ui(
                         color: AppColors.muted,
                         fontSize: AppTextStyles.sm))
-              else
-                ...state.filteredExercises.map((ex) => Padding(
+              else ...[
+                ...state.pagedExercises.map((ex) => Padding(
                       padding: const EdgeInsets.only(bottom: AppSpacing.sm),
                       child: AppCard(
                         onTap: () => onEdit(ex),
@@ -424,11 +433,21 @@ class _ExercisesPanel extends StatelessWidget {
                         child: Row(
                           children: [
                             Expanded(
-                              child: Text(toProperCase(ex.name),
-                                  style: AppFonts.ui(
-                                      fontSize: AppTextStyles.md,
-                                      fontWeight: FontWeight.w600,
-                                      color: AppColors.primary)),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(toProperCase(ex.name),
+                                      style: AppFonts.ui(
+                                          fontSize: AppTextStyles.md,
+                                          fontWeight: FontWeight.w600,
+                                          color: AppColors.primary)),
+                                  if (state.usage[ex.exerciseId] != null)
+                                    Text(_usageLine(state.usage[ex.exerciseId]!, isExercise: true),
+                                        style: AppFonts.ui(
+                                            fontSize: AppTextStyles.xs,
+                                            color: AppColors.muted)),
+                                ],
+                              ),
                             ),
                             Icon(Icons.chevron_right,
                                 size: 16, color: AppColors.muted),
@@ -436,6 +455,17 @@ class _ExercisesPanel extends StatelessWidget {
                         ),
                       ),
                     )),
+                if (state.exTotal > _pageSize)
+                  _PaginationBar(
+                    shown: state.pagedExercises.length,
+                    total: state.exTotal,
+                    page: state.exPage,
+                    canPrev: state.canPrevEx,
+                    canNext: state.canNextEx,
+                    onPrev: onPrev,
+                    onNext: onNext,
+                  ),
+              ],
             ],
           );
   }
@@ -447,12 +477,16 @@ class _VariationsPanel extends StatelessWidget {
     required this.searchController,
     required this.onAdd,
     required this.onEdit,
+    required this.onPrev,
+    required this.onNext,
   });
 
   final ExerciseState state;
   final TextEditingController searchController;
   final VoidCallback onAdd;
   final ValueChanged<CustomVariation> onEdit;
+  final VoidCallback onPrev;
+  final VoidCallback onNext;
 
   @override
   Widget build(BuildContext context) {
@@ -525,13 +559,13 @@ class _VariationsPanel extends StatelessWidget {
                     ),
                   ),
                 )
-              else if (state.filteredVariations.isEmpty)
+              else if (state.pagedVariations.isEmpty)
                 Text('No results.',
                     style: AppFonts.ui(
                         color: AppColors.muted,
                         fontSize: AppTextStyles.sm))
-              else
-                ...state.filteredVariations.map((v) => Padding(
+              else ...[
+                ...state.pagedVariations.map((v) => Padding(
                       padding: const EdgeInsets.only(bottom: AppSpacing.sm),
                       child: AppCard(
                         onTap: () => onEdit(v),
@@ -540,11 +574,21 @@ class _VariationsPanel extends StatelessWidget {
                         child: Row(
                           children: [
                             Expanded(
-                              child: Text(toProperCase(v.name),
-                                  style: AppFonts.ui(
-                                      fontSize: AppTextStyles.md,
-                                      fontWeight: FontWeight.w600,
-                                      color: AppColors.primary)),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(toProperCase(v.name),
+                                      style: AppFonts.ui(
+                                          fontSize: AppTextStyles.md,
+                                          fontWeight: FontWeight.w600,
+                                          color: AppColors.primary)),
+                                  if (state.usage[v.variationId] != null)
+                                    Text(_usageLine(state.usage[v.variationId]!, isExercise: false),
+                                        style: AppFonts.ui(
+                                            fontSize: AppTextStyles.xs,
+                                            color: AppColors.muted)),
+                                ],
+                              ),
                             ),
                             Icon(Icons.chevron_right,
                                 size: 16, color: AppColors.muted),
@@ -552,8 +596,91 @@ class _VariationsPanel extends StatelessWidget {
                         ),
                       ),
                     )),
+                if (state.varTotal > _pageSize)
+                  _PaginationBar(
+                    shown: state.pagedVariations.length,
+                    total: state.varTotal,
+                    page: state.varPage,
+                    canPrev: state.canPrevVar,
+                    canNext: state.canNextVar,
+                    onPrev: onPrev,
+                    onNext: onNext,
+                  ),
+              ],
             ],
           );
+  }
+}
+
+// ── Library helpers ─────────────────────────────────────────────────────────────
+
+const _pageSize = 10;
+
+/// Builds the muted usage line under an exercise/variation name — just the
+/// last-used label (workout/set counts intentionally not shown).
+String _usageLine(ExerciseUsage u, {required bool isExercise}) => u.lastUsedLabel;
+
+class _PaginationBar extends StatelessWidget {
+  const _PaginationBar({
+    required this.shown,
+    required this.total,
+    required this.page,
+    required this.canPrev,
+    required this.canNext,
+    required this.onPrev,
+    required this.onNext,
+  });
+
+  final int shown;
+  final int total;
+  final int page;
+  final bool canPrev;
+  final bool canNext;
+  final VoidCallback onPrev;
+  final VoidCallback onNext;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: AppSpacing.sm, bottom: AppSpacing.md),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          GestureDetector(
+            onTap: canPrev ? onPrev : null,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: canPrev ? AppColors.accentBg : AppColors.surfaceHigh,
+                borderRadius: BorderRadius.circular(AppRadius.md),
+                border: Border.all(
+                    color: canPrev ? AppColors.accent.withValues(alpha: 0.35) : AppColors.border),
+              ),
+              child: Icon(Icons.chevron_left,
+                  size: 16, color: canPrev ? AppColors.accent : AppColors.muted),
+            ),
+          ),
+          const SizedBox(width: AppSpacing.md),
+          Text('$shown of $total',
+              style: AppFonts.mono(fontSize: 11, color: AppColors.muted)),
+          const SizedBox(width: AppSpacing.md),
+          GestureDetector(
+            onTap: canNext ? onNext : null,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: canNext ? AppColors.accentBg : AppColors.surfaceHigh,
+                borderRadius: BorderRadius.circular(AppRadius.md),
+                border: Border.all(
+                    color: canNext ? AppColors.accent.withValues(alpha: 0.35) : AppColors.border),
+              ),
+              child: Icon(Icons.chevron_right,
+                  size: 16, color: canNext ? AppColors.accent : AppColors.muted),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -851,6 +978,37 @@ class _EditExerciseModal extends StatelessWidget {
                       child: LambdaButton(
                         label: 'Save',
                         onPressed: () async {
+                          // Rename guardrail: renames only affect future sets —
+                          // past sets keep the name as logged (name snapshots).
+                          final original = state.editExercise!.name;
+                          final renamed = state.editExName.trim() != original;
+                          if (renamed) {
+                            final ok = await showDialog<bool>(
+                              context: context,
+                              builder: (ctx) => AlertDialog(
+                                backgroundColor: AppColors.surface,
+                                title: Text('Rename "$original"?',
+                                    style: AppFonts.ui(
+                                        fontWeight: FontWeight.w800, color: AppColors.primary)),
+                                content: Text(
+                                    'Past sets keep the name as logged; only future sets use the new name.',
+                                    style: AppFonts.ui(color: AppColors.muted)),
+                                actions: [
+                                  TextButton(
+                                      onPressed: () => Navigator.of(ctx).pop(false),
+                                      child: Text('Cancel',
+                                          style: AppFonts.ui(color: AppColors.muted))),
+                                  TextButton(
+                                      onPressed: () => Navigator.of(ctx).pop(true),
+                                      child: Text('Rename',
+                                          style: AppFonts.ui(
+                                              color: AppColors.accent,
+                                              fontWeight: FontWeight.w600))),
+                                ],
+                              ),
+                            );
+                            if (ok != true || !context.mounted) return;
+                          }
                           await viewModel.saveEditExercise();
                           if (context.mounted) {
                             Navigator.of(context, rootNavigator: true).pop();
@@ -1008,6 +1166,35 @@ class _EditVariationModal extends StatelessWidget {
                       child: LambdaButton(
                         label: 'Save',
                         onPressed: () async {
+                          final original = state.editVariation!.name;
+                          final renamed = state.editVarName.trim() != original;
+                          if (renamed) {
+                            final ok = await showDialog<bool>(
+                              context: context,
+                              builder: (ctx) => AlertDialog(
+                                backgroundColor: AppColors.surface,
+                                title: Text('Rename "$original"?',
+                                    style: AppFonts.ui(
+                                        fontWeight: FontWeight.w800, color: AppColors.primary)),
+                                content: Text(
+                                    'Past sets keep the name as logged; only future sets use the new name.',
+                                    style: AppFonts.ui(color: AppColors.muted)),
+                                actions: [
+                                  TextButton(
+                                      onPressed: () => Navigator.of(ctx).pop(false),
+                                      child: Text('Cancel',
+                                          style: AppFonts.ui(color: AppColors.muted))),
+                                  TextButton(
+                                      onPressed: () => Navigator.of(ctx).pop(true),
+                                      child: Text('Rename',
+                                          style: AppFonts.ui(
+                                              color: AppColors.accent,
+                                              fontWeight: FontWeight.w600))),
+                                ],
+                              ),
+                            );
+                            if (ok != true || !context.mounted) return;
+                          }
                           await viewModel.saveEditVariation();
                           if (context.mounted) {
                             Navigator.of(context, rootNavigator: true).pop();

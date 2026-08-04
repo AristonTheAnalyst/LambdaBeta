@@ -1,0 +1,58 @@
+# Lambda — PowerSync Sync Streams (edition 3)
+#
+# REPLACES the legacy bucket_definitions in the PowerSync Dashboard → Sync Streams.
+# One user-scoped stream per table so each user gets only their own rows.
+#
+# Every query aliases the real PK as `id` — PowerSync requires a text PK column
+# named `id` on the client. For the two composite-PK tables (no server-side id),
+# a synthetic id is built from the pair with a '-' separator.
+#
+# Deploy steps (PowerSync Dashboard → Sync Streams):
+#   1. Replace the current YAML with this file.
+#   2. Validate, then Deploy.
+#
+# NOTE: if the app ever adds a synced table, update lib/core/powersync/schema.dart
+# AND lib/core/powersync/database.dart AND this file — see the sync-contract skill.
+
+config:
+  edition: 3
+
+streams:
+  user_data:
+    auto_subscribe: true
+    queries:
+      - SELECT *, user_id as id FROM dim_user WHERE user_id = auth.user_id()
+      - SELECT *, user_workout_id as id FROM fact_workout WHERE user_id = auth.user_id()
+      - SELECT *, custom_exercise_id as id FROM dim_exercise WHERE user_id = auth.user_id()
+      - SELECT *, custom_variation_id as id FROM dim_variation WHERE user_id = auth.user_id()
+      - SELECT *, (custom_exercise_id || '-' || custom_variation_id) as id FROM dim_exercise_variation_bridge WHERE user_id = auth.user_id()
+      - SELECT *, user_weight_id as id FROM fact_bodyweight WHERE user_id = auth.user_id()
+      - SELECT *, program_id as id FROM dim_program WHERE user_id = auth.user_id()
+      - SELECT *, planned_workout_id as id FROM dim_planned_workout WHERE user_id = auth.user_id()
+      - SELECT *, planned_set_id as id FROM dim_planned_set WHERE user_id = auth.user_id()
+      - SELECT *, program_run_id as id FROM fact_program_run WHERE user_id = auth.user_id()
+      - SELECT *, lesson_id as id FROM fact_lesson WHERE user_id = auth.user_id()
+      - SELECT *, rest_id as id FROM fact_rest WHERE user_id = auth.user_id()
+      - SELECT *, pr_id as id FROM fact_pr WHERE user_id = auth.user_id()
+      - SELECT *, workout_set_id as id FROM fact_workout_set WHERE user_id = auth.user_id()
+
+  # A coach gets read-only visibility into the athletes they coach, plus the
+  # relationship rows that connect them. IMPORTANT: every synced row needs a
+  # unique id — so the athlete's rows keep their own PK alias (pr_id as id,
+  # workout_set_id as id, user_workout_id as id), identical to how the owner's
+  # stream maps them. The relationship's composite PK becomes a synthetic id
+  # with a '-' separator.
+  coaching:
+    auto_subscribe: true
+    queries:
+      - SELECT *, (coach_user_id || '-' || athlete_user_id) as id FROM coaching_relationship WHERE coach_user_id = auth.user_id()
+      - SELECT *, (coach_user_id || '-' || athlete_user_id) as id FROM coaching_relationship WHERE athlete_user_id = auth.user_id()
+      - SELECT *, pr_id as id FROM fact_pr pr
+          JOIN coaching_relationship cr ON cr.athlete_user_id = pr.user_id
+          WHERE cr.coach_user_id = auth.user_id()
+      - SELECT *, workout_set_id as id FROM fact_workout_set ws
+          JOIN coaching_relationship cr ON cr.athlete_user_id = ws.user_id
+          WHERE cr.coach_user_id = auth.user_id()
+      - SELECT *, user_workout_id as id FROM fact_workout w
+          JOIN coaching_relationship cr ON cr.athlete_user_id = w.user_id
+          WHERE cr.coach_user_id = auth.user_id()

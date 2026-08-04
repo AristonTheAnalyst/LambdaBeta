@@ -25,6 +25,7 @@ const schema = Schema([
     Column.text('planned_workout_id'),
     Column.integer('user_workout_feeling'),
     Column.integer('pre_workout_feeling'),
+    Column.text('exercise_order'),
   ]),
   Table('dim_exercise', [
     Column.text('custom_exercise_id'),
@@ -54,6 +55,7 @@ const schema = Schema([
   Table('fact_workout_set', [
     Column.text('workout_set_id'),
     Column.text('user_workout_id'),
+    Column.text('user_id'),
     Column.text('custom_exercise_id'),
     Column.text('custom_variation_id'),
     Column.integer('workout_set_number'),
@@ -65,6 +67,8 @@ const schema = Schema([
     Column.text('program_id'),
     Column.text('planned_set_id'),
     Column.integer('superset_group_number'),
+    Column.text('exercise_name'),
+    Column.text('variation_name'),
   ]),
   Table('dim_program', [
     Column.text('program_id'),
@@ -99,6 +103,8 @@ const schema = Schema([
     Column.text('target_duration_seconds'),
     Column.text('target_notes'),
     Column.integer('is_active'),
+    Column.text('exercise_name'),
+    Column.text('variation_name'),
   ]),
   Table('fact_program_run', [
     Column.text('program_run_id'),
@@ -139,5 +145,10 @@ const schema = Schema([
     Column.integer('target_reps'),
     Column.text('target_weight'),
     Column.integer('is_active'),
+  ]),
+  Table('coaching_relationship', [
+    Column.text('coach_user_id'),
+    Column.text('athlete_user_id'),
+    Column.text('created_date'),
   ]),
 ]);

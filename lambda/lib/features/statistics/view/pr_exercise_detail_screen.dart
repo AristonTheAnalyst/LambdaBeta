@@ -1,19 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../../../../core/styles/app_colors.dart';
-import '../../../../core/styles/app_fonts.dart';
-import '../../../../core/styles/app_radius.dart';
-import '../../../../core/styles/app_spacing.dart';
-import '../../../../core/styles/app_text_styles.dart';
-import '../../../../core/utils/workout_format.dart';
-import '../../../../data/models/custom_variation.dart';
-import '../../../../data/repositories/exercise_repository.dart';
-import '../../../../data/repositories/pr_repository.dart';
-import '../../../../data/repositories/workout_repository.dart';
-import '../../../../shared/widgets/multi_select_sheet.dart';
-import '../../../../shared/widgets/page_header.dart';
-import '../../../../shared/widgets/slide_up_modal.dart';
+import '../../../core/styles/app_colors.dart';
+import '../../../core/styles/app_fonts.dart';
+import '../../../core/styles/app_radius.dart';
+import '../../../core/styles/app_spacing.dart';
+import '../../../core/styles/app_text_styles.dart';
+import '../../../core/utils/workout_format.dart';
+import '../../../data/models/custom_variation.dart';
+import '../../../data/repositories/exercise_repository.dart';
+import '../../../data/repositories/pr_repository.dart';
+import '../../../data/repositories/workout_repository.dart';
+import '../../../shared/widgets/multi_select_sheet.dart';
+import '../../../shared/widgets/page_header.dart';
+import '../../../shared/widgets/slide_up_modal.dart';
 import '../../session/model/pr_engine.dart';
 
 /// All PR types for one exercise: rep-max curve (grouped by rep range),
@@ -54,6 +55,13 @@ class _PrExerciseDetailScreenState extends State<PrExerciseDetailScreen> {
   Set<String> _selectedVariations = {}; // variationId, or _noVariation
   Set<num> _selectedWeights = {}; // weightMax weights
 
+  // Timeline pagination — reveal 15 PRs at a time.
+  static const _timelinePageSize = 15;
+  int _visibleTimelineCount = _timelinePageSize;
+
+  /// Optional "before this date" filter; null = show all.
+  DateTime? _beforeDate;
+
   String get _userId => Supabase.instance.client.auth.currentUser!.id;
 
   @override
@@ -93,6 +101,21 @@ class _PrExerciseDetailScreenState extends State<PrExerciseDetailScreen> {
     return _selectedVariations.contains(key);
   }
 
+  /// Variation + date filters (the "before this date" cutoff applies to the
+  /// whole page — curve, weight-max, and timeline alike).
+  bool _matchesFilters(PrRecord p) {
+    if (!_matchesVariation(p)) return false;
+    final cutoff = _beforeDate;
+    if (cutoff != null) {
+      final d = p.achievedDate;
+      // Include records before the cutoff date (strictly earlier than its
+      // end-of-day), so the filter reads as "PRs before this date".
+      final beforeEndOfDay = DateTime(cutoff.year, cutoff.month, cutoff.day, 23, 59, 59);
+      if (!d.isBefore(beforeEndOfDay)) return false;
+    }
+    return true;
+  }
+
   bool _inBand(PrRecord p, ({String label, int min, int? max}) band) {
     if (p.type != PrType.repMax || p.targetReps == null) return false;
     if (p.targetReps! < band.min) return false;
@@ -102,7 +125,7 @@ class _PrExerciseDetailScreenState extends State<PrExerciseDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final name = toProperCase(_exerciseName ?? widget.exerciseId);
-    final prs = _prs.where(_matchesVariation).toList();
+    final prs = _prs.where(_matchesFilters).toList();
 
     // ── Rep-max curve (latest repMax record per display rep count) ──
     final curve = <int, PrRecord>{};
@@ -156,7 +179,7 @@ class _PrExerciseDetailScreenState extends State<PrExerciseDetailScreen> {
                     else ...[
                       _weightMaxDropdown(weightMax),
                       const SizedBox(height: AppSpacing.sm),
-                      for (final entry in _filteredWeightMax(weightMax).entries)
+                      for (final entry in _filteredWeightMax(weightMax))
                         InkWell(
                           onTap: () => _showAxisHistorySheet(
                             context,
@@ -197,8 +220,8 @@ class _PrExerciseDetailScreenState extends State<PrExerciseDetailScreen> {
                   children: [
                     if (prs.isEmpty)
                       _muted('No PRs recorded')
-                    else
-                      for (final p in prs.reversed)
+                    else ...[
+                      for (final p in prs.reversed.take(_visibleTimelineCount))
                         InkWell(
                           onTap: p.workoutId.isNotEmpty
                               ? () => context.push('/logs/${p.workoutId}')
@@ -234,6 +257,72 @@ class _PrExerciseDetailScreenState extends State<PrExerciseDetailScreen> {
                             ),
                           ),
                         ),
+                      if (prs.length > _timelinePageSize)
+                        Padding(
+                          padding: const EdgeInsets.only(top: AppSpacing.sm),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              GestureDetector(
+                                onTap: _visibleTimelineCount > _timelinePageSize
+                                    ? () => setState(() => _visibleTimelineCount -= _timelinePageSize)
+                                    : null,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 12, vertical: 8),
+                                  decoration: BoxDecoration(
+                                    color: _visibleTimelineCount > _timelinePageSize
+                                        ? AppColors.accentBg
+                                        : AppColors.surfaceHigh,
+                                    borderRadius: BorderRadius.circular(AppRadius.md),
+                                    border: Border.all(
+                                        color: _visibleTimelineCount > _timelinePageSize
+                                            ? AppColors.accent.withValues(alpha: 0.35)
+                                            : AppColors.border),
+                                  ),
+                                  child: Icon(Icons.chevron_left,
+                                      size: 16,
+                                      color: _visibleTimelineCount > _timelinePageSize
+                                          ? AppColors.accent
+                                          : AppColors.muted),
+                                ),
+                              ),
+                              const SizedBox(width: AppSpacing.md),
+                              Text('${_visibleTimelineCount.clamp(0, prs.length)} of ${prs.length}',
+                                  style: AppFonts.mono(
+                                      fontSize: 11, color: AppColors.muted)),
+                              const SizedBox(width: AppSpacing.md),
+                              GestureDetector(
+                                onTap: _visibleTimelineCount < prs.length
+                                    ? () => setState(() {
+                                          _visibleTimelineCount = (_visibleTimelineCount + _timelinePageSize)
+                                              .clamp(0, prs.length);
+                                        })
+                                    : null,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 12, vertical: 8),
+                                  decoration: BoxDecoration(
+                                    color: _visibleTimelineCount < prs.length
+                                        ? AppColors.accentBg
+                                        : AppColors.surfaceHigh,
+                                    borderRadius: BorderRadius.circular(AppRadius.md),
+                                    border: Border.all(
+                                        color: _visibleTimelineCount < prs.length
+                                            ? AppColors.accent.withValues(alpha: 0.35)
+                                            : AppColors.border),
+                                  ),
+                                  child: Icon(Icons.chevron_right,
+                                      size: 16,
+                                      color: _visibleTimelineCount < prs.length
+                                          ? AppColors.accent
+                                          : AppColors.muted),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                    ],
                   ],
                 ),
               ],
@@ -247,10 +336,11 @@ class _PrExerciseDetailScreenState extends State<PrExerciseDetailScreen> {
   // ── Variation multi-select filter ─────────────────────────────────────────
 
   Widget _variationFilter() {
+    final ordered = [..._variations]..sort(CustomVariation.byRecency);
     final options = <MultiSelectOption<String>>[
       if (_prs.any((p) => p.variationId == null))
         const MultiSelectOption(label: 'No variation', value: _noVariation),
-      for (final v in _variations)
+      for (final v in ordered)
         MultiSelectOption(label: toProperCase(v.name), value: v.variationId),
     ];
     final label = _selectedVariations.isEmpty
@@ -261,49 +351,94 @@ class _PrExerciseDetailScreenState extends State<PrExerciseDetailScreen> {
                 : toProperCase(_variations.firstWhere((v) => v.variationId == k, orElse: () => CustomVariation(variationId: k, userId: '', name: k, isActive: true)).name))
             .join(' · ');
 
+    // Inline filter row: variation (left) + date (right), side by side.
     return Padding(
       padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, AppSpacing.xs),
-      child: GestureDetector(
-        onTap: () async {
-          final result = await showMultiSelectSheet<String>(
-            context,
-            options: options,
-            selected: _selectedVariations.toList(),
-            title: 'Variations',
-            confirmLabel: 'Done',
-          );
-          if (result != null) {
-            setState(() => _selectedVariations = result.toSet());
-          }
-        },
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(AppRadius.md),
-            border: Border.all(
-                color: _selectedVariations.isEmpty ? AppColors.border : AppColors.accent),
+      child: Row(
+        children: [
+          Expanded(
+            child: _filterChip(
+              icon: Icons.filter_list,
+              label: label,
+              active: _selectedVariations.isNotEmpty,
+              onTap: () async {
+                final result = await showMultiSelectSheet<String>(
+                  context,
+                  options: options,
+                  selected: _selectedVariations.toList(),
+                  title: 'Variations',
+                  confirmLabel: 'Done',
+                );
+                if (result != null) {
+                  setState(() => _selectedVariations = result.toSet());
+                }
+              },
+            ),
           ),
-          child: Row(
-            children: [
-              Icon(Icons.filter_list, size: 16,
-                  color: _selectedVariations.isEmpty ? AppColors.muted : AppColors.accent),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(label,
-                    style: AppFonts.ui(
-                        fontSize: AppTextStyles.sm,
-                        fontWeight: FontWeight.w600,
-                        color: _selectedVariations.isEmpty ? AppColors.muted : AppColors.accent),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis),
-              ),
-              Icon(Icons.arrow_drop_down, size: 18, color: AppColors.muted),
-            ],
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: _filterChip(
+              icon: Icons.calendar_today_outlined,
+              label: _beforeDate != null
+                  ? 'before ${DateFormat('d MMM').format(_beforeDate!)}'
+                  : 'All time',
+              active: _beforeDate != null,
+              onTap: _pickBeforeDate,
+            ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _filterChip({
+    required IconData icon,
+    required String label,
+    required bool active,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          border: Border.all(color: active ? AppColors.accent : AppColors.border),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 16, color: active ? AppColors.accent : AppColors.muted),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(label,
+                  style: AppFonts.ui(
+                      fontSize: AppTextStyles.sm,
+                      fontWeight: FontWeight.w600,
+                      color: active ? AppColors.accent : AppColors.muted),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis),
+            ),
+            Icon(Icons.arrow_drop_down, size: 18, color: AppColors.muted),
+          ],
         ),
       ),
     );
+  }
+
+  /// Picks an optional "before this date" cutoff. Selecting the same date
+  /// again clears the filter; "Clear" clears it too.
+  Future<void> _pickBeforeDate() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _beforeDate ?? now,
+      firstDate: DateTime(now.year - 10),
+      lastDate: now,
+      helpText: 'Show PRs before…',
+    );
+    if (picked == null) return;
+    setState(() => _beforeDate = picked);
   }
 
   // ── Rep-max content ───────────────────────────────────────────────────────
@@ -357,7 +492,7 @@ class _PrExerciseDetailScreenState extends State<PrExerciseDetailScreen> {
           borderRadius: BorderRadius.circular(AppRadius.md),
           border: Border.all(color: AppColors.accent.withValues(alpha: 0.3)),
         ),
-        child: Text('${repCount}RM ${_fmt(record.weight)}',
+        child: Text('${repCount}RM - ${_fmt(record.weight)}kg',
             style: AppFonts.mono(fontSize: 11, color: AppColors.accent)),
       ),
     );
@@ -411,9 +546,13 @@ class _PrExerciseDetailScreenState extends State<PrExerciseDetailScreen> {
     );
   }
 
-  Map<num, PrRecord> _filteredWeightMax(Map<num, PrRecord> weightMax) {
-    if (_selectedWeights.isEmpty) return weightMax;
-    return Map.fromEntries(weightMax.entries.where((e) => _selectedWeights.contains(e.key)));
+  /// Weight-max entries sorted by weight descending (highest first), filtered
+  /// to the selected weights when any are chosen.
+  List<MapEntry<num, PrRecord>> _filteredWeightMax(Map<num, PrRecord> weightMax) {
+    final entries = weightMax.entries.toList()
+      ..sort((a, b) => b.key.compareTo(a.key));
+    if (_selectedWeights.isEmpty) return entries;
+    return entries.where((e) => _selectedWeights.contains(e.key)).toList();
   }
 
   // ── Axis history sheet ────────────────────────────────────────────────────

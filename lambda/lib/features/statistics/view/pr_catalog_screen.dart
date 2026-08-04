@@ -1,21 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../../../../core/styles/app_colors.dart';
-import '../../../../core/styles/app_fonts.dart';
-import '../../../../core/styles/app_spacing.dart';
-import '../../../../core/styles/app_text_styles.dart';
-import '../../../../core/utils/workout_format.dart';
-import '../../../../data/models/exercise_detail.dart';
-import '../../../../data/repositories/exercise_repository.dart';
-import '../../../../data/repositories/pr_repository.dart';
-import '../../../../data/repositories/workout_repository.dart';
-import '../../../../shared/widgets/app_card.dart';
-import '../../../../shared/widgets/page_header.dart';
-import '../../../../shared/widgets/press_squash.dart';
+import '../../../core/styles/app_colors.dart';
+import '../../../core/styles/app_fonts.dart';
+import '../../../core/styles/app_spacing.dart';
+import '../../../core/styles/app_text_styles.dart';
+import '../../../core/utils/workout_format.dart';
+import '../../../data/models/exercise_detail.dart';
+import '../../../data/models/exercise_usage.dart';
+import '../../../data/repositories/exercise_repository.dart';
+import '../../../data/repositories/pr_repository.dart';
+import '../../../data/repositories/workout_repository.dart';
+import '../../../shared/widgets/app_card.dart';
+import '../../../shared/widgets/page_header.dart';
+import '../../../shared/widgets/press_squash.dart';
 import '../../session/model/pr_engine.dart';
 
-/// Dev-only catalog of every exercise with its PR record count, linking to a
+/// Catalog of every exercise with its PR record count, linking to a
 /// per-exercise PR breakdown page.
 class PrCatalogScreen extends StatefulWidget {
   const PrCatalogScreen({super.key});
@@ -39,15 +40,18 @@ class _PrCatalogScreenState extends State<PrCatalogScreen> {
     _load();
   }
 
+  Map<String, DateTime> _lastUsedByExercise = {};
+
   Future<void> _load() async {
     try {
-      final prs = await _prRepo.loadAllWithBackfill(
-          _userId, () => _workoutRepo.loadPastSetsTimeline(_userId));
+      final timeline = await _workoutRepo.loadPastSetsTimeline(_userId);
+      final prs = await _prRepo.loadAllWithBackfill(_userId, () async => timeline);
       final map = await _exerciseRepo.fetchExerciseDetailMap(_userId);
       if (!mounted) return;
       setState(() {
         _exerciseMap = map;
         _prs = prs;
+        _lastUsedByExercise = lastUsedByEntity(timeline);
       });
     } catch (_) {
       if (mounted) setState(() => _exerciseMap = {});
@@ -62,8 +66,14 @@ class _PrCatalogScreenState extends State<PrCatalogScreen> {
     for (final pr in _prs) {
       prCounts[pr.exerciseId] = (prCounts[pr.exerciseId] ?? 0) + 1;
     }
-    final sorted = [...exercises]
-      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    final sorted = [...exercises]..sort((a, b) {
+        final da = _lastUsedByExercise[a.exerciseId];
+        final db = _lastUsedByExercise[b.exerciseId];
+        if (da != null && db != null) return db.compareTo(da);
+        if (da != null) return -1;
+        if (db != null) return 1;
+        return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+      });
 
     return Scaffold(
       backgroundColor: AppColors.bg,
@@ -90,7 +100,7 @@ class _PrCatalogScreenState extends State<PrCatalogScreen> {
                               padding: const EdgeInsets.symmetric(
                                   horizontal: AppSpacing.md, vertical: AppSpacing.sm),
                               child: PressSquash(
-                                onTap: () => context.push('/dev/prs/${ex.exerciseId}'),
+                                onTap: () => context.push('/statistics/prs/${ex.exerciseId}'),
                                 child: Row(
                                   children: [
                                     Expanded(

@@ -50,11 +50,15 @@ class _ExerciseCardState extends State<ExerciseCard> {
         final draftIds = vm.draftSlotsByExercise[exerciseId] ?? const <int>[];
         final plannedSets = vm.plannedSetsByExercise[exerciseId] ?? const [];
         final viewingHistory = _viewingSession != null;
-        final featuredLesson = lessons.isEmpty
-            ? null
-            : (lessons.where((l) => l.pinned).isNotEmpty
-                ? lessons.firstWhere((l) => l.pinned)
-                : lessons.last);
+        // The banner shows the pinned lesson only — pinning is what decides
+        // whether a note appears at the top of the exercise card.
+        Lesson? featuredLesson;
+        for (final l in lessons) {
+          if (l.pinned) {
+            featuredLesson = l;
+            break;
+          }
+        }
 
         return Container(
           decoration: BoxDecoration(
@@ -169,8 +173,18 @@ class _ExerciseCardState extends State<ExerciseCard> {
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
         child: Row(
           children: [
-            Text(lesson.pinned ? '📌 LESSON' : 'LESSON',
-                style: AppFonts.mono(fontSize: 9, letterSpacing: 0.8, color: AppColors.accent)),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (lesson.pinned) ...[
+                  Icon(Icons.push_pin, size: 10, color: AppColors.accent),
+                  const SizedBox(width: 4),
+                ],
+                Text('LESSON',
+                    style: AppFonts.mono(
+                        fontSize: 9, letterSpacing: 0.8, color: AppColors.accent)),
+              ],
+            ),
             const SizedBox(width: 8),
             Expanded(
               child: Text(lesson.text,
@@ -206,19 +220,20 @@ class _ExerciseCardState extends State<ExerciseCard> {
               children: [
                 Row(
                   children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: planned ? AppColors.successBg : AppColors.accentBg,
-                        borderRadius: BorderRadius.circular(999),
+                    if (planned)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: AppColors.successBg,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text('PLANNED',
+                            style: AppFonts.ui(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.5,
+                                color: AppColors.success)),
                       ),
-                      child: Text(planned ? 'PLANNED' : 'UNPLANNED',
-                          style: AppFonts.ui(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 0.5,
-                              color: planned ? AppColors.success : AppColors.accent)),
-                    ),
                     if (prCount > 0) ...[
                       const SizedBox(width: 6),
                       Container(
@@ -245,7 +260,7 @@ class _ExerciseCardState extends State<ExerciseCard> {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               _pillButton(
-                icon: Icons.emoji_objects_outlined,
+                icon: Icons.menu_book_outlined,
                 label: lessonsCount > 0 ? '$lessonsCount Lessons' : 'Lessons',
                 active: lessonsCount > 0,
                 color: AppColors.accent,

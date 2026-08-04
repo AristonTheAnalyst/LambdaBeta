@@ -371,6 +371,13 @@ class ProgramDetailViewModel {
   Future<void> saveWorkout() async {
     final s = state.value;
     if (!s.workoutUnsavedChanges) return;
+    // A planned workout must contain at least one exercise — never save an
+    // empty one.
+    if (s.workoutExerciseSlots.isEmpty) {
+      state.value = state.value.copyWith(
+          error: 'Add at least one exercise to this workout before saving.');
+      return;
+    }
     await Future.wait([
       commitWorkoutName(),
       commitWorkoutNotes(),
@@ -523,7 +530,9 @@ class ProgramDetailViewModel {
         _userId,
         workout.plannedWorkoutId,
         exerciseId: exerciseId,
+        exerciseName: state.value.exerciseDetailMap[exerciseId]?.name,
         variationId: variationId,
+        variationName: _variationName(exerciseId, variationId),
         exerciseSequenceOrder: exerciseSequenceOrder,
         setNumber: setNumber,
         targetWeight: weight,
@@ -560,6 +569,7 @@ class ProgramDetailViewModel {
         clearTargetWeight: clearWeight,
         targetReps: reps,
         variationId: variationId,
+        variationName: variationId != null ? _variationName(ps.exerciseId, variationId) : null,
         clearVariation: clearVariation,
         targetNotes: notes,
         clearTargetNotes: clearNotes,
@@ -581,7 +591,9 @@ class ProgramDetailViewModel {
         _userId,
         workout.plannedWorkoutId,
         exerciseId: ps.exerciseId,
+        exerciseName: ps.exerciseName ?? state.value.exerciseDetailMap[ps.exerciseId]?.name,
         variationId: ps.variationId,
+        variationName: ps.variationName ?? _variationName(ps.exerciseId, ps.variationId),
         exerciseSequenceOrder: ps.exerciseSequenceOrder,
         setNumber: setNumber,
         targetWeight: ps.targetWeight,
@@ -693,11 +705,21 @@ class ProgramDetailViewModel {
 
   // ── Lessons (per-exercise, cross-session — same fact_lesson data session uses) ──
 
+  String? _variationName(String exerciseId, String? variationId) {
+    if (variationId == null) return null;
+    return state.value.exerciseDetailMap[exerciseId]
+        ?.assignedVariations
+        .where((v) => v.variationId == variationId)
+        .map((v) => v.name)
+        .firstOrNull;
+  }
+
   List<Lesson> lessonsFor(String exerciseId) => state.value.lessonsByExercise[exerciseId] ?? const [];
 
   Future<void> loadLessonsFor(String exerciseId) async {
     try {
       final lessons = await _lessonRepo.fetchLessons(_userId, exerciseId);
+      debugPrint('lessons loadLessonsFor($exerciseId) → ${lessons.length}');
       final map = Map<String, List<Lesson>>.from(state.value.lessonsByExercise);
       map[exerciseId] = lessons;
       state.value = state.value.copyWith(lessonsByExercise: map);
@@ -720,7 +742,7 @@ class ProgramDetailViewModel {
     final lesson = lessonsFor(exerciseId).firstWhereOrNull((l) => l.lessonId == lessonId);
     if (lesson == null) return;
     try {
-      await _lessonRepo.toggleLessonPin(lessonId, !lesson.pinned);
+      await _lessonRepo.setPinned(_userId, exerciseId, lessonId, !lesson.pinned);
       await loadLessonsFor(exerciseId);
     } catch (e) {
       state.value = state.value.copyWith(error: e.toString());

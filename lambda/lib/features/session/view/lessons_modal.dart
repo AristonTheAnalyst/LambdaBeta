@@ -7,6 +7,7 @@ import '../../../core/styles/app_spacing.dart';
 import '../../../data/models/lesson.dart';
 import '../../../shared/widgets/glass_button.dart';
 import '../../../shared/widgets/slide_up_modal.dart';
+import '../../../shared/widgets/swipe_actions.dart';
 
 /// Bound to a [Listenable] + a handful of callbacks rather than a concrete
 /// viewmodel type, so both `SessionViewModel` (a `ChangeNotifier`) and
@@ -95,7 +96,12 @@ class _LessonsModalContentState extends State<_LessonsModalContent> {
       listenable: widget.listenable,
       builder: (context, _) {
         final lessons = widget.lessonsFor(widget.exerciseId);
-        final ordered = [...lessons]..sort((a, b) => (b.pinned ? 1 : 0).compareTo(a.pinned ? 1 : 0));
+        // Pinned first, then newest by datetime (Dart's sort is unstable, so
+        // sort by both keys explicitly to preserve chronological order).
+        final ordered = [...lessons]..sort((a, b) {
+          final pin = (b.pinned ? 1 : 0).compareTo(a.pinned ? 1 : 0);
+          return pin != 0 ? pin : b.createdDate.compareTo(a.createdDate);
+        });
         return SafeArea(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(
@@ -205,52 +211,62 @@ class _LessonRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(AppSpacing.sm),
-      decoration: BoxDecoration(
-        color: lesson.pinned ? AppColors.accentBg : AppColors.surfaceHigh,
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(
-            color: lesson.pinned ? AppColors.accent.withValues(alpha: 0.3) : AppColors.border),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          GestureDetector(
-            onTap: onTogglePin,
-            child: Container(
-              width: 28,
-              height: 28,
-              margin: const EdgeInsets.only(top: 1),
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: lesson.pinned ? AppColors.accentBg : Colors.transparent,
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: lesson.pinned ? AppColors.accent : AppColors.border),
+    return SwipeActions(
+      actions: [
+        SwipeAction(
+          icon: Icons.delete_outline,
+          label: 'Delete',
+          color: AppColors.danger,
+          onTap: onDelete,
+        ),
+      ],
+      child: Container(
+        padding: const EdgeInsets.all(AppSpacing.sm),
+        decoration: BoxDecoration(
+          color: lesson.pinned ? AppColors.accentBg : AppColors.surfaceHigh,
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          border: Border.all(
+              color: lesson.pinned ? AppColors.accent.withValues(alpha: 0.3) : AppColors.border),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Pin sits at the leading edge, far from the trailing Delete
+            // drawer — a tap on the pin can never land on Delete, and the pin
+            // never gets covered when the row slides open.
+            GestureDetector(
+              onTap: onTogglePin,
+              child: Container(
+                width: 28,
+                height: 28,
+                margin: const EdgeInsets.only(right: AppSpacing.sm, top: 1),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: lesson.pinned ? AppColors.accentBg : Colors.transparent,
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(
+                      color: lesson.pinned ? AppColors.accent : AppColors.border),
+                ),
+                child: Icon(Icons.push_pin,
+                    size: 14, color: lesson.pinned ? AppColors.accent : AppColors.muted),
               ),
-              child: Icon(Icons.push_pin,
-                  size: 14, color: lesson.pinned ? AppColors.accent : AppColors.muted),
             ),
-          ),
-          const SizedBox(width: AppSpacing.sm),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(lesson.text, style: AppFonts.ui(fontSize: 13, color: AppColors.primary)),
-                const SizedBox(height: 4),
-                Text(DateFormat('MMM d').format(lesson.createdDate),
-                    style: AppFonts.mono(
-                        fontSize: 9,
-                        color: lesson.pinned ? AppColors.accent : AppColors.muted)),
-              ],
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(lesson.text,
+                      style: AppFonts.ui(fontSize: 13, color: AppColors.primary)),
+                  const SizedBox(height: 4),
+                  Text(DateFormat('MMM d · h:mm a').format(lesson.createdDate),
+                      style: AppFonts.mono(
+                          fontSize: 9,
+                          color: lesson.pinned ? AppColors.accent : AppColors.muted)),
+                ],
+              ),
             ),
-          ),
-          GestureDetector(
-            onTap: onDelete,
-            child: Icon(Icons.close, size: 16, color: AppColors.muted),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

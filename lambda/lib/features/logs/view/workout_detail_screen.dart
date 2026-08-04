@@ -6,6 +6,7 @@ import '../../../core/styles/app_fonts.dart';
 import '../../../core/styles/app_radius.dart';
 import '../../../core/styles/app_spacing.dart';
 import '../../../core/utils/workout_format.dart';
+import '../../../data/models/custom_variation.dart';
 import '../../../data/models/exercise_detail.dart';
 import '../../../data/models/lesson.dart';
 import '../../../data/models/workout_set.dart';
@@ -447,9 +448,15 @@ class _DetailExerciseCardState extends State<_DetailExerciseCard> {
     final sets = s.setsFor(order);
     final draftIds = s.workoutSetDrafts[order] ?? const <int>[];
     final viewingHistory = _viewingSession != null;
-    final featuredLesson = lessons.isEmpty
-        ? null
-        : (lessons.where((l) => l.pinned).isNotEmpty ? lessons.firstWhere((l) => l.pinned) : lessons.last);
+    // The banner shows the pinned lesson only — pinning is what decides
+    // whether a note appears at the top of the exercise card.
+    Lesson? featuredLesson;
+    for (final l in lessons) {
+      if (l.pinned) {
+        featuredLesson = l;
+        break;
+      }
+    }
 
     return Container(
       decoration: BoxDecoration(
@@ -601,7 +608,7 @@ class _DetailExerciseCardState extends State<_DetailExerciseCard> {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               _pillButton(
-                icon: Icons.emoji_objects_outlined,
+                icon: Icons.menu_book_outlined,
                 label: lessonsCount > 0 ? '$lessonsCount Lessons' : 'Lessons',
                 active: lessonsCount > 0,
                 onTap: () => showLessonsModal(
@@ -1151,9 +1158,11 @@ class _DetailSetRowState extends State<_DetailSetRow> {
     final set = widget.set;
     final hasNotes = _isDraft ? (_draftNotes?.trim().isNotEmpty ?? false) : (set!.notes?.isNotEmpty ?? false);
     final variationId = _isDraft ? _draftVariationId : set!.variationId;
+    final List<CustomVariation> assigned = [...(widget.detail?.assignedVariations ?? const <CustomVariation>[])]
+      ..sort(CustomVariation.byRecency);
     final variationOptions = [
       const DropdownOption<String?>(label: '—', value: null),
-      ...(widget.detail?.assignedVariations ?? [])
+      ...assigned
           .map((v) => DropdownOption<String?>(label: toProperCase(v.name), value: v.variationId)),
     ];
 

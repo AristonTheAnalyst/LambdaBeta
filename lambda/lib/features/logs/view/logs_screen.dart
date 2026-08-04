@@ -6,6 +6,7 @@ import '../../../../core/styles/app_fonts.dart';
 import '../../../../core/styles/app_radius.dart';
 import '../../../../core/styles/app_spacing.dart';
 import '../../../../core/styles/app_text_styles.dart';
+import '../../../../data/models/exercise_usage.dart';
 import '../../../../data/models/workout.dart';
 import '../../../../data/models/workout_set.dart';
 import '../../../../shared/widgets/app_card.dart';
@@ -30,6 +31,16 @@ class _LogsScreenState extends State<LogsScreen> {
   String?   _selectedVariation;
   DateTime? _dateFrom;
   DateTime? _dateTo;
+
+  /// Name-keyed comparator: most recently used first (nulls last, then name).
+  static int _byNameRecency(String a, String b, Map<String, DateTime> lastUsed) {
+    final da = lastUsed[a];
+    final db = lastUsed[b];
+    if (da != null && db != null) return db.compareTo(da);
+    if (da != null) return -1;
+    if (db != null) return 1;
+    return a.toLowerCase().compareTo(b.toLowerCase());
+  }
 
   @override
   void initState() {
@@ -91,11 +102,29 @@ class _LogsScreenState extends State<LogsScreen> {
               ? state.workouts.expand((w) => w.sets).toList()
               : state.pastSets.cast<WorkoutSet>();
 
+          // Most recently used first (names derived from the dated timeline).
+          final byId = lastUsedByEntity(state.pastSets);
+          final lastUsed = <String, DateTime>{};
+          for (final s in state.pastSets) {
+            final exD = byId[s.exerciseId];
+            final exName = s.exerciseName ?? s.exerciseId;
+            if (exD != null && (!lastUsed.containsKey(exName) || exD.isAfter(lastUsed[exName]!))) {
+              lastUsed[exName] = exD;
+            }
+            final vName = s.variationName;
+            if (vName != null && s.variationId != null) {
+              final vD = byId[s.variationId!];
+              if (vD != null && (!lastUsed.containsKey(vName) || vD.isAfter(lastUsed[vName]!))) {
+                lastUsed[vName] = vD;
+              }
+            }
+          }
+
           final exercises = allSets
               .map((s) => s.exerciseName ?? s.exerciseId)
               .toSet()
               .toList()
-            ..sort();
+            ..sort((a, b) => _byNameRecency(a, b, lastUsed));
 
           final variations = allSets
               .where((s) =>
@@ -105,7 +134,7 @@ class _LogsScreenState extends State<LogsScreen> {
               .whereType<String>()
               .toSet()
               .toList()
-            ..sort();
+            ..sort((a, b) => _byNameRecency(a, b, lastUsed));
 
           // ── client-side filtering ─────────────────────────────────────────────
           bool matchesExercise(WorkoutSet s) =>

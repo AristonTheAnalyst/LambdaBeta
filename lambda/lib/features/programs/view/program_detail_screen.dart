@@ -47,6 +47,31 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> {
   final _descriptionController = TextEditingController();
   final _lengthWeeksController = TextEditingController();
 
+  Future<void> _confirmSetAsCurrent() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: Text('Set as current?',
+            style: AppFonts.ui(fontWeight: FontWeight.w800, color: AppColors.primary)),
+        content: Text(
+            'Setting this program current will reset progress on any currently '
+            'active program.',
+            style: AppFonts.ui(color: AppColors.muted)),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: Text('Cancel', style: AppFonts.ui(color: AppColors.muted))),
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: Text('Set Current',
+                  style: AppFonts.ui(color: AppColors.accent, fontWeight: FontWeight.w600))),
+        ],
+      ),
+    );
+    if (ok == true && mounted) _vm.setAsCurrent();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -95,9 +120,7 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> {
           return Column(
             children: [
               PageHeader(
-                title: state.program != null
-                    ? toProperCase(state.program!.name)
-                    : 'Program',
+                title: 'Program',
                 left: GestureDetector(
                   onTap: () => context.pop(),
                   child: Icon(Icons.arrow_back_ios_new,
@@ -138,21 +161,23 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> {
                           placeholder: 'e.g. Strength Block 1',
                           textCapitalization: TextCapitalization.words,
                           onChanged: _vm.setNameDraft,
+                          required: true,
                         ),
                         const SizedBox(height: AppSpacing.md),
                         LambdaInput(
                           controller: _descriptionController,
-                          label: 'Goal / description (optional)',
+                          label: 'Goal / description',
                           placeholder: 'What is this program trying to achieve?',
                           onChanged: _vm.setDescriptionDraft,
                         ),
                         const SizedBox(height: AppSpacing.md),
                         LambdaInput(
                           controller: _lengthWeeksController,
-                          label: 'Length in weeks (optional)',
+                          label: 'Length in weeks',
                           placeholder: 'e.g. 6',
                           keyboardType: TextInputType.number,
                           onChanged: _vm.setLengthWeeksDraft,
+                          required: true,
                         ),
                         const SizedBox(height: AppSpacing.md),
                         Text('Progression',
@@ -192,7 +217,7 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> {
                                       icon: Icons.play_circle_outline,
                                       loading: state.settingCurrent,
                                       disabled: state.settingCurrent,
-                                      onPressed: _vm.setAsCurrent,
+                                      onPressed: _confirmSetAsCurrent,
                                     ),
                             ),
                           ],

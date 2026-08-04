@@ -195,7 +195,9 @@ class ProgramRepository {
   Future<List<PlannedSet>> fetchPlannedSets(String plannedWorkoutId) async {
     final rows = await ps.db.getAll(
       '''
-      SELECT s.*, e.exercise_name, v.variation_name
+      SELECT s.*,
+             COALESCE(s.exercise_name, e.exercise_name) AS exercise_name,
+             COALESCE(s.variation_name, v.variation_name) AS variation_name
       FROM dim_planned_set s
       LEFT JOIN dim_exercise e ON e.custom_exercise_id = s.custom_exercise_id
       LEFT JOIN dim_variation v ON v.custom_variation_id = s.custom_variation_id
@@ -218,6 +220,8 @@ class ProgramRepository {
     List<num> targetReps = const [],
     List<num> targetDuration = const [],
     String? targetNotes,
+    String? exerciseName,
+    String? variationName,
   }) async {
     final id = _uuid.v4();
     await ps.db.execute(
@@ -225,8 +229,8 @@ class ProgramRepository {
       INSERT INTO dim_planned_set
         (id, planned_set_id, planned_workout_id, user_id, custom_exercise_id, custom_variation_id,
          exercise_sequence_order, planned_set_number, target_weight, target_reps,
-         target_duration_seconds, target_notes, is_active)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         target_duration_seconds, target_notes, is_active, exercise_name, variation_name)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ''',
       [
         id,
@@ -242,6 +246,8 @@ class ProgramRepository {
         jsonEncode(targetDuration),
         targetNotes,
         1,
+        exerciseName,
+        variationName,
       ],
     );
     return PlannedSet(
@@ -273,11 +279,15 @@ class ProgramRepository {
     List<num>? targetDuration,
     String? targetNotes,
     bool clearTargetNotes = false,
+    String? exerciseName,
+    String? variationName,
   }) async {
     final updates = <String, dynamic>{};
     if (exerciseId != null) updates['custom_exercise_id'] = exerciseId;
+    if (exerciseName != null) updates['exercise_name'] = exerciseName;
     if (clearVariation) {
       updates['custom_variation_id'] = null;
+      updates['variation_name'] = null;
     } else if (variationId != null) {
       updates['custom_variation_id'] = variationId;
     }
@@ -426,8 +436,8 @@ class ProgramRepository {
             INSERT INTO dim_planned_set
               (id, planned_set_id, planned_workout_id, user_id, custom_exercise_id, custom_variation_id,
                exercise_sequence_order, planned_set_number, target_weight, target_reps,
-               target_duration_seconds, target_notes, is_active)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               target_duration_seconds, target_notes, is_active, exercise_name, variation_name)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''',
             [
               newSetId,
@@ -443,6 +453,8 @@ class ProgramRepository {
               jsonEncode(set.targetDuration),
               set.targetNotes,
               1,
+              set.exerciseName,
+              set.variationName,
             ],
           );
         }

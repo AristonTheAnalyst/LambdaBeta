@@ -4,12 +4,12 @@ import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
 import '../../../core/styles/app_radius.dart';
 import '../../../core/utils/workout_format.dart';
+import '../../../data/models/custom_variation.dart';
 import '../../../data/models/exercise_detail.dart';
 import '../../../data/models/planned_set.dart';
 import '../../../data/models/workout_set.dart';
 import '../../../shared/widgets/dropdown_select.dart';
 import '../../../shared/widgets/swipe_actions.dart';
-import '../model/session_local_state.dart' as local;
 import '../viewmodel/session_viewmodel.dart';
 import 'notes_modal.dart';
 
@@ -261,10 +261,7 @@ class _SessionSetRowState extends State<SessionSetRow> {
   Widget build(BuildContext context) {
     final vm = widget.vm;
     final set = widget.set;
-    final bestEver = set != null
-        ? vm.baselineFor(widget.exerciseId, excludingSetId: set.setId)
-        : vm.prevBestFor(widget.exerciseId);
-    final pr = set != null && local.isPr(set, bestEver);
+    final pr = set != null && vm.isPrSet(set.setId);
     final hasNotes = _isDraft ? (_draftNotes?.trim().isNotEmpty ?? false) : (set!.notes?.isNotEmpty ?? false);
     final plannedWeight = widget.plannedTarget?.targetWeight;
     final plannedReps = widget.plannedTarget?.targetReps.isNotEmpty == true
@@ -272,9 +269,11 @@ class _SessionSetRowState extends State<SessionSetRow> {
         : null;
 
     final variationId = _isDraft ? _draftVariationId : set!.variationId;
+    final List<CustomVariation> assigned = [...(widget.detail?.assignedVariations ?? const <CustomVariation>[])]
+      ..sort(CustomVariation.byRecency);
     final variationOptions = [
       const DropdownOption<String?>(label: '—', value: null),
-      ...(widget.detail?.assignedVariations ?? [])
+      ...assigned
           .map((v) => DropdownOption<String?>(label: toProperCase(v.name), value: v.variationId)),
     ];
 

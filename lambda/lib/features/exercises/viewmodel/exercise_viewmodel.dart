@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../data/models/custom_exercise.dart';
 import '../../../data/models/custom_variation.dart';
 import '../../../data/models/exercise_detail.dart';
+import '../../../data/models/exercise_usage.dart';
 import '../../../data/repositories/exercise_repository.dart';
 
 class ExerciseState {
@@ -13,9 +14,12 @@ class ExerciseState {
     this.exercises = const [],
     this.variations = const [],
     this.exerciseDetailMap = const {},
+    this.usage = const {},
     this.activeTab = 0,
     this.exSearch = '',
     this.varSearch = '',
+    this.exPage = 0,
+    this.varPage = 0,
     // Edit exercise modal
     this.editExercise,
     this.editExName = '',
@@ -43,9 +47,12 @@ class ExerciseState {
   final List<CustomExercise> exercises;
   final List<CustomVariation> variations;
   final Map<String, ExerciseDetail> exerciseDetailMap;
+  final Map<String, ExerciseUsage> usage;
   final int activeTab;
   final String exSearch;
   final String varSearch;
+  final int exPage;
+  final int varPage;
 
   final CustomExercise? editExercise;
   final String editExName;
@@ -66,6 +73,15 @@ class ExerciseState {
   final bool isCreatingEx;
   final bool isCreatingVar;
 
+  static const _pageSize = 10;
+
+  static int _byRecency(DateTime? da, DateTime? db, String na, String nb) {
+    if (da != null && db != null) return db.compareTo(da);
+    if (da != null) return -1;
+    if (db != null) return 1;
+    return na.toLowerCase().compareTo(nb.toLowerCase());
+  }
+
   List<CustomExercise> get filteredExercises => exSearch.isEmpty
       ? exercises
       : exercises
@@ -80,17 +96,73 @@ class ExerciseState {
               v.name.toLowerCase().contains(varSearch.toLowerCase()))
           .toList();
 
+  /// Exercises sorted by most recently used (lastUsed desc), then name.
+  List<CustomExercise> get sortedExercises {
+    final sorted = [...filteredExercises]..sort((a, b) {
+        final da = usage[a.exerciseId]?.lastUsed;
+        final db = usage[b.exerciseId]?.lastUsed;
+        if (da != null && db != null) return db.compareTo(da);
+        if (da != null) return -1;
+        if (db != null) return 1;
+        return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+      });
+    return sorted;
+  }
+
+  List<CustomVariation> get sortedVariations {
+    final sorted = [...filteredVariations]..sort((a, b) {
+        final da = usage[a.variationId]?.lastUsed;
+        final db = usage[b.variationId]?.lastUsed;
+        if (da != null && db != null) return db.compareTo(da);
+        if (da != null) return -1;
+        if (db != null) return 1;
+        return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+      });
+    return sorted;
+  }
+
+  List<CustomExercise> get pagedExercises {
+    final start = (exPage * _pageSize).clamp(0, sortedExercises.length);
+    final end = ((exPage + 1) * _pageSize).clamp(0, sortedExercises.length);
+    return sortedExercises.sublist(start, end);
+  }
+
+  List<CustomVariation> get pagedVariations {
+    final start = (varPage * _pageSize).clamp(0, sortedVariations.length);
+    final end = ((varPage + 1) * _pageSize).clamp(0, sortedVariations.length);
+    return sortedVariations.sublist(start, end);
+  }
+
+  bool get canPrevEx => exPage > 0;
+  bool get canNextEx => (exPage + 1) * _pageSize < sortedExercises.length;
+  bool get canPrevVar => varPage > 0;
+  bool get canNextVar => (varPage + 1) * _pageSize < sortedVariations.length;
+
+  int get exTotal => sortedExercises.length;
+  int get varTotal => sortedVariations.length;
+
   List<CustomVariation> get editExAssignedVars =>
       variations.where((v) => editExDraftVarIds.contains(v.variationId)).toList();
 
-  List<CustomVariation> get editExAvailableVars =>
-      variations.where((v) => !editExDraftVarIds.contains(v.variationId)).toList();
+  List<CustomVariation> get editExAvailableVars {
+    final list = variations.where((v) => !editExDraftVarIds.contains(v.variationId)).toList()
+      ..sort((a, b) => _byRecency(a.lastUsed, b.lastUsed, a.name, b.name));
+    return list;
+  }
 
   List<CustomExercise> get editVarAssignedExs =>
       exercises.where((e) => editVarDraftExIds.contains(e.exerciseId)).toList();
 
-  List<CustomExercise> get editVarAvailableExs =>
-      exercises.where((e) => !editVarDraftExIds.contains(e.exerciseId)).toList();
+  List<CustomExercise> get editVarAvailableExs {
+    final list = exercises.where((e) => !editVarDraftExIds.contains(e.exerciseId)).toList()
+      ..sort((a, b) => _byRecency(
+            usage[a.exerciseId]?.lastUsed,
+            usage[b.exerciseId]?.lastUsed,
+            a.name,
+            b.name,
+          ));
+    return list;
+  }
 
   ExerciseState copyWith({
     bool? isLoading,
@@ -100,9 +172,12 @@ class ExerciseState {
     List<CustomExercise>? exercises,
     List<CustomVariation>? variations,
     Map<String, ExerciseDetail>? exerciseDetailMap,
+    Map<String, ExerciseUsage>? usage,
     int? activeTab,
     String? exSearch,
     String? varSearch,
+    int? exPage,
+    int? varPage,
     CustomExercise? editExercise,
     bool clearEditEx = false,
     String? editExName,
@@ -129,9 +204,12 @@ class ExerciseState {
         exercises: exercises ?? this.exercises,
         variations: variations ?? this.variations,
         exerciseDetailMap: exerciseDetailMap ?? this.exerciseDetailMap,
+        usage: usage ?? this.usage,
         activeTab: activeTab ?? this.activeTab,
         exSearch: exSearch ?? this.exSearch,
         varSearch: varSearch ?? this.varSearch,
+        exPage: exPage ?? this.exPage,
+        varPage: varPage ?? this.varPage,
         editExercise: clearEditEx ? null : (editExercise ?? this.editExercise),
         editExName: clearEditEx ? '' : (editExName ?? this.editExName),
         editExOriginalVarIds: clearEditEx ? {} : (editExOriginalVarIds ?? this.editExOriginalVarIds),
@@ -166,20 +244,27 @@ class ExerciseViewModel {
       final exercises  = await _repo.fetchExercises(_userId);
       final variations = await _repo.fetchVariations(_userId);
       final detailMap  = await _repo.fetchExerciseDetailMap(_userId);
+      final usage      = await _repo.fetchUsage(_userId);
       state.value = state.value.copyWith(
         isLoading: false,
         exercises: exercises,
         variations: variations,
         exerciseDetailMap: detailMap,
+        usage: usage,
       );
     } catch (e) {
       state.value = state.value.copyWith(isLoading: false, error: e.toString());
     }
   }
 
-  void setTab(int i) => state.value = state.value.copyWith(activeTab: i);
-  void setExSearch(String q) => state.value = state.value.copyWith(exSearch: q);
-  void setVarSearch(String q) => state.value = state.value.copyWith(varSearch: q);
+  void setTab(int i) => state.value = state.value.copyWith(activeTab: i, exPage: 0, varPage: 0);
+  void setExSearch(String q) => state.value = state.value.copyWith(exSearch: q, exPage: 0);
+  void setVarSearch(String q) => state.value = state.value.copyWith(varSearch: q, varPage: 0);
+
+  void nextExPage() => state.value = state.value.copyWith(exPage: state.value.exPage + 1);
+  void prevExPage() => state.value = state.value.copyWith(exPage: state.value.exPage - 1);
+  void nextVarPage() => state.value = state.value.copyWith(varPage: state.value.varPage + 1);
+  void prevVarPage() => state.value = state.value.copyWith(varPage: state.value.varPage - 1);
 
   // ── Open edit exercise ─────────────────────────────────────────────────────
 
