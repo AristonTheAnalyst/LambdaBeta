@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/styles/app_colors.dart';
 import '../../../../core/styles/app_fonts.dart';
-import '../../../../core/styles/app_radius.dart';
 import '../../../../core/styles/app_spacing.dart';
 import '../../../../core/styles/app_text_styles.dart';
 import '../../../../core/utils/workout_format.dart';
 import '../../../../data/models/planned_workout.dart';
+import '../../../../data/models/program_run.dart';
 import '../../../../shared/widgets/app_card.dart';
 import '../../../../shared/widgets/glass_button.dart';
 import '../../../../shared/widgets/lambda_input.dart';
@@ -15,11 +15,6 @@ import '../../../../shared/widgets/press_squash.dart';
 import '../../../../shared/widgets/segmented_control.dart';
 import '../viewmodel/program_detail_viewmodel.dart';
 import 'plan_workout_screen.dart';
-
-const _progressionModeOptions = [
-  SegmentOption(label: 'Sequential', value: 'sequential'),
-  SegmentOption(label: 'Calendar', value: 'calendar'),
-];
 
 String _dayOfWeekLabel(int? d) => switch (d) {
       1 => 'Mon',
@@ -45,31 +40,219 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> {
 
   final _nameController = TextEditingController();
   final _descriptionController = TextEditingController();
-  final _lengthWeeksController = TextEditingController();
 
-  Future<void> _confirmSetAsCurrent() async {
-    final ok = await showDialog<bool>(
+  Future<void> _confirmBeginProgram() async {
+    final state = _vm.state.value;
+    final isCalendar = state.program?.progressionMode == 'calendar';
+    final controller = TextEditingController();
+    var useEndDate = false;
+    DateTime? endDate;
+
+    final result = await showDialog<({int? count, DateTime? endDate})>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        title: Text('Set as current?',
-            style: AppFonts.ui(fontWeight: FontWeight.w800, color: AppColors.primary)),
-        content: Text(
-            'Setting this program current will reset progress on any currently '
-            'active program.',
-            style: AppFonts.ui(color: AppColors.muted)),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: Text('Cancel', style: AppFonts.ui(color: AppColors.muted))),
-          TextButton(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: Text('Set Current',
-                  style: AppFonts.ui(color: AppColors.accent, fontWeight: FontWeight.w600))),
-        ],
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setState) => AlertDialog(
+          backgroundColor: AppColors.surface,
+          title: Text('Begin Program',
+              style: AppFonts.ui(fontWeight: FontWeight.w800, color: AppColors.primary)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                  'This resets progress on any currently active program.',
+                  style: AppFonts.ui(color: AppColors.muted)),
+              const SizedBox(height: AppSpacing.md),
+              if (isCalendar) ...[
+                SegmentedControl<bool>(
+                  subtle: true,
+                  options: const [
+                    SegmentOption(label: 'Weeks', value: false),
+                    SegmentOption(label: 'End date', value: true),
+                  ],
+                  value: useEndDate,
+                  onChange: (v) => setState(() => useEndDate = v),
+                ),
+                const SizedBox(height: AppSpacing.md),
+              ],
+              if (!isCalendar || !useEndDate)
+                LambdaInput(
+                  controller: controller,
+                  label: isCalendar ? 'Number of weeks' : 'Number of sessions',
+                  placeholder: isCalendar ? 'e.g. 6' : 'e.g. 12',
+                  keyboardType: TextInputType.number,
+                  required: true,
+                )
+              else ...[
+                Text('End date',
+                    style: AppFonts.ui(fontSize: AppTextStyles.sm,
+                        fontWeight: FontWeight.w600, color: AppColors.primary)),
+                const SizedBox(height: 6),
+                GestureDetector(
+                  onTap: () async {
+                    final picked = await showDatePicker(
+                      context: ctx,
+                      initialDate: DateTime.now().add(const Duration(days: 7)),
+                      firstDate: DateTime.now(),
+                      lastDate: DateTime(DateTime.now().year + 5),
+                    );
+                    if (picked != null) setState(() => endDate = picked);
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppColors.border),
+                    ),
+                    child: Text(endDate != null
+                        ? '${endDate!.day}/${endDate!.month}/${endDate!.year}'
+                        : 'Pick a date…',
+                        style: AppFonts.ui(color: endDate != null ? AppColors.primary : AppColors.muted)),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: Text('Cancel', style: AppFonts.ui(color: AppColors.muted))),
+            TextButton(
+                onPressed: () {
+                  final count = int.tryParse(controller.text.trim());
+                  if (isCalendar && useEndDate) {
+                    if (endDate == null) return;
+                    Navigator.of(ctx).pop((count: null, endDate: endDate));
+                  } else {
+                    if (count == null || count <= 0) return;
+                    Navigator.of(ctx).pop((count: count, endDate: null));
+                  }
+                },
+                child: Text('Begin',
+                    style: AppFonts.ui(color: AppColors.accent, fontWeight: FontWeight.w600))),
+          ],
+        ),
       ),
     );
-    if (ok == true && mounted) _vm.setAsCurrent();
+    controller.dispose();
+    if (result == null || !mounted) return;
+    await _vm.setAsCurrent(
+      targetSessions: isCalendar ? null : result.count,
+      targetWeeks: (isCalendar && !useEndDate) ? result.count : null,
+      endDate: result.endDate,
+    );
+  }
+
+  String _runConfigLabel(ProgramRun run) {
+    if (run.targetSessions != null) return '${run.targetSessions} sessions';
+    final w = run.targetWeeks;
+    if (w != null) return '$w weeks';
+    final end = run.endDate;
+    if (end != null) return 'ends ${end.day}/${end.month}/${end.year}';
+    return 'duration not set';
+  }
+
+  /// Edits the active run's duration config while the program is running.
+  Future<void> _editRunConfig(ProgramRun run) async {
+    final isCalendar = _vm.state.value.program?.progressionMode == 'calendar';
+    final controller = TextEditingController(
+        text: (run.targetSessions ?? run.targetWeeks ?? '').toString());
+    var useEndDate = isCalendar && run.endDate != null && run.targetWeeks == null;
+    var endDate = run.endDate;
+
+    final result = await showDialog<({int? count, DateTime? endDate})>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setState) => AlertDialog(
+          backgroundColor: AppColors.surface,
+          title: Text('Edit duration',
+              style: AppFonts.ui(fontWeight: FontWeight.w800, color: AppColors.primary)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (isCalendar) ...[
+                SegmentedControl<bool>(
+                  subtle: true,
+                  options: const [
+                    SegmentOption(label: 'Weeks', value: false),
+                    SegmentOption(label: 'End date', value: true),
+                  ],
+                  value: useEndDate,
+                  onChange: (v) => setState(() => useEndDate = v),
+                ),
+                const SizedBox(height: AppSpacing.md),
+              ],
+              if (!isCalendar || !useEndDate)
+                LambdaInput(
+                  controller: controller,
+                  label: isCalendar ? 'Number of weeks' : 'Number of sessions',
+                  placeholder: isCalendar ? 'e.g. 6' : 'e.g. 12',
+                  keyboardType: TextInputType.number,
+                )
+              else ...[
+                Text('End date',
+                    style: AppFonts.ui(fontSize: AppTextStyles.sm,
+                        fontWeight: FontWeight.w600, color: AppColors.primary)),
+                const SizedBox(height: 6),
+                GestureDetector(
+                  onTap: () async {
+                    final picked = await showDatePicker(
+                      context: ctx,
+                      initialDate: endDate ?? DateTime.now().add(const Duration(days: 7)),
+                      firstDate: DateTime.now(),
+                      lastDate: DateTime(DateTime.now().year + 5),
+                    );
+                    if (picked != null) setState(() => endDate = picked);
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppColors.border),
+                    ),
+                    child: Text(endDate != null
+                        ? '${endDate!.day}/${endDate!.month}/${endDate!.year}'
+                        : 'Pick a date…',
+                        style: AppFonts.ui(color: endDate != null ? AppColors.primary : AppColors.muted)),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: Text('Cancel', style: AppFonts.ui(color: AppColors.muted))),
+            TextButton(
+                onPressed: () {
+                  final count = int.tryParse(controller.text.trim());
+                  if (isCalendar && useEndDate) {
+                    if (endDate == null) return;
+                    Navigator.of(ctx).pop((count: null, endDate: endDate));
+                  } else {
+                    if (count == null || count <= 0) return;
+                    Navigator.of(ctx).pop((count: count, endDate: null));
+                  }
+                },
+                child: Text('Save',
+                    style: AppFonts.ui(color: AppColors.accent, fontWeight: FontWeight.w600))),
+          ],
+        ),
+      ),
+    );
+    controller.dispose();
+    if (result == null || !mounted) return;
+    await _vm.updateRunConfig(
+      targetSessions: isCalendar ? null : result.count,
+      clearSessions: !isCalendar,
+      targetWeeks: (isCalendar && !useEndDate) ? result.count : null,
+      clearWeeks: (isCalendar && useEndDate),
+      endDate: result.endDate,
+      clearEndDate: (isCalendar && !useEndDate),
+    );
   }
 
   @override
@@ -81,7 +264,6 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> {
       final s = _vm.state.value;
       _nameController.text = s.nameDraft;
       _descriptionController.text = s.descriptionDraft;
-      _lengthWeeksController.text = s.lengthWeeksDraft;
     });
   }
 
@@ -90,7 +272,6 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> {
     _vm.dispose();
     _nameController.dispose();
     _descriptionController.dispose();
-    _lengthWeeksController.dispose();
     super.dispose();
   }
 
@@ -171,57 +352,79 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> {
                           onChanged: _vm.setDescriptionDraft,
                         ),
                         const SizedBox(height: AppSpacing.md),
-                        LambdaInput(
-                          controller: _lengthWeeksController,
-                          label: 'Length in weeks',
-                          placeholder: 'e.g. 6',
-                          keyboardType: TextInputType.number,
-                          onChanged: _vm.setLengthWeeksDraft,
-                          required: true,
-                        ),
-                        const SizedBox(height: AppSpacing.md),
                         Text('Progression',
                             style: AppFonts.ui(
                                 fontSize: AppTextStyles.sm,
                                 fontWeight: FontWeight.w500,
                                 color: AppColors.primary)),
                         const SizedBox(height: AppSpacing.xs),
-                        SegmentedControl<String>(
-                          options: _progressionModeOptions,
-                          value: state.progressionModeDraft,
-                          onChange: _vm.setProgressionModeDraft,
+                        // Locked once created — progression determines how the
+                        // run schedules workouts and can't change afterwards.
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: AppColors.surfaceHigh,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: AppColors.border),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(Icons.lock_outline,
+                                  size: 14, color: AppColors.muted),
+                              const SizedBox(width: 8),
+                              Text(
+                                state.progressionModeDraft == 'calendar'
+                                    ? 'Calendar'
+                                    : 'Sequential',
+                                style: AppFonts.ui(
+                                    fontSize: AppTextStyles.sm,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.primary),
+                              ),
+                            ],
+                          ),
                         ),
                         const SizedBox(height: AppSpacing.lg),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: state.isCurrent
-                                  ? Container(
-                                      padding: const EdgeInsets.symmetric(
-                                          vertical: 10),
-                                      decoration: BoxDecoration(
-                                        color: AppColors.accentBg,
-                                        borderRadius: BorderRadius.circular(AppRadius.md),
-                                        border: Border.all(color: AppColors.accent),
-                                      ),
-                                      child: Center(
-                                        child: Text('Current Program',
-                                            style: AppFonts.ui(
-                                                fontSize: AppTextStyles.sm,
-                                                fontWeight: FontWeight.w700,
-                                                color: AppColors.accent)),
-                                      ),
-                                    )
-                                  : GlassButton(
-                                      label: 'Set as Current Program',
-                                      icon: Icons.play_circle_outline,
-                                      loading: state.settingCurrent,
-                                      disabled: state.settingCurrent,
-                                      onPressed: _confirmSetAsCurrent,
-                                    ),
+                        if (!state.isCurrent)
+                          Row(
+                            children: [
+                              Expanded(
+                                child: GlassButton(
+                                  label: 'Begin Program',
+                                  icon: Icons.play_circle_outline,
+                                  loading: state.settingCurrent,
+                                  disabled: state.settingCurrent,
+                                  onPressed: _confirmBeginProgram,
+                                ),
+                              ),
+                            ],
+                          ),
+                        if (state.isCurrent && state.activeRun != null) ...[
+                          const SizedBox(height: AppSpacing.sm),
+                          Text(
+                            _runConfigLabel(state.activeRun!),
+                            style: AppFonts.mono(
+                                fontSize: 10, color: AppColors.muted),
+                          ),
+                          if (state.currentProgress != null) ...[
+                            const SizedBox(height: AppSpacing.xs),
+                            Text(
+                              state.currentProgress!.remainingLabel,
+                              style: AppFonts.mono(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.accent),
                             ),
                           ],
-                        ),
+                          const SizedBox(height: AppSpacing.xs),
+                          GlassButton(
+                            label: 'Edit duration',
+                            icon: Icons.tune,
+                            compact: true,
+                            onPressed: () => _editRunConfig(state.activeRun!),
+                          ),
+                        ],
                         const SizedBox(height: AppSpacing.lg),
                         Divider(color: AppColors.border),
                         const SizedBox(height: AppSpacing.sm),
@@ -324,16 +527,23 @@ class _PlannedWorkoutRow extends StatelessWidget {
                   ],
                 ),
               ),
-              if (showDayOfWeek && workout.dayOfWeek != null) ...[
+              if (showDayOfWeek) ...[
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                   decoration: BoxDecoration(
-                    color: AppColors.surfaceHigh,
+                    color: workout.dayOfWeek != null
+                        ? AppColors.surfaceHigh
+                        : AppColors.dangerBg,
                     borderRadius: BorderRadius.circular(999),
                   ),
-                  child: Text(_dayOfWeekLabel(workout.dayOfWeek),
-                      style:
-                          AppFonts.ui(fontSize: AppTextStyles.xs, color: AppColors.muted)),
+                  child: Text(workout.dayOfWeek != null
+                      ? _dayOfWeekLabel(workout.dayOfWeek)
+                      : 'No day',
+                      style: AppFonts.ui(
+                          fontSize: AppTextStyles.xs,
+                          color: workout.dayOfWeek != null
+                              ? AppColors.muted
+                              : AppColors.danger)),
                 ),
                 const SizedBox(width: AppSpacing.sm),
               ],

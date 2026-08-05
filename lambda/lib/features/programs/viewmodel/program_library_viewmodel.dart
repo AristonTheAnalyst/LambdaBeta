@@ -14,6 +14,7 @@ class ProgramLibraryState {
     this.settingCurrentId,
     this.showCreate = false,
     this.createName = '',
+    this.createProgression = 'sequential',
     this.isCreating = false,
     this.currentProgress,
   });
@@ -26,6 +27,7 @@ class ProgramLibraryState {
   final String? settingCurrentId;
   final bool showCreate;
   final String createName;
+  final String createProgression;
   final bool isCreating;
 
   /// Progress of the current program (null when none is current).
@@ -55,6 +57,7 @@ class ProgramLibraryState {
     String? createName,
     bool? isCreating,
     ProgramProgress? currentProgress,
+    String? createProgression,
   }) =>
       ProgramLibraryState(
         isLoading: isLoading ?? this.isLoading,
@@ -68,6 +71,7 @@ class ProgramLibraryState {
             : (settingCurrentId ?? this.settingCurrentId),
         showCreate: showCreate ?? this.showCreate,
         createName: createName ?? this.createName,
+        createProgression: createProgression ?? this.createProgression,
         isCreating: isCreating ?? this.isCreating,
         currentProgress: currentProgress ?? this.currentProgress,
       );
@@ -111,11 +115,13 @@ class ProgramLibraryViewModel {
 
   // ── Create ────────────────────────────────────────────────────────────────
 
-  void openCreate() =>
-      state.value = state.value.copyWith(showCreate: true, createName: '');
+  void openCreate() => state.value = state.value.copyWith(
+      showCreate: true, createName: '', createProgression: 'sequential');
   void closeCreate() => state.value = state.value.copyWith(showCreate: false);
   void setCreateName(String v) =>
       state.value = state.value.copyWith(createName: v);
+  void setCreateProgression(String v) =>
+      state.value = state.value.copyWith(createProgression: v);
 
   Future<String?> submitCreate() async {
     final s = state.value;
@@ -123,7 +129,8 @@ class ProgramLibraryViewModel {
     if (name.isEmpty) return null;
     state.value = s.copyWith(isCreating: true, clearError: true);
     try {
-      final created = await _repo.createProgram(_userId, name: name);
+      final created = await _repo.createProgram(_userId,
+          name: name, progressionMode: s.createProgression);
       state.value = state.value.copyWith(isCreating: false, showCreate: false);
       await fetchAll();
       return created.programId;
@@ -153,13 +160,21 @@ class ProgramLibraryViewModel {
     }
   }
 
-  Future<void> setCurrentProgram(String programId) async {
+  Future<void> setCurrentProgram(
+    String programId, {
+    int? targetSessions,
+    int? targetWeeks,
+    DateTime? endDate,
+  }) async {
     state.value = state.value.copyWith(settingCurrentId: programId, clearError: true);
     try {
       // Use the run returned directly from the write rather than re-reading
       // getCurrentRun immediately after — local PowerSync reads can lag a
       // just-completed remote write.
-      final run = await _runRepo.startProgramRun(_userId, programId);
+      final run = await _runRepo.startProgramRun(_userId, programId,
+          targetSessions: targetSessions,
+          targetWeeks: targetWeeks,
+          endDate: endDate);
       state.value = state.value.copyWith(
         clearSettingCurrentId: true,
         currentProgramId: run.programId,

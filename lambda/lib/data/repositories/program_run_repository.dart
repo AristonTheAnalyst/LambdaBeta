@@ -25,8 +25,16 @@ class ProgramRunRepository {
     return ProgramRun.fromMap(rows.first);
   }
 
-  /// Ends any existing current run and starts a fresh one for [programId].
-  Future<ProgramRun> startProgramRun(String userId, String programId) async {
+  /// Ends any existing current run and starts a fresh one for [programId],
+  /// optionally carrying the duration config (sessions for sequential, weeks
+  /// or end date for calendar).
+  Future<ProgramRun> startProgramRun(
+    String userId,
+    String programId, {
+    int? targetSessions,
+    int? targetWeeks,
+    DateTime? endDate,
+  }) async {
     await endCurrentRun(userId);
 
     final id = _uuid.v4();
@@ -34,8 +42,16 @@ class ProgramRunRepository {
     // by Postgres's timestamptz column (see WorkoutRepository.createWorkout).
     final startedDate = DateTime.now().toUtc();
     await ps.db.execute(
-      'INSERT INTO fact_program_run (id, program_run_id, program_id, user_id, started_date, is_current) VALUES (?, ?, ?, ?, ?, ?)',
-      [id, id, programId, userId, startedDate.toIso8601String(), 1],
+      '''
+      INSERT INTO fact_program_run
+        (id, program_run_id, program_id, user_id, started_date, is_current,
+         target_sessions, target_weeks, end_date)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ''',
+      [
+        id, id, programId, userId, startedDate.toIso8601String(), 1,
+        targetSessions, targetWeeks, endDate?.toUtc().toIso8601String(),
+      ],
     );
     return ProgramRun(
       programRunId: id,
@@ -43,6 +59,37 @@ class ProgramRunRepository {
       userId: userId,
       startedDate: startedDate,
       isCurrent: true,
+      targetSessions: targetSessions,
+      targetWeeks: targetWeeks,
+      endDate: endDate?.toUtc(),
+    );
+  }
+
+  /// Updates an active run's duration config — programs are mutable while
+  /// running. Pass `clear: true` alongside a null value to explicitly clear a
+  /// previously-set field (e.g. switching a calendar run from end date to
+  /// weeks must clear the old end date).
+  Future<void> updateRunConfig(
+    String programRunId, {
+    int? targetSessions,
+    int? targetWeeks,
+    DateTime? endDate,
+    bool clearSessions = false,
+    bool clearWeeks = false,
+    bool clearEndDate = false,
+  }) async {
+    final updates = <String, dynamic>{};
+    if (clearSessions) updates['target_sessions'] = null;
+    if (targetSessions != null) updates['target_sessions'] = targetSessions;
+    if (clearWeeks) updates['target_weeks'] = null;
+    if (targetWeeks != null) updates['target_weeks'] = targetWeeks;
+    if (clearEndDate) updates['end_date'] = null;
+    if (endDate != null) updates['end_date'] = endDate.toUtc().toIso8601String();
+    if (updates.isEmpty) return;
+    final setClause = updates.keys.map((k) => '$k = ?').join(', ');
+    await ps.db.execute(
+      'UPDATE fact_program_run SET $setClause WHERE program_run_id = ?',
+      [...updates.values, programRunId],
     );
   }
 
@@ -107,12 +154,22 @@ class ProgramRunRepository {
     final workouts = await _programRepo.fetchPlannedWorkouts(program.programId);
     final completed = await _completedWorkoutCount(run.programRunId);
     final totalInCycle = workouts.length;
-    final workoutsCompletedInCycle = totalInCycle == 0 ? 0 : completed % totalInCycle;
 
-    final rawWeek = (DateTime.now().difference(run.startedDate).inDays ~/ 7) + 1;
-    final weekNumber = program.lengthWeeks != null && rawWeek > program.lengthWeeks!
-        ? program.lengthWeeks!
-        : rawWeek;
+    // Sequential: the run's configured session count overrides the planned
+    // workout count for progress/finish. Calendar: the run's weeks or end date
+    // overrides program.lengthWeeks.
+    final effectiveTotal =
+        program.progressionMode == 'sequential'
+            ? (run.targetSessions ?? totalInCycle)
+            : totalInCycle;
+    final workoutsCompletedInCycle =
+        effectiveTotal == 0 ? 0 : completed % effectiveTotal;
+
+    final now = DateTime.now();
+    final rawWeek = (now.difference(run.startedDate).inDays ~/ 7) + 1;
+    final totalWeeks = run.targetWeeks ?? program.lengthWeeks;
+    final weekNumber =
+        totalWeeks != null && rawWeek > totalWeeks ? totalWeeks : rawWeek;
 
     final next = await getNextPlannedWorkout(
       program.programId,
@@ -124,9 +181,9 @@ class ProgramRunRepository {
       program: program,
       run: run,
       weekNumber: weekNumber,
-      totalWeeks: program.lengthWeeks,
+      totalWeeks: totalWeeks,
       workoutsCompletedInCycle: workoutsCompletedInCycle,
-      totalWorkoutsInCycle: totalInCycle,
+      totalWorkoutsInCycle: effectiveTotal,
       totalWorkoutsCompleted: completed,
       nextPlannedWorkout: next,
     );

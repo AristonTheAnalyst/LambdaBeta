@@ -87,14 +87,15 @@ class _PlanSetRowState extends State<PlanSetRow> {
     final reps = repsText.isEmpty ? null : num.tryParse(repsText);
 
     if (_isDraft) {
-      if (reps == null) return; // stays a draft until a target is entered
+      // Commit even with no targets — an empty planned set is valid (it shows
+      // as a blank row to fill during the session).
       await widget.viewModel.quickCreatePlannedSet(
         exerciseId: widget.exerciseId,
         exerciseSequenceOrder: widget.exerciseSequenceOrder,
         draftId: widget.draftId!,
         variationId: _draftVariationId,
         weight: weight,
-        reps: [reps],
+        reps: reps != null ? [reps] : const [],
         duration: const [],
         notes: _draftNotes?.trim().isEmpty == true ? null : _draftNotes?.trim(),
       );

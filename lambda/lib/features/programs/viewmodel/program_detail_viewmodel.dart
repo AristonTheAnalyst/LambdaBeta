@@ -6,6 +6,7 @@ import '../../../data/models/lesson.dart';
 import '../../../data/models/planned_set.dart';
 import '../../../data/models/planned_workout.dart';
 import '../../../data/models/program.dart';
+import '../../../data/models/program_progress.dart';
 import '../../../data/models/program_run.dart';
 import '../../../data/repositories/exercise_repository.dart';
 import '../../../data/repositories/lesson_repository.dart';
@@ -36,6 +37,8 @@ class ProgramDetailState {
     this.exerciseDetailMap = const {},
     this.isCurrent = false,
     this.settingCurrent = false,
+    this.activeRun,
+    this.currentProgress,
     // Program field drafts
     this.nameDraft = '',
     this.descriptionDraft = '',
@@ -72,6 +75,13 @@ class ProgramDetailState {
   final Map<String, ExerciseDetail> exerciseDetailMap;
   final bool isCurrent;
   final bool settingCurrent;
+
+  /// The active run for this program (when it's the current program) — carries
+  /// the run's duration config, editable while running.
+  final ProgramRun? activeRun;
+
+  /// Progress of the active run (null unless this program is current).
+  final ProgramProgress? currentProgress;
 
   final String nameDraft;
   final String descriptionDraft;
@@ -118,6 +128,8 @@ class ProgramDetailState {
     Map<String, ExerciseDetail>? exerciseDetailMap,
     bool? isCurrent,
     bool? settingCurrent,
+    ProgramRun? activeRun,
+    ProgramProgress? currentProgress,
     String? nameDraft,
     String? descriptionDraft,
     String? lengthWeeksDraft,
@@ -151,6 +163,8 @@ class ProgramDetailState {
         exerciseDetailMap: exerciseDetailMap ?? this.exerciseDetailMap,
         isCurrent: isCurrent ?? this.isCurrent,
         settingCurrent: settingCurrent ?? this.settingCurrent,
+        activeRun: activeRun ?? this.activeRun,
+        currentProgress: currentProgress ?? this.currentProgress,
         nameDraft: nameDraft ?? this.nameDraft,
         descriptionDraft: descriptionDraft ?? this.descriptionDraft,
         lengthWeeksDraft: lengthWeeksDraft ?? this.lengthWeeksDraft,
@@ -211,9 +225,20 @@ class ProgramDetailViewModel {
   final WorkoutRepository _workoutRepo;
   final state = ValueNotifier(const ProgramDetailState());
 
-  int _nextDraftId = 1;
-
   String get _userId => Supabase.instance.client.auth.currentUser!.id;
+
+  /// Creates a new program with only a progression mode (name/goals are set
+  /// by the wizard's later steps) and returns its id, ready for [load].
+  Future<String?> createNewProgram(String progressionMode) async {
+    try {
+      final created = await _repo.createProgram(_userId,
+          name: 'New Program', progressionMode: progressionMode);
+      return created.programId;
+    } catch (e) {
+      state.value = state.value.copyWith(error: e.toString());
+      return null;
+    }
+  }
 
   Future<void> load(String programId) async {
     state.value = state.value.copyWith(isLoading: true, clearError: true);
@@ -235,6 +260,13 @@ class ProgramDetailViewModel {
         final varId = b['custom_variation_id'] as String;
         counts[varId] = (counts[varId] ?? 0) + 1;
       }
+      final isCurrent = currentRun != null && currentRun.programId == programId;
+      ProgramProgress? progress;
+      if (isCurrent) {
+        try {
+          progress = await _runRepo.getProgress(_userId);
+        } catch (_) {}
+      }
       state.value = state.value.copyWith(
         isLoading: false,
         program: program,
@@ -244,7 +276,9 @@ class ProgramDetailViewModel {
         descriptionDraft: program?.description ?? '',
         lengthWeeksDraft: program?.lengthWeeks?.toString() ?? '',
         progressionModeDraft: program?.progressionMode ?? 'sequential',
-        isCurrent: currentRun != null && currentRun.programId == programId,
+        isCurrent: isCurrent,
+        activeRun: isCurrent ? currentRun : null,
+        currentProgress: progress,
         allVariations: variations,
         variationExerciseCounts: counts,
       );
@@ -282,16 +316,49 @@ class ProgramDetailViewModel {
     }
   }
 
-  Future<void> setAsCurrent() async {
+  Future<void> setAsCurrent({
+    int? targetSessions,
+    int? targetWeeks,
+    DateTime? endDate,
+  }) async {
     final s = state.value;
     if (s.program == null) return;
     state.value = s.copyWith(settingCurrent: true, clearError: true);
     try {
-      await _runRepo.startProgramRun(_userId, s.program!.programId);
-      state.value = state.value.copyWith(settingCurrent: false, isCurrent: true);
+      final run = await _runRepo.startProgramRun(_userId, s.program!.programId,
+          targetSessions: targetSessions,
+          targetWeeks: targetWeeks,
+          endDate: endDate);
+      state.value = state.value.copyWith(
+          settingCurrent: false, isCurrent: true, activeRun: run);
     } catch (e) {
       state.value =
           state.value.copyWith(settingCurrent: false, error: e.toString());
+    }
+  }
+
+  /// Updates the active run's duration config (mutable while running).
+  Future<void> updateRunConfig({
+    int? targetSessions,
+    int? targetWeeks,
+    DateTime? endDate,
+    bool clearSessions = false,
+    bool clearWeeks = false,
+    bool clearEndDate = false,
+  }) async {
+    final run = state.value.activeRun;
+    if (run == null) return;
+    try {
+      await _runRepo.updateRunConfig(run.programRunId,
+          targetSessions: targetSessions,
+          targetWeeks: targetWeeks,
+          endDate: endDate,
+          clearSessions: clearSessions,
+          clearWeeks: clearWeeks,
+          clearEndDate: clearEndDate);
+      state.value = state.value.copyWith(clearError: true);
+    } catch (e) {
+      state.value = state.value.copyWith(error: e.toString());
     }
   }
 
@@ -458,14 +525,20 @@ class ProgramDetailViewModel {
         ? 1
         : s.workoutExerciseSlots.map((sl) => sl.exerciseSequenceOrder).reduce((a, b) => a > b ? a : b) + 1;
     final slots = [...s.workoutExerciseSlots, PlanExerciseSlot(exerciseSequenceOrder: nextOrder, exerciseId: exerciseId)];
-    final drafts = Map<int, List<int>>.from(s.workoutSetDrafts);
-    drafts.putIfAbsent(nextOrder, () => []).add(_nextDraftId++);
+    // No draft row — the persisted empty planned set (below) IS the first set
+    // row, so adding a ghost would double it.
     state.value = s.copyWith(
       workoutExerciseSlots: slots,
-      workoutSetDrafts: drafts,
       activeSlotIndex: slots.length - 1,
       workoutUnsavedChanges: true,
     );
+    // Persist an empty planned set so the exercise survives a save/reopen —
+    // slots are reconstructed from persisted sets, so an exercise with no
+    // committed set would otherwise vanish.
+    final workout = s.editingWorkout;
+    if (workout != null) {
+      _persistEmptyPlannedSet(exerciseId, nextOrder);
+    }
     loadLessonsFor(exerciseId);
   }
 
@@ -496,10 +569,40 @@ class ProgramDetailViewModel {
 
   // ── Draft (unsaved) planned-set rows ──────────────────────────────────────
 
+  /// Persists an empty planned set row so an exercise added to a planned
+  /// workout survives a save/reopen even before any target is entered.
+  Future<void> _persistEmptyPlannedSet(String exerciseId, int exerciseSequenceOrder) async {
+    final workout = state.value.editingWorkout;
+    if (workout == null) return;
+    final existing = state.value.plannedSetsFor(exerciseSequenceOrder);
+    final setNumber = existing.isEmpty
+        ? 1
+        : existing.map((ps) => ps.setNumber).reduce((a, b) => a > b ? a : b) + 1;
+    try {
+      await _repo.createPlannedSet(
+        _userId,
+        workout.plannedWorkoutId,
+        exerciseId: exerciseId,
+        exerciseName: state.value.exerciseDetailMap[exerciseId]?.name,
+        exerciseSequenceOrder: exerciseSequenceOrder,
+        setNumber: setNumber,
+      );
+      final sets = await _repo.fetchPlannedSets(workout.plannedWorkoutId);
+      state.value = state.value.copyWith(workoutPlannedSets: sets);
+    } catch (e) {
+      state.value = state.value.copyWith(error: e.toString());
+    }
+  }
+
   void addDraftPlannedSet(int exerciseSequenceOrder) {
-    final drafts = Map<int, List<int>>.from(state.value.workoutSetDrafts);
-    drafts.putIfAbsent(exerciseSequenceOrder, () => []).add(_nextDraftId++);
-    state.value = state.value.copyWith(workoutSetDrafts: drafts, workoutUnsavedChanges: true);
+    // Persist an empty planned set immediately so "+ ADD SET" rows survive a
+    // save/reopen even when no target is entered. The set number is assigned
+    // here; the caller's PlanSetRow fills weight/reps on commit.
+    final slot = state.value.workoutExerciseSlots
+        .where((s) => s.exerciseSequenceOrder == exerciseSequenceOrder)
+        .firstOrNull;
+    if (slot == null) return;
+    _persistEmptyPlannedSet(slot.exerciseId, exerciseSequenceOrder);
   }
 
   void removeDraftPlannedSet(int exerciseSequenceOrder, int draftId) {
@@ -520,7 +623,9 @@ class ProgramDetailViewModel {
   }) async {
     final workout = state.value.editingWorkout;
     if (workout == null) return false;
-    if (reps.isEmpty && duration.isEmpty) return false;
+    // Empty planned sets are valid — a planned workout may list sets with no
+    // target weight/reps yet (they show as blank rows, filled during the
+    // session).
     final existing = state.value.plannedSetsFor(exerciseSequenceOrder);
     final setNumber = existing.isEmpty
         ? 1

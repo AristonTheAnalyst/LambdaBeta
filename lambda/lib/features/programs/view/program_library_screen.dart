@@ -9,11 +9,11 @@ import '../../../../data/models/program.dart';
 import '../../../../data/models/program_progress.dart';
 import '../../../../shared/widgets/app_card.dart';
 import '../../../../shared/widgets/glass_button.dart';
-import '../../../../shared/widgets/lambda_button.dart';
 import '../../../../shared/widgets/lambda_input.dart';
+import '../../../../shared/widgets/segmented_control.dart';
 import '../../../../shared/widgets/page_header.dart';
+import 'program_wizard_screen.dart';
 import '../../../../shared/widgets/press_squash.dart';
-import '../../../../shared/widgets/slide_up_modal.dart';
 import '../viewmodel/program_library_viewmodel.dart';
 
 class ProgramLibraryScreen extends StatefulWidget {
@@ -43,15 +43,8 @@ class _ProgramLibraryScreenState extends State<ProgramLibraryScreen> {
   void _openCreate() {
     _createController.clear();
     _viewModel.openCreate();
-    showLambdaModal(
-      context,
-      fitContent: true,
-      keyboardAware: true,
-      child: _CreateProgramModal(
-        controller: _createController,
-        viewModel: _viewModel,
-        onCreated: (id) => context.push('/exercises/programs/$id'),
-      ),
+    Navigator.of(context, rootNavigator: true).push(
+      MaterialPageRoute(builder: (_) => const ProgramWizardScreen()),
     );
   }
 
@@ -83,7 +76,7 @@ class _ProgramLibraryScreenState extends State<ProgramLibraryScreen> {
     );
   }
 
-  Future<void> _confirmSetCurrent(Program p) async {
+  Future<void> _beginProgram(Program p) async {
     final currentId = _viewModel.state.value.currentProgramId;
     final currentProgram = currentId != null && currentId != p.programId
         ? _viewModel.state.value.programs
@@ -91,35 +84,135 @@ class _ProgramLibraryScreenState extends State<ProgramLibraryScreen> {
             .firstOrNull
         : null;
 
-    if (currentProgram == null) {
-      _viewModel.setCurrentProgram(p.programId);
-      return;
+    if (currentProgram != null) {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: AppColors.surface,
+          title: Text('Begin Program?',
+              style: AppFonts.ui(fontWeight: FontWeight.w800, color: AppColors.primary)),
+          content: Text(
+              'Begin "${toProperCase(p.name)}"? Your progress on '
+              '"${toProperCase(currentProgram.name)}" will reset.',
+              style: AppFonts.ui(color: AppColors.muted)),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: Text('Cancel', style: AppFonts.ui(color: AppColors.muted))),
+            TextButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: Text('Begin',
+                    style: AppFonts.ui(color: AppColors.accent, fontWeight: FontWeight.w600))),
+          ],
+        ),
+      );
+      if (ok != true || !mounted) return;
     }
 
-    final ok = await showDialog<bool>(
+    if (!mounted) return;
+    await _showBeginConfigModal(p);
+  }
+
+  /// Asks for the run's duration config: sequential → number of sessions;
+  /// calendar → number of weeks OR an end date.
+  Future<void> _showBeginConfigModal(Program p) async {
+    final now = DateTime.now();
+    final controller = TextEditingController();
+    final isCalendar = p.progressionMode == 'calendar';
+    var useEndDate = false;
+    DateTime? endDate;
+
+    final result = await showDialog<_RunConfig>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        title: Text('Set as current?',
-            style: AppFonts.ui(fontWeight: FontWeight.w800, color: AppColors.primary)),
-        content: Text(
-            'Set "${toProperCase(p.name)}" as current? Your progress on '
-            '"${toProperCase(currentProgram.name)}" will reset.',
-            style: AppFonts.ui(color: AppColors.muted)),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: Text('Cancel', style: AppFonts.ui(color: AppColors.muted))),
-          TextButton(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: Text('Set Current',
-                  style: AppFonts.ui(color: AppColors.accent, fontWeight: FontWeight.w600))),
-        ],
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setState) => AlertDialog(
+          backgroundColor: AppColors.surface,
+          title: Text('Begin "${toProperCase(p.name)}"',
+              style: AppFonts.ui(fontWeight: FontWeight.w800, color: AppColors.primary)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (isCalendar) ...[
+                SegmentedControl<bool>(
+                  subtle: true,
+                  options: const [
+                    SegmentOption(label: 'Weeks', value: false),
+                    SegmentOption(label: 'End date', value: true),
+                  ],
+                  value: useEndDate,
+                  onChange: (v) => setState(() => useEndDate = v),
+                ),
+                const SizedBox(height: AppSpacing.md),
+              ],
+              if (!isCalendar || !useEndDate)
+                LambdaInput(
+                  controller: controller,
+                  label: isCalendar ? 'Number of weeks' : 'Number of sessions',
+                  placeholder: isCalendar ? 'e.g. 6' : 'e.g. 12',
+                  keyboardType: TextInputType.number,
+                  required: true,
+                )
+              else ...[
+                Text('End date',
+                    style: AppFonts.ui(fontSize: AppTextStyles.sm,
+                        fontWeight: FontWeight.w600, color: AppColors.primary)),
+                const SizedBox(height: 6),
+                GestureDetector(
+                  onTap: () async {
+                    final picked = await showDatePicker(
+                      context: ctx,
+                      initialDate: DateTime.now().add(const Duration(days: 7)),
+                      firstDate: DateTime.now(),
+                      lastDate: DateTime(now.year + 5),
+                    );
+                    if (picked != null) setState(() => endDate = picked);
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppColors.border),
+                    ),
+                    child: Text(endDate != null
+                        ? '${endDate!.day}/${endDate!.month}/${endDate!.year}'
+                        : 'Pick a date…',
+                        style: AppFonts.ui(color: endDate != null ? AppColors.primary : AppColors.muted)),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: Text('Cancel', style: AppFonts.ui(color: AppColors.muted))),
+            TextButton(
+                onPressed: () {
+                  final count = int.tryParse(controller.text.trim());
+                  if (isCalendar && useEndDate) {
+                    if (endDate == null) return;
+                    Navigator.of(ctx).pop(_RunConfig(endDate: endDate));
+                  } else {
+                    if (count == null || count <= 0) return;
+                    Navigator.of(ctx).pop(_RunConfig(count: count));
+                  }
+                },
+                child: Text('Begin',
+                    style: AppFonts.ui(color: AppColors.accent, fontWeight: FontWeight.w600))),
+          ],
+        ),
       ),
     );
-    if (ok == true && mounted) {
-      _viewModel.setCurrentProgram(p.programId);
-    }
+    controller.dispose();
+    if (result == null || !mounted) return;
+    _viewModel.setCurrentProgram(
+      p.programId,
+      targetSessions: isCalendar ? null : result.count,
+      targetWeeks: (isCalendar && !useEndDate) ? result.count : null,
+      endDate: result.endDate,
+    );
   }
 
   @override
@@ -191,7 +284,7 @@ class _ProgramLibraryScreenState extends State<ProgramLibraryScreen> {
                                 onOpen: () =>
                                     context.push('/exercises/programs/${p.programId}'),
                                 onSetCurrent: () =>
-                                    _confirmSetCurrent(p),
+                                    _beginProgram(p),
                                 onDuplicate: () =>
                                     _viewModel.duplicateProgram(p.programId),
                                 onArchive: () => _confirmArchive(p),
@@ -264,7 +357,7 @@ class _ProgramCard extends StatelessWidget {
                                 borderRadius: BorderRadius.circular(999),
                                 border: Border.all(color: AppColors.accent),
                               ),
-                              child: Text('CURRENT',
+                              child: Text('Active',
                                   style: AppFonts.ui(
                                       fontSize: 10,
                                       letterSpacing: 0.5,
@@ -305,8 +398,9 @@ class _ProgramCard extends StatelessWidget {
             Text(
               progress!.isFinished
                   ? 'Finished'
-                  : 'Week ${progress!.weekNumber} of ${progress!.totalWeeks ?? '?'} · '
-                      '${progress!.workoutsCompletedInCycle}/${progress!.totalWorkoutsInCycle} workouts',
+                  : progress!.program.progressionMode == 'calendar'
+                      ? 'Week ${progress!.weekNumber} of ${progress!.totalWeeks ?? '?'} · ${progress!.remainingLabel}'
+                      : '${progress!.workoutsCompletedInCycle}/${progress!.totalWorkoutsInCycle} sessions · ${progress!.remainingLabel}',
               style: AppFonts.mono(fontSize: 9, color: AppColors.muted),
             ),
           ],
@@ -317,7 +411,7 @@ class _ProgramCard extends StatelessWidget {
             children: [
               if (!isCurrent)
                 GlassButton(
-                  label: 'Set Current',
+                  label: 'Begin Program',
                   icon: Icons.play_circle_outline,
                   compact: true,
                   loading: settingCurrent,
@@ -342,79 +436,9 @@ class _ProgramCard extends StatelessWidget {
   }
 }
 
-class _CreateProgramModal extends StatelessWidget {
-  const _CreateProgramModal({
-    required this.controller,
-    required this.viewModel,
-    required this.onCreated,
-  });
-
-  final TextEditingController controller;
-  final ProgramLibraryViewModel viewModel;
-  final ValueChanged<String> onCreated;
-
-  @override
-  Widget build(BuildContext context) {
-    return ValueListenableBuilder<ProgramLibraryState>(
-      valueListenable: viewModel.state,
-      builder: (context, state, _) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(AppSpacing.xl),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text('New Program',
-                    style: AppFonts.ui(
-                        fontSize: AppTextStyles.lg,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.primary)),
-                const SizedBox(height: AppSpacing.md),
-                LambdaInput(
-                  controller: controller,
-                  placeholder: 'Program name',
-                  enabled: !state.isCreating,
-                  textCapitalization: TextCapitalization.words,
-                  textInputAction: TextInputAction.done,
-                  onChanged: viewModel.setCreateName,
-                ),
-                const SizedBox(height: AppSpacing.lg),
-                Row(
-                  children: [
-                    Expanded(
-                      child: LambdaButton(
-                        label: 'Cancel',
-                        variant: ButtonVariant.ghost,
-                        onPressed: () {
-                          Navigator.of(context, rootNavigator: true).pop();
-                          viewModel.closeCreate();
-                        },
-                        disabled: state.isCreating,
-                      ),
-                    ),
-                    const SizedBox(width: AppSpacing.sm),
-                    Expanded(
-                      child: LambdaButton(
-                        label: 'Create',
-                        onPressed: () async {
-                          final id = await viewModel.submitCreate();
-                          if (id != null && context.mounted) {
-                            Navigator.of(context, rootNavigator: true).pop();
-                            onCreated(id);
-                          }
-                        },
-                        loading: state.isCreating,
-                        disabled: state.isCreating,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
+/// Result of the "Begin Program" duration-config dialog.
+class _RunConfig {
+  const _RunConfig({this.count, this.endDate});
+  final int? count;
+  final DateTime? endDate;
 }

@@ -27,13 +27,14 @@ class ProgramProgress {
   final int totalWorkoutsCompleted;
   final PlannedWorkout? nextPlannedWorkout;
 
-  /// Whether the program's cycle is complete. Sequential: the full cycle has
-  /// been worked through (raw completed count reached a multiple of the cycle
-  /// length — `workoutsCompletedInCycle` alone wraps via `%`). Calendar: the
-  /// run has passed its lengthWeeks. When true, the run should no longer be
-  /// "current".
+  /// Whether the program's cycle is complete. Sequential: the configured
+  /// session count (or the planned-workout cycle) has been worked through.
+  /// Calendar: the run has passed its weeks or explicit end date. When true,
+  /// the run should no longer be "current".
   bool get isFinished {
     if (program.progressionMode == 'calendar') {
+      final end = run.effectiveEndDate;
+      if (end != null && DateTime.now().isAfter(end)) return true;
       return totalWeeks != null && weekNumber > totalWeeks!;
     }
     return totalWorkoutsInCycle > 0 &&
@@ -49,5 +50,27 @@ class ProgramProgress {
     }
     if (totalWorkoutsInCycle <= 0) return 0;
     return (workoutsCompletedInCycle / totalWorkoutsInCycle).clamp(0.0, 1.0);
+  }
+
+  /// Human-readable "how much is left" — sequential shows remaining sessions,
+  /// calendar shows weeks or days remaining (by weeks or end date).
+  String get remainingLabel {
+    if (isFinished) return 'finished';
+    if (program.progressionMode == 'calendar') {
+      final end = run.effectiveEndDate;
+      if (end != null) {
+        final days = end.difference(DateTime.now()).inDays;
+        if (days <= 0) return 'ends today';
+        return days == 1 ? '1 day left' : '$days days left';
+      }
+      final w = totalWeeks;
+      if (w != null) {
+        final left = w - weekNumber;
+        return left <= 0 ? 'final week' : '$left week${left == 1 ? '' : 's'} left';
+      }
+      return 'ongoing';
+    }
+    final left = totalWorkoutsInCycle - totalWorkoutsCompleted;
+    return left <= 0 ? 'final session' : '$left session${left == 1 ? '' : 's'} left';
   }
 }
