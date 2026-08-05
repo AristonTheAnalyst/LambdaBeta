@@ -1,17 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/styles/app_colors.dart';
+import '../../../../core/styles/app_radius.dart';
 import '../../../../core/styles/app_fonts.dart';
 import '../../../../core/styles/app_spacing.dart';
 import '../../../../core/styles/app_text_styles.dart';
 import '../../../../core/utils/workout_format.dart';
 import '../../../../data/models/planned_workout.dart';
 import '../../../../data/models/program_run.dart';
+import '../../../../data/repositories/workout_plan_repository.dart';
 import '../../../../shared/widgets/app_card.dart';
 import '../../../../shared/widgets/glass_button.dart';
 import '../../../../shared/widgets/lambda_input.dart';
 import '../../../../shared/widgets/page_header.dart';
 import '../../../../shared/widgets/segmented_control.dart';
+import '../../../../shared/widgets/swipe_actions.dart';
 import '../viewmodel/program_detail_viewmodel.dart';
 import 'plan_workout_screen.dart';
 
@@ -282,6 +286,125 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> {
     );
   }
 
+  /// "+" on Planned Workouts: offer creating a new workout or copying an
+  /// existing standalone workout into this program.
+  Future<void> _openAddWorkoutMenu() async {
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      useRootNavigator: true,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.lg)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(AppSpacing.lg),
+              child: Text('Add workout',
+                  style: AppFonts.ui(
+                      fontSize: AppTextStyles.lg,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.primary)),
+            ),
+            ListTile(
+              leading: Icon(Icons.add, color: AppColors.accent),
+              title: Text('New workout',
+                  style: AppFonts.ui(
+                      fontSize: AppTextStyles.md, color: AppColors.primary)),
+              onTap: () => Navigator.of(ctx).pop('new'),
+            ),
+            ListTile(
+              leading: Icon(Icons.library_add_outlined, color: AppColors.accent),
+              title: Text('From Workouts',
+                  style: AppFonts.ui(
+                      fontSize: AppTextStyles.md, color: AppColors.primary)),
+              onTap: () => Navigator.of(ctx).pop('from'),
+            ),
+            const SizedBox(height: AppSpacing.md),
+          ],
+        ),
+      ),
+    );
+    if (!mounted) return;
+    if (choice == 'new') {
+      _openCreateWorkout();
+    } else if (choice == 'from') {
+      await _addExistingWorkout();
+    }
+  }
+
+  /// Confirms and removes a planned workout from this program.
+  Future<void> _confirmDeleteWorkout(PlannedWorkout w) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: Text('Remove Workout',
+            style: AppFonts.ui(fontWeight: FontWeight.w800, color: AppColors.danger)),
+        content: Text('Remove "${toProperCase(w.name)}" from this program?',
+            style: AppFonts.ui(color: AppColors.muted)),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: Text('Cancel', style: AppFonts.ui(color: AppColors.muted))),
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: Text('Remove',
+                  style: AppFonts.ui(
+                      color: AppColors.danger, fontWeight: FontWeight.w600))),
+        ],
+      ),
+    );
+    if (ok == true && mounted) {
+      await _vm.removePlannedWorkout(w);
+    }
+  }
+
+  /// Lets the user pick a standalone workout to copy into this program.
+  Future<void> _addExistingWorkout() async {
+    final repo = WorkoutPlanRepository();
+    final workouts = await repo.fetchWorkouts(
+        Supabase.instance.client.auth.currentUser!.id);
+    if (workouts.isEmpty || !mounted) return;
+    final chosen = await showModalBottomSheet<String>(
+      context: context,
+      useRootNavigator: true,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.lg)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(AppSpacing.lg),
+              child: Text('Add workout to program',
+                  style: AppFonts.ui(
+                      fontSize: AppTextStyles.lg,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.primary)),
+            ),
+            for (final w in workouts)
+              ListTile(
+                title: Text(toProperCase(w.name),
+                    style: AppFonts.ui(
+                        fontSize: AppTextStyles.md, color: AppColors.primary)),
+                onTap: () => Navigator.of(ctx).pop(w.workoutId),
+              ),
+            const SizedBox(height: AppSpacing.md),
+          ],
+        ),
+      ),
+    );
+    if (chosen == null || !mounted) return;
+    await _vm.copyWorkoutIntoProgram(chosen);
+  }
+
   Future<void> _openEditWorkout(PlannedWorkout w) async {
     // Informational confirm when editing a workout in a running program:
     // changes apply to future sessions only; already-logged sets are snapshots
@@ -471,7 +594,7 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> {
                               label: '',
                               icon: Icons.add,
                               compact: true,
-                              onPressed: _openCreateWorkout,
+                              onPressed: _openAddWorkoutMenu,
                             ),
                           ],
                         ),
@@ -498,6 +621,7 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> {
                                       workout: w,
                                       showDayOfWeek: state.isCalendarMode,
                                       onTap: () => _openEditWorkout(w),
+                                      onDelete: () => _confirmDeleteWorkout(w),
                                     ))
                                 .toList(),
                           ),
@@ -522,17 +646,28 @@ class _PlannedWorkoutRow extends StatelessWidget {
     required this.workout,
     required this.showDayOfWeek,
     required this.onTap,
+    required this.onDelete,
   });
 
   final PlannedWorkout workout;
   final bool showDayOfWeek;
   final VoidCallback onTap;
+  final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-      child: AppCard(
+      child: SwipeActions(
+        actions: [
+          SwipeAction(
+            icon: Icons.delete_outline,
+            label: 'Delete',
+            color: AppColors.danger,
+            onTap: onDelete,
+          ),
+        ],
+        child: AppCard(
         onTap: onTap,
         padding: const EdgeInsets.symmetric(
             horizontal: AppSpacing.md, vertical: AppSpacing.sm),
@@ -579,6 +714,7 @@ class _PlannedWorkoutRow extends StatelessWidget {
               Icon(Icons.drag_handle, size: 18, color: AppColors.muted),
             ],
           ),
+      ),
       ),
     );
   }

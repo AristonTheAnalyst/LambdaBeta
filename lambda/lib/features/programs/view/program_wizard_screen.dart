@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/styles/app_colors.dart';
 import '../../../../core/styles/app_fonts.dart';
 import '../../../../core/styles/app_radius.dart';
@@ -7,6 +8,7 @@ import '../../../../core/styles/app_spacing.dart';
 import '../../../../core/styles/app_text_styles.dart';
 import '../../../../core/utils/workout_format.dart';
 import '../../../../data/models/planned_workout.dart';
+import '../../../../data/repositories/workout_plan_repository.dart';
 import '../../../../shared/widgets/glass_button.dart';
 import '../../../../shared/widgets/lambda_input.dart';
 import '../../../../shared/widgets/page_header.dart';
@@ -117,6 +119,56 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
     await Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(builder: (_) => PlanWorkoutScreen(viewModel: _vm)),
     );
+    if (mounted) setState(() {});
+  }
+
+  /// Copies an existing standalone workout into the program as a planned
+  /// workout (including its exercises and sets).
+  Future<void> _addExistingWorkout() async {
+    final repo = WorkoutPlanRepository();
+    final workouts = await repo.fetchWorkouts(
+        Supabase.instance.client.auth.currentUser!.id);
+    if (workouts.isEmpty || !mounted) return;
+    final chosen = await showModalBottomSheet<String>(
+      context: context,
+      useRootNavigator: true,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.lg)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(AppSpacing.lg),
+              child: Text('Add workout to program',
+                  style: AppFonts.ui(
+                      fontSize: AppTextStyles.lg,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.primary)),
+            ),
+            for (final w in workouts)
+              InkWell(
+                onTap: () => Navigator.of(ctx).pop(w.workoutId),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.lg, vertical: AppSpacing.md),
+                  child: Text(toProperCase(w.name),
+                      style: AppFonts.ui(
+                          fontSize: AppTextStyles.md,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.primary)),
+                ),
+              ),
+            const SizedBox(height: AppSpacing.md),
+          ],
+        ),
+      ),
+    );
+    if (chosen == null || !mounted) return;
+    await _vm.copyWorkoutIntoProgram(chosen);
     if (mounted) setState(() {});
   }
 
@@ -400,10 +452,24 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        GlassButton(
-          label: '+ Add workout',
-          icon: Icons.add,
-          onPressed: _addWorkout,
+        Row(
+          children: [
+            Expanded(
+              child: GlassButton(
+                label: '+ New',
+                icon: Icons.add,
+                onPressed: _addWorkout,
+              ),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(
+              child: GlassButton(
+                label: 'From Workouts',
+                icon: Icons.library_add_outlined,
+                onPressed: _addExistingWorkout,
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: AppSpacing.md),
         if (workouts.isEmpty)

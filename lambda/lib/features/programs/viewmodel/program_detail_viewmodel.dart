@@ -499,6 +499,7 @@ class ProgramDetailViewModel {
   /// notes, and planned sets into the editor.
   Future<void> openStandaloneWorkout(String workoutId) async {
     _standaloneWorkoutId = workoutId;
+    await _ensureCatalog();
     final workouts = await _workoutPlanRepo.fetchWorkouts(_userId);
     final w = workouts.where((x) => x.workoutId == workoutId).firstOrNull;
     if (w == null) return;
@@ -536,11 +537,64 @@ class ProgramDetailViewModel {
   /// Creates a brand-new standalone workout and opens it for editing.
   Future<void> createStandaloneWorkoutAndOpen() async {
     _standaloneWorkoutId = null;
+    await _ensureCatalog();
     try {
       final created = await _workoutPlanRepo.createWorkout(_userId, name: 'New Workout');
       await openStandaloneWorkout(created.workoutId);
     } catch (e) {
       state.value = state.value.copyWith(error: e.toString());
+    }
+  }
+
+  /// Loads the exercise/variation catalog if not already loaded — the
+  /// standalone workout editor needs it to populate the add-exercise picker.
+  Future<void> _ensureCatalog() async {
+    if (state.value.exerciseDetailMap.isNotEmpty) return;
+    try {
+      await _reloadCatalog();
+    } catch (_) {}
+  }
+
+  /// Copies a standalone workout into the current program as a planned
+  /// workout, including its exercise sets. Returns the new planned workout.
+  Future<PlannedWorkout?> copyWorkoutIntoProgram(String workoutId) async {
+    final programId = state.value.program?.programId;
+    if (programId == null) return null;
+    try {
+      final src = (await _workoutPlanRepo.fetchWorkouts(_userId))
+          .where((w) => w.workoutId == workoutId)
+          .firstOrNull;
+      if (src == null) return null;
+      final srcSets = await _workoutPlanRepo.fetchSets(workoutId);
+      final created = await _repo.createPlannedWorkout(
+        _userId,
+        programId,
+        name: src.name,
+        notes: src.notes,
+        sequenceOrder: state.value.plannedWorkouts.length + 1,
+      );
+      for (final s in srcSets) {
+        await _repo.createPlannedSet(
+          _userId,
+          created.plannedWorkoutId,
+          exerciseId: s.exerciseId,
+          exerciseName: s.exerciseName,
+          variationId: s.variationId,
+          variationName: s.variationName,
+          exerciseSequenceOrder: s.exerciseSequenceOrder,
+          setNumber: s.setNumber,
+          targetWeight: s.targetWeight?.toDouble(),
+          targetReps: s.targetReps,
+          targetDuration: s.targetDuration,
+          targetNotes: s.targetNotes,
+        );
+      }
+      final workouts = await _repo.fetchPlannedWorkouts(programId);
+      state.value = state.value.copyWith(plannedWorkouts: workouts);
+      return created;
+    } catch (e) {
+      state.value = state.value.copyWith(error: e.toString());
+      return null;
     }
   }
 
@@ -581,6 +635,15 @@ class ProgramDetailViewModel {
       _standaloneWorkoutId = null;
       return;
     }
+    final programId = state.value.program?.programId;
+    if (programId == null) return;
+    await _repo.archivePlannedWorkout(w.plannedWorkoutId);
+    final workouts = await _repo.fetchPlannedWorkouts(programId);
+    state.value = state.value.copyWith(plannedWorkouts: workouts);
+  }
+
+  /// Removes a planned workout from the current program (from the detail list).
+  Future<void> removePlannedWorkout(PlannedWorkout w) async {
     final programId = state.value.program?.programId;
     if (programId == null) return;
     await _repo.archivePlannedWorkout(w.plannedWorkoutId);

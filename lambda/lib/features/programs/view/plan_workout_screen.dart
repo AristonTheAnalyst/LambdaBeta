@@ -30,10 +30,22 @@ const _dayOfWeekOptions = [
 /// blur, Lessons/History per exercise, swipe-to-reveal delete/duplicate.
 /// Pushed via [program_detail_screen.dart] on create or edit.
 class PlanWorkoutScreen extends StatefulWidget {
-  const PlanWorkoutScreen({super.key, required this.viewModel, this.workout});
+  const PlanWorkoutScreen({
+    super.key,
+    required this.viewModel,
+    this.workout,
+    this.standalone = false,
+    this.standaloneWorkoutId,
+  });
 
   final ProgramDetailViewModel viewModel;
   final PlannedWorkout? workout; // null = new workout
+
+  /// When true, a new workout is a standalone workout (no program).
+  final bool standalone;
+
+  /// When set, opens an existing standalone workout for editing.
+  final String? standaloneWorkoutId;
 
   @override
   State<PlanWorkoutScreen> createState() => _PlanWorkoutScreenState();
@@ -64,8 +76,13 @@ class _PlanWorkoutScreenState extends State<PlanWorkoutScreen> with UnsavedChang
     // ValueListenableBuilder doesn't try to rebuild during initState.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      if (widget.workout != null) {
+      final sid = widget.standaloneWorkoutId;
+      if (sid != null) {
+        widget.viewModel.openStandaloneWorkout(sid);
+      } else if (widget.workout != null) {
         widget.viewModel.openEditWorkout(widget.workout!);
+      } else if (widget.standalone) {
+        widget.viewModel.createStandaloneWorkoutAndOpen();
       } else {
         widget.viewModel.createWorkoutAndOpen();
       }

@@ -46,8 +46,8 @@ class _ExerciseHubScreenState extends State<ExerciseHubScreen> {
           ),
           Expanded(
             child: _tab == 0
-                ? const WorkoutLibraryScreen()
-                : const ProgramLibraryScreen(),
+                ? const WorkoutLibraryScreen(showHeader: false)
+                : const ProgramLibraryScreen(showHeader: false),
           ),
         ],
       ),

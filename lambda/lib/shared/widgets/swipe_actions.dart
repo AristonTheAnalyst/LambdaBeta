@@ -66,68 +66,81 @@ class _SwipeActionsState extends State<SwipeActions> with SingleTickerProviderSt
     return AnimatedBuilder(
       animation: _ctrl,
       builder: (context, _) {
-        return ClipRRect(
-          borderRadius: BorderRadius.circular(AppRadius.md),
-          child: Stack(
-            clipBehavior: Clip.hardEdge,
-            children: [
-              Positioned.fill(
-                child: Row(
+        return Stack(
+          clipBehavior: Clip.none,
+          children: [
+            // Action buttons behind the card, right-aligned — the card's child
+            // covers exactly this width when open, so no gap shows.
+            Positioned.fill(
+              child: Row(
+                children: [
+                  const Spacer(),
+                  ...widget.actions.map((a) => SizedBox(
+                        width: _swipeButtonWidth,
+                        child: GestureDetector(
+                          onTap: () {
+                            _close();
+                            a.onTap();
+                          },
+                          child: Container(
+                            color: a.color,
+                            alignment: Alignment.center,
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(a.icon, size: 16, color: Colors.white),
+                                const SizedBox(height: 2),
+                                Text(a.label,
+                                    style: AppFonts.ui(
+                                        fontSize: 9, fontWeight: FontWeight.w700, color: Colors.white)),
+                              ],
+                            ),
+                          ),
+                        ),
+                      )),
+                ],
+              ),
+            ),
+            Transform.translate(
+              offset: Offset(-_ctrl.value * _drawerWidth, 0),
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onHorizontalDragUpdate: _handleDragUpdate,
+                onHorizontalDragEnd: _handleDragEnd,
+                onTap: _ctrl.value > 0 ? _close : null,
+                child: Stack(
                   children: [
-                    const Spacer(),
-                    ...widget.actions.map((a) => SizedBox(
-                          width: _swipeButtonWidth,
-                          child: GestureDetector(
-                            onTap: () {
-                              _close();
-                              a.onTap();
-                            },
-                            child: Container(
-                              color: a.color,
-                              alignment: Alignment.center,
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(a.icon, size: 16, color: Colors.white),
-                                  const SizedBox(height: 2),
-                                  Text(a.label,
-                                      style: AppFonts.ui(
-                                          fontSize: 9, fontWeight: FontWeight.w700, color: Colors.white)),
-                                ],
+                    widget.child,
+                    // Swipe hint: solid line on the card's right edge, slides
+                    // with the card. Inset by the corner radius so it stays on
+                    // the card's flat edge instead of bleeding over the rounded
+                    // corners and showing the action color behind them.
+                    Positioned(
+                      top: AppRadius.lg,
+                      bottom: AppRadius.lg,
+                      right: 0,
+                      child: IgnorePointer(
+                        child: Opacity(
+                          opacity: 1 - _ctrl.value,
+                          child: Container(
+                            width: 3,
+                            decoration: BoxDecoration(
+                              color: AppColors.accent.withValues(alpha: 0.6),
+                              borderRadius: const BorderRadius.only(
+                                topLeft: Radius.circular(2),
+                                bottomLeft: Radius.circular(2),
                               ),
                             ),
                           ),
-                        )),
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),
-              Transform.translate(
-                offset: Offset(-_ctrl.value * _drawerWidth, 0),
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onHorizontalDragUpdate: _handleDragUpdate,
-                  onHorizontalDragEnd: _handleDragEnd,
-                  onTap: _ctrl.value > 0 ? _close : null,
-                  child: widget.child,
-                ),
-              ),
-              Positioned(
-                top: 0,
-                right: 0,
-                child: IgnorePointer(
-                  child: Container(
-                    width: 16,
-                    height: 3,
-                    decoration: BoxDecoration(
-                      color: AppColors.accent,
-                      borderRadius: const BorderRadius.only(bottomLeft: Radius.circular(3)),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         );
       },
     );

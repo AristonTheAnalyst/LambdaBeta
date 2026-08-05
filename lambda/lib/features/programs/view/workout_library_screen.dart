@@ -8,6 +8,7 @@ import '../../../../core/utils/workout_format.dart';
 import '../../../../data/models/workout_plan.dart';
 import '../../../../data/repositories/workout_plan_repository.dart';
 import '../../../../shared/widgets/app_card.dart';
+import '../../../../shared/widgets/swipe_actions.dart';
 import '../../../../shared/widgets/glass_button.dart';
 import '../../../../shared/widgets/page_header.dart';
 import '../viewmodel/program_detail_viewmodel.dart';
@@ -15,7 +16,12 @@ import 'plan_workout_screen.dart';
 
 /// Library of standalone planned workouts (a single session, no program).
 class WorkoutLibraryScreen extends StatefulWidget {
-  const WorkoutLibraryScreen({super.key});
+  const WorkoutLibraryScreen({super.key, this.showHeader = true});
+
+  /// When embedded in a tab (Exercises hub), render content only — the hub
+  /// owns the header, so a nested PageHeader would add empty top space and a
+  /// dead back button.
+  final bool showHeader;
 
   @override
   State<WorkoutLibraryScreen> createState() => _WorkoutLibraryScreenState();
@@ -51,7 +57,8 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
   Future<void> _create() async {
     final vm = ProgramDetailViewModel();
     await Navigator.of(context, rootNavigator: true).push(
-      MaterialPageRoute(builder: (_) => PlanWorkoutScreen(viewModel: vm)),
+      MaterialPageRoute(
+          builder: (_) => PlanWorkoutScreen(viewModel: vm, standalone: true)),
     );
     vm.dispose();
     await _load();
@@ -59,10 +66,10 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
 
   Future<void> _edit(WorkoutPlan w) async {
     final vm = ProgramDetailViewModel();
-    await vm.openStandaloneWorkout(w.workoutId);
-    if (!mounted) return;
     await Navigator.of(context, rootNavigator: true).push(
-      MaterialPageRoute(builder: (_) => PlanWorkoutScreen(viewModel: vm)),
+      MaterialPageRoute(
+          builder: (_) => PlanWorkoutScreen(
+              viewModel: vm, standaloneWorkoutId: w.workoutId)),
     );
     vm.dispose();
     await _load();
@@ -101,31 +108,60 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
       backgroundColor: AppColors.bg,
       body: Column(
         children: [
-          PageHeader(
-            title: 'Workouts',
-            right: GlassButton(
-              label: '',
-              icon: Icons.add,
-              compact: true,
-              onPressed: _create,
+          if (widget.showHeader)
+            PageHeader(
+              title: 'Workouts',
+              right: GlassButton(
+                label: '',
+                icon: Icons.add,
+                compact: true,
+                onPressed: _create,
+              ),
             ),
-          ),
           Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
-                : _workouts.isEmpty
-                    ? Center(
-                        child: Text('No workouts yet — create one to get started.',
-                            style: AppFonts.ui(
-                                fontSize: AppTextStyles.md, color: AppColors.muted)),
-                      )
-                    : ListView.separated(
+                : Column(
+                    children: [
+                      if (!widget.showHeader)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(
+                              AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, 0),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: GlassButton(
+                                  label: 'New Workout',
+                                  icon: Icons.add,
+                                  onPressed: _create,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      Expanded(
+                        child: _workouts.isEmpty
+                            ? Center(
+                                child: Text('No workouts yet — create one to get started.',
+                                    style: AppFonts.ui(
+                                        fontSize: AppTextStyles.md, color: AppColors.muted)),
+                              )
+                            : ListView.separated(
                         padding: const EdgeInsets.all(AppSpacing.lg),
                         itemCount: _workouts.length,
                         separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.md),
                         itemBuilder: (context, i) {
                           final w = _workouts[i];
-                          return AppCard(
+                          return SwipeActions(
+                            actions: [
+                              SwipeAction(
+                                icon: Icons.archive_outlined,
+                                label: 'Archive',
+                                color: AppColors.danger,
+                                onTap: () => _archive(w),
+                              ),
+                            ],
+                            child: AppCard(
                             onTap: () => _edit(w),
                             child: Row(
                               children: [
@@ -148,18 +184,15 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
                                     ],
                                   ),
                                 ),
-                                GlassButton(
-                                  label: '',
-                                  icon: Icons.archive_outlined,
-                                  color: AppColors.danger,
-                                  compact: true,
-                                  onPressed: () => _archive(w),
-                                ),
                               ],
+                            ),
                             ),
                           );
                         },
                       ),
+                      ),
+                    ],
+                  ),
           ),
         ],
       ),

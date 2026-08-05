@@ -12,11 +12,17 @@ import '../../../../shared/widgets/glass_button.dart';
 import '../../../../shared/widgets/lambda_input.dart';
 import '../../../../shared/widgets/segmented_control.dart';
 import '../../../../shared/widgets/page_header.dart';
+import '../../../../shared/widgets/swipe_actions.dart';
 import 'program_wizard_screen.dart';
 import '../viewmodel/program_library_viewmodel.dart';
 
 class ProgramLibraryScreen extends StatefulWidget {
-  const ProgramLibraryScreen({super.key});
+  const ProgramLibraryScreen({super.key, this.showHeader = true});
+
+  /// When embedded in a tab (Exercises hub), render content only — the hub
+  /// owns the header, so a nested PageHeader would add empty top space and a
+  /// dead back button.
+  final bool showHeader;
 
   @override
   State<ProgramLibraryScreen> createState() => _ProgramLibraryScreenState();
@@ -223,16 +229,33 @@ class _ProgramLibraryScreenState extends State<ProgramLibraryScreen> {
         builder: (context, state, _) {
           return Column(
             children: [
-              PageHeader(
-                title: 'Programs',
-                left: GestureDetector(
-                  onTap: () => context.pop(),
-                  child: Icon(Icons.arrow_back_ios_new,
-                      size: 18, color: AppColors.accent),
+              if (widget.showHeader)
+                PageHeader(
+                  title: 'Programs',
+                  left: GestureDetector(
+                    onTap: () => context.pop(),
+                    child: Icon(Icons.arrow_back_ios_new,
+                        size: 18, color: AppColors.accent),
+                  ),
+                  right: GlassButton(
+                      label: '', icon: Icons.add, onPressed: _openCreate, compact: true),
                 ),
-                right: GlassButton(
-                    label: '', icon: Icons.add, onPressed: _openCreate, compact: true),
-              ),
+              if (!widget.showHeader)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                      AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, 0),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: GlassButton(
+                          label: 'New Program',
+                          icon: Icons.add,
+                          onPressed: _openCreate,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               if (state.error != null)
                 Container(
                   width: double.infinity,
@@ -324,7 +347,16 @@ class _ProgramCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AppCard(
+    return SwipeActions(
+      actions: [
+        SwipeAction(
+          icon: Icons.archive_outlined,
+          label: 'Archive',
+          color: AppColors.danger,
+          onTap: onArchive,
+        ),
+      ],
+      child: AppCard(
       onTap: onOpen,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -418,16 +450,10 @@ class _ProgramCard extends StatelessWidget {
               const Spacer(),
               GlassButton(
                   label: '', icon: Icons.copy, compact: true, onPressed: onDuplicate),
-              const SizedBox(width: AppSpacing.sm),
-              GlassButton(
-                  label: '',
-                  icon: Icons.archive_outlined,
-                  color: AppColors.danger,
-                  compact: true,
-                  onPressed: onArchive),
             ],
           ),
         ],
+      ),
       ),
     );
   }
