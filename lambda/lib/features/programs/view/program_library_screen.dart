@@ -13,7 +13,6 @@ import '../../../../shared/widgets/lambda_input.dart';
 import '../../../../shared/widgets/segmented_control.dart';
 import '../../../../shared/widgets/page_header.dart';
 import 'program_wizard_screen.dart';
-import '../../../../shared/widgets/press_squash.dart';
 import '../viewmodel/program_library_viewmodel.dart';
 
 class ProgramLibraryScreen extends StatefulWidget {
@@ -207,7 +206,7 @@ class _ProgramLibraryScreenState extends State<ProgramLibraryScreen> {
     );
     controller.dispose();
     if (result == null || !mounted) return;
-    _viewModel.setCurrentProgram(
+    await _viewModel.setCurrentProgram(
       p.programId,
       targetSessions: isCalendar ? null : result.count,
       targetWeeks: (isCalendar && !useEndDate) ? result.count : null,
@@ -326,62 +325,60 @@ class _ProgramCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AppCard(
+      onTap: onOpen,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          PressSquash(
-            onTap: onOpen,
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Flexible(
-                            child: Text(toProperCase(program.name),
-                                style: AppFonts.ui(
-                                    fontSize: AppTextStyles.md,
-                                    fontWeight: FontWeight.w800,
-                                    color: AppColors.primary),
-                                overflow: TextOverflow.ellipsis),
-                          ),
-                          if (isCurrent) ...[
-                            const SizedBox(width: AppSpacing.xs),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: AppColors.accentBg,
-                                borderRadius: BorderRadius.circular(999),
-                                border: Border.all(color: AppColors.accent),
-                              ),
-                              child: Text('Active',
-                                  style: AppFonts.ui(
-                                      fontSize: 10,
-                                      letterSpacing: 0.5,
-                                      fontWeight: FontWeight.w800,
-                                      color: AppColors.accent)),
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(toProperCase(program.name),
+                              style: AppFonts.ui(
+                                  fontSize: AppTextStyles.md,
+                                  fontWeight: FontWeight.w800,
+                                  color: AppColors.primary),
+                              overflow: TextOverflow.ellipsis),
+                        ),
+                        if (isCurrent) ...[
+                          const SizedBox(width: AppSpacing.xs),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: AppColors.accentBg,
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(color: AppColors.accent),
                             ),
-                          ],
+                            child: Text('Active',
+                                style: AppFonts.ui(
+                                    fontSize: 10,
+                                    letterSpacing: 0.5,
+                                    fontWeight: FontWeight.w800,
+                                    color: AppColors.accent)),
+                          ),
                         ],
-                      ),
-                      if (program.description?.isNotEmpty == true) ...[
-                        const SizedBox(height: 2),
-                        Text(program.description!,
-                            style: AppFonts.ui(
-                                fontSize: AppTextStyles.sm,
-                                color: AppColors.muted),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis),
                       ],
+                    ),
+                    if (program.description?.isNotEmpty == true) ...[
+                      const SizedBox(height: 2),
+                      Text(program.description!,
+                          style: AppFonts.ui(
+                              fontSize: AppTextStyles.sm,
+                              color: AppColors.muted),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis),
                     ],
-                  ),
+                  ],
                 ),
-                Icon(Icons.chevron_right, size: 16, color: AppColors.muted),
-              ],
-            ),
+              ),
+              Icon(Icons.chevron_right, size: 16, color: AppColors.muted),
+            ],
           ),
           if (progress != null) ...[
             const SizedBox(height: AppSpacing.sm),

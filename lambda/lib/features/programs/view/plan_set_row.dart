@@ -289,9 +289,10 @@ class _PlanSetRowState extends State<PlanSetRow> {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
           decoration: BoxDecoration(
-            color: AppColors.surfaceHigh,
+            color: AppColors.successBg,
             borderRadius: BorderRadius.circular(AppRadius.md),
-            border: Border.all(color: AppColors.border, width: 0.5),
+            border: Border.all(
+                color: AppColors.success.withValues(alpha: 0.4), width: 0.5),
           ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
@@ -308,29 +309,42 @@ class _PlanSetRowState extends State<PlanSetRow> {
                         margin: const EdgeInsets.only(top: 2),
                         width: 5,
                         height: 5,
-                        decoration: BoxDecoration(color: AppColors.accent, shape: BoxShape.circle),
+                        decoration: BoxDecoration(color: AppColors.success, shape: BoxShape.circle),
                       ),
                   ],
                 ),
               ),
               const SizedBox(width: 6),
-              Expanded(child: _cell(controller: _weightCtrl, focusNode: _weightFocus)),
+              Expanded(child: _cell(
+                  controller: _weightCtrl,
+                  focusNode: _weightFocus,
+                  highlighted: _weightCtrl.text.trim().isNotEmpty)),
               const SizedBox(width: 6),
-              Expanded(child: _cell(controller: _repsCtrl, focusNode: _repsFocus)),
+              Expanded(child: _cell(
+                  controller: _repsCtrl,
+                  focusNode: _repsFocus,
+                  highlighted: _repsCtrl.text.trim().isNotEmpty)),
               const SizedBox(width: 6),
               Expanded(
                 child: Container(
                   height: 34,
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
-                    color: AppColors.bg,
+                    color: variationId != null
+                        ? AppColors.successBg
+                        : AppColors.bg,
                     borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: AppColors.border, width: 0.5),
+                    border: Border.all(
+                        color: variationId != null
+                            ? AppColors.success.withValues(alpha: 0.4)
+                            : AppColors.border,
+                        width: 0.5),
                   ),
                   child: DropdownSelect<String?>(
                     options: variationOptions,
                     value: variationId,
                     compact: true,
+                    valueColor: AppColors.success,
                     createNewLabel: 'New Variation',
                     onCreateNew: _handleCreateVariation,
                     onChange: (id) {
@@ -356,7 +370,11 @@ class _PlanSetRowState extends State<PlanSetRow> {
     );
   }
 
-  Widget _cell({required TextEditingController controller, required FocusNode focusNode}) {
+  Widget _cell({
+    required TextEditingController controller,
+    required FocusNode focusNode,
+    required bool highlighted,
+  }) {
     return SizedBox(
       height: 34,
       child: TextField(
@@ -370,12 +388,20 @@ class _PlanSetRowState extends State<PlanSetRow> {
           isDense: true,
           contentPadding: const EdgeInsets.symmetric(vertical: 8),
           hintText: '—',
-          hintStyle: AppFonts.mono(fontSize: 14, color: AppColors.muted.withValues(alpha: 0.6)),
+          hintStyle: AppFonts.mono(
+              fontSize: 14,
+              color: highlighted
+                  ? AppColors.success.withValues(alpha: 0.7)
+                  : AppColors.muted.withValues(alpha: 0.6)),
           filled: true,
-          fillColor: AppColors.bg,
+          fillColor: highlighted ? AppColors.successBg : AppColors.bg,
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(6),
-            borderSide: BorderSide(color: AppColors.border, width: 0.5),
+            borderSide: BorderSide(
+                color: highlighted
+                    ? AppColors.success.withValues(alpha: 0.4)
+                    : AppColors.border,
+                width: 0.5),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(6),
@@ -395,11 +421,15 @@ class _PlanSetRowState extends State<PlanSetRow> {
         height: 32,
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: active ? AppColors.accentBg : Colors.transparent,
+          color: active ? AppColors.successBg : Colors.transparent,
           borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: active ? AppColors.accent.withValues(alpha: 0.4) : AppColors.border),
+          border: Border.all(
+              color: active
+                  ? AppColors.success.withValues(alpha: 0.4)
+                  : AppColors.border),
         ),
-        child: Icon(icon, size: 15, color: active ? AppColors.accent : AppColors.muted),
+        child: Icon(icon,
+            size: 15, color: active ? AppColors.success : AppColors.muted),
       ),
     );
   }

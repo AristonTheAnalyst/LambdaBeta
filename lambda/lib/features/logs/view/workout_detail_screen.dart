@@ -1226,6 +1226,7 @@ class _DetailSetRowState extends State<_DetailSetRow> {
                       options: variationOptions,
                       value: variationId,
                       compact: true,
+                      valueColor: AppColors.success,
                       createNewLabel: 'New Variation',
                       onCreateNew: _handleCreateVariation,
                       onChange: (id) {

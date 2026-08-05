@@ -11,7 +11,6 @@ import '../../../../shared/widgets/app_card.dart';
 import '../../../../shared/widgets/glass_button.dart';
 import '../../../../shared/widgets/lambda_input.dart';
 import '../../../../shared/widgets/page_header.dart';
-import '../../../../shared/widgets/press_squash.dart';
 import '../../../../shared/widgets/segmented_control.dart';
 import '../viewmodel/program_detail_viewmodel.dart';
 import 'plan_workout_screen.dart';
@@ -283,7 +282,38 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> {
     );
   }
 
-  void _openEditWorkout(PlannedWorkout w) {
+  Future<void> _openEditWorkout(PlannedWorkout w) async {
+    // Informational confirm when editing a workout in a running program:
+    // changes apply to future sessions only; already-logged sets are snapshots
+    // and won't change.
+    if (_vm.state.value.isCurrent) {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: AppColors.surface,
+          title: Text('Edit while running?',
+              style: AppFonts.ui(
+                  fontWeight: FontWeight.w800, color: AppColors.primary)),
+          content: Text(
+              'This program is active. Changes to the workout apply to future '
+              'sessions; past logged sets and PRs won\'t change.',
+              style: AppFonts.ui(color: AppColors.muted)),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child:
+                    Text('Cancel', style: AppFonts.ui(color: AppColors.muted))),
+            TextButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: Text('Edit',
+                    style: AppFonts.ui(
+                        color: AppColors.accent,
+                        fontWeight: FontWeight.w600))),
+          ],
+        ),
+      );
+      if (ok != true || !mounted) return;
+    }
     Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(
         builder: (_) => PlanWorkoutScreen(viewModel: _vm, workout: w),
@@ -503,11 +533,10 @@ class _PlannedWorkoutRow extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: AppSpacing.sm),
       child: AppCard(
+        onTap: onTap,
         padding: const EdgeInsets.symmetric(
             horizontal: AppSpacing.md, vertical: AppSpacing.sm),
-        child: PressSquash(
-          onTap: onTap,
-          child: Row(
+        child: Row(
             children: [
               Expanded(
                 child: Column(
@@ -550,7 +579,6 @@ class _PlannedWorkoutRow extends StatelessWidget {
               Icon(Icons.drag_handle, size: 18, color: AppColors.muted),
             ],
           ),
-        ),
       ),
     );
   }

@@ -68,7 +68,7 @@ mixin UnsavedChangesGuard<T extends StatefulWidget> on State<T> {
         backgroundColor: AppColors.surface,
         title: Text('Unsaved Changes',
             style: AppFonts.ui(fontWeight: FontWeight.w800, color: AppColors.primary)),
-        content: Text('Save changes before leaving?',
+        content: Text('You have unsaved changes. Discard them?',
             style: AppFonts.ui(color: AppColors.muted)),
         actions: [
           TextButton(
@@ -77,19 +77,11 @@ mixin UnsavedChangesGuard<T extends StatefulWidget> on State<T> {
           TextButton(
               onPressed: () => Navigator.of(ctx).pop('cancel'),
               child: Text('Stay', style: AppFonts.ui(color: AppColors.muted))),
-          TextButton(
-              onPressed: () => Navigator.of(ctx).pop('save'),
-              child: Text('Save',
-                  style: AppFonts.ui(
-                      color: AppColors.accent, fontWeight: FontWeight.w600))),
         ],
       ),
     );
     if (choice == null || !mounted) return;
     if (choice == 'cancel') return;
-    if (choice == 'save') {
-      await onSave();
-    }
     onDiscard();
   }
 }

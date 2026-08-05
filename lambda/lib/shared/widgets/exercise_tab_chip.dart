@@ -12,6 +12,7 @@ class ExerciseTabChip extends StatelessWidget {
     required this.isActive,
     this.count,
     this.prefixIcon,
+    this.activeColor,
     required this.onTap,
   });
 
@@ -19,40 +20,47 @@ class ExerciseTabChip extends StatelessWidget {
   final bool isActive;
   final int? count;
   final IconData? prefixIcon;
+
+  /// The active-pill color — defaults to the accent orange, but the planner
+  /// passes green so its planned-exercise pills read as "planned".
+  final Color? activeColor;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
+    final color = activeColor ?? AppColors.accent;
     return GestureDetector(
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
-          color: isActive ? AppColors.accentBg : AppColors.surface,
+          color: isActive ? color.withValues(alpha: 0.12) : AppColors.surface,
           borderRadius: BorderRadius.circular(AppRadius.md),
-          border: Border.all(color: isActive ? AppColors.accent : AppColors.border),
+          border: Border.all(
+              color: isActive ? color : AppColors.border),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             if (prefixIcon != null) ...[
-              Icon(prefixIcon, size: 11, color: AppColors.accent),
+              Icon(prefixIcon, size: 11, color: color),
               const SizedBox(width: 4),
             ],
             Text(label,
                 style: AppFonts.ui(
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
-                    color: isActive ? AppColors.accent : AppColors.primary)),
+                    color: isActive ? color : AppColors.primary)),
             if (count != null && count! > 0) ...[
               const SizedBox(width: 6),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                 decoration: BoxDecoration(
-                  color: AppColors.accentBg,
+                  color: color.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(999),
                 ),
-                child: Text('$count', style: AppFonts.mono(fontSize: 10, color: AppColors.accent)),
+                child: Text('$count',
+                    style: AppFonts.mono(fontSize: 10, color: color)),
               ),
             ],
           ],

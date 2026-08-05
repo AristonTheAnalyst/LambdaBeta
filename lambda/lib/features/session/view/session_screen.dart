@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
+import '../../../core/styles/app_radius.dart';
 import '../../../core/styles/app_spacing.dart';
 import '../../../core/styles/app_text_styles.dart';
+import '../../../core/utils/workout_format.dart';
 import '../../../shared/widgets/glass_button.dart';
 import '../../../shared/widgets/lambda_button.dart';
 import '../../../shared/widgets/lambda_input.dart';
@@ -38,6 +40,11 @@ class _SessionScreenState extends State<SessionScreen> {
     if (_cachedVm != null) {
       // Reuse across hot reload — workout state stays intact
       _vm = _cachedVm!;
+      // Returning to the tab: refresh the current program / planned workout so
+      // a newly created or begun program shows without a full restart.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _vm.refreshProgram();
+      });
     } else {
       _vm = SessionViewModel();
       _cachedVm = _vm;
@@ -199,30 +206,38 @@ class _StartPage extends StatelessWidget {
                   ),
                 ),
               if (vm.exercises.isNotEmpty) ...[
-                if (vm.programProgress?.nextPlannedWorkout != null) ...[
-                  Container(
-                    padding: const EdgeInsets.all(AppSpacing.md),
-                    decoration: BoxDecoration(
-                      color: AppColors.successBg,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: AppColors.success.withValues(alpha: 0.3)),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('Week ${vm.programProgress!.weekNumber} · ${vm.programProgress!.program.name}',
-                                  style: AppFonts.mono(fontSize: 9, letterSpacing: 0.6, color: AppColors.success)),
-                              const SizedBox(height: 2),
-                              Text(vm.programProgress!.nextPlannedWorkout!.name,
-                                  style: AppFonts.ui(
-                                      fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.primary)),
-                            ],
+                if (vm.selectedPlannedWorkout != null) ...[
+                  GestureDetector(
+                    onTap: vm.availableWorkouts.length > 1
+                        ? () => _showWorkoutPicker(context, vm)
+                        : null,
+                    child: Container(
+                      padding: const EdgeInsets.all(AppSpacing.md),
+                      decoration: BoxDecoration(
+                        color: AppColors.successBg,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                            color: AppColors.success.withValues(alpha: 0.3)),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('Week ${vm.programProgress!.weekNumber} · ${vm.programProgress!.program.name}',
+                                    style: AppFonts.mono(fontSize: 9, letterSpacing: 0.6, color: AppColors.success)),
+                                const SizedBox(height: 2),
+                                Text(vm.selectedPlannedWorkout!.name,
+                                    style: AppFonts.ui(
+                                        fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.primary)),
+                              ],
+                            ),
                           ),
-                        ),
-                      ],
+                          if (vm.availableWorkouts.length > 1)
+                            Icon(Icons.swap_vert, size: 18, color: AppColors.success),
+                        ],
+                      ),
                     ),
                   ),
                   const SizedBox(height: AppSpacing.lg),
@@ -280,6 +295,62 @@ class _StartPage extends StatelessWidget {
             ),
           ),
       ],
+    );
+  }
+
+  /// Lets the user pick which planned workout to log instead of the auto-next.
+  Future<void> _showWorkoutPicker(BuildContext context, SessionViewModel vm) async {
+    await showModalBottomSheet<String>(
+      context: context,
+      useRootNavigator: true,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.lg)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(AppSpacing.lg),
+              child: Text('Select workout',
+                  style: AppFonts.ui(
+                      fontSize: AppTextStyles.lg,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.primary)),
+            ),
+            for (final w in vm.availableWorkouts)
+              InkWell(
+                onTap: () {
+                  vm.selectPlannedWorkout(w);
+                  Navigator.of(ctx).pop();
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.lg, vertical: AppSpacing.md),
+                  color: w.plannedWorkoutId == vm.selectedPlannedWorkout?.plannedWorkoutId
+                      ? AppColors.accentBg
+                      : Colors.transparent,
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(toProperCase(w.name),
+                            style: AppFonts.ui(
+                                fontSize: AppTextStyles.md,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.primary)),
+                      ),
+                      if (w.plannedWorkoutId == vm.selectedPlannedWorkout?.plannedWorkoutId)
+                        Icon(Icons.check, size: 18, color: AppColors.accent),
+                    ],
+                  ),
+                ),
+              ),
+            const SizedBox(height: AppSpacing.md),
+          ],
+        ),
+      ),
     );
   }
 }

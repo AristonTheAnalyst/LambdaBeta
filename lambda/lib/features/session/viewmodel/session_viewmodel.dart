@@ -8,6 +8,7 @@ import '../../../data/models/custom_variation.dart';
 import '../../../data/models/exercise_detail.dart';
 import '../../../data/models/lesson.dart';
 import '../../../data/models/planned_set.dart';
+import '../../../data/models/planned_workout.dart';
 import '../../../data/models/program_progress.dart';
 import '../../../data/models/workout.dart';
 import '../../../data/models/exercise_usage.dart';
@@ -248,25 +249,80 @@ class SessionViewModel extends ChangeNotifier {
     return results;
   }
 
+  /// Planned workouts available for the current program, so the user can pick
+  /// one to log rather than always taking the auto-suggested next workout.
+  List<PlannedWorkout> availableWorkouts = [];
+
+  /// The planned workout the user selected (or the auto-next by default).
+  PlannedWorkout? selectedPlannedWorkout;
+
   Future<void> _loadPlannedWorkout() async {
     try {
       programProgress = await _programRunRepo.getProgress(_userId);
-      final pw = programProgress?.nextPlannedWorkout;
-      if (pw != null) {
-        final plannedSets = await _programRepo.fetchPlannedSets(pw.plannedWorkoutId);
-        final sorted = [...plannedSets]
-          ..sort((a, b) => a.exerciseSequenceOrder.compareTo(b.exerciseSequenceOrder));
-        final byExercise = <String, List<PlannedSet>>{};
-        final order = <String>[];
-        for (final p in sorted) {
-          if (!byExercise.containsKey(p.exerciseId)) order.add(p.exerciseId);
-          byExercise.putIfAbsent(p.exerciseId, () => []).add(p);
-        }
-        plannedSetsByExercise = byExercise;
-        plannedExerciseOrder = order;
+      final programId = programProgress?.program.programId;
+      if (programId != null) {
+        availableWorkouts =
+            await _programRepo.fetchPlannedWorkouts(programId);
+        selectedPlannedWorkout =
+            programProgress?.nextPlannedWorkout ?? availableWorkouts.firstOrNull;
       }
+      await _loadSelectedWorkoutSets();
     } catch (_) {}
     notifyListeners();
+  }
+
+  /// Loads the planned sets for the currently selected workout.
+  Future<void> _loadSelectedWorkoutSets() async {
+    final pw = selectedPlannedWorkout;
+    if (pw == null) {
+      plannedSetsByExercise = {};
+      plannedExerciseOrder = [];
+      return;
+    }
+    try {
+      final plannedSets = await _programRepo.fetchPlannedSets(pw.plannedWorkoutId);
+      final sorted = [...plannedSets]
+        ..sort((a, b) => a.exerciseSequenceOrder.compareTo(b.exerciseSequenceOrder));
+      final byExercise = <String, List<PlannedSet>>{};
+      final order = <String>[];
+      for (final p in sorted) {
+        if (!byExercise.containsKey(p.exerciseId)) order.add(p.exerciseId);
+        byExercise.putIfAbsent(p.exerciseId, () => []).add(p);
+      }
+      plannedSetsByExercise = byExercise;
+      plannedExerciseOrder = order;
+    } catch (_) {}
+  }
+
+  /// Picks a different planned workout to log and loads its planned sets.
+  Future<void> selectPlannedWorkout(PlannedWorkout w) async {
+    selectedPlannedWorkout = w;
+    await _loadSelectedWorkoutSets();
+    notifyListeners();
+  }
+
+  /// Refreshes the current program / planned-workout state — called when the
+  /// session tab becomes active again so a newly created (or begun) program
+  /// shows without a full restart. Only refreshes when no workout is active.
+  Future<void> refreshProgram() async {
+    if (currentWorkoutId != null) return;
+    try {
+      programProgress = await _programRunRepo.getProgress(_userId);
+      final programId = programProgress?.program.programId;
+      if (programId != null) {
+        availableWorkouts =
+            await _programRepo.fetchPlannedWorkouts(programId);
+        selectedPlannedWorkout =
+            programProgress?.nextPlannedWorkout ?? availableWorkouts.firstOrNull;
+      } else {
+        availableWorkouts = [];
+        selectedPlannedWorkout = null;
+        plannedSetsByExercise = {};
+        plannedExerciseOrder = [];
+      }
+      await _loadSelectedWorkoutSets();
+      notifyListeners();
+    } catch (_) {}
   }
 
   Future<void> _loadPastSets() async {
@@ -938,7 +994,7 @@ class SessionViewModel extends ChangeNotifier {
         preNotes: startNotes.trim().isEmpty ? null : startNotes.trim(),
         programId: programProgress?.program.programId,
         programRunId: programProgress?.run.programRunId,
-        plannedWorkoutId: programProgress?.nextPlannedWorkout?.plannedWorkoutId,
+        plannedWorkoutId: selectedPlannedWorkout?.plannedWorkoutId,
         preFeeling: sessionFeeling,
       );
       currentWorkoutId = id;

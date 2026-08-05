@@ -166,6 +166,7 @@ class ProgramLibraryViewModel {
     int? targetWeeks,
     DateTime? endDate,
   }) async {
+    if (_disposed) return;
     state.value = state.value.copyWith(settingCurrentId: programId, clearError: true);
     try {
       // Use the run returned directly from the write rather than re-reading
@@ -175,15 +176,22 @@ class ProgramLibraryViewModel {
           targetSessions: targetSessions,
           targetWeeks: targetWeeks,
           endDate: endDate);
+      if (_disposed) return;
       state.value = state.value.copyWith(
         clearSettingCurrentId: true,
         currentProgramId: run.programId,
       );
     } catch (e) {
+      if (_disposed) return;
       state.value =
           state.value.copyWith(clearSettingCurrentId: true, error: e.toString());
     }
   }
 
-  void dispose() => state.dispose();
+  bool _disposed = false;
+
+  void dispose() {
+    _disposed = true;
+    state.dispose();
+  }
 }

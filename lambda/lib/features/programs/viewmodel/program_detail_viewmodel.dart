@@ -322,16 +322,18 @@ class ProgramDetailViewModel {
     DateTime? endDate,
   }) async {
     final s = state.value;
-    if (s.program == null) return;
+    if (s.program == null || _disposed) return;
     state.value = s.copyWith(settingCurrent: true, clearError: true);
     try {
       final run = await _runRepo.startProgramRun(_userId, s.program!.programId,
           targetSessions: targetSessions,
           targetWeeks: targetWeeks,
           endDate: endDate);
+      if (_disposed) return;
       state.value = state.value.copyWith(
           settingCurrent: false, isCurrent: true, activeRun: run);
     } catch (e) {
+      if (_disposed) return;
       state.value =
           state.value.copyWith(settingCurrent: false, error: e.toString());
     }
@@ -881,7 +883,12 @@ class ProgramDetailViewModel {
     }
   }
 
-  void dispose() => state.dispose();
+  bool _disposed = false;
+
+  void dispose() {
+    _disposed = true;
+    state.dispose();
+  }
 }
 
 extension _FirstWhereOrNull<T> on List<T> {

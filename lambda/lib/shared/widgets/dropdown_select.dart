@@ -66,6 +66,7 @@ class DropdownSelect<T> extends StatelessWidget {
     this.onCreateNew,
     this.createNewLabel = 'Create new',
     this.compact = false,
+    this.valueColor,
   });
 
   final List<DropdownOption<T>> options;
@@ -82,6 +83,10 @@ class DropdownSelect<T> extends StatelessWidget {
   // same picker) — for a field that's dependent on/subordinate to another
   // one nearby, e.g. a variation breadcrumbed off its exercise.
   final bool compact;
+
+  /// Color of the selected value text (defaults to accent orange). The planner
+  /// and session set rows pass green so variation matches the kg/reps cells.
+  final Color? valueColor;
 
   String get _displayLabel {
     if (value == null) return placeholder;
@@ -140,7 +145,7 @@ class DropdownSelect<T> extends StatelessWidget {
                   style: AppFonts.ui(
                     fontSize: AppTextStyles.sm,
                     fontWeight: FontWeight.w500,
-                    color: hasValue ? AppColors.accent : AppColors.muted,
+                    color: hasValue ? (valueColor ?? AppColors.accent) : AppColors.muted,
                   ),
                   overflow: TextOverflow.ellipsis,
                 ),

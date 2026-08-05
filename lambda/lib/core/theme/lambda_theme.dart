@@ -56,8 +56,8 @@ class LambdaColors {
     dangerBorder: Color(0xFF7A2020),
     success:      Color(0xFF4ADE80),
     successBg:    Color(0xFF16321F),
-    history:      Color(0xFFA78BFA),
-    historyBg:    Color(0xFF2C2440),
+    history:      Color(0xFF6B9BFF),
+    historyBg:    Color(0xFF16233F),
   );
 
   static const monoLight = LambdaColors(
@@ -75,8 +75,8 @@ class LambdaColors {
     dangerBorder: Color(0xFFE8A8A8),
     success:      Color(0xFF2E7D46),
     successBg:    Color(0xFFEAF6EE),
-    history:      Color(0xFF6D4FC7),
-    historyBg:    Color(0xFFF1ECFB),
+    history:      Color(0xFF3B6FD6),
+    historyBg:    Color(0xFFE8F0FC),
   );
 
   ThemeData toThemeData() {
