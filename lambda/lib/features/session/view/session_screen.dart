@@ -320,33 +320,79 @@ class _StartPage extends StatelessWidget {
                       fontWeight: FontWeight.w800,
                       color: AppColors.primary)),
             ),
-            for (final w in vm.availableWorkouts)
-              InkWell(
-                onTap: () {
-                  vm.selectPlannedWorkout(w);
-                  Navigator.of(ctx).pop();
-                },
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.lg, vertical: AppSpacing.md),
-                  color: w.plannedWorkoutId == vm.selectedPlannedWorkout?.plannedWorkoutId
-                      ? AppColors.accentBg
-                      : Colors.transparent,
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(toProperCase(w.name),
-                            style: AppFonts.ui(
-                                fontSize: AppTextStyles.md,
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.primary)),
-                      ),
-                      if (w.plannedWorkoutId == vm.selectedPlannedWorkout?.plannedWorkoutId)
-                        Icon(Icons.check, size: 18, color: AppColors.accent),
-                    ],
+            if (vm.standaloneWorkouts.isNotEmpty) ...[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.lg, 0, AppSpacing.lg, AppSpacing.xs),
+                child: Text('Workouts',
+                    style: AppFonts.mono(
+                        fontSize: 9, letterSpacing: 0.8, color: AppColors.muted)),
+              ),
+              for (final w in vm.standaloneWorkouts)
+                InkWell(
+                  onTap: () {
+                    vm.selectStandaloneWorkout(w);
+                    Navigator.of(ctx).pop();
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.lg, vertical: AppSpacing.md),
+                    color: w.workoutId == vm.selectedStandaloneWorkout?.workoutId
+                        ? AppColors.accentBg
+                        : Colors.transparent,
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(toProperCase(w.name),
+                              style: AppFonts.ui(
+                                  fontSize: AppTextStyles.md,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.primary)),
+                        ),
+                        if (w.workoutId == vm.selectedStandaloneWorkout?.workoutId)
+                          Icon(Icons.check, size: 18, color: AppColors.accent),
+                      ],
+                    ),
                   ),
                 ),
+              const SizedBox(height: AppSpacing.xs),
+            ],
+            if (vm.availableWorkouts.isNotEmpty) ...[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.lg, 0, AppSpacing.lg, AppSpacing.xs),
+                child: Text('Program',
+                    style: AppFonts.mono(
+                        fontSize: 9, letterSpacing: 0.8, color: AppColors.muted)),
               ),
+              for (final w in vm.availableWorkouts)
+                InkWell(
+                  onTap: () {
+                    vm.selectPlannedWorkout(w);
+                    Navigator.of(ctx).pop();
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.lg, vertical: AppSpacing.md),
+                    color: w.plannedWorkoutId == vm.selectedPlannedWorkout?.plannedWorkoutId
+                        ? AppColors.accentBg
+                        : Colors.transparent,
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(toProperCase(w.name),
+                              style: AppFonts.ui(
+                                  fontSize: AppTextStyles.md,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.primary)),
+                        ),
+                        if (w.plannedWorkoutId == vm.selectedPlannedWorkout?.plannedWorkoutId)
+                          Icon(Icons.check, size: 18, color: AppColors.accent),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
             const SizedBox(height: AppSpacing.md),
           ],
         ),

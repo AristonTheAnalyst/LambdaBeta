@@ -11,6 +11,8 @@ import '../../../data/models/planned_set.dart';
 import '../../../data/models/planned_workout.dart';
 import '../../../data/models/program_progress.dart';
 import '../../../data/models/workout.dart';
+import '../../../data/models/workout_plan.dart';
+import '../../../data/models/workout_plan_set.dart';
 import '../../../data/models/exercise_usage.dart';
 import '../../../data/models/workout_set.dart';
 import '../../../core/powersync/database.dart' as ps;
@@ -20,6 +22,7 @@ import '../../../data/repositories/pr_repository.dart';
 import '../../../data/repositories/program_repository.dart';
 import '../../../data/repositories/program_run_repository.dart';
 import '../../../data/repositories/rest_period_repository.dart';
+import '../../../data/repositories/workout_plan_repository.dart';
 import '../../../data/repositories/workout_repository.dart';
 import '../../../shared/widgets/slide_pages.dart';
 import '../model/pr_engine.dart' hide bestEverForExercise;
@@ -37,18 +40,21 @@ class SessionViewModel extends ChangeNotifier {
     LessonRepository? lessonRepo,
     RestPeriodRepository? restPeriodRepo,
     PrRepository? prRepo,
+    WorkoutPlanRepository? workoutPlanRepo,
   })  : _workoutRepo = workoutRepo ?? WorkoutRepository(),
         _exerciseRepo = exerciseRepo ?? ExerciseRepository(),
         _programRepo = programRepo ?? ProgramRepository(),
         _programRunRepo = programRunRepo ?? ProgramRunRepository(),
         _lessonRepo = lessonRepo ?? LessonRepository(),
         _restPeriodRepo = restPeriodRepo ?? RestPeriodRepository(),
+        _workoutPlanRepo = workoutPlanRepo ?? WorkoutPlanRepository(),
         _prRepo = prRepo ?? PrRepository() {
     slidePagesController = SlidePagesController();
     _init();
   }
 
   final WorkoutRepository _workoutRepo;
+  final WorkoutPlanRepository _workoutPlanRepo;
   final ExerciseRepository _exerciseRepo;
   final ProgramRepository _programRepo;
   final ProgramRunRepository _programRunRepo;
@@ -256,6 +262,13 @@ class SessionViewModel extends ChangeNotifier {
   /// The planned workout the user selected (or the auto-next by default).
   PlannedWorkout? selectedPlannedWorkout;
 
+  /// Standalone workouts (no program) the user can log.
+  List<WorkoutPlan> standaloneWorkouts = [];
+
+  /// The standalone workout selected to log (mutually exclusive with
+  /// [selectedPlannedWorkout]).
+  WorkoutPlan? selectedStandaloneWorkout;
+
   Future<void> _loadPlannedWorkout() async {
     try {
       programProgress = await _programRunRepo.getProgress(_userId);
@@ -266,13 +279,21 @@ class SessionViewModel extends ChangeNotifier {
         selectedPlannedWorkout =
             programProgress?.nextPlannedWorkout ?? availableWorkouts.firstOrNull;
       }
+      standaloneWorkouts = await _workoutPlanRepo.fetchWorkouts(_userId);
       await _loadSelectedWorkoutSets();
     } catch (_) {}
     notifyListeners();
   }
 
-  /// Loads the planned sets for the currently selected workout.
+  /// Loads the planned sets for the currently selected workout (program or
+  /// standalone).
   Future<void> _loadSelectedWorkoutSets() async {
+    if (selectedStandaloneWorkout != null) {
+      final sets = await _workoutPlanRepo.fetchSets(selectedStandaloneWorkout!.workoutId);
+      plannedSetsByExercise = _plannedMapFromWorkoutSets(sets);
+      plannedExerciseOrder = _plannedOrderFromWorkoutSets(sets);
+      return;
+    }
     final pw = selectedPlannedWorkout;
     if (pw == null) {
       plannedSetsByExercise = {};
@@ -281,22 +302,71 @@ class SessionViewModel extends ChangeNotifier {
     }
     try {
       final plannedSets = await _programRepo.fetchPlannedSets(pw.plannedWorkoutId);
-      final sorted = [...plannedSets]
-        ..sort((a, b) => a.exerciseSequenceOrder.compareTo(b.exerciseSequenceOrder));
-      final byExercise = <String, List<PlannedSet>>{};
-      final order = <String>[];
-      for (final p in sorted) {
-        if (!byExercise.containsKey(p.exerciseId)) order.add(p.exerciseId);
-        byExercise.putIfAbsent(p.exerciseId, () => []).add(p);
-      }
-      plannedSetsByExercise = byExercise;
-      plannedExerciseOrder = order;
+      plannedSetsByExercise = _plannedMapFromSets(plannedSets);
+      plannedExerciseOrder = _plannedOrderFromSets(plannedSets);
     } catch (_) {}
+  }
+
+  Map<String, List<PlannedSet>> _plannedMapFromSets(List<PlannedSet> sets) {
+    final sorted = [...sets]
+      ..sort((a, b) => a.exerciseSequenceOrder.compareTo(b.exerciseSequenceOrder));
+    final byExercise = <String, List<PlannedSet>>{};
+    for (final p in sorted) {
+      byExercise.putIfAbsent(p.exerciseId, () => []).add(p);
+    }
+    return byExercise;
+  }
+
+  List<String> _plannedOrderFromSets(List<PlannedSet> sets) {
+    final sorted = [...sets]
+      ..sort((a, b) => a.exerciseSequenceOrder.compareTo(b.exerciseSequenceOrder));
+    final order = <String>[];
+    for (final p in sorted) {
+      if (!order.contains(p.exerciseId)) order.add(p.exerciseId);
+    }
+    return order;
+  }
+
+  Map<String, List<PlannedSet>> _plannedMapFromWorkoutSets(List<WorkoutPlanSet> sets) =>
+      _plannedMapFromSets(_setsFromWorkoutSets(sets));
+
+  List<String> _plannedOrderFromWorkoutSets(List<WorkoutPlanSet> sets) =>
+      _plannedOrderFromSets(_setsFromWorkoutSets(sets));
+
+  List<PlannedSet> _setsFromWorkoutSets(List<WorkoutPlanSet> sets) => [
+        for (final s in sets)
+          PlannedSet(
+            plannedSetId: s.setId,
+            plannedWorkoutId: s.workoutId,
+            userId: s.userId,
+            exerciseId: s.exerciseId,
+            variationId: s.variationId,
+            exerciseSequenceOrder: s.exerciseSequenceOrder,
+            setNumber: s.setNumber,
+            targetWeight: s.targetWeight?.toDouble(),
+            targetReps: s.targetReps,
+            targetDuration: s.targetDuration,
+            targetNotes: s.targetNotes,
+            exerciseName: s.exerciseName,
+            variationName: s.variationName,
+            isActive: true,
+          ),
+      ];
+
+  /// Picks a standalone workout to log.
+  Future<void> selectStandaloneWorkout(WorkoutPlan w) async {
+    selectedStandaloneWorkout = w;
+    selectedPlannedWorkout = null;
+    final sets = await _workoutPlanRepo.fetchSets(w.workoutId);
+    plannedSetsByExercise = _plannedMapFromWorkoutSets(sets);
+    plannedExerciseOrder = _plannedOrderFromWorkoutSets(sets);
+    notifyListeners();
   }
 
   /// Picks a different planned workout to log and loads its planned sets.
   Future<void> selectPlannedWorkout(PlannedWorkout w) async {
     selectedPlannedWorkout = w;
+    selectedStandaloneWorkout = null;
     await _loadSelectedWorkoutSets();
     notifyListeners();
   }
@@ -992,9 +1062,15 @@ class SessionViewModel extends ChangeNotifier {
       final id = await _workoutRepo.createWorkout(
         _userId,
         preNotes: startNotes.trim().isEmpty ? null : startNotes.trim(),
-        programId: programProgress?.program.programId,
-        programRunId: programProgress?.run.programRunId,
-        plannedWorkoutId: selectedPlannedWorkout?.plannedWorkoutId,
+        programId: selectedStandaloneWorkout != null
+            ? null
+            : programProgress?.program.programId,
+        programRunId: selectedStandaloneWorkout != null
+            ? null
+            : programProgress?.run.programRunId,
+        plannedWorkoutId: selectedStandaloneWorkout != null
+            ? null
+            : selectedPlannedWorkout?.plannedWorkoutId,
         preFeeling: sessionFeeling,
       );
       currentWorkoutId = id;

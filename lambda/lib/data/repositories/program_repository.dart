@@ -5,6 +5,7 @@ import '../../core/powersync/database.dart' as ps;
 import '../models/planned_set.dart';
 import '../models/planned_workout.dart';
 import '../models/program.dart';
+import '../models/program_goal.dart';
 
 const _uuid = Uuid();
 
@@ -462,5 +463,28 @@ class ProgramRepository {
     });
 
     return newProgramId;
+  }
+
+  Future<void> createProgramGoal(String userId, String programId, ProgramGoal goal) async {
+    await ps.db.execute(
+      '''
+      INSERT INTO dim_program_goal
+        (id, program_goal_id, program_id, user_id, goal_text, custom_exercise_id,
+         target_weight, target_reps, goal_created_date)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ''',
+      [
+        goal.goalId, goal.goalId, programId, userId, goal.text, goal.exerciseId,
+        goal.targetWeight, goal.targetReps, DateTime.now().toUtc().toIso8601String(),
+      ],
+    );
+  }
+
+  Future<List<ProgramGoal>> fetchProgramGoals(String programId) async {
+    final rows = await ps.db.getAll(
+      'SELECT * FROM dim_program_goal WHERE program_id = ? ORDER BY goal_created_date DESC',
+      [programId],
+    );
+    return rows.map((r) => ProgramGoal.fromMap(r)).toList();
   }
 }

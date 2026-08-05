@@ -1,11 +1,13 @@
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:uuid/uuid.dart';
 import '../../../data/models/custom_variation.dart';
 import '../../../data/models/exercise_detail.dart';
 import '../../../data/models/lesson.dart';
 import '../../../data/models/planned_set.dart';
 import '../../../data/models/planned_workout.dart';
 import '../../../data/models/program.dart';
+import '../../../data/models/program_goal.dart';
 import '../../../data/models/program_progress.dart';
 import '../../../data/models/program_run.dart';
 import '../../../data/models/workout_plan_set.dart';
@@ -247,6 +249,23 @@ class ProgramDetailViewModel {
     } catch (e) {
       state.value = state.value.copyWith(error: e.toString());
       return null;
+    }
+  }
+
+  /// Adds a free-text program goal.
+  Future<void> addProgramGoalText(String text) async {
+    final programId = state.value.program?.programId;
+    if (programId == null || text.trim().isEmpty) return;
+    final goal = ProgramGoal(
+      goalId: Uuid().v4(),
+      programId: programId,
+      userId: _userId,
+      text: text.trim(),
+    );
+    try {
+      await _repo.createProgramGoal(_userId, programId, goal);
+    } catch (e) {
+      state.value = state.value.copyWith(error: e.toString());
     }
   }
 
