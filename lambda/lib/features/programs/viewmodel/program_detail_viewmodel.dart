@@ -8,9 +8,11 @@ import '../../../data/models/planned_workout.dart';
 import '../../../data/models/program.dart';
 import '../../../data/models/program_progress.dart';
 import '../../../data/models/program_run.dart';
+import '../../../data/models/workout_plan_set.dart';
 import '../../../data/repositories/exercise_repository.dart';
 import '../../../data/repositories/lesson_repository.dart';
 import '../../../data/repositories/program_repository.dart';
+import '../../../data/repositories/workout_plan_repository.dart';
 import '../../../data/repositories/program_run_repository.dart';
 import '../../../data/repositories/workout_repository.dart';
 import '../../session/model/session_local_state.dart'
@@ -212,17 +214,25 @@ class ProgramDetailViewModel {
     ExerciseRepository? exerciseRepo,
     LessonRepository? lessonRepo,
     WorkoutRepository? workoutRepo,
+    WorkoutPlanRepository? workoutPlanRepo,
   })  : _repo = repo ?? ProgramRepository(),
         _runRepo = runRepo ?? ProgramRunRepository(),
         _exerciseRepo = exerciseRepo ?? ExerciseRepository(),
         _lessonRepo = lessonRepo ?? LessonRepository(),
-        _workoutRepo = workoutRepo ?? WorkoutRepository();
+        _workoutRepo = workoutRepo ?? WorkoutRepository(),
+        _workoutPlanRepo = workoutPlanRepo ?? WorkoutPlanRepository();
 
   final ProgramRepository _repo;
   final ProgramRunRepository _runRepo;
   final ExerciseRepository _exerciseRepo;
   final LessonRepository _lessonRepo;
   final WorkoutRepository _workoutRepo;
+  final WorkoutPlanRepository _workoutPlanRepo;
+
+  /// When set, the editor operates on a standalone workout (no program)
+  /// instead of a program's planned workout.
+  String? _standaloneWorkoutId;
+  bool get isStandaloneMode => _standaloneWorkoutId != null;
   final state = ValueNotifier(const ProgramDetailState());
 
   String get _userId => Supabase.instance.client.auth.currentUser!.id;
@@ -366,6 +376,38 @@ class ProgramDetailViewModel {
 
   // ── Planned workout editor (full screen) ─────────────────────────────────
 
+  List<PlannedSet> _setsFromWorkoutSets(List<WorkoutPlanSet> sets) => [
+        for (final s in sets)
+          PlannedSet(
+            plannedSetId: s.setId,
+            plannedWorkoutId: s.workoutId,
+            userId: s.userId,
+            exerciseId: s.exerciseId,
+            variationId: s.variationId,
+            exerciseSequenceOrder: s.exerciseSequenceOrder,
+            setNumber: s.setNumber,
+            targetWeight: s.targetWeight?.toDouble(),
+            targetReps: s.targetReps,
+            targetDuration: s.targetDuration,
+            targetNotes: s.targetNotes,
+            exerciseName: s.exerciseName,
+            variationName: s.variationName,
+            isActive: true,
+          ),
+      ];
+
+  List<PlanExerciseSlot> _slotsFromWorkoutSets(List<WorkoutPlanSet> sets) {
+    final seen = <int>{};
+    final slots = <PlanExerciseSlot>[];
+    for (final s in sets) {
+      if (seen.add(s.exerciseSequenceOrder)) {
+        slots.add(
+            PlanExerciseSlot(exerciseSequenceOrder: s.exerciseSequenceOrder, exerciseId: s.exerciseId));
+      }
+    }
+    return slots;
+  }
+
   List<PlanExerciseSlot> _slotsFromSets(List<PlannedSet> sets) {
     final seen = <int>{};
     final slots = <PlanExerciseSlot>[];
@@ -434,6 +476,55 @@ class ProgramDetailViewModel {
     }
   }
 
+  /// Opens a standalone workout for editing (no program). Loads its name,
+  /// notes, and planned sets into the editor.
+  Future<void> openStandaloneWorkout(String workoutId) async {
+    _standaloneWorkoutId = workoutId;
+    final workouts = await _workoutPlanRepo.fetchWorkouts(_userId);
+    final w = workouts.where((x) => x.workoutId == workoutId).firstOrNull;
+    if (w == null) return;
+    state.value = state.value.copyWith(
+      editingWorkout: PlannedWorkout(
+        plannedWorkoutId: w.workoutId,
+        programId: '',
+        userId: w.userId,
+        name: w.name,
+        notes: w.notes,
+        sequenceOrder: 0,
+        isActive: true,
+      ),
+      workoutNameDraft: w.name,
+      workoutNotesDraft: w.notes ?? '',
+      workoutSetsLoading: true,
+    );
+    try {
+      final sets = await _workoutPlanRepo.fetchSets(workoutId);
+      state.value = state.value.copyWith(
+        workoutPlannedSets: _setsFromWorkoutSets(sets),
+        workoutExerciseSlots: _slotsFromWorkoutSets(sets),
+        activeSlotIndex: 0,
+        workoutSetsLoading: false,
+      );
+      for (final slot in state.value.workoutExerciseSlots) {
+        loadLessonsFor(slot.exerciseId);
+      }
+    } catch (e) {
+      state.value =
+          state.value.copyWith(workoutSetsLoading: false, error: e.toString());
+    }
+  }
+
+  /// Creates a brand-new standalone workout and opens it for editing.
+  Future<void> createStandaloneWorkoutAndOpen() async {
+    _standaloneWorkoutId = null;
+    try {
+      final created = await _workoutPlanRepo.createWorkout(_userId, name: 'New Workout');
+      await openStandaloneWorkout(created.workoutId);
+    } catch (e) {
+      state.value = state.value.copyWith(error: e.toString());
+    }
+  }
+
   void markWorkoutDirty() =>
       state.value = state.value.copyWith(workoutUnsavedChanges: true);
 
@@ -451,6 +542,10 @@ class ProgramDetailViewModel {
       commitWorkoutName(),
       commitWorkoutNotes(),
     ]);
+    if (isStandaloneMode) {
+      state.value = state.value.copyWith(workoutUnsavedChanges: false);
+      return;
+    }
     await _repo.fetchPlannedWorkouts(s.program?.programId ?? '');
     state.value = state.value.copyWith(workoutUnsavedChanges: false);
   }
@@ -460,9 +555,15 @@ class ProgramDetailViewModel {
 
   Future<void> deleteWorkout() async {
     final w = state.value.editingWorkout;
-    final programId = state.value.program?.programId;
-    if (w == null || programId == null) return;
+    if (w == null) return;
     closeWorkoutEditor();
+    if (isStandaloneMode) {
+      await _workoutPlanRepo.archiveWorkout(w.plannedWorkoutId);
+      _standaloneWorkoutId = null;
+      return;
+    }
+    final programId = state.value.program?.programId;
+    if (programId == null) return;
     await _repo.archivePlannedWorkout(w.plannedWorkoutId);
     final workouts = await _repo.fetchPlannedWorkouts(programId);
     state.value = state.value.copyWith(plannedWorkouts: workouts);
@@ -485,6 +586,10 @@ class ProgramDetailViewModel {
     final w = state.value.editingWorkout;
     final name = state.value.workoutNameDraft.trim();
     if (w == null || name.isEmpty || name == w.name) return;
+    if (isStandaloneMode) {
+      await _workoutPlanRepo.updateWorkout(w.plannedWorkoutId, name: name);
+      return;
+    }
     await _repo.updatePlannedWorkout(w.plannedWorkoutId, name: name);
     final programId = state.value.program?.programId;
     if (programId != null) {
@@ -498,13 +603,18 @@ class ProgramDetailViewModel {
     if (w == null) return;
     final notes = state.value.workoutNotesDraft.trim();
     if (notes == (w.notes ?? '')) return;
+    if (isStandaloneMode) {
+      await _workoutPlanRepo.updateWorkout(w.plannedWorkoutId,
+          notes: notes.isEmpty ? null : notes);
+      return;
+    }
     await _repo.updatePlannedWorkout(w.plannedWorkoutId,
         notes: notes.isEmpty ? null : notes);
   }
 
   Future<void> commitWorkoutDayOfWeek(int? v) async {
     final w = state.value.editingWorkout;
-    if (w == null) return;
+    if (w == null || isStandaloneMode) return; // standalone workouts have no weekday
     state.value = v == null
         ? state.value.copyWith(clearWorkoutDayOfWeekDraft: true)
         : state.value.copyWith(workoutDayOfWeekDraft: v);
@@ -564,8 +674,15 @@ class ProgramDetailViewModel {
     // Persist: swap exerciseSequenceOrder for both exercises' planned sets
     final orderA = slot.exerciseSequenceOrder;
     final orderB = s.workoutExerciseSlots[oldIndex == newActive ? oldIndex : newIndex].exerciseSequenceOrder;
-    await _repo.swapPlannedExerciseOrders(s.editingWorkout!.plannedWorkoutId, orderA, orderB);
-    final sets = await _repo.fetchPlannedSets(s.editingWorkout!.plannedWorkoutId);
+    final wid = s.editingWorkout!.plannedWorkoutId;
+    if (isStandaloneMode) {
+      await _workoutPlanRepo.swapSetExerciseOrders(wid, orderA, orderB);
+      final sets = await _workoutPlanRepo.fetchSets(wid);
+      state.value = state.value.copyWith(workoutPlannedSets: _setsFromWorkoutSets(sets));
+      return;
+    }
+    await _repo.swapPlannedExerciseOrders(wid, orderA, orderB);
+    final sets = await _repo.fetchPlannedSets(wid);
     state.value = state.value.copyWith(workoutPlannedSets: sets);
   }
 
@@ -581,6 +698,19 @@ class ProgramDetailViewModel {
         ? 1
         : existing.map((ps) => ps.setNumber).reduce((a, b) => a > b ? a : b) + 1;
     try {
+      if (isStandaloneMode) {
+        await _workoutPlanRepo.createSet(
+          _userId,
+          workout.plannedWorkoutId,
+          exerciseId: exerciseId,
+          exerciseName: state.value.exerciseDetailMap[exerciseId]?.name,
+          exerciseSequenceOrder: exerciseSequenceOrder,
+          setNumber: setNumber,
+        );
+        final sets = await _workoutPlanRepo.fetchSets(workout.plannedWorkoutId);
+        state.value = state.value.copyWith(workoutPlannedSets: _setsFromWorkoutSets(sets));
+        return;
+      }
       await _repo.createPlannedSet(
         _userId,
         workout.plannedWorkoutId,
@@ -633,6 +763,26 @@ class ProgramDetailViewModel {
         ? 1
         : existing.map((ps) => ps.setNumber).reduce((a, b) => a > b ? a : b) + 1;
     try {
+      if (isStandaloneMode) {
+        await _workoutPlanRepo.createSet(
+          _userId,
+          workout.plannedWorkoutId,
+          exerciseId: exerciseId,
+          exerciseName: state.value.exerciseDetailMap[exerciseId]?.name,
+          variationId: variationId,
+          variationName: _variationName(exerciseId, variationId),
+          exerciseSequenceOrder: exerciseSequenceOrder,
+          setNumber: setNumber,
+          targetWeight: weight,
+          targetReps: reps,
+          targetDuration: duration,
+          targetNotes: notes,
+        );
+        removeDraftPlannedSet(exerciseSequenceOrder, draftId);
+        final sets = await _workoutPlanRepo.fetchSets(workout.plannedWorkoutId);
+        state.value = state.value.copyWith(workoutPlannedSets: _setsFromWorkoutSets(sets));
+        return true;
+      }
       await _repo.createPlannedSet(
         _userId,
         workout.plannedWorkoutId,
@@ -670,6 +820,19 @@ class ProgramDetailViewModel {
     final workout = state.value.editingWorkout;
     if (workout == null) return;
     try {
+      if (isStandaloneMode) {
+        await _workoutPlanRepo.updateSet(
+          ps.plannedSetId,
+          targetWeight: weight,
+          clearWeight: clearWeight,
+          targetReps: reps,
+          targetNotes: notes,
+          clearNotes: clearNotes,
+        );
+        final sets = await _workoutPlanRepo.fetchSets(workout.plannedWorkoutId);
+        state.value = state.value.copyWith(workoutPlannedSets: _setsFromWorkoutSets(sets), workoutUnsavedChanges: true);
+        return;
+      }
       await _repo.updatePlannedSet(
         ps.plannedSetId,
         targetWeight: weight,
@@ -694,6 +857,25 @@ class ProgramDetailViewModel {
     final existing = state.value.plannedSetsFor(ps.exerciseSequenceOrder);
     final setNumber = existing.map((s) => s.setNumber).reduce((a, b) => a > b ? a : b) + 1;
     try {
+      if (isStandaloneMode) {
+        await _workoutPlanRepo.createSet(
+          _userId,
+          workout.plannedWorkoutId,
+          exerciseId: ps.exerciseId,
+          exerciseName: ps.exerciseName ?? state.value.exerciseDetailMap[ps.exerciseId]?.name,
+          variationId: ps.variationId,
+          variationName: ps.variationName ?? _variationName(ps.exerciseId, ps.variationId),
+          exerciseSequenceOrder: ps.exerciseSequenceOrder,
+          setNumber: setNumber,
+          targetWeight: ps.targetWeight,
+          targetReps: ps.targetReps,
+          targetDuration: ps.targetDuration,
+          targetNotes: ps.targetNotes,
+        );
+        final sets = await _workoutPlanRepo.fetchSets(workout.plannedWorkoutId);
+        state.value = state.value.copyWith(workoutPlannedSets: _setsFromWorkoutSets(sets), workoutUnsavedChanges: true);
+        return;
+      }
       await _repo.createPlannedSet(
         _userId,
         workout.plannedWorkoutId,
@@ -718,6 +900,12 @@ class ProgramDetailViewModel {
   Future<void> deletePlannedSet(String plannedSetId) async {
     final workout = state.value.editingWorkout;
     if (workout == null) return;
+    if (isStandaloneMode) {
+      await _workoutPlanRepo.archiveSet(plannedSetId);
+      final sets = await _workoutPlanRepo.fetchSets(workout.plannedWorkoutId);
+      state.value = state.value.copyWith(workoutPlannedSets: _setsFromWorkoutSets(sets), workoutUnsavedChanges: true);
+      return;
+    }
     await _repo.archivePlannedSet(plannedSetId);
     final sets = await _repo.fetchPlannedSets(workout.plannedWorkoutId);
     state.value = state.value.copyWith(workoutPlannedSets: sets, workoutUnsavedChanges: true);

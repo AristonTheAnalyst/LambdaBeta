@@ -1,35 +1,26 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/styles/app_colors.dart';
 import '../../../../core/styles/app_fonts.dart';
-import '../../../../core/styles/app_radius.dart';
 import '../../../../core/styles/app_spacing.dart';
+import '../../../../core/styles/app_text_styles.dart';
 import '../../../../shared/widgets/app_card.dart';
 import '../../../../shared/widgets/page_header.dart';
+import '../../../../shared/widgets/slide_tab_bar.dart';
+import '../../programs/view/program_library_screen.dart';
+import '../../programs/view/workout_library_screen.dart';
 
-class ExerciseHubScreen extends StatelessWidget {
+/// Exercises hub: two tabs — Workouts (standalone planned sessions) and
+/// Programs — plus quick links to the exercise library and guide.
+class ExerciseHubScreen extends StatefulWidget {
   const ExerciseHubScreen({super.key});
 
-  static const _sections = [
-    _Section(
-      route: '/exercises/library',
-      label: 'Exercises & Variations',
-      description: 'Create and manage exercises and variations',
-      icon: Icons.fitness_center,
-    ),
-    _Section(
-      route: '/exercises/guide',
-      label: 'User Guide',
-      description: 'Learn how to set up and use the app',
-      icon: Icons.menu_book_outlined,
-    ),
-    _Section(
-      route: '/exercises/programs',
-      label: 'Programs',
-      description: 'Structured training programs and templates',
-      icon: Icons.list_alt,
-    ),
-  ];
+  @override
+  State<ExerciseHubScreen> createState() => _ExerciseHubScreenState();
+}
+
+class _ExerciseHubScreenState extends State<ExerciseHubScreen> {
+  int _tab = 0;
 
   @override
   Widget build(BuildContext context) {
@@ -38,73 +29,49 @@ class ExerciseHubScreen extends StatelessWidget {
       body: Column(
         children: [
           const PageHeader(title: 'Exercise Configuration'),
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(AppSpacing.xl),
-              child: Column(
-                children: _sections
-                    .map((s) => Padding(
-                          padding:
-                              const EdgeInsets.only(bottom: AppSpacing.md),
-                          child: AppCard(
-                            onTap: () =>
-                                context.push(s.route),
-                            child: Row(
-                              children: [
-                                Container(
-                                  width: 44,
-                                  height: 44,
-                                  decoration: BoxDecoration(
-                                    color: AppColors.accentBg,
-                                    borderRadius: BorderRadius.circular(AppRadius.md),
-                                  ),
-                                  child: Icon(s.icon,
-                                      color: AppColors.accent, size: 22),
-                                ),
-                                const SizedBox(width: AppSpacing.lg),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(s.label,
-                                          style: AppFonts.ui(
-                                              fontSize: 15,
-                                              fontWeight: FontWeight.w800,
-                                              color: AppColors.primary)),
-                                      const SizedBox(height: 2),
-                                      Text(s.description,
-                                          style: AppFonts.ui(
-                                              fontSize: 12,
-                                              color: AppColors.muted)),
-                                    ],
-                                  ),
-                                ),
-                                Icon(Icons.chevron_right,
-                                    size: 18, color: AppColors.muted),
-                              ],
-                            ),
-                          ),
-                        ))
-                    .toList(),
-              ),
+          Padding(
+            padding: const EdgeInsets.all(AppSpacing.lg),
+            child: Row(
+              children: [
+                _quickLink('Library', Icons.fitness_center, '/exercises/library'),
+                const SizedBox(width: AppSpacing.md),
+                _quickLink('Guide', Icons.menu_book_outlined, '/exercises/guide'),
+              ],
             ),
+          ),
+          SlideTabBar(
+            tabs: const ['Workouts', 'Programs'],
+            activeIndex: _tab,
+            onTap: (i) => setState(() => _tab = i),
+          ),
+          Expanded(
+            child: _tab == 0
+                ? const WorkoutLibraryScreen()
+                : const ProgramLibraryScreen(),
           ),
         ],
       ),
     );
   }
-}
 
-class _Section {
-  const _Section({
-    required this.route,
-    required this.label,
-    required this.description,
-    required this.icon,
-  });
-  final String route;
-  final String label;
-  final String description;
-  final IconData icon;
+  Widget _quickLink(String label, IconData icon, String route) {
+    return Expanded(
+      child: AppCard(
+        onTap: () => context.push(route),
+        padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+        child: Row(
+          children: [
+            Icon(icon, size: 16, color: AppColors.accent),
+            const SizedBox(width: AppSpacing.sm),
+            Text(label,
+                style: AppFonts.ui(
+                    fontSize: AppTextStyles.sm,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.primary)),
+          ],
+        ),
+      ),
+    );
+  }
 }
