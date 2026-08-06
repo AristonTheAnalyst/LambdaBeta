@@ -26,6 +26,8 @@ const schema = Schema([
     Column.integer('user_workout_feeling'),
     Column.integer('pre_workout_feeling'),
     Column.text('exercise_order'),
+    Column.text('planned_workout_name'),
+    Column.text('program_name'),
   ]),
   Table('dim_exercise', [
     Column.text('custom_exercise_id'),
@@ -46,7 +48,7 @@ const schema = Schema([
     Column.integer('deleted_locally'),
   ]),
   Table('fact_bodyweight', [
-    Column.integer('user_weight_id'),
+    Column.text('user_weight_id'),
     Column.text('user_id'),
     Column.text('user_weight'),
     Column.text('user_weight_date'),

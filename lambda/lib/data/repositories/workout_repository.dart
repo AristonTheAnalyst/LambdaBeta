@@ -12,8 +12,10 @@ class WorkoutRepository {
     String userId, {
     String? preNotes,
     String? programId,
+    String? programName,
     String? programRunId,
     String? plannedWorkoutId,
+    String? plannedWorkoutName,
     int? preFeeling,
   }) async {
     final workoutId = _uuid.v4();
@@ -21,23 +23,22 @@ class WorkoutRepository {
       '''
       INSERT INTO fact_workout
         (id, user_workout_id, user_id, user_pre_workout_notes, user_workout_created_date,
-         is_active, program_id, program_run_id, planned_workout_id, pre_workout_feeling)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         is_active, program_id, program_name, program_run_id, planned_workout_id,
+         planned_workout_name, pre_workout_feeling)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ''',
       [
         workoutId,
         workoutId,
         userId,
         preNotes?.isNotEmpty == true ? preNotes : null,
-        // .toUtc() is required — a bare DateTime.now().toIso8601String() has
-        // no timezone offset, so Postgres's timestamptz column silently
-        // reinterprets local wall-clock time as UTC, skewing every elapsed-
-        // time comparison by the device's UTC offset.
         DateTime.now().toUtc().toIso8601String(),
         1,
         programId,
+        programName,
         programRunId,
         plannedWorkoutId,
+        plannedWorkoutName,
         preFeeling,
       ],
     );
@@ -130,6 +131,7 @@ class WorkoutRepository {
     return WorkoutSet(
       setId: setId,
       workoutId: workoutId,
+      userId: userId,
       exerciseId: exerciseId,
       variationId: variationId,
       setNumber: setNumber,
@@ -138,6 +140,8 @@ class WorkoutRepository {
       duration: duration,
       notes: notes?.isNotEmpty == true ? notes : null,
       supersetGroupNumber: supersetGroupNumber,
+      programId: programId,
+      plannedSetId: plannedSetId,
     );
   }
 
@@ -236,11 +240,9 @@ class WorkoutRepository {
   Future<List<WorkoutWithSets>> loadWorkoutsWithSets(String userId) async {
     final workoutRows = await ps.db.getAll(
       '''
-      SELECT fw.*, pp.planned_workout_name
-      FROM fact_workout fw
-      LEFT JOIN dim_planned_workout pp ON pp.planned_workout_id = fw.planned_workout_id
-      WHERE fw.user_id = ? AND fw.is_active = 0
-      ORDER BY fw.user_workout_created_date DESC
+      SELECT * FROM fact_workout
+      WHERE user_id = ? AND is_active = 0
+      ORDER BY user_workout_created_date DESC
       ''',
       [userId],
     );

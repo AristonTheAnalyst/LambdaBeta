@@ -113,7 +113,13 @@ class _PlanWorkoutScreenState extends State<PlanWorkoutScreen> with UnsavedChang
 
   @override
   void onDiscard() {
-    widget.viewModel.closeWorkoutEditor();
+    // If the workout has no exercises, treat it as abandoned — delete it from
+    // the DB rather than leaving an empty orphan row.
+    if (widget.viewModel.state.value.workoutExerciseSlots.isEmpty) {
+      widget.viewModel.deleteWorkout();
+    } else {
+      widget.viewModel.closeWorkoutEditor();
+    }
   }
 
   @override
@@ -133,7 +139,7 @@ class _PlanWorkoutScreenState extends State<PlanWorkoutScreen> with UnsavedChang
             backgroundColor: AppColors.bg,
             body: Column(
               children: [
-                _editableHeader(state.workoutUnsavedChanges),
+                _editableHeader(state.workoutUnsavedChanges, state.workoutExerciseSlots.isEmpty),
                 if (state.error != null)
                   Container(
                     width: double.infinity,
@@ -175,7 +181,41 @@ class _PlanWorkoutScreenState extends State<PlanWorkoutScreen> with UnsavedChang
                             padding: const EdgeInsets.all(AppSpacing.lg),
                             child: CircularProgressIndicator(color: AppColors.accent),
                           ))
-                        else ...[
+                        else if (state.workoutExerciseSlots.isEmpty) ...[
+                          const SizedBox(height: AppSpacing.xl),
+                          GestureDetector(
+                            onTap: _showAddExercise,
+                            child: Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.symmetric(
+                                  vertical: AppSpacing.xxl),
+                              decoration: BoxDecoration(
+                                color: AppColors.surface,
+                                borderRadius:
+                                    BorderRadius.circular(AppRadius.lg),
+                                border: Border.all(color: AppColors.border),
+                              ),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.fitness_center_outlined,
+                                      size: 32, color: AppColors.muted),
+                                  const SizedBox(height: AppSpacing.sm),
+                                  Text('Tap to add an exercise',
+                                      style: AppFonts.ui(
+                                          fontSize: AppTextStyles.md,
+                                          color: AppColors.muted)),
+                                  const SizedBox(height: AppSpacing.xs),
+                                  Text(
+                                      'A workout needs at least one exercise',
+                                      style: AppFonts.ui(
+                                          fontSize: AppTextStyles.xs,
+                                          color: AppColors.muted)),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ] else ...[
                           _PlanExerciseTabBar(
                             slots: state.workoutExerciseSlots,
                             activeIndex: state.activeSlotIndex,
@@ -210,7 +250,7 @@ class _PlanWorkoutScreenState extends State<PlanWorkoutScreen> with UnsavedChang
     );
   }
 
-  Widget _editableHeader(bool unsaved) {
+  Widget _editableHeader(bool unsaved, bool noExercises) {
     final topPadding = MediaQuery.of(context).padding.top;
     return Container(
       padding: EdgeInsets.only(top: topPadding),
@@ -259,7 +299,7 @@ class _PlanWorkoutScreenState extends State<PlanWorkoutScreen> with UnsavedChang
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (unsaved)
+                  if (unsaved && !noExercises)
                     GestureDetector(
                       onTap: () => widget.viewModel.saveWorkout(),
                       child: Container(

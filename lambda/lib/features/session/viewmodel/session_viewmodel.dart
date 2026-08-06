@@ -175,6 +175,7 @@ class SessionViewModel extends ChangeNotifier {
       all.add(PastSetRow(
         setId: s.setId,
         workoutId: s.workoutId,
+        userId: s.userId,
         exerciseId: s.exerciseId,
         setNumber: s.setNumber,
         reps: s.reps,
@@ -453,6 +454,7 @@ class SessionViewModel extends ChangeNotifier {
       combined.add(PastSetRow(
         setId: s.setId,
         workoutId: s.workoutId,
+        userId: s.userId,
         exerciseId: s.exerciseId,
         setNumber: s.setNumber,
         reps: s.reps,
@@ -1065,12 +1067,18 @@ class SessionViewModel extends ChangeNotifier {
         programId: selectedStandaloneWorkout != null
             ? null
             : programProgress?.program.programId,
+        programName: selectedStandaloneWorkout != null
+            ? null
+            : programProgress?.program.name,
         programRunId: selectedStandaloneWorkout != null
             ? null
             : programProgress?.run.programRunId,
         plannedWorkoutId: selectedStandaloneWorkout != null
             ? null
             : selectedPlannedWorkout?.plannedWorkoutId,
+        plannedWorkoutName: selectedStandaloneWorkout != null
+            ? null
+            : selectedPlannedWorkout?.name,
         preFeeling: sessionFeeling,
       );
       currentWorkoutId = id;
@@ -1144,6 +1152,7 @@ class SessionViewModel extends ChangeNotifier {
         combined.add(PastSetRow(
           setId: s.setId,
           workoutId: s.workoutId,
+          userId: s.userId,
           exerciseId: s.exerciseId,
           setNumber: s.setNumber,
           reps: s.reps,

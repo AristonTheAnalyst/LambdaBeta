@@ -151,9 +151,9 @@ class ProgramLibraryViewModel {
     }
   }
 
-  Future<void> archiveProgram(String programId) async {
+  Future<void> deleteProgram(String programId) async {
     try {
-      await _repo.archiveProgram(programId);
+      await _repo.deleteProgram(programId);
       await fetchAll();
     } catch (e) {
       state.value = state.value.copyWith(error: e.toString());

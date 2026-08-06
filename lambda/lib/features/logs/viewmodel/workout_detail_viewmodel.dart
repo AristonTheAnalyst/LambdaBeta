@@ -263,6 +263,7 @@ class WorkoutDetailViewModel {
         combined.add(PastSetRow(
           setId: set.setId,
           workoutId: set.workoutId,
+          userId: set.userId,
           exerciseId: set.exerciseId,
           setNumber: set.setNumber,
           reps: set.reps,
@@ -333,6 +334,7 @@ class WorkoutDetailViewModel {
         combined.add(PastSetRow(
           setId: set.setId,
           workoutId: set.workoutId,
+          userId: set.userId,
           exerciseId: set.exerciseId,
           setNumber: set.setNumber,
           reps: set.reps,

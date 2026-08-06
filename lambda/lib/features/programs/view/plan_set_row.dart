@@ -271,6 +271,7 @@ class _PlanSetRowState extends State<PlanSetRow> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: SwipeActions(
+        borderRadius: AppRadius.md,
         actions: [
           if (!_isDraft)
             SwipeAction(

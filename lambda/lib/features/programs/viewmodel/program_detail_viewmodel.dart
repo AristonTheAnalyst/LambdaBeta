@@ -35,6 +35,7 @@ class ProgramDetailState {
   const ProgramDetailState({
     this.isLoading = false,
     this.isSaving = false,
+    this.saveSuccess = false,
     this.error,
     this.program,
     this.plannedWorkouts = const [],
@@ -73,6 +74,7 @@ class ProgramDetailState {
 
   final bool isLoading;
   final bool isSaving;
+  final bool saveSuccess;
   final String? error;
   final Program? program;
   final List<PlannedWorkout> plannedWorkouts;
@@ -114,6 +116,14 @@ class ProgramDetailState {
 
   bool get isCalendarMode => progressionModeDraft == 'calendar';
 
+  /// True when the program name or description has been edited in the form
+  /// but not yet persisted — used by [UnsavedChangesGuard] to warn on back.
+  bool get hasUnsavedProgramFields {
+    if (program == null) return false;
+    return nameDraft.trim() != (program!.name) ||
+        descriptionDraft.trim() != (program!.description ?? '');
+  }
+
   PlanExerciseSlot? get activeSlot => workoutExerciseSlots.isEmpty
       ? null
       : workoutExerciseSlots[activeSlotIndex.clamp(0, workoutExerciseSlots.length - 1)];
@@ -125,6 +135,7 @@ class ProgramDetailState {
   ProgramDetailState copyWith({
     bool? isLoading,
     bool? isSaving,
+    bool? saveSuccess,
     String? error,
     bool clearError = false,
     Program? program,
@@ -161,6 +172,7 @@ class ProgramDetailState {
       ProgramDetailState(
         isLoading: isLoading ?? this.isLoading,
         isSaving: isSaving ?? this.isSaving,
+        saveSuccess: saveSuccess ?? false,
         error: clearError ? null : error ?? this.error,
         program: program ?? this.program,
         plannedWorkouts: plannedWorkouts ?? this.plannedWorkouts,
@@ -337,9 +349,15 @@ class ProgramDetailViewModel {
         description: s.descriptionDraft.trim(),
         lengthWeeks: int.tryParse(s.lengthWeeksDraft.trim()),
         progressionMode: s.progressionModeDraft,
+        userId: _userId,
       );
       final updated = await _repo.fetchProgram(s.program!.programId);
-      state.value = state.value.copyWith(isSaving: false, program: updated);
+      state.value = state.value.copyWith(
+          isSaving: false, program: updated, saveSuccess: true);
+      // Auto-dismiss the success banner after a short delay.
+      Future.delayed(const Duration(seconds: 2), () {
+        state.value = state.value.copyWith(saveSuccess: false);
+      });
     } catch (e) {
       state.value = state.value.copyWith(isSaving: false, error: e.toString());
     }
@@ -631,13 +649,21 @@ class ProgramDetailViewModel {
     if (w == null) return;
     closeWorkoutEditor();
     if (isStandaloneMode) {
-      await _workoutPlanRepo.archiveWorkout(w.plannedWorkoutId);
+      await _workoutPlanRepo.deleteWorkout(w.plannedWorkoutId);
       _standaloneWorkoutId = null;
       return;
     }
     final programId = state.value.program?.programId;
     if (programId == null) return;
-    await _repo.archivePlannedWorkout(w.plannedWorkoutId);
+    await _repo.deletePlannedWorkout(w.plannedWorkoutId);
+    final workouts = await _repo.fetchPlannedWorkouts(programId);
+    state.value = state.value.copyWith(plannedWorkouts: workouts);
+  }
+
+  Future<void> duplicatePlannedWorkout(PlannedWorkout source) async {
+    final programId = state.value.program?.programId;
+    if (programId == null) return;
+    await _repo.duplicatePlannedWorkout(_userId, source);
     final workouts = await _repo.fetchPlannedWorkouts(programId);
     state.value = state.value.copyWith(plannedWorkouts: workouts);
   }
@@ -646,7 +672,7 @@ class ProgramDetailViewModel {
   Future<void> removePlannedWorkout(PlannedWorkout w) async {
     final programId = state.value.program?.programId;
     if (programId == null) return;
-    await _repo.archivePlannedWorkout(w.plannedWorkoutId);
+    await _repo.deletePlannedWorkout(w.plannedWorkoutId);
     final workouts = await _repo.fetchPlannedWorkouts(programId);
     state.value = state.value.copyWith(plannedWorkouts: workouts);
   }
@@ -669,7 +695,8 @@ class ProgramDetailViewModel {
     final name = state.value.workoutNameDraft.trim();
     if (w == null || name.isEmpty || name == w.name) return;
     if (isStandaloneMode) {
-      await _workoutPlanRepo.updateWorkout(w.plannedWorkoutId, name: name);
+      await _workoutPlanRepo.updateWorkout(w.plannedWorkoutId,
+          name: name, userId: _userId);
       return;
     }
     await _repo.updatePlannedWorkout(w.plannedWorkoutId, name: name);
@@ -983,12 +1010,12 @@ class ProgramDetailViewModel {
     final workout = state.value.editingWorkout;
     if (workout == null) return;
     if (isStandaloneMode) {
-      await _workoutPlanRepo.archiveSet(plannedSetId);
+      await _workoutPlanRepo.deleteSet(plannedSetId);
       final sets = await _workoutPlanRepo.fetchSets(workout.plannedWorkoutId);
       state.value = state.value.copyWith(workoutPlannedSets: _setsFromWorkoutSets(sets), workoutUnsavedChanges: true);
       return;
     }
-    await _repo.archivePlannedSet(plannedSetId);
+    await _repo.deletePlannedSet(plannedSetId);
     final sets = await _repo.fetchPlannedSets(workout.plannedWorkoutId);
     state.value = state.value.copyWith(workoutPlannedSets: sets, workoutUnsavedChanges: true);
   }

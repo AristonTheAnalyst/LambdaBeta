@@ -63,11 +63,22 @@ class AuthNotifier extends ChangeNotifier {
         );
         profile = await _userRepo.fetchProfile(_session!.user.id);
       }
-      final onboarded = profile?.onboarded ?? false;
-      if (onboarded == _isOnboarded) return; // no change — skip router refresh
-      _isOnboarded = onboarded;
+      // If the profile is STILL null after waiting, treat onboarding status
+      // as unknown rather than assuming the user needs onboarding. A null
+      // isOnboarded keeps the router from redirecting — the user stays on
+      // their current screen until the sync lands. The null case typically
+      // means PowerSync hasn't finished initialising (e.g. after
+      // disconnectAndClear).
+      if (profile == null) {
+        if (_isOnboarded != null) return; // unchanged
+        _isOnboarded = null;
+      } else {
+        final onboarded = profile.onboarded;
+        if (onboarded == _isOnboarded) return;
+        _isOnboarded = onboarded;
+      }
     } catch (_) {
-      if (_isOnboarded != null) return; // unchanged — skip router refresh
+      if (_isOnboarded != null) return; // unchanged
       _isOnboarded = null;
     }
     notifyListeners();

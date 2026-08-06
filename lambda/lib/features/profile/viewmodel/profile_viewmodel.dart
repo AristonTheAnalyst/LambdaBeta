@@ -9,6 +9,7 @@ class ProfileState {
     this.isSaving = false,
     this.isDeleting = false,
     this.isEditing = false,
+    this.saveSuccess = false,
     this.error,
     this.profile,
   });
@@ -17,6 +18,7 @@ class ProfileState {
   final bool isSaving;
   final bool isDeleting;
   final bool isEditing;
+  final bool saveSuccess;
   final String? error;
   final UserProfile? profile;
 
@@ -27,6 +29,7 @@ class ProfileState {
     bool? isSaving,
     bool? isDeleting,
     bool? isEditing,
+    bool? saveSuccess,
     String? error,
     bool clearError = false,
     UserProfile? profile,
@@ -36,6 +39,7 @@ class ProfileState {
         isSaving: isSaving ?? this.isSaving,
         isDeleting: isDeleting ?? this.isDeleting,
         isEditing: isEditing ?? this.isEditing,
+        saveSuccess: saveSuccess ?? false,
         error: clearError ? null : error ?? this.error,
         profile: profile ?? this.profile,
       );
@@ -111,8 +115,12 @@ class ProfileViewModel {
       state.value = state.value.copyWith(
         isSaving: false,
         isEditing: false,
+        saveSuccess: true,
         profile: updated,
       );
+      Future.delayed(const Duration(seconds: 2), () {
+        state.value = state.value.copyWith(saveSuccess: false);
+      });
     } catch (e) {
       state.value = state.value.copyWith(
           isSaving: false, error: 'Failed to save changes.');

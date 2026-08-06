@@ -87,6 +87,16 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                           style: AppFonts.ui(fontSize: AppTextStyles.sm, color: AppColors.accent)),
                     ),
                   ),
+                if (state.error != null)
+                  Container(
+                    width: double.infinity,
+                    color: AppColors.dangerBg,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
+                    child: Text(state.error!,
+                        style: AppFonts.ui(
+                            color: AppColors.danger, fontSize: AppTextStyles.sm)),
+                  ),
                 Expanded(
                   child: PageView(
                     controller: _pageCtrl,

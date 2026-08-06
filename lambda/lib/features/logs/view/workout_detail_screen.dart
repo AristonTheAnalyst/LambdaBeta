@@ -1265,6 +1265,7 @@ class _DetailSetRowState extends State<_DetailSetRow> {
 
     if (!widget.readOnly) {
       row = SwipeActions(
+        borderRadius: AppRadius.md,
         actions: [
           if (!_isDraft)
             SwipeAction(

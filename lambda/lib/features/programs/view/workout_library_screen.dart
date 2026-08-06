@@ -75,14 +75,19 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
     await _load();
   }
 
-  Future<void> _archive(WorkoutPlan w) async {
+  Future<void> _duplicate(WorkoutPlan w) async {
+    await _repo.duplicateWorkout(_userId, w);
+    await _load();
+  }
+
+  Future<void> _delete(WorkoutPlan w) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
-        title: Text('Archive Workout',
+        title: Text('Delete Workout',
             style: AppFonts.ui(fontWeight: FontWeight.w800, color: AppColors.danger)),
-        content: Text('Archive "${toProperCase(w.name)}"?',
+        content: Text('Delete "${toProperCase(w.name)}"?',
             style: AppFonts.ui(color: AppColors.muted)),
         actions: [
           TextButton(
@@ -90,14 +95,14 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
               child: Text('Cancel', style: AppFonts.ui(color: AppColors.muted))),
           TextButton(
               onPressed: () => Navigator.of(ctx).pop(true),
-              child: Text('Archive',
+              child: Text('Delete',
                   style: AppFonts.ui(
                       color: AppColors.danger, fontWeight: FontWeight.w600))),
         ],
       ),
     );
     if (ok == true) {
-      await _repo.archiveWorkout(w.workoutId);
+      await _repo.deleteWorkout(w.workoutId);
       await _load();
     }
   }
@@ -155,10 +160,16 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
                           return SwipeActions(
                             actions: [
                               SwipeAction(
-                                icon: Icons.archive_outlined,
-                                label: 'Archive',
+                                icon: Icons.copy_rounded,
+                                label: 'Duplicate',
+                                color: AppColors.accent,
+                                onTap: () => _duplicate(w),
+                              ),
+                              SwipeAction(
+                                icon: Icons.delete_outline,
+                                label: 'Delete',
                                 color: AppColors.danger,
-                                onTap: () => _archive(w),
+                                onTap: () => _delete(w),
                               ),
                             ],
                             child: AppCard(

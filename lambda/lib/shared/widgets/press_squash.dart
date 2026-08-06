@@ -20,7 +20,6 @@ class _PressSquashState extends State<PressSquash>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
   late final Animation<double> _scale;
-  late final Animation<double> _opacity;
 
   @override
   void initState() {
@@ -30,10 +29,7 @@ class _PressSquashState extends State<PressSquash>
       duration: const Duration(milliseconds: 80),
       reverseDuration: const Duration(milliseconds: 200),
     );
-    _scale = Tween<double>(begin: 1.0, end: 0.95).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeOut),
-    );
-    _opacity = Tween<double>(begin: 1.0, end: 0.75).animate(
+    _scale = Tween<double>(begin: 1.0, end: 0.97).animate(
       CurvedAnimation(parent: _controller, curve: Curves.easeOut),
     );
   }
@@ -63,10 +59,8 @@ class _PressSquashState extends State<PressSquash>
       onTapCancel: _onTapCancel,
       child: AnimatedBuilder(
         animation: _controller,
-        builder: (_, child) => Opacity(
-          opacity: _opacity.value,
-          child: Transform.scale(scale: _scale.value, child: child),
-        ),
+        builder: (_, child) =>
+            Transform.scale(scale: _scale.value, child: child),
         child: widget.child,
       ),
     );

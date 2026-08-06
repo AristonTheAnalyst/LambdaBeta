@@ -5,15 +5,12 @@
       "url": "https://docs.powersync.com/mcp"
     },
     "supabase": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "@supabase/mcp-server-supabase@latest",
-        "--project-ref=dybluaeowmpdwsweawcq"
-      ],
-      "env": {
-        "SUPABASE_ACCESS_TOKEN": "${SUPABASE_ACCESS_TOKEN}"
-      }
+      "type": "http",
+      "url": "https://mcp.supabase.com/mcp?project_ref=dybluaeowmpdwsweawcq&features=docs%2Caccount%2Cdatabase%2Cdebugging%2Cdevelopment%2Cfunctions%2Cbranching"
+    },
+    "dart": {
+      "type": "http",
+      "url": "https://mcp.dartai.com/mcp"
     }
   }
 }

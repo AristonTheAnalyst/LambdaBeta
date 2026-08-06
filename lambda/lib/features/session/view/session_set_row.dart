@@ -280,6 +280,7 @@ class _SessionSetRowState extends State<SessionSetRow> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: SwipeActions(
+        borderRadius: AppRadius.md,
         actions: [
           if (!_isDraft)
             SwipeAction(

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/styles/app_colors.dart';
 import '../../../../core/styles/app_radius.dart';
@@ -15,6 +14,7 @@ import '../../../../shared/widgets/glass_button.dart';
 import '../../../../shared/widgets/lambda_input.dart';
 import '../../../../shared/widgets/page_header.dart';
 import '../../../../shared/widgets/segmented_control.dart';
+import '../../../../shared/mixins/unsaved_changes_guard.dart';
 import '../../../../shared/widgets/swipe_actions.dart';
 import '../viewmodel/program_detail_viewmodel.dart';
 import 'plan_workout_screen.dart';
@@ -38,11 +38,28 @@ class ProgramDetailScreen extends StatefulWidget {
   State<ProgramDetailScreen> createState() => _ProgramDetailScreenState();
 }
 
-class _ProgramDetailScreenState extends State<ProgramDetailScreen> {
+class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedChangesGuard<ProgramDetailScreen> {
   late final ProgramDetailViewModel _vm;
 
   final _nameController = TextEditingController();
   final _descriptionController = TextEditingController();
+
+  // ── UnsavedChangesGuard overrides ─────────────────────────────────────────
+
+  @override
+  bool get hasUnsavedChanges => _vm.state.value.hasUnsavedProgramFields;
+
+  @override
+  Future<void> onSave() async => await _vm.saveProgramDetails();
+
+  @override
+  void onDiscard() {
+    final s = _vm.state.value;
+    _nameController.text = s.program?.name ?? '';
+    _descriptionController.text = s.program?.description ?? '';
+    _vm.setNameDraft(s.program?.name ?? '');
+    _vm.setDescriptionDraft(s.program?.description ?? '');
+  }
 
   Future<void> _confirmBeginProgram() async {
     final state = _vm.state.value;
@@ -446,38 +463,54 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.bg,
-      body: ValueListenableBuilder<ProgramDetailState>(
-        valueListenable: _vm.state,
-        builder: (context, state, _) {
-          return Column(
-            children: [
-              PageHeader(
-                title: 'Program',
-                left: GestureDetector(
-                  onTap: () => context.pop(),
-                  child: Icon(Icons.arrow_back_ios_new,
-                      size: 18, color: AppColors.accent),
+    return buildGuardedScaffold(
+      scaffold: Scaffold(
+        backgroundColor: AppColors.bg,
+        body: ValueListenableBuilder<ProgramDetailState>(
+          valueListenable: _vm.state,
+          builder: (context, state, _) {
+            return Column(
+              children: [
+                PageHeader(
+                  title: 'Program',
+                  left: GestureDetector(
+                    onTap: () async {
+                      final nav = Navigator.of(context);
+                      if (await confirmBack() && mounted) {
+                        nav.pop();
+                      }
+                    },
+                    child: Icon(Icons.arrow_back_ios_new,
+                        size: 18, color: AppColors.accent),
+                  ),
+                  right: GlassButton(
+                    label: 'Save',
+                    compact: true,
+                    loading: state.isSaving,
+                    disabled: state.isSaving,
+                    onPressed: _vm.saveProgramDetails,
+                  ),
                 ),
-                right: GlassButton(
-                  label: 'Save',
-                  compact: true,
-                  loading: state.isSaving,
-                  disabled: state.isSaving,
-                  onPressed: _vm.saveProgramDetails,
-                ),
-              ),
-              if (state.error != null)
-                Container(
-                  width: double.infinity,
-                  color: AppColors.dangerBg,
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
-                  child: Text(state.error!,
-                      style: AppFonts.ui(
-                          color: AppColors.danger, fontSize: AppTextStyles.sm)),
-                ),
+                if (state.error != null)
+                  Container(
+                    width: double.infinity,
+                    color: AppColors.dangerBg,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
+                    child: Text(state.error!,
+                        style: AppFonts.ui(
+                            color: AppColors.danger, fontSize: AppTextStyles.sm)),
+                  ),
+                if (state.saveSuccess)
+                  Container(
+                    width: double.infinity,
+                    color: AppColors.successBg,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
+                    child: Text('Program saved.',
+                        style: AppFonts.ui(
+                            color: AppColors.success, fontSize: AppTextStyles.sm)),
+                  ),
               if (state.isLoading)
                 Expanded(
                     child:
@@ -621,6 +654,7 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> {
                                       workout: w,
                                       showDayOfWeek: state.isCalendarMode,
                                       onTap: () => _openEditWorkout(w),
+                                      onDuplicate: () => _vm.duplicatePlannedWorkout(w),
                                       onDelete: () => _confirmDeleteWorkout(w),
                                     ))
                                 .toList(),
@@ -630,11 +664,12 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> {
                     ),
                   ),
                 ),
-            ],
+              ],
           );
         },
       ),
-    );
+    ),
+  );
   }
 }
 
@@ -646,12 +681,14 @@ class _PlannedWorkoutRow extends StatelessWidget {
     required this.workout,
     required this.showDayOfWeek,
     required this.onTap,
+    required this.onDuplicate,
     required this.onDelete,
   });
 
   final PlannedWorkout workout;
   final bool showDayOfWeek;
   final VoidCallback onTap;
+  final VoidCallback onDuplicate;
   final VoidCallback onDelete;
 
   @override
@@ -660,6 +697,12 @@ class _PlannedWorkoutRow extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: AppSpacing.sm),
       child: SwipeActions(
         actions: [
+          SwipeAction(
+            icon: Icons.copy_rounded,
+            label: 'Duplicate',
+            color: AppColors.accent,
+            onTap: onDuplicate,
+          ),
           SwipeAction(
             icon: Icons.delete_outline,
             label: 'Delete',

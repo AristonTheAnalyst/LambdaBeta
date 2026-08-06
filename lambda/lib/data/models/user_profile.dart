@@ -21,7 +21,7 @@ class UserProfile {
     this.userDateCreated,
   });
 
-  factory UserProfile.fromJson(Map<String, dynamic> json) {
+  factory UserProfile.fromMap(Map<String, dynamic> json) {
     return UserProfile(
       userId: json['user_id'] as String,
       userName: json['user_name'] as String?,
@@ -75,7 +75,7 @@ class UserProfile {
         userDateCreated: userDateCreated,
       );
 
-  Map<String, dynamic> toJson() {
+  Map<String, dynamic> toMap() {
     return {
       'user_id': userId,
       'user_name': userName,

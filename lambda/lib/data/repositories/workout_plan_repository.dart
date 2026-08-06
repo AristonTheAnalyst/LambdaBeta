@@ -10,15 +10,41 @@ const _uuid = Uuid();
 /// Owns standalone planned workouts (a single session not tied to a program)
 /// and their planned sets — mirrors the program planned-workout/set CRUD.
 class WorkoutPlanRepository {
+  Future<bool> _nameExists(String userId, String name,
+      {String? excludeWorkoutId}) async {
+    final rows = await ps.db.getAll(
+      '''
+      SELECT 1 FROM dim_workout
+      WHERE user_id = ? AND LOWER(workout_name) = LOWER(?)
+        ${excludeWorkoutId != null ? 'AND workout_id != ?' : ''}
+      LIMIT 1
+      ''',
+      [
+        userId,
+        name.trim(),
+        ?excludeWorkoutId,
+      ],
+    );
+    return rows.isNotEmpty;
+  }
+
+  Future<void> _assertWorkoutNameUnique(String userId, String name,
+      {String? excludeWorkoutId}) async {
+    if (await _nameExists(userId, name, excludeWorkoutId: excludeWorkoutId)) {
+      throw Exception('A workout named "$name" already exists.');
+    }
+  }
+
   Future<List<WorkoutPlan>> fetchWorkouts(String userId) async {
     final rows = await ps.db.getAll(
-      'SELECT * FROM dim_workout WHERE user_id = ? AND is_active = 1 ORDER BY workout_created_date DESC',
+      'SELECT * FROM dim_workout WHERE user_id = ? ORDER BY workout_created_date DESC',
       [userId],
     );
     return rows.map((r) => WorkoutPlan.fromMap(r)).toList();
   }
 
   Future<WorkoutPlan> createWorkout(String userId, {required String name, String? notes}) async {
+    await _assertWorkoutNameUnique(userId, name);
     final id = _uuid.v4();
     final createdDate = DateTime.now().toUtc();
     await ps.db.execute(
@@ -39,7 +65,11 @@ class WorkoutPlanRepository {
     );
   }
 
-  Future<void> updateWorkout(String workoutId, {String? name, String? notes}) async {
+  Future<void> updateWorkout(String workoutId,
+      {String? name, String? notes, String userId = ''}) async {
+    if (name != null) {
+      await _assertWorkoutNameUnique(userId, name, excludeWorkoutId: workoutId);
+    }
     final updates = <String, dynamic>{};
     if (name != null) updates['workout_name'] = name;
     if (notes != null) updates['workout_notes'] = notes;
@@ -51,9 +81,13 @@ class WorkoutPlanRepository {
     );
   }
 
-  Future<void> archiveWorkout(String workoutId) async {
+  Future<void> deleteWorkout(String workoutId) async {
     await ps.db.execute(
-      'UPDATE dim_workout SET is_active = 0 WHERE workout_id = ?',
+      'DELETE FROM dim_workout_set WHERE workout_id = ?',
+      [workoutId],
+    );
+    await ps.db.execute(
+      'DELETE FROM dim_workout WHERE workout_id = ?',
       [workoutId],
     );
   }
@@ -152,11 +186,63 @@ class WorkoutPlanRepository {
     );
   }
 
-  Future<void> archiveSet(String setId) async {
+  Future<void> deleteSet(String setId) async {
     await ps.db.execute(
-      'UPDATE dim_workout_set SET is_active = 0 WHERE workout_set_id = ?',
+      'DELETE FROM dim_workout_set WHERE workout_set_id = ?',
       [setId],
     );
+  }
+
+  /// Deep-copies a standalone workout with all its sets.
+  Future<String> duplicateWorkout(String userId, WorkoutPlan source) async {
+    final sets = await fetchSets(source.workoutId);
+
+    // Find a unique copy name.
+    var copyName = '${source.name} (Copy)';
+    if (await _nameExists(userId, copyName)) {
+      for (var i = 2;; i++) {
+        copyName = '${source.name} (Copy $i)';
+        if (!await _nameExists(userId, copyName)) break;
+      }
+    }
+
+    final newId = _uuid.v4();
+    final createdDate = DateTime.now().toUtc();
+
+    await ps.db.writeTransaction((tx) async {
+      await tx.execute(
+        '''
+        INSERT INTO dim_workout
+          (id, workout_id, user_id, workout_name, workout_notes, is_active, workout_created_date)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''',
+        [newId, newId, userId, copyName, source.notes, 1, createdDate.toIso8601String()],
+      );
+
+      for (final set in sets) {
+        final newSetId = _uuid.v4();
+        await tx.execute(
+          '''
+          INSERT INTO dim_workout_set
+            (id, workout_set_id, workout_id, user_id, custom_exercise_id,
+             custom_variation_id, exercise_sequence_order, workout_set_number,
+             target_weight, target_reps, target_duration_seconds, target_notes,
+             exercise_name, variation_name, is_active)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ''',
+          [
+            newSetId, newSetId, newId, userId,
+            set.exerciseId, set.variationId,
+            set.exerciseSequenceOrder, set.setNumber,
+            set.targetWeight, jsonEncode(set.targetReps),
+            jsonEncode(set.targetDuration), set.targetNotes,
+            set.exerciseName, set.variationName, 1,
+          ],
+        );
+      }
+    });
+
+    return newId;
   }
 
   /// Swaps the exercise sequence order between two exercises' sets in a

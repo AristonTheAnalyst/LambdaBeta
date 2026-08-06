@@ -71,9 +71,9 @@ class _ProgramLibraryScreenState extends State<ProgramLibraryScreen> {
           TextButton(
               onPressed: () {
                 Navigator.of(ctx).pop();
-                _viewModel.archiveProgram(p.programId);
+                _viewModel.deleteProgram(p.programId);
               },
-              child: Text('Archive',
+              child: Text('Delete',
                   style: AppFonts.ui(
                       color: AppColors.danger, fontWeight: FontWeight.w600))),
         ],
@@ -309,7 +309,7 @@ class _ProgramLibraryScreenState extends State<ProgramLibraryScreen> {
                                     _beginProgram(p),
                                 onDuplicate: () =>
                                     _viewModel.duplicateProgram(p.programId),
-                                onArchive: () => _confirmArchive(p),
+                                onDelete: () => _confirmArchive(p),
                               );
                             },
                           ),
@@ -330,7 +330,7 @@ class _ProgramCard extends StatelessWidget {
     required this.onOpen,
     required this.onSetCurrent,
     required this.onDuplicate,
-    required this.onArchive,
+    required this.onDelete,
     this.progress,
   });
 
@@ -340,7 +340,7 @@ class _ProgramCard extends StatelessWidget {
   final VoidCallback onOpen;
   final VoidCallback onSetCurrent;
   final VoidCallback onDuplicate;
-  final VoidCallback onArchive;
+  final VoidCallback onDelete;
 
   /// Progress of the current program — shown as a bar only on the current card.
   final ProgramProgress? progress;
@@ -350,10 +350,16 @@ class _ProgramCard extends StatelessWidget {
     return SwipeActions(
       actions: [
         SwipeAction(
-          icon: Icons.archive_outlined,
-          label: 'Archive',
+          icon: Icons.copy_rounded,
+          label: 'Duplicate',
+          color: AppColors.accent,
+          onTap: onDuplicate,
+        ),
+        SwipeAction(
+          icon: Icons.delete_outline,
+          label: 'Delete',
           color: AppColors.danger,
-          onTap: onArchive,
+          onTap: onDelete,
         ),
       ],
       child: AppCard(

@@ -36,6 +36,6 @@ class Lesson {
   static bool _toBool(dynamic v) {
     if (v is bool) return v;
     if (v is int) return v != 0;
-    return false;
+    return true;
   }
 }

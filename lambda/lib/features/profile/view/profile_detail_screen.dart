@@ -1,11 +1,12 @@
 ﻿import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/styles/app_colors.dart';
+import '../../../../core/styles/app_fonts.dart';
 import '../../../../core/styles/app_spacing.dart';
 import '../../../../core/styles/app_text_styles.dart';
 import '../../../../shared/widgets/dropdown_select.dart';
 import '../../../../shared/widgets/glass_button.dart';
+import '../../../../shared/mixins/unsaved_changes_guard.dart';
 import '../../../../shared/widgets/lambda_button.dart';
 import '../../../../shared/widgets/lambda_input.dart';
 import '../../../../shared/widgets/page_header.dart';
@@ -18,7 +19,7 @@ class ProfileDetailScreen extends StatefulWidget {
   State<ProfileDetailScreen> createState() => _ProfileDetailScreenState();
 }
 
-class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
+class _ProfileDetailScreenState extends State<ProfileDetailScreen> with UnsavedChangesGuard<ProfileDetailScreen> {
   final _firstNameController = TextEditingController();
   final _lastNameController  = TextEditingController();
   final _heightController    = TextEditingController();
@@ -27,6 +28,17 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
 
   DateTime? _editDob;
   String? _editGender;
+
+  // ── UnsavedChangesGuard overrides ─────────────────────────────────────────
+
+  @override
+  bool get hasUnsavedChanges => _viewModel.state.value.isEditing;
+
+  @override
+  Future<void> onSave() async => await _handleSave();
+
+  @override
+  void onDiscard() => _viewModel.cancelEditing();
 
   static const _genderOptions = [
     DropdownOption(label: 'Not specified', value: ''),
@@ -159,56 +171,71 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.bg,
-      resizeToAvoidBottomInset: true,
-      body: ValueListenableBuilder<ProfileState>(
-        valueListenable: _viewModel.state,
-        builder: (context, state, _) {
-          return Column(
-            children: [
-              PageHeader(
-                title: 'User Profile',
-                left: GestureDetector(
-                  onTap: () => context.pop(),
-                  child: Icon(Icons.arrow_back_ios_new,
-                      size: 18, color: AppColors.accent),
+    return buildGuardedScaffold(
+      scaffold: Scaffold(
+        backgroundColor: AppColors.bg,
+        resizeToAvoidBottomInset: true,
+        body: ValueListenableBuilder<ProfileState>(
+          valueListenable: _viewModel.state,
+          builder: (context, state, _) {
+            return Column(
+              children: [
+                PageHeader(
+                  title: 'User Profile',
+                  left: GestureDetector(
+                    onTap: () async {
+                      final nav = Navigator.of(context);
+                      if (await confirmBack() && mounted) {
+                        nav.pop();
+                      }
+                    },
+                    child: Icon(Icons.arrow_back_ios_new,
+                        size: 18, color: AppColors.accent),
+                  ),
+                  right: !state.isEditing
+                      ? GlassButton(
+                          label: 'Edit',
+                          onPressed: () {
+                            _populateEditFields();
+                            _viewModel.startEditing();
+                          },
+                          compact: true,
+                        )
+                      : null,
                 ),
-                right: !state.isEditing
-                    ? GlassButton(
-                        label: 'Edit',
-                        onPressed: () {
-                          _populateEditFields();
-                          _viewModel.startEditing();
-                        },
-                        compact: true,
-                      )
-                    : null,
-              ),
-              Expanded(
+                if (state.error != null) ...[
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppColors.dangerBg,
+                      border: Border.all(color: AppColors.dangerBorder),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(state.error!,
+                        style: TextStyle(
+                            color: AppColors.danger,
+                            fontSize: AppTextStyles.sm),
+                        textAlign: TextAlign.center),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                ],
+                if (state.saveSuccess)
+                  Container(
+                    width: double.infinity,
+                    color: AppColors.successBg,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
+                    child: Text('Profile saved.',
+                        style: AppFonts.ui(
+                            color: AppColors.success, fontSize: AppTextStyles.sm)),
+                  ),
+                Expanded(
                 child: KeyboardDismissOnScroll(
                   child: SingleChildScrollView(
                     padding: const EdgeInsets.all(AppSpacing.xl),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        if (state.error != null) ...[
-                          Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: AppColors.dangerBg,
-                              border: Border.all(color: AppColors.dangerBorder),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(state.error!,
-                                style: TextStyle(
-                                    color: AppColors.danger,
-                                    fontSize: AppTextStyles.sm),
-                                textAlign: TextAlign.center),
-                          ),
-                          const SizedBox(height: AppSpacing.md),
-                        ],
-
                         // Email (always read-only)
                         _ProfileRow(
                           label: 'Email',
@@ -430,7 +457,8 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
           );
         },
       ),
-    );
+    ),
+  );
   }
 
   String _emailDisplay() {

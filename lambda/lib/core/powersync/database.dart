@@ -198,6 +198,49 @@ Future<void> disconnectAndClear() async {
   await db.disconnectAndClear();
 }
 
+/// Wipes every row from **both the Supabase server and the local database**,
+/// then signs the user out so they get the login screen on next launch.
+/// Only for draft/dev use — there is no undo anywhere.
+Future<void> clearAllTables() async {
+  // 1. Delete every user-owned row from the Supabase server while we
+  //    still have a valid session.  Tables without a user_id column
+  //    (app_config) or with RLS that rejects anonymous deletes are
+  //    silently skipped.
+  final session = Supabase.instance.client.auth.currentSession;
+  if (session != null) {
+    final rest = Supabase.instance.client.rest;
+    final userId = session.user.id;
+
+    final tables = [
+      ..._pkColumns.keys,
+      'dim_exercise_variation_bridge',
+      'coaching_relationship',
+    ];
+    for (final table in tables) {
+      try {
+        await rest.from(table).delete().eq('user_id', userId);
+      } catch (_) {
+        // Silently skip — table may lack user_id or reject the op.
+      }
+    }
+  }
+
+  // 2. disconnectAndClear wipes the local database AND PowerSync
+  //    internal tracking tables, then disconnects.  Safer than raw
+  //    DELETEs which can leave stale sync metadata behind.
+  await db.disconnectAndClear();
+
+  // 3. Sign out — clears the Supabase session and redirects to login.
+  //    The onAuthStateChange handler fires signedOut → disconnect(),
+  //    which is harmless after disconnectAndClear (idempotent).
+  try {
+    await Supabase.instance.client.auth.signOut();
+  } catch (_) {
+    // signOut itself failed — still redirect to login via the
+    // auth-notifier so the user isn't stuck in a half-signed-in state.
+  }
+}
+
 Future<String> _dbPath() async {
   const filename = 'lambda.db';
   if (kIsWeb) return filename;

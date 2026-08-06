@@ -212,6 +212,7 @@ class _LessonRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SwipeActions(
+      borderRadius: AppRadius.md,
       actions: [
         SwipeAction(
           icon: Icons.delete_outline,
