@@ -304,14 +304,16 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedC
     super.dispose();
   }
 
-  Future<void> _openCreateWorkout() async {
-    await Navigator.of(context, rootNavigator: true).push(
-      MaterialPageRoute(
-        builder: (_) => PlanWorkoutScreen(viewModel: _vm),
-      ),
-    );
-    if (!mounted) return;
-    _refreshAfterEdit();
+  void _openCreateWorkout() {
+    Navigator.of(context, rootNavigator: true)
+        .push<bool>(
+          MaterialPageRoute(
+            builder: (_) => PlanWorkoutScreen(viewModel: _vm),
+          ),
+        )
+        .then((_) {
+          if (mounted) _refreshAfterEdit();
+        });
   }
 
   /// "+" on Planned Workouts: offer creating a new workout or copying an
@@ -358,7 +360,7 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedC
     );
     if (!mounted) return;
     if (choice == 'new') {
-      await _openCreateWorkout();
+      _openCreateWorkout(); // fire-and-forget — .then() handles refresh
     } else if (choice == 'from') {
       await _addExistingWorkout();
       if (mounted) _refreshAfterEdit();
@@ -466,13 +468,15 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedC
       );
       if (ok != true || !mounted) return;
     }
-    await Navigator.of(context, rootNavigator: true).push(
-      MaterialPageRoute(
-        builder: (_) => PlanWorkoutScreen(viewModel: _vm, workout: w),
-      ),
-    );
-    if (!mounted) return;
-    _refreshAfterEdit();
+    Navigator.of(context, rootNavigator: true)
+        .push<bool>(
+          MaterialPageRoute(
+            builder: (_) => PlanWorkoutScreen(viewModel: _vm, workout: w),
+          ),
+        )
+        .then((_) {
+          if (mounted) _refreshAfterEdit();
+        });
   }
 
   /// Refreshes planned workouts after returning from the workout editor.
