@@ -35,7 +35,12 @@ abstract final class AppRouter {
   /// Exposed so OnboardingScreen can call authNotifier.completeOnboarding().
   static AuthNotifier get authNotifier => _authNotifier;
 
+  static final _rootNavigatorKey = GlobalKey<NavigatorState>();
+  static final routeObserver = RouteObserver<ModalRoute<dynamic>>();
+
   static final router = GoRouter(
+    navigatorKey: _rootNavigatorKey,
+    observers: [routeObserver],
     initialLocation: '/session',
     // Merge auth + theme so route builders re-run (and pick up new AppColors)
     // whenever either changes.

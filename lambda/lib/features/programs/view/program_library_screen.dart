@@ -7,6 +7,7 @@ import '../../../../core/styles/app_text_styles.dart';
 import '../../../../core/utils/workout_format.dart';
 import '../../../../data/models/program.dart';
 import '../../../../data/models/program_progress.dart';
+import '../../../../shared/router/app_router.dart';
 import '../../../../shared/widgets/app_card.dart';
 import '../../../../shared/widgets/glass_button.dart';
 import '../../../../shared/widgets/lambda_input.dart';
@@ -28,7 +29,8 @@ class ProgramLibraryScreen extends StatefulWidget {
   State<ProgramLibraryScreen> createState() => _ProgramLibraryScreenState();
 }
 
-class _ProgramLibraryScreenState extends State<ProgramLibraryScreen> {
+class _ProgramLibraryScreenState extends State<ProgramLibraryScreen>
+    with RouteAware {
   final _viewModel = ProgramLibraryViewModel();
   final _createController = TextEditingController();
 
@@ -39,10 +41,24 @@ class _ProgramLibraryScreenState extends State<ProgramLibraryScreen> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    AppRouter.routeObserver.subscribe(this, ModalRoute.of(context)!);
+  }
+
+  @override
   void dispose() {
+    AppRouter.routeObserver.unsubscribe(this);
     _viewModel.dispose();
     _createController.dispose();
     super.dispose();
+  }
+
+  /// Called when a route on top of this one is popped — refresh the
+  /// program list so edits made in the detail screen are visible.
+  @override
+  void didPopNext() {
+    _viewModel.fetchAll();
   }
 
   void _openCreate() {
