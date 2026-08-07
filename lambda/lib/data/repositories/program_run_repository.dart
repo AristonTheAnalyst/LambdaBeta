@@ -44,7 +44,21 @@ class ProgramRunRepository {
     final startedDate = DateTime.now().toUtc();
     final client = Supabase.instance.client;
 
-    // 1. Authoritative write — hits Supabase directly so the run exists
+    // 1. End the previous run on the server FIRST — a unique partial index
+    //    enforces at most one is_current=true row per user, so the old run
+    //    must be cleared before inserting the new one.
+    try {
+      await client.from('fact_program_run').update({
+        'is_current': false,
+        'ended_date': startedDate.toIso8601String(),
+      }).eq('user_id', userId).eq('is_current', true)
+          .timeout(const Duration(seconds: 5));
+    } catch (_) {
+      // If this fails the insert below will also fail with a duplicate-key
+      // violation — let that propagate to the caller.
+    }
+
+    // 2. Authoritative write — hits Supabase directly so the run exists
     //    server-side even if PowerSync is stuck reconciling a checkpoint.
     await client.from('fact_program_run').insert({
       'program_run_id': id,
@@ -57,19 +71,7 @@ class ProgramRunRepository {
       'end_date': endDate?.toUtc().toIso8601String(),
     }).timeout(const Duration(seconds: 8));
 
-    // 2. End the previous run on the server too.
-    try {
-      await client.from('fact_program_run').update({
-        'is_current': false,
-        'ended_date': startedDate.toIso8601String(),
-      }).eq('user_id', userId).eq('is_current', true).neq('program_run_id', id)
-          .timeout(const Duration(seconds: 5));
-    } catch (_) {
-      // Non-critical — the old run will be marked ended by the next sync.
-    }
-
-    // 3. Mirror locally so the UI reads are immediate (avoids waiting for
-    //    PowerSync to download the just-uploaded row).
+    // 3. Mirror locally so the UI reads are immediate.
     try {
       await ps.safeExec(
         'UPDATE fact_program_run SET is_current = 0, ended_date = ? WHERE user_id = ? AND is_current = 1',
