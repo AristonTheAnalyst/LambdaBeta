@@ -479,22 +479,11 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedC
         });
   }
 
-  /// Refreshes planned workouts after returning from the workout editor.
-  /// Deferred to the next frame so the pop transition has finished before
-  /// we modify state.
+  /// Refreshes after returning from the workout editor by reloading
+  /// the full ViewModel — this is the same path that works when navigating
+  /// to another page and back (initState → load).
   Future<void> _refreshAfterEdit() async {
-    // Wait for the pop animation to finish before touching state.
-    await Future<void>.delayed(const Duration(milliseconds: 50));
-    if (!mounted) return;
-    try {
-      final workouts = await ProgramRepository()
-          .fetchPlannedWorkouts(widget.programId);
-      if (!mounted) return;
-      _vm.state.value = _vm.state.value.copyWith(
-        plannedWorkouts: workouts,
-      );
-      setState(() {});
-    } catch (_) {}
+    await _vm.load(widget.programId);
   }
 
   @override
