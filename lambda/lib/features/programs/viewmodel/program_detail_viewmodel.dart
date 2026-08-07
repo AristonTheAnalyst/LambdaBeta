@@ -327,6 +327,7 @@ class ProgramDetailViewModel {
   }
 
   Future<void> load(String programId) async {
+    debugPrint('🔄 VM.load: starting, programId=$programId');
     state.value = state.value.copyWith(isLoading: true, clearError: true);
     try {
       // Each fetch is individually timed out so a stuck PowerSync checkpoint
@@ -371,9 +372,11 @@ class ProgramDetailViewModel {
         allVariations: variations,
         variationExerciseCounts: counts,
       );
+      debugPrint('🔄 VM.load: done — plannedWorkouts=${(results[1] as List).length}, isCurrent=$isCurrent');
       // Goals load independently — they aren't critical for rendering.
       _loadGoals();
     } catch (e) {
+      debugPrint('🔄 VM.load: FAILED — $e');
       state.value = state.value.copyWith(isLoading: false, error: e.toString());
     }
   }
