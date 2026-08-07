@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'core/powersync/database.dart';
+import 'core/powersync/secure_local_storage.dart';
 import 'core/styles/app_fonts.dart';
 import 'version_gate_app.dart';
 
@@ -14,6 +15,11 @@ Future<void> main() async {
     url: 'https://dybluaeowmpdwsweawcq.supabase.co',
     publishableKey:
         'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR5Ymx1YWVvd21wZHdzd2Vhd2NxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI4MTA1MzcsImV4cCI6MjA4ODM4NjUzN30.rjzDqKQJT3giqZ4o7-8oRHaGw1IujnOQVzKINJDjWBg',
+    // Persist the session (incl. refresh token) in the OS keychain/keystore
+    // instead of supabase_flutter's plaintext SharedPreferences default.
+    authOptions: FlutterAuthClientOptions(
+      localStorage: SecureLocalStorage(),
+    ),
   );
 
   await initializeDateFormatting('en_GB');
