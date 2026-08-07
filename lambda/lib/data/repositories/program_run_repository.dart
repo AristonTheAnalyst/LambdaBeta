@@ -18,12 +18,28 @@ class ProgramRunRepository {
   final ProgramRepository _programRepo;
 
   Future<ProgramRun?> getCurrentRun(String userId) async {
+    // 1. Try the local PowerSync mirror first — it's fast and offline-safe.
     final rows = await ps.db.getAll(
       'SELECT * FROM fact_program_run WHERE user_id = ? AND is_current = 1 LIMIT 1',
       [userId],
     );
-    if (rows.isEmpty) return null;
-    return ProgramRun.fromMap(rows.first);
+    if (rows.isNotEmpty) return ProgramRun.fromMap(rows.first);
+
+    // 2. Fall back to Supabase REST — the local PowerSync DB can be stale when
+    //    a checkpoint is stuck, but the server always has the latest state.
+    try {
+      final remote = await Supabase.instance.client
+          .from('fact_program_run')
+          .select('*')
+          .eq('user_id', userId)
+          .eq('is_current', true)
+          .limit(1)
+          .timeout(const Duration(seconds: 5));
+      if (remote.isNotEmpty) return ProgramRun.fromMap(remote.first);
+    } catch (_) {
+      // Server unreachable — genuinely no current run, or just offline.
+    }
+    return null;
   }
 
   /// Ends any existing current run and starts a fresh one for [programId],
