@@ -11,6 +11,7 @@ import '../../../../data/models/exercise_detail.dart';
 import '../../../../data/models/planned_workout.dart';
 import '../../../../data/models/program_goal.dart';
 import '../../../../data/models/program_run.dart';
+import '../../../../data/repositories/program_repository.dart';
 import '../../../../data/repositories/workout_plan_repository.dart';
 import '../../../../shared/widgets/app_card.dart';
 import '../../../../shared/widgets/glass_button.dart';
@@ -309,10 +310,8 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedC
         builder: (_) => PlanWorkoutScreen(viewModel: _vm),
       ),
     );
-    // Refresh after returning — the PlanWorkoutScreen may have added/removed
-    // exercises, changed the workout name, or created/deleted the workout.
     if (!mounted) return;
-    _vm.load(widget.programId);
+    _refreshAfterEdit();
   }
 
   /// "+" on Planned Workouts: offer creating a new workout or copying an
@@ -362,10 +361,7 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedC
       await _openCreateWorkout();
     } else if (choice == 'from') {
       await _addExistingWorkout();
-      // _addExistingWorkout copies a workout in via the VM, which updates
-      // plannedWorkouts.  Still reload full detail so goals, runs, etc. are
-      // current when the tab is revisited.
-      if (mounted) _vm.load(widget.programId);
+      if (mounted) _refreshAfterEdit();
     }
   }
 
@@ -475,10 +471,23 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedC
         builder: (_) => PlanWorkoutScreen(viewModel: _vm, workout: w),
       ),
     );
-    // Refresh after returning — exercises, sets, or the workout name may have
-    // changed.
     if (!mounted) return;
-    _vm.load(widget.programId);
+    _refreshAfterEdit();
+  }
+
+  /// Refreshes planned workouts and goals after returning from the workout
+  /// editor.  We avoid calling [ProgramDetailViewModel.load] (which does a
+  /// full reload with a loading spinner) because the workout editor already
+  /// committed its changes to the ViewModel state — only the list of workouts
+  /// (which may have been created, deleted, or renamed) needs a fresh fetch.
+  Future<void> _refreshAfterEdit() async {
+    try {
+      final workouts = await ProgramRepository()
+          .fetchPlannedWorkouts(widget.programId);
+      _vm.state.value = _vm.state.value.copyWith(
+        plannedWorkouts: workouts,
+      );
+    } catch (_) {}
   }
 
   @override
