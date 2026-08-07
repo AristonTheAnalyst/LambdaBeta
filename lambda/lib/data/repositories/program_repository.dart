@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 import '../../core/powersync/database.dart' as ps;
 import '../models/planned_set.dart';
@@ -10,14 +11,6 @@ import '../models/program_goal.dart';
 import '../../shared/utils/unique_name.dart';
 
 const _uuid = Uuid();
-
-/// Bounded wrapper around PowerSync writes.  When PowerSync isn't initialised
-/// or is stuck reconciling a stale local DB, `ps.db.execute` can hang forever
-/// (freezing the UI).  This surfaces it as a thrown exception after a few
-/// seconds instead — the caller can catch and show an error.
-Future<void> _exec(String sql, [List<Object?> params = const []]) async {
-  await ps.db.execute(sql, params).timeout(const Duration(seconds: 5));
-}
 
 /// Turns a partial `{column: value}` update map into a `SET col = ?, ...`
 /// clause plus its bound parameters, for the dynamic partial-update methods
@@ -117,25 +110,38 @@ class ProgramRepository {
     // .toUtc() avoids a naive local-time string being reinterpreted as UTC
     // by Postgres's timestamptz column (see WorkoutRepository.createWorkout).
     final createdDate = DateTime.now().toUtc();
-    await _exec(
-      '''
-      INSERT INTO dim_program
-        (id, program_id, user_id, program_name, program_description,
-         program_length_weeks, progression_mode, is_active, program_created_date)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ''',
-      [
-        id,
-        id,
-        userId,
-        finalName,
-        description,
-        lengthWeeks,
-        progressionMode,
-        1,
-        createdDate.toIso8601String(),
-      ],
-    );
+
+    // 1. Authoritative write — hits Supabase directly so the program exists
+    //    server-side even if PowerSync is stuck reconciling a checkpoint.
+    await Supabase.instance.client.from('dim_program').insert({
+      'program_id': id,
+      'user_id': userId,
+      'program_name': finalName,
+      'program_description': description,
+      'program_length_weeks': lengthWeeks,
+      'progression_mode': progressionMode,
+      'is_active': true,
+      'program_created_date': createdDate.toIso8601String(),
+    }).timeout(const Duration(seconds: 8));
+
+    // 2. Mirror locally so the UI reads are immediate.
+    try {
+      await ps.safeExec(
+        '''
+        INSERT INTO dim_program
+          (id, program_id, user_id, program_name, program_description,
+           program_length_weeks, progression_mode, is_active, program_created_date)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''',
+        [
+          id, id, userId, finalName, description,
+          lengthWeeks, progressionMode, 1, createdDate.toIso8601String(),
+        ],
+      );
+    } catch (_) {
+      // Local mirror failed — PowerSync will download the row on next sync.
+    }
+
     return Program(
       programId: id,
       userId: userId,
@@ -166,7 +172,7 @@ class ProgramRepository {
     if (progressionMode != null) updates['progression_mode'] = progressionMode;
     if (updates.isEmpty) return;
     final (setClause, params) = _buildSetClause(updates);
-    await _exec(
+    await ps.safeExec(
       'UPDATE dim_program SET $setClause WHERE program_id = ?',
       [...params, programId],
     );

@@ -223,6 +223,32 @@ void resetForSignOut() {
   reset?.call();
 }
 
+/// Centralised bounded write helper — every repository that writes through
+/// PowerSync should use this instead of its own copy-pasted `_exec`.  Keeps a
+/// hung/stale local DB from freezing the UI: after [timeoutSeconds] the call
+/// throws [TimeoutException] so the caller can surface the error.
+///
+/// Prefer [safeWriteTransaction] for multi-statement work that must be atomic.
+Future<void> safeExec(String sql, [List<Object?> params = const []]) async {
+  await db
+      .execute(sql, params)
+      .timeout(Duration(seconds: _execTimeoutSeconds));
+}
+
+/// Transactional wrapper — all statements run atomically or not at all.
+/// The callback receives the database transaction; prefer this over multiple
+/// standalone [safeExec] calls when the writes must be atomic.
+Future<void> safeWriteTransaction(
+    Future<void> Function(dynamic tx) fn) async {
+  await db
+      .writeTransaction(fn)
+      .timeout(Duration(seconds: _execTimeoutSeconds));
+}
+
+/// How long a single PowerSync write may take before the helper gives up.
+/// Kept as a mutable top-level so dev tools can bump it for debugging.
+int _execTimeoutSeconds = 8;
+
 /// Whether the local app has a usable authenticated session — a session
 /// whose token has already expired is treated as signed out so PowerSync
 /// stops retrying a stale credential and the router can redirect.
@@ -243,12 +269,18 @@ Future<void> openDatabase() async {
   );
   await db.initialize();
 
-  // Purge stale CRUD entries for tables that have been renamed or dropped.
-  // These entries will never succeed on upload and block the checkpoint from
-  // applying, stalling all sync. Only `dim_program_goal` is handled here
-  // right now — add to the list if more tables are renamed in the future.
+  // Purge stale CRUD entries for tables that have been renamed, dropped, or
+  // are missing from the sync-stream config.  These entries will never succeed
+  // on upload and block the checkpoint from applying, stalling all sync.
   try {
     await db.writeTransaction((tx) async {
+      // `coaching_relationship` was historically local-only (missing from the
+      // sync stream) — any queued uploads for it would fail with a 404 on the
+      // PowerSync server and stall the checkpoint.
+      await tx.execute(
+        "DELETE FROM ps_crud WHERE table_name = 'coaching_relationship'",
+      );
+      // Old table name — renamed to fact_program_goal in a past migration.
       await tx.execute(
         "DELETE FROM ps_crud WHERE table_name = 'dim_program_goal'",
       );

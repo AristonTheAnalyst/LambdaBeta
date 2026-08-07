@@ -121,103 +121,35 @@ class _ProgramLibraryScreenState extends State<ProgramLibraryScreen> {
   /// Asks for the run's duration config: sequential → number of sessions;
   /// calendar → number of weeks OR an end date.
   Future<void> _showBeginConfigModal(Program p) async {
-    final now = DateTime.now();
-    final controller = TextEditingController();
-    final isCalendar = p.progressionMode == 'calendar';
-    var useEndDate = false;
-    DateTime? endDate;
-
     final result = await showDialog<_RunConfig>(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setState) => AlertDialog(
-          backgroundColor: AppColors.surface,
-          title: Text('Begin "${toProperCase(p.name)}"',
-              style: AppFonts.ui(fontWeight: FontWeight.w800, color: AppColors.primary)),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (isCalendar) ...[
-                SegmentedControl<bool>(
-                  subtle: true,
-                  options: const [
-                    SegmentOption(label: 'Weeks', value: false),
-                    SegmentOption(label: 'End date', value: true),
-                  ],
-                  value: useEndDate,
-                  onChange: (v) => setState(() => useEndDate = v),
-                ),
-                const SizedBox(height: AppSpacing.md),
-              ],
-              if (!isCalendar || !useEndDate)
-                LambdaInput(
-                  controller: controller,
-                  label: isCalendar ? 'Number of weeks' : 'Number of sessions',
-                  placeholder: isCalendar ? 'e.g. 6' : 'e.g. 12',
-                  keyboardType: TextInputType.number,
-                  required: true,
-                )
-              else ...[
-                Text('End date',
-                    style: AppFonts.ui(fontSize: AppTextStyles.sm,
-                        fontWeight: FontWeight.w600, color: AppColors.primary)),
-                const SizedBox(height: 6),
-                GestureDetector(
-                  onTap: () async {
-                    final picked = await showDatePicker(
-                      context: ctx,
-                      initialDate: DateTime.now().add(const Duration(days: 7)),
-                      firstDate: DateTime.now(),
-                      lastDate: DateTime(now.year + 5),
-                    );
-                    if (picked != null) setState(() => endDate = picked);
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                    decoration: BoxDecoration(
-                      color: AppColors.surface,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: AppColors.border),
-                    ),
-                    child: Text(endDate != null
-                        ? '${endDate!.day}/${endDate!.month}/${endDate!.year}'
-                        : 'Pick a date…',
-                        style: AppFonts.ui(color: endDate != null ? AppColors.primary : AppColors.muted)),
-                  ),
-                ),
-              ],
-            ],
-          ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.of(ctx).pop(),
-                child: Text('Cancel', style: AppFonts.ui(color: AppColors.muted))),
-            TextButton(
-                onPressed: () {
-                  final count = int.tryParse(controller.text.trim());
-                  if (isCalendar && useEndDate) {
-                    if (endDate == null) return;
-                    Navigator.of(ctx).pop(_RunConfig(endDate: endDate));
-                  } else {
-                    if (count == null || count <= 0) return;
-                    Navigator.of(ctx).pop(_RunConfig(count: count));
-                  }
-                },
-                child: Text('Begin',
-                    style: AppFonts.ui(color: AppColors.accent, fontWeight: FontWeight.w600))),
-          ],
-        ),
-      ),
+      builder: (_) => _BeginConfigDialog(program: p),
     );
-    controller.dispose();
     if (result == null || !mounted) return;
-    await _viewModel.setCurrentProgram(
-      p.programId,
-      targetSessions: isCalendar ? null : result.count,
-      targetWeeks: (isCalendar && !useEndDate) ? result.count : null,
-      endDate: result.endDate,
-    );
+    try {
+      await _viewModel.setCurrentProgram(
+        p.programId,
+        targetSessions: p.progressionMode == 'calendar' ? null : result.count,
+        targetWeeks: (p.progressionMode == 'calendar' && !result.useEndDate)
+            ? result.count
+            : null,
+        endDate: result.endDate,
+      );
+    } catch (_) {
+      // Error already set on _viewModel.state.error — the error bar and
+      // SnackBar in the build method handle display.
+    }
+    if (!mounted) return;
+    final error = _viewModel.state.value.error;
+    if (error != null && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error),
+          backgroundColor: AppColors.danger,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
   @override
@@ -467,7 +399,121 @@ class _ProgramCard extends StatelessWidget {
 
 /// Result of the "Begin Program" duration-config dialog.
 class _RunConfig {
-  const _RunConfig({this.count, this.endDate});
+  const _RunConfig({this.count, this.endDate, this.useEndDate = false});
   final int? count;
   final DateTime? endDate;
+  final bool useEndDate;
+}
+
+/// The "Begin Program" duration-config dialog. Stateful so it owns the
+/// [TextEditingController] — disposing a controller right after `showDialog`
+/// returns crashes because the TextField is still mounted and rebuilding
+/// during the pop animation.
+class _BeginConfigDialog extends StatefulWidget {
+  const _BeginConfigDialog({required this.program});
+
+  final Program program;
+
+  @override
+  State<_BeginConfigDialog> createState() => _BeginConfigDialogState();
+}
+
+class _BeginConfigDialogState extends State<_BeginConfigDialog> {
+  final _controller = TextEditingController();
+  bool _useEndDate = false;
+  DateTime? _endDate;
+
+  bool get _isCalendar => widget.program.progressionMode == 'calendar';
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final count = int.tryParse(_controller.text.trim());
+    if (_isCalendar && _useEndDate) {
+      final end = _endDate;
+      if (end == null) return;
+      Navigator.of(context).pop(_RunConfig(endDate: end, useEndDate: true));
+    } else {
+      if (count == null || count <= 0) return;
+      Navigator.of(context).pop(_RunConfig(count: count));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final now = DateTime.now();
+    return AlertDialog(
+      backgroundColor: AppColors.surface,
+      title: Text('Begin "${toProperCase(widget.program.name)}"',
+          style: AppFonts.ui(fontWeight: FontWeight.w800, color: AppColors.primary)),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (_isCalendar) ...[
+            SegmentedControl<bool>(
+              subtle: true,
+              options: const [
+                SegmentOption(label: 'Weeks', value: false),
+                SegmentOption(label: 'End date', value: true),
+              ],
+              value: _useEndDate,
+              onChange: (v) => setState(() => _useEndDate = v),
+            ),
+            const SizedBox(height: AppSpacing.md),
+          ],
+          if (!_isCalendar || !_useEndDate)
+            LambdaInput(
+              controller: _controller,
+              label: _isCalendar ? 'Number of weeks' : 'Number of sessions',
+              placeholder: _isCalendar ? 'e.g. 6' : 'e.g. 12',
+              keyboardType: TextInputType.number,
+              required: true,
+            )
+          else ...[
+            Text('End date',
+                style: AppFonts.ui(fontSize: AppTextStyles.sm,
+                    fontWeight: FontWeight.w600, color: AppColors.primary)),
+            const SizedBox(height: 6),
+            GestureDetector(
+              onTap: () async {
+                final picked = await showDatePicker(
+                  context: context,
+                  initialDate: DateTime.now().add(const Duration(days: 7)),
+                  firstDate: DateTime.now(),
+                  lastDate: DateTime(now.year + 5),
+                );
+                if (picked != null) setState(() => _endDate = picked);
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AppColors.border),
+                ),
+                child: Text(_endDate != null
+                    ? '${_endDate!.day}/${_endDate!.month}/${_endDate!.year}'
+                    : 'Pick a date…',
+                    style: AppFonts.ui(color: _endDate != null ? AppColors.primary : AppColors.muted)),
+              ),
+            ),
+          ],
+        ],
+      ),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text('Cancel', style: AppFonts.ui(color: AppColors.muted))),
+        TextButton(
+            onPressed: _submit,
+            child: Text('Begin',
+                style: AppFonts.ui(color: AppColors.accent, fontWeight: FontWeight.w600))),
+      ],
+    );
+  }
 }
