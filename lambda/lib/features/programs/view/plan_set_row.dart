@@ -253,7 +253,10 @@ class _PlanSetRowState extends State<PlanSetRow> {
               child: Text('Create', style: TextStyle(color: AppColors.accent, fontWeight: FontWeight.w600))),
         ],
       ),
-    );
+    ).then((v) {
+      ctrl.dispose();
+      return v;
+    });
   }
 
   @override

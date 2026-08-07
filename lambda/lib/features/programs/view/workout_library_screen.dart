@@ -31,6 +31,7 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
   final _repo = WorkoutPlanRepository();
   List<WorkoutPlan> _workouts = const [];
   bool _loading = true;
+  String? _error;
 
   String get _userId => Supabase.instance.client.auth.currentUser!.id;
 
@@ -41,6 +42,10 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
   }
 
   Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
       final w = await _repo.fetchWorkouts(_userId);
       if (mounted) {
@@ -49,8 +54,13 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
           _loading = false;
         });
       }
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _error = e.toString();
+        });
+      }
     }
   }
 
@@ -126,7 +136,33 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
           Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
-                : Column(
+                : _error != null
+                    ? Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(AppSpacing.xl),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text('Could not load workouts.',
+                                  style: AppFonts.ui(
+                                      fontSize: AppTextStyles.md,
+                                      color: AppColors.danger)),
+                              const SizedBox(height: AppSpacing.sm),
+                              Text(_error!,
+                                  textAlign: TextAlign.center,
+                                  style: AppFonts.ui(
+                                      fontSize: AppTextStyles.xs,
+                                      color: AppColors.muted)),
+                              const SizedBox(height: AppSpacing.lg),
+                              GlassButton(
+                                label: 'Retry',
+                                onPressed: _load,
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                    : Column(
                     children: [
                       if (!widget.showHeader)
                         Padding(

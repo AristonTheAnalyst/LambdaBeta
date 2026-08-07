@@ -12,6 +12,7 @@ import '../../../data/repositories/exercise_repository.dart';
 import '../../../data/repositories/pr_repository.dart';
 import '../../../data/repositories/workout_repository.dart';
 import '../../../shared/widgets/app_card.dart';
+import '../../../shared/widgets/glass_button.dart';
 import '../../../shared/widgets/page_header.dart';
 import '../../../shared/widgets/press_squash.dart';
 import '../../session/model/pr_engine.dart';
@@ -31,6 +32,7 @@ class _PrCatalogScreenState extends State<PrCatalogScreen> {
   final _workoutRepo = WorkoutRepository();
   Map<String, ExerciseDetail>? _exerciseMap;
   List<PrRecord> _prs = const [];
+  String? _error;
 
   String get _userId => Supabase.instance.client.auth.currentUser!.id;
 
@@ -52,9 +54,15 @@ class _PrCatalogScreenState extends State<PrCatalogScreen> {
         _exerciseMap = map;
         _prs = prs;
         _lastUsedByExercise = lastUsedByEntity(timeline);
+        _error = null;
       });
-    } catch (_) {
-      if (mounted) setState(() => _exerciseMap = {});
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _exerciseMap = null;
+          _error = e.toString();
+        });
+      }
     }
   }
 
@@ -82,7 +90,33 @@ class _PrCatalogScreenState extends State<PrCatalogScreen> {
           const PageHeader(title: 'Personal Records'),
           Expanded(
             child: map == null
-                ? const Center(child: CircularProgressIndicator())
+                ? (_error != null
+                      ? Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(AppSpacing.xl),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text('Could not load PRs.',
+                                    style: AppFonts.ui(
+                                        fontSize: AppTextStyles.md,
+                                        color: AppColors.danger)),
+                                const SizedBox(height: AppSpacing.sm),
+                                Text(_error!,
+                                    textAlign: TextAlign.center,
+                                    style: AppFonts.ui(
+                                        fontSize: AppTextStyles.xs,
+                                        color: AppColors.muted)),
+                                const SizedBox(height: AppSpacing.lg),
+                                GlassButton(
+                                  label: 'Retry',
+                                  onPressed: _load,
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                      : const Center(child: CircularProgressIndicator()))
                 : sorted.isEmpty
                     ? Center(
                         child: Text('No exercises set up yet.',

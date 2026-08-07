@@ -12,6 +12,7 @@ import '../../../data/models/exercise_usage.dart';
 import '../../../data/models/workout_set.dart';
 import '../../../data/repositories/workout_repository.dart';
 import '../../../shared/widgets/app_card.dart';
+import '../../../shared/widgets/glass_button.dart';
 import '../../../shared/widgets/multi_select_sheet.dart';
 import '../../../shared/widgets/page_header.dart';
 import '../../../shared/widgets/segmented_control.dart';
@@ -35,6 +36,7 @@ class _InsightsScreenState extends State<InsightsScreen> {
   final _workoutRepo = WorkoutRepository();
   List<PastSetRow>? _sets;
   List<PrRecord>? _prs;
+  String? _error;
   int _tab = 0;
   InsightRange _range = InsightRange.month;
 
@@ -58,13 +60,15 @@ class _InsightsScreenState extends State<InsightsScreen> {
         setState(() {
           _sets = sets;
           _prs = prs;
+          _error = null;
         });
       }
-    } catch (_) {
+    } catch (e) {
       if (mounted) {
         setState(() {
-          _sets = const [];
-          _prs = const [];
+          _sets = null;
+          _prs = null;
+          _error = e.toString();
         });
       }
     }
@@ -162,7 +166,33 @@ class _InsightsScreenState extends State<InsightsScreen> {
           ),
           Expanded(
             child: _sets == null
-                ? const Center(child: CircularProgressIndicator())
+                ? (_error != null
+                      ? Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(AppSpacing.xl),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text('Could not load insights.',
+                                    style: AppFonts.ui(
+                                        fontSize: AppTextStyles.md,
+                                        color: AppColors.danger)),
+                                const SizedBox(height: AppSpacing.sm),
+                                Text(_error!,
+                                    textAlign: TextAlign.center,
+                                    style: AppFonts.ui(
+                                        fontSize: AppTextStyles.xs,
+                                        color: AppColors.muted)),
+                                const SizedBox(height: AppSpacing.lg),
+                                GlassButton(
+                                  label: 'Retry',
+                                  onPressed: _load,
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                      : const Center(child: CircularProgressIndicator()))
                 : switch (_tab) {
                     0 => _PrsTab(screen: this),
                     1 => _SetsTab(screen: this),

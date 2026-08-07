@@ -276,10 +276,10 @@ class _WorkoutBody extends StatelessWidget {
     );
   }
 
-  void _showNotesModal(BuildContext context, String target) {
+  Future<void> _showNotesModal(BuildContext context, String target) async {
     final preCtrl = TextEditingController(text: state.preNotesDraft);
     final postCtrl = TextEditingController(text: state.postNotesDraft);
-    showLambdaModal(
+    await showLambdaModal<void>(
       context,
       fitContent: true,
       keyboardAware: true,
@@ -322,6 +322,8 @@ class _WorkoutBody extends StatelessWidget {
         ),
       ),
     );
+    preCtrl.dispose();
+    postCtrl.dispose();
   }
 
   void _showAddExercise(BuildContext context) {
@@ -1150,7 +1152,10 @@ class _DetailSetRowState extends State<_DetailSetRow> {
               child: Text('Create', style: TextStyle(color: AppColors.accent, fontWeight: FontWeight.w600))),
         ],
       ),
-    );
+    ).then((v) {
+      ctrl.dispose();
+      return v;
+    });
   }
 
   @override

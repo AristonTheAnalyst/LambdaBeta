@@ -175,6 +175,30 @@ class SupabaseConnector extends PowerSyncBackendConnector {
     } on PostgrestException catch (e) {
       if (e.code != null && _fatalCodes.any((r) => r.hasMatch(e.code!))) {
         _log.severe('Fatal upload error - discarding $lastOp', e);
+        // Quarantine the failing op locally before it's dropped from the
+        // upload queue, so it isn't lost with no trace. upload_failures is
+        // a local-only table (not in the sync streams), so it never syncs.
+        try {
+          await database.writeTransaction((tx) async {
+            await tx.execute(
+              '''
+              INSERT INTO upload_failures
+                (table_name, op_id, op_type, op_data, error_code, created_at)
+              VALUES (?, ?, ?, ?, ?, ?)
+              ''',
+              [
+                lastOp?.table,
+                lastOp?.id,
+                lastOp?.op.name,
+                lastOp?.opData == null ? null : jsonEncode(lastOp!.opData),
+                e.code,
+                DateTime.now().toUtc().toIso8601String(),
+              ],
+            );
+          });
+        } catch (quarantineErr) {
+          _log.warning('Failed to quarantine upload failure', quarantineErr);
+        }
         await transaction.complete();
       } else {
         rethrow;

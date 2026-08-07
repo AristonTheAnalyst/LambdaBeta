@@ -1,6 +1,19 @@
 import 'package:powersync/powersync.dart';
 
 const schema = Schema([
+  // Local-only quarantine for uploads that failed fatally (RLS / FK / type).
+  // NOT in powersync/sync-streams.yaml — failures must stay on-device so a
+  // single bad row can't be silently dropped without any trace.
+  Table('upload_failures', [
+    // `id` is auto-added by PowerSync (every table gets one); these are the
+    // additional local-only columns.
+    Column.text('table_name'),
+    Column.text('op_id'),
+    Column.text('op_type'),
+    Column.text('op_data'),
+    Column.text('error_code'),
+    Column.text('created_at'),
+  ]),
   Table('dim_user', [
     Column.text('user_id'),
     Column.text('user_name'),
