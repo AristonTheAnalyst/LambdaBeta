@@ -475,18 +475,19 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedC
     _refreshAfterEdit();
   }
 
-  /// Refreshes planned workouts and goals after returning from the workout
-  /// editor.  We avoid calling [ProgramDetailViewModel.load] (which does a
-  /// full reload with a loading spinner) because the workout editor already
-  /// committed its changes to the ViewModel state — only the list of workouts
-  /// (which may have been created, deleted, or renamed) needs a fresh fetch.
+  /// Refreshes planned workouts after returning from the workout editor.
   Future<void> _refreshAfterEdit() async {
     try {
       final workouts = await ProgramRepository()
           .fetchPlannedWorkouts(widget.programId);
+      if (!mounted) return;
       _vm.state.value = _vm.state.value.copyWith(
         plannedWorkouts: workouts,
       );
+      // Belt and suspenders: force the State to rebuild even if the
+      // ValueListenableBuilder didn't pick up the state change during
+      // the pop transition.
+      setState(() {});
     } catch (_) {}
   }
 
