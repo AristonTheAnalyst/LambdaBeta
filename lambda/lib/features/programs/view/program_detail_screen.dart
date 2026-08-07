@@ -478,11 +478,14 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedC
         });
   }
 
-  /// Refreshes after returning from the workout editor by reloading
-  /// the full ViewModel — this is the same path that works when navigating
-  /// to another page and back (initState → load).
-  Future<void> _refreshAfterEdit() async {
-    await _vm.load(widget.programId);
+  /// Refreshes after returning from the workout editor.
+  void _refreshAfterEdit() {
+    // Defer past this frame so the pop transition has fully settled and
+    // the ValueListenableBuilder is back in the render tree.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _vm.load(widget.programId);
+    });
   }
 
   @override
