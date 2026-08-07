@@ -22,6 +22,8 @@ class AuthNotifier extends ChangeNotifier {
         } else if (data.event == AuthChangeEvent.signedOut) {
           _isPasswordRecovery = false;
           _isOnboarded = null;
+          _expiryTimer?.cancel();
+          _expiryTimer = null;
         }
 
         // Fetch onboarding status whenever a new sign-in occurs
@@ -29,6 +31,8 @@ class AuthNotifier extends ChangeNotifier {
             data.event == AuthChangeEvent.tokenRefreshed) {
           _fetchOnboardingStatus();
         }
+
+        _scheduleExpiryCheck();
 
         notifyListeners();
       },
@@ -39,9 +43,37 @@ class AuthNotifier extends ChangeNotifier {
   bool _isPasswordRecovery = false;
   bool? _isOnboarded; // null = not yet fetched, false = needs onboarding, true = done
   late final StreamSubscription<AuthState> _subscription;
+  Timer? _expiryTimer;
   final _userRepo = UserRepository();
 
-  bool get isAuthenticated => _session != null;
+  bool get isAuthenticated => _session != null && !_isSessionExpired(_session!);
+
+  static bool _isSessionExpired(Session s) {
+    final exp = s.expiresAt;
+    if (exp == null) return false;
+    return DateTime.now().millisecondsSinceEpoch / 1000 >= (exp - 30);
+  }
+
+  /// Schedules a forced sign-out at the moment the current session's token
+  /// expires (if no fresh token arrives first), so the router bounces to
+  /// `/login` instead of showing a dead, permanently-unauthenticated UI.
+  void _scheduleExpiryCheck() {
+    _expiryTimer?.cancel();
+    final session = _session;
+    if (session == null || _isSessionExpired(session)) return;
+    final expiresAt = session.expiresAt;
+    if (expiresAt == null) return;
+    final msUntilExpiry =
+        (expiresAt * 1000 - DateTime.now().millisecondsSinceEpoch) + 30000;
+    _expiryTimer = Timer(Duration(milliseconds: msUntilExpiry), () {
+      final cur = _session;
+      if (cur == null || _isSessionExpired(cur)) {
+        // Token expired without a refresh — force the session closed so the
+        // router redirects to login rather than sitting in a dead state.
+        Supabase.instance.client.auth.signOut().then((_) {}, onError: (_) {});
+      }
+    });
+  }
   bool get isPasswordRecovery => _isPasswordRecovery;
   bool? get isOnboarded => _isOnboarded;
 
@@ -100,6 +132,7 @@ class AuthNotifier extends ChangeNotifier {
   @override
   void dispose() {
     _subscription.cancel();
+    _expiryTimer?.cancel();
     super.dispose();
   }
 }

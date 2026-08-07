@@ -438,14 +438,26 @@ class ProgramDetailViewModel {
       activeRun: run,
       clearError: true,
     );
-    // Fire-and-forget the persistence — must never hold up the UI.
-    unawaited(_runRepo.startProgramRun(
-      _userId,
-      s.program!.programId,
-      targetSessions: targetSessions,
-      targetWeeks: targetWeeks,
-      endDate: endDate,
-    ));
+    try {
+      // Write through PowerSync (queued offline, synced later). Await so a
+      // real failure surfaces instead of leaving optimistic state that a
+      // restart would not reproduce.
+      await _runRepo.startProgramRun(
+        _userId,
+        s.program!.programId,
+        targetSessions: targetSessions,
+        targetWeeks: targetWeeks,
+        endDate: endDate,
+      );
+    } catch (e) {
+      // The write failed — roll the optimistic UI back so the program is not
+      // left marked "current" when nothing was actually persisted.
+      state.value = state.value.copyWith(
+        isCurrent: false,
+        activeRun: null,
+        error: e.toString(),
+      );
+    }
     _loadGoals();
   }
 

@@ -89,6 +89,9 @@ class SupabaseConnector extends PowerSyncBackendConnector {
     await _refreshFuture;
     final session = Supabase.instance.client.auth.currentSession;
     if (session == null) return null;
+    // An expired session must not be handed to PowerSync — it would retry a
+    // stale token forever while the UI looks authenticated.
+    if (_isExpired(session)) return null;
     return PowerSyncCredentials(
       endpoint: _powersyncUrl,
       token: session.accessToken,
@@ -97,6 +100,13 @@ class SupabaseConnector extends PowerSyncBackendConnector {
           ? null
           : DateTime.fromMillisecondsSinceEpoch(session.expiresAt! * 1000),
     );
+  }
+
+  static bool _isExpired(Session session) {
+    final expiresAt = session.expiresAt;
+    if (expiresAt == null) return false;
+    // 30s buffer: a token that dies within the next 30s is treated as dead.
+    return DateTime.now().millisecondsSinceEpoch / 1000 >= (expiresAt - 30);
   }
 
   @override
