@@ -87,28 +87,9 @@ class ProgramRunRepository {
       'end_date': endDate?.toUtc().toIso8601String(),
     }).timeout(const Duration(seconds: 8));
 
-    // 3. Mirror locally so the UI reads are immediate.
-    try {
-      await ps.safeExec(
-        'UPDATE fact_program_run SET is_current = 0, ended_date = ? WHERE user_id = ? AND is_current = 1',
-        [startedDate.toIso8601String(), userId],
-      );
-      await ps.safeExec(
-        '''
-        INSERT INTO fact_program_run
-          (id, program_run_id, program_id, user_id, started_date, is_current,
-           target_sessions, target_weeks, end_date)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''',
-        [
-          id, id, programId, userId, startedDate.toIso8601String(),
-          1, targetSessions, targetWeeks, endDate?.toUtc().toIso8601String(),
-        ],
-      );
-    } catch (_) {
-      // Local mirror failed — the server has the row, PowerSync will download
-      // it on the next successful sync.  Not an error for the caller.
-    }
+    // No local PowerSync mirror — writing locally creates a CRUD entry that
+    // blocks the checkpoint from applying (the row already exists server-side
+    // and PowerSync will download it on the next successful sync).
 
     return ProgramRun(
       programRunId: id,

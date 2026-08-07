@@ -124,23 +124,8 @@ class ProgramRepository {
       'program_created_date': createdDate.toIso8601String(),
     }).timeout(const Duration(seconds: 8));
 
-    // 2. Mirror locally so the UI reads are immediate.
-    try {
-      await ps.safeExec(
-        '''
-        INSERT INTO dim_program
-          (id, program_id, user_id, program_name, program_description,
-           program_length_weeks, progression_mode, is_active, program_created_date)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''',
-        [
-          id, id, userId, finalName, description,
-          lengthWeeks, progressionMode, 1, createdDate.toIso8601String(),
-        ],
-      );
-    } catch (_) {
-      // Local mirror failed — PowerSync will download the row on next sync.
-    }
+    // No local PowerSync mirror — writing locally creates a CRUD entry that
+    // blocks the checkpoint (PowerSync will download the row on next sync).
 
     return Program(
       programId: id,
