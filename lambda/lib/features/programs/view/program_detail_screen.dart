@@ -303,12 +303,16 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedC
     super.dispose();
   }
 
-  void _openCreateWorkout() {
-    Navigator.of(context, rootNavigator: true).push(
+  Future<void> _openCreateWorkout() async {
+    await Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(
         builder: (_) => PlanWorkoutScreen(viewModel: _vm),
       ),
     );
+    // Refresh after returning — the PlanWorkoutScreen may have added/removed
+    // exercises, changed the workout name, or created/deleted the workout.
+    if (!mounted) return;
+    _vm.load(widget.programId);
   }
 
   /// "+" on Planned Workouts: offer creating a new workout or copying an
@@ -355,9 +359,13 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedC
     );
     if (!mounted) return;
     if (choice == 'new') {
-      _openCreateWorkout();
+      await _openCreateWorkout();
     } else if (choice == 'from') {
       await _addExistingWorkout();
+      // _addExistingWorkout copies a workout in via the VM, which updates
+      // plannedWorkouts.  Still reload full detail so goals, runs, etc. are
+      // current when the tab is revisited.
+      if (mounted) _vm.load(widget.programId);
     }
   }
 
@@ -462,11 +470,15 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedC
       );
       if (ok != true || !mounted) return;
     }
-    Navigator.of(context, rootNavigator: true).push(
+    await Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(
         builder: (_) => PlanWorkoutScreen(viewModel: _vm, workout: w),
       ),
     );
+    // Refresh after returning — exercises, sets, or the workout name may have
+    // changed.
+    if (!mounted) return;
+    _vm.load(widget.programId);
   }
 
   @override

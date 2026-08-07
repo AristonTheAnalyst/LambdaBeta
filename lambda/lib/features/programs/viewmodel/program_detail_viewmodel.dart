@@ -752,12 +752,31 @@ class ProgramDetailViewModel {
       state.value = state.value.copyWith(workoutUnsavedChanges: false);
       return;
     }
-    await _repo.fetchPlannedWorkouts(s.program?.programId ?? '');
-    state.value = state.value.copyWith(workoutUnsavedChanges: false);
+    // Refresh the workout list so the parent screen picks up name / order
+    // changes when the user presses back.
+    final workouts = await _repo.fetchPlannedWorkouts(s.program?.programId ?? '');
+    state.value = state.value.copyWith(
+      plannedWorkouts: workouts,
+      workoutUnsavedChanges: false,
+    );
   }
 
-  void closeWorkoutEditor() =>
+  void closeWorkoutEditor() {
+    // When closing without saving (discard), still refresh the workout list
+    // so that a newly-created-then-discarded workout shows its name correctly
+    // and exercises added/removed during editing are reflected.
+    final programId = state.value.program?.programId;
+    if (!isStandaloneMode && programId != null) {
+      _repo.fetchPlannedWorkouts(programId).then((workouts) {
+        state.value = state.value.copyWith(
+          plannedWorkouts: workouts,
+          clearEditingWorkout: true,
+        );
+      });
+    } else {
       state.value = state.value.copyWith(clearEditingWorkout: true);
+    }
+  }
 
   Future<void> deleteWorkout() async {
     final w = state.value.editingWorkout;
