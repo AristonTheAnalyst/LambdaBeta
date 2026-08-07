@@ -329,13 +329,16 @@ class ProgramDetailViewModel {
   Future<void> load(String programId) async {
     state.value = state.value.copyWith(isLoading: true, clearError: true);
     try {
+      // Each fetch is individually timed out so a stuck PowerSync checkpoint
+      // (which can block ALL local DB ops, reads included) doesn't freeze the
+      // screen forever.
       final results = await Future.wait([
-        _repo.fetchProgram(programId),
-        _repo.fetchPlannedWorkouts(programId),
-        _exerciseRepo.fetchExerciseDetailMap(_userId),
-        _runRepo.getCurrentRun(_userId),
-        _exerciseRepo.fetchVariations(_userId),
-        _exerciseRepo.fetchBridges(_userId),
+        _repo.fetchProgram(programId).timeout(const Duration(seconds: 4)),
+        _repo.fetchPlannedWorkouts(programId).timeout(const Duration(seconds: 4)),
+        _exerciseRepo.fetchExerciseDetailMap(_userId).timeout(const Duration(seconds: 4)),
+        _runRepo.getCurrentRun(_userId).timeout(const Duration(seconds: 4)),
+        _exerciseRepo.fetchVariations(_userId).timeout(const Duration(seconds: 4)),
+        _exerciseRepo.fetchBridges(_userId).timeout(const Duration(seconds: 4)),
       ]);
       final program = results[0] as Program?;
       final currentRun = results[3] as ProgramRun?;

@@ -67,20 +67,55 @@ class ProgramRepository {
   }
 
   Future<List<Program>> fetchPrograms(String userId) async {
-    final rows = await ps.db.getAll(
-      'SELECT * FROM dim_program WHERE user_id = ? AND is_active = 1 ORDER BY program_created_date DESC',
-      [userId],
-    );
-    return rows.map((r) => Program.fromMap(r)).toList();
+    // 1. Try the local PowerSync mirror.
+    try {
+      final rows = await ps.db.getAll(
+        'SELECT * FROM dim_program WHERE user_id = ? AND is_active = 1 ORDER BY program_created_date DESC',
+        [userId],
+      ).timeout(const Duration(seconds: 3));
+      if (rows.isNotEmpty) return rows.map((r) => Program.fromMap(r)).toList();
+    } catch (_) {
+      // Timed out — fall through to REST.
+    }
+
+    // 2. Fall back to Supabase REST.
+    try {
+      final remote = await Supabase.instance.client
+          .from('dim_program')
+          .select('*')
+          .eq('user_id', userId)
+          .eq('is_active', true)
+          .order('program_created_date', ascending: false)
+          .timeout(const Duration(seconds: 5));
+      return remote.map((r) => Program.fromMap(r)).toList();
+    } catch (_) {
+      return [];
+    }
   }
 
   Future<Program?> fetchProgram(String programId) async {
-    final rows = await ps.db.getAll(
-      'SELECT * FROM dim_program WHERE program_id = ?',
-      [programId],
-    );
-    if (rows.isEmpty) return null;
-    return Program.fromMap(rows.first);
+    // 1. Try the local PowerSync mirror.
+    try {
+      final rows = await ps.db.getAll(
+        'SELECT * FROM dim_program WHERE program_id = ?',
+        [programId],
+      ).timeout(const Duration(seconds: 3));
+      if (rows.isNotEmpty) return Program.fromMap(rows.first);
+    } catch (_) {
+      // Timed out — fall through to REST.
+    }
+
+    // 2. Fall back to Supabase REST.
+    try {
+      final remote = await Supabase.instance.client
+          .from('dim_program')
+          .select('*')
+          .eq('program_id', programId)
+          .limit(1)
+          .timeout(const Duration(seconds: 5));
+      if (remote.isNotEmpty) return Program.fromMap(remote.first);
+    } catch (_) {}
+    return null;
   }
 
   /// Creates a program. When [name] is null the app auto-generates one
@@ -213,11 +248,30 @@ class ProgramRepository {
   // ── Planned workouts ─────────────────────────────────────────────────────
 
   Future<List<PlannedWorkout>> fetchPlannedWorkouts(String programId) async {
-    final rows = await ps.db.getAll(
-      'SELECT * FROM dim_planned_workout WHERE program_id = ? AND is_active = 1 ORDER BY sequence_order',
-      [programId],
-    );
-    return rows.map((r) => PlannedWorkout.fromMap(r)).toList();
+    // 1. Try the local PowerSync mirror — fast and offline-safe.
+    try {
+      final rows = await ps.db.getAll(
+        'SELECT * FROM dim_planned_workout WHERE program_id = ? AND is_active = 1 ORDER BY sequence_order',
+        [programId],
+      ).timeout(const Duration(seconds: 3));
+      if (rows.isNotEmpty) return rows.map((r) => PlannedWorkout.fromMap(r)).toList();
+    } catch (_) {
+      // Local read timed out or failed — fall through to REST.
+    }
+
+    // 2. Fall back to Supabase REST when PowerSync is stuck.
+    try {
+      final remote = await Supabase.instance.client
+          .from('dim_planned_workout')
+          .select('*')
+          .eq('program_id', programId)
+          .eq('is_active', true)
+          .order('sequence_order')
+          .timeout(const Duration(seconds: 5));
+      return remote.map((r) => PlannedWorkout.fromMap(r)).toList();
+    } catch (_) {
+      return [];
+    }
   }
 
   Future<PlannedWorkout> createPlannedWorkout(
@@ -303,20 +357,40 @@ class ProgramRepository {
   // ── Planned sets ─────────────────────────────────────────────────────────
 
   Future<List<PlannedSet>> fetchPlannedSets(String plannedWorkoutId) async {
-    final rows = await ps.db.getAll(
-      '''
-      SELECT s.*,
-             COALESCE(s.exercise_name, e.exercise_name) AS exercise_name,
-             COALESCE(s.variation_name, v.variation_name) AS variation_name
-      FROM dim_planned_set s
-      LEFT JOIN dim_exercise e ON e.custom_exercise_id = s.custom_exercise_id
-      LEFT JOIN dim_variation v ON v.custom_variation_id = s.custom_variation_id
-      WHERE s.planned_workout_id = ? AND s.is_active = 1
-      ORDER BY s.exercise_sequence_order, s.planned_set_number
-      ''',
-      [plannedWorkoutId],
-    );
-    return rows.map((r) => PlannedSet.fromMap(r)).toList();
+    // 1. Try the local PowerSync mirror — fast and offline-safe.
+    try {
+      final rows = await ps.db.getAll(
+        '''
+        SELECT s.*,
+               COALESCE(s.exercise_name, e.exercise_name) AS exercise_name,
+               COALESCE(s.variation_name, v.variation_name) AS variation_name
+        FROM dim_planned_set s
+        LEFT JOIN dim_exercise e ON e.custom_exercise_id = s.custom_exercise_id
+        LEFT JOIN dim_variation v ON v.custom_variation_id = s.custom_variation_id
+        WHERE s.planned_workout_id = ? AND s.is_active = 1
+        ORDER BY s.exercise_sequence_order, s.planned_set_number
+        ''',
+        [plannedWorkoutId],
+      ).timeout(const Duration(seconds: 3));
+      if (rows.isNotEmpty) return rows.map((r) => PlannedSet.fromMap(r)).toList();
+    } catch (_) {
+      // Local read timed out or failed — fall through to REST.
+    }
+
+    // 2. Fall back to Supabase REST.
+    try {
+      final remote = await Supabase.instance.client
+          .from('dim_planned_set')
+          .select('*')
+          .eq('planned_workout_id', plannedWorkoutId)
+          .eq('is_active', true)
+          .order('exercise_sequence_order')
+          .order('planned_set_number')
+          .timeout(const Duration(seconds: 5));
+      return remote.map((r) => PlannedSet.fromMap(r)).toList();
+    } catch (_) {
+      return [];
+    }
   }
 
   Future<PlannedSet> createPlannedSet(

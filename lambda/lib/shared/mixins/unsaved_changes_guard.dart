@@ -68,12 +68,15 @@ mixin UnsavedChangesGuard<T extends StatefulWidget> on State<T> {
         backgroundColor: AppColors.surface,
         title: Text('Unsaved Changes',
             style: AppFonts.ui(fontWeight: FontWeight.w800, color: AppColors.primary)),
-        content: Text('You have unsaved changes. Discard them?',
+        content: Text('You have unsaved changes. What would you like to do?',
             style: AppFonts.ui(color: AppColors.muted)),
         actions: [
           TextButton(
               onPressed: () => Navigator.of(ctx).pop('discard'),
               child: Text('Discard', style: AppFonts.ui(color: AppColors.danger))),
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop('save'),
+              child: Text('Save', style: AppFonts.ui(color: AppColors.accent, fontWeight: FontWeight.w600))),
           TextButton(
               onPressed: () => Navigator.of(ctx).pop('cancel'),
               child: Text('Stay', style: AppFonts.ui(color: AppColors.muted))),
@@ -82,6 +85,10 @@ mixin UnsavedChangesGuard<T extends StatefulWidget> on State<T> {
     );
     if (choice == null || !mounted) return;
     if (choice == 'cancel') return;
+    if (choice == 'save') {
+      await onSave();
+      return;
+    }
     onDiscard();
   }
 }
