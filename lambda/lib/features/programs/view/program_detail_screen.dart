@@ -480,7 +480,12 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedC
   }
 
   /// Refreshes planned workouts after returning from the workout editor.
+  /// Deferred to the next frame so the pop transition has finished before
+  /// we modify state.
   Future<void> _refreshAfterEdit() async {
+    // Wait for the pop animation to finish before touching state.
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    if (!mounted) return;
     try {
       final workouts = await ProgramRepository()
           .fetchPlannedWorkouts(widget.programId);
@@ -488,9 +493,6 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedC
       _vm.state.value = _vm.state.value.copyWith(
         plannedWorkouts: workouts,
       );
-      // Belt and suspenders: force the State to rebuild even if the
-      // ValueListenableBuilder didn't pick up the state change during
-      // the pop transition.
       setState(() {});
     } catch (_) {}
   }
