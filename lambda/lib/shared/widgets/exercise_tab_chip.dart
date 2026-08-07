@@ -14,6 +14,7 @@ class ExerciseTabChip extends StatelessWidget {
     this.prefixIcon,
     this.activeColor,
     required this.onTap,
+    this.onRemove,
   });
 
   final String label;
@@ -26,13 +27,18 @@ class ExerciseTabChip extends StatelessWidget {
   final Color? activeColor;
   final VoidCallback onTap;
 
+  /// When non-null a small close icon appears at the right edge of the pill.
+  /// Tapping it (not the main label area) calls this callback — the caller
+  /// should present a confirmation dialog if needed.
+  final VoidCallback? onRemove;
+
   @override
   Widget build(BuildContext context) {
     final color = activeColor ?? AppColors.accent;
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        padding: const EdgeInsets.only(left: 12, right: 10, top: 6, bottom: 6),
         decoration: BoxDecoration(
           color: isActive ? color.withValues(alpha: 0.12) : AppColors.surface,
           borderRadius: BorderRadius.circular(AppRadius.md),
@@ -51,16 +57,11 @@ class ExerciseTabChip extends StatelessWidget {
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
                     color: isActive ? color : AppColors.primary)),
-            if (count != null && count! > 0) ...[
+            if (onRemove != null) ...[
               const SizedBox(width: 6),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text('$count',
-                    style: AppFonts.mono(fontSize: 10, color: color)),
+              GestureDetector(
+                onTap: onRemove,
+                child: Icon(Icons.close, size: 13, color: isActive ? color : AppColors.border),
               ),
             ],
           ],

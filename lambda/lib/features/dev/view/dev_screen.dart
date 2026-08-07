@@ -47,6 +47,32 @@ class DevScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: AppSpacing.xl),
                   AppCard(
+                    onTap: () => _confirmRebuildLocal(context),
+                    child: Row(
+                      children: [
+                        Icon(Icons.refresh, size: 20, color: AppColors.accent),
+                        const SizedBox(width: AppSpacing.md),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Rebuild Local Database',
+                                  style: TextStyle(
+                                      fontSize: AppTextStyles.md,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppColors.primary)),
+                              Text('Wipe + rebuild the on-device PowerSync DB (keeps your session & server data)',
+                                  style: TextStyle(
+                                      fontSize: AppTextStyles.sm,
+                                      color: AppColors.muted)),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  AppCard(
                     onTap: () => _confirmClearTables(context),
                     child: Row(
                       children: [
@@ -148,6 +174,45 @@ class _NavCard extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+Future<void> _confirmRebuildLocal(BuildContext context) async {
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      backgroundColor: AppColors.surface,
+      title: Text('Rebuild Local Database',
+          style: TextStyle(
+              fontSize: AppTextStyles.lg,
+              fontWeight: FontWeight.w800,
+              color: AppColors.primary)),
+      content: Text(
+          'This wipes and recreates the local PowerSync database from the '
+          'current schema. Your session and server data are kept — the local '
+          'DB re-syncs from the server. Use this after schema changes to '
+          'clear a stale local DB.',
+          style: TextStyle(color: AppColors.muted)),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text('Cancel',
+                style: TextStyle(color: AppColors.muted))),
+        TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text('Rebuild',
+                style: TextStyle(
+                    color: AppColors.accent, fontWeight: FontWeight.w800))),
+      ],
+    ),
+  );
+  if (ok == true && context.mounted) {
+    await ps.rebuildLocalDatabase();
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Local database rebuilt — restart the app')),
+      );
+    }
   }
 }
 

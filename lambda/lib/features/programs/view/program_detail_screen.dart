@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/styles/app_colors.dart';
 import '../../../../core/styles/app_radius.dart';
@@ -6,7 +7,9 @@ import '../../../../core/styles/app_fonts.dart';
 import '../../../../core/styles/app_spacing.dart';
 import '../../../../core/styles/app_text_styles.dart';
 import '../../../../core/utils/workout_format.dart';
+import '../../../../data/models/exercise_detail.dart';
 import '../../../../data/models/planned_workout.dart';
+import '../../../../data/models/program_goal.dart';
 import '../../../../data/models/program_run.dart';
 import '../../../../data/repositories/workout_plan_repository.dart';
 import '../../../../shared/widgets/app_card.dart';
@@ -14,6 +17,7 @@ import '../../../../shared/widgets/glass_button.dart';
 import '../../../../shared/widgets/lambda_input.dart';
 import '../../../../shared/widgets/page_header.dart';
 import '../../../../shared/widgets/segmented_control.dart';
+import '../../../../shared/utils/pop_dialog.dart';
 import '../../../../shared/mixins/unsaved_changes_guard.dart';
 import '../../../../shared/widgets/swipe_actions.dart';
 import '../viewmodel/program_detail_viewmodel.dart';
@@ -136,17 +140,21 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedC
           ),
           actions: [
             TextButton(
-                onPressed: () => Navigator.of(ctx).pop(),
+                onPressed: () => popDialog(ctx),
                 child: Text('Cancel', style: AppFonts.ui(color: AppColors.muted))),
             TextButton(
                 onPressed: () {
                   final count = int.tryParse(controller.text.trim());
                   if (isCalendar && useEndDate) {
                     if (endDate == null) return;
-                    Navigator.of(ctx).pop((count: null, endDate: endDate));
+                    // Release focus before popping — otherwise the dialog's
+                    // FocusScope inherited element deactivates while the
+                    // TextField still depends on it, throwing "depends is
+                    // empty is not true" (framework debugDeactivated assert).
+                    popDialog(ctx, (count: null, endDate: endDate));
                   } else {
                     if (count == null || count <= 0) return;
-                    Navigator.of(ctx).pop((count: count, endDate: null));
+                    popDialog(ctx, (count: count, endDate: null));
                   }
                 },
                 child: Text('Begin',
@@ -244,17 +252,17 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedC
           ),
           actions: [
             TextButton(
-                onPressed: () => Navigator.of(ctx).pop(),
+                onPressed: () => popDialog(ctx),
                 child: Text('Cancel', style: AppFonts.ui(color: AppColors.muted))),
             TextButton(
                 onPressed: () {
                   final count = int.tryParse(controller.text.trim());
                   if (isCalendar && useEndDate) {
                     if (endDate == null) return;
-                    Navigator.of(ctx).pop((count: null, endDate: endDate));
+                    popDialog(ctx, (count: null, endDate: endDate));
                   } else {
                     if (count == null || count <= 0) return;
-                    Navigator.of(ctx).pop((count: count, endDate: null));
+                    popDialog(ctx, (count: count, endDate: null));
                   }
                 },
                 child: Text('Save',
@@ -533,8 +541,8 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedC
                         const SizedBox(height: AppSpacing.md),
                         LambdaInput(
                           controller: _descriptionController,
-                          label: 'Goal / description',
-                          placeholder: 'What is this program trying to achieve?',
+                          label: 'Description',
+                          placeholder: 'What is this program about?',
                           onChanged: _vm.setDescriptionDraft,
                         ),
                         const SizedBox(height: AppSpacing.md),
@@ -611,6 +619,10 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedC
                             onPressed: () => _editRunConfig(state.activeRun!),
                           ),
                         ],
+                        if (state.isCurrent && state.activeRun != null) ...[
+                          const SizedBox(height: AppSpacing.lg),
+                          _buildGoalsSection(state),
+                        ],
                         const SizedBox(height: AppSpacing.lg),
                         Divider(color: AppColors.border),
                         const SizedBox(height: AppSpacing.sm),
@@ -670,6 +682,291 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedC
       ),
     ),
   );
+  }
+
+  Widget _buildGoalsSection(ProgramDetailState state) {
+    final goals = state.programGoals;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text('Goals',
+                  style: AppFonts.ui(
+                      fontSize: AppTextStyles.md,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.primary)),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        if (goals.isEmpty)
+          Text("No goals set — add a PR target you'd like to hit during this run.",
+              style: AppFonts.ui(fontSize: AppTextStyles.sm, color: AppColors.muted)),
+        for (final g in goals) ...[
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(AppSpacing.md),
+            decoration: BoxDecoration(
+              color: AppColors.successBg,
+              borderRadius: BorderRadius.circular(AppRadius.md),
+              border: Border.all(color: AppColors.success.withValues(alpha: 0.3)),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: _goalLabel(g, state),
+                ),
+                GestureDetector(
+                  onTap: () => _vm.deleteProgramGoal(g.goalId),
+                  child: Icon(Icons.close, size: 16, color: AppColors.muted),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+        ],
+        const SizedBox(height: AppSpacing.sm),
+        _GoalPicker(
+          detailMap: state.exerciseDetailMap,
+          onAdd: (exerciseId, exerciseName, weight, reps) {
+            _vm.addProgramGoal(
+              exerciseId: exerciseId,
+              exerciseName: exerciseName,
+              targetWeight: weight,
+              targetReps: reps,
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _goalLabel(ProgramGoal goal, ProgramDetailState state) {
+    final exerciseName = toProperCase(state.exerciseDetailMap[goal.exerciseId]?.name ?? goal.text ?? '');
+    final weightStr = goal.targetWeight != null ? '${_fmtNum(goal.targetWeight!)} kg' : '';
+    final repsStr = goal.targetReps != null ? '${goal.targetReps} rep${goal.targetReps == 1 ? '' : 's'}' : '';
+    final targetStr = [weightStr, repsStr].where((s) => s.isNotEmpty).join(' × ');
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(targetStr.isNotEmpty ? '$exerciseName — $targetStr' : exerciseName,
+            style: AppFonts.ui(fontSize: AppTextStyles.sm, fontWeight: FontWeight.w600, color: AppColors.success)),
+      ],
+    );
+  }
+
+  static String _fmtNum(num n) => n == n.roundToDouble() ? n.toInt().toString() : n.toString();
+}
+
+// ── Goal Picker ─────────────────────────────────────────────────────────────
+
+/// An inline picker for adding exercise-target goals. Expands from a compact
+/// toggle into exercise search + weight/reps, then collapses again after add.
+class _GoalPicker extends StatefulWidget {
+  const _GoalPicker({
+    required this.detailMap,
+    required this.onAdd,
+  });
+
+  final Map<String, ExerciseDetail> detailMap;
+  final void Function(String exerciseId, String exerciseName, num? weight, int? reps) onAdd;
+
+  @override
+  State<_GoalPicker> createState() => _GoalPickerState();
+}
+
+class _GoalPickerState extends State<_GoalPicker> {
+  bool _expanded = false;
+  String _query = '';
+  String? _selectedExerciseId;
+  final _weightCtrl = TextEditingController();
+  final _repsCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _weightCtrl.dispose();
+    _repsCtrl.dispose();
+    super.dispose();
+  }
+
+  List<MapEntry<String, String>> get _filtered {
+    final detailMap = widget.detailMap;
+    if (detailMap.isEmpty) return [];
+    final results = detailMap.entries
+        .where((e) {
+          final name = e.value.name;
+          return _query.isEmpty ||
+              toProperCase(name).toLowerCase().contains(_query.toLowerCase());
+        })
+        .map((e) => MapEntry(e.key, toProperCase(e.value.name)))
+        .toList();
+    results.sort((a, b) => a.value.toLowerCase().compareTo(b.value.toLowerCase()));
+    return results;
+  }
+
+  void _add() {
+    final weight = double.tryParse(_weightCtrl.text.trim());
+    final reps = int.tryParse(_repsCtrl.text.trim());
+    if (_selectedExerciseId == null) return;
+    final detail = widget.detailMap[_selectedExerciseId!];
+    final name = detail?.name ?? '';
+    widget.onAdd(_selectedExerciseId!, toProperCase(name), weight, reps);
+    setState(() {
+      _expanded = false;
+      _query = '';
+      _selectedExerciseId = null;
+      _weightCtrl.clear();
+      _repsCtrl.clear();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_expanded) {
+      return GestureDetector(
+        onTap: () => setState(() => _expanded = true),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Row(
+            children: [
+              Icon(Icons.add_circle_outline, size: 16, color: AppColors.accent),
+              const SizedBox(width: 8),
+              Text('Add a PR target…',
+                  style: AppFonts.ui(
+                      fontSize: AppTextStyles.sm,
+                      color: AppColors.accent,
+                      fontWeight: FontWeight.w600)),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        TextField(
+          autofocus: true,
+          style: AppFonts.ui(fontSize: AppTextStyles.sm, color: AppColors.primary),
+          decoration: InputDecoration(
+            hintText: 'Search exercises…',
+            hintStyle: AppFonts.ui(color: AppColors.muted),
+            prefixIcon: Icon(Icons.search, size: 16, color: AppColors.muted),
+            suffixIcon: GestureDetector(
+              onTap: () => setState(() {
+                _expanded = false;
+                _selectedExerciseId = null;
+              }),
+              child: Icon(Icons.close, size: 16, color: AppColors.muted),
+            ),
+            filled: true,
+            fillColor: AppColors.surfaceHigh,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(AppRadius.md),
+              borderSide: BorderSide(color: AppColors.border),
+            ),
+          ),
+          onChanged: (v) => setState(() {
+            _query = v;
+            _selectedExerciseId = null;
+          }),
+        ),
+        if (_selectedExerciseId == null) ...[
+          const SizedBox(height: 6),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 160),
+            child: ListView(
+              shrinkWrap: true,
+              children: _filtered.map((e) => Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: GestureDetector(
+                  onTap: () => setState(() => _selectedExerciseId = e.key),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: AppColors.surfaceHigh,
+                      borderRadius: BorderRadius.circular(AppRadius.md),
+                      border: Border.all(color: AppColors.border),
+                    ),
+                    child: Text(e.value,
+                        style: AppFonts.ui(
+                            fontSize: AppTextStyles.sm,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.primary)),
+                  ),
+                ),
+              )).toList(),
+            ),
+          ),
+        ],
+        if (_selectedExerciseId != null) ...[
+          const SizedBox(height: 8),
+          Text(
+            toProperCase(widget.detailMap[_selectedExerciseId!]?.name ?? ''),
+            style: AppFonts.ui(
+                fontSize: AppTextStyles.sm,
+                fontWeight: FontWeight.w700,
+                color: AppColors.accent),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _weightCtrl,
+                  textAlign: TextAlign.center,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*$'))],
+                  style: AppFonts.mono(fontSize: 14, color: AppColors.primary),
+                  decoration: InputDecoration(
+                    hintText: 'kg',
+                    hintStyle: AppFonts.mono(color: AppColors.muted),
+                    contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                    isDense: true,
+                    filled: true,
+                    fillColor: AppColors.surfaceHigh,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(6),
+                      borderSide: BorderSide(color: AppColors.border),
+                    ),
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                child: Text('×', style: AppFonts.ui(fontSize: 14, color: AppColors.muted)),
+              ),
+              Expanded(
+                child: TextField(
+                  controller: _repsCtrl,
+                  textAlign: TextAlign.center,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  style: AppFonts.mono(fontSize: 14, color: AppColors.primary),
+                  decoration: InputDecoration(
+                    hintText: 'reps',
+                    hintStyle: AppFonts.mono(color: AppColors.muted),
+                    contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                    isDense: true,
+                    filled: true,
+                    fillColor: AppColors.surfaceHigh,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(6),
+                      borderSide: BorderSide(color: AppColors.border),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              GlassButton(label: 'Add', compact: true, onPressed: _add),
+            ],
+          ),
+        ],
+        const SizedBox(height: AppSpacing.sm),
+      ],
+    );
   }
 }
 

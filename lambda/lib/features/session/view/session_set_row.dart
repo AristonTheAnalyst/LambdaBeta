@@ -8,6 +8,7 @@ import '../../../data/models/custom_variation.dart';
 import '../../../data/models/exercise_detail.dart';
 import '../../../data/models/planned_set.dart';
 import '../../../data/models/workout_set.dart';
+import '../../../shared/utils/pop_dialog.dart';
 import '../../../shared/widgets/dropdown_select.dart';
 import '../../../shared/widgets/swipe_actions.dart';
 import '../viewmodel/session_viewmodel.dart';
@@ -193,7 +194,7 @@ class _SessionSetRowState extends State<SessionSetRow> {
               Padding(
                 padding: const EdgeInsets.only(bottom: 8),
                 child: GestureDetector(
-                  onTap: () => Navigator.of(ctx).pop((createNew: false, existingId: s.id)),
+                  onTap: () => popDialog(ctx, (createNew: false, existingId: s.id)),
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                     decoration: BoxDecoration(
@@ -221,7 +222,7 @@ class _SessionSetRowState extends State<SessionSetRow> {
               onPressed: () => Navigator.of(ctx).pop(),
               child: Text('Cancel', style: TextStyle(color: AppColors.muted))),
           TextButton(
-            onPressed: () => Navigator.of(ctx).pop((createNew: true, existingId: null)),
+            onPressed: () => popDialog(ctx, (createNew: true, existingId: null)),
             child: Text('Create "$typedName" anyway',
                 style: TextStyle(color: AppColors.accent, fontWeight: FontWeight.w600)),
           ),
@@ -243,14 +244,14 @@ class _SessionSetRowState extends State<SessionSetRow> {
           textCapitalization: TextCapitalization.words,
           style: TextStyle(color: AppColors.primary),
           decoration: InputDecoration(hintText: 'Variation name', hintStyle: TextStyle(color: AppColors.muted)),
-          onSubmitted: (v) => Navigator.of(ctx).pop(v),
+          onSubmitted: (v) => popDialog(ctx, v),
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
+              onPressed: () => popDialog(ctx),
               child: Text('Cancel', style: TextStyle(color: AppColors.muted))),
           TextButton(
-              onPressed: () => Navigator.of(ctx).pop(ctrl.text),
+              onPressed: () => popDialog(ctx, ctrl.text),
               child: Text('Create', style: TextStyle(color: AppColors.accent, fontWeight: FontWeight.w600))),
         ],
       ),

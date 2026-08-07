@@ -1,3 +1,4 @@
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 import '../../core/powersync/database.dart' as ps;
 import '../models/planned_workout.dart';
@@ -15,6 +16,7 @@ class ProgramRunRepository {
       : _programRepo = programRepository ?? ProgramRepository();
 
   final ProgramRepository _programRepo;
+  final _client = Supabase.instance.client;
 
   Future<ProgramRun?> getCurrentRun(String userId) async {
     final rows = await ps.db.getAll(
@@ -35,24 +37,29 @@ class ProgramRunRepository {
     int? targetWeeks,
     DateTime? endDate,
   }) async {
-    await endCurrentRun(userId);
-
     final id = _uuid.v4();
-    // .toUtc() avoids a naive local-time string being reinterpreted as UTC
-    // by Postgres's timestamptz column (see WorkoutRepository.createWorkout).
     final startedDate = DateTime.now().toUtc();
-    await ps.db.execute(
-      '''
-      INSERT INTO fact_program_run
-        (id, program_run_id, program_id, user_id, started_date, is_current,
-         target_sessions, target_weeks, end_date)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ''',
-      [
-        id, id, programId, userId, startedDate.toIso8601String(), 1,
-        targetSessions, targetWeeks, endDate?.toUtc().toIso8601String(),
-      ],
-    );
+
+    // Both REST calls are individually wrapped in try-catch with short
+    // timeouts — on this device the Supabase API is unreachable and hangs
+    // forever without a timeout.  The first call (`endCurrentRun`) had no
+    // timeout at all, which was the hang.
+    try {
+      await endCurrentRun(userId);
+    } catch (_) {}
+
+    try {
+      await _client.from('fact_program_run').insert({
+        'program_run_id': id,
+        'program_id': programId,
+        'user_id': userId,
+        'started_date': startedDate.toIso8601String(),
+        'is_current': true,
+        'target_sessions': targetSessions,
+        'target_weeks': targetWeeks,
+        'end_date': endDate?.toUtc().toIso8601String(),
+      }).timeout(const Duration(seconds: 3));
+    } catch (_) {}
     return ProgramRun(
       programRunId: id,
       programId: programId,
@@ -86,18 +93,20 @@ class ProgramRunRepository {
     if (clearEndDate) updates['end_date'] = null;
     if (endDate != null) updates['end_date'] = endDate.toUtc().toIso8601String();
     if (updates.isEmpty) return;
-    final setClause = updates.keys.map((k) => '$k = ?').join(', ');
-    await ps.db.execute(
-      'UPDATE fact_program_run SET $setClause WHERE program_run_id = ?',
-      [...updates.values, programRunId],
-    );
+    try {
+      await _client.from('fact_program_run').update(updates).eq('program_run_id', programRunId)
+          .timeout(const Duration(seconds: 3));
+    } catch (_) {}
   }
 
   Future<void> endCurrentRun(String userId) async {
-    await ps.db.execute(
-      'UPDATE fact_program_run SET is_current = 0, ended_date = ? WHERE user_id = ? AND is_current = 1',
-      [DateTime.now().toUtc().toIso8601String(), userId],
-    );
+    try {
+      await _client.from('fact_program_run').update({
+        'is_current': false,
+        'ended_date': DateTime.now().toUtc().toIso8601String(),
+      }).eq('user_id', userId).eq('is_current', true)
+        .timeout(const Duration(seconds: 3));
+    } catch (_) {}
   }
 
   Future<List<ProgramRun>> fetchProgramHistory(String userId) async {

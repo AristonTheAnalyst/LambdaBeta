@@ -180,9 +180,9 @@ const schema = Schema([
     Column.text('variation_name'),
     Column.integer('is_active'),
   ]),
-  Table('dim_program_goal', [
+  Table('fact_program_goal', [
     Column.text('program_goal_id'),
-    Column.text('program_id'),
+    Column.text('program_run_id'),
     Column.text('user_id'),
     Column.text('goal_text'),
     Column.text('custom_exercise_id'),

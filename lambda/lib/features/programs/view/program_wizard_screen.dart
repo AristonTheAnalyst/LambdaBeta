@@ -15,12 +15,13 @@ import '../../../../shared/widgets/page_header.dart';
 import '../viewmodel/program_detail_viewmodel.dart';
 import 'plan_workout_screen.dart';
 
-/// 3-step guided program creation: choose progression (with helper text),
-/// name + goals, then design the planned workouts. Calendar workouts must
-/// have a weekday assigned; sequential ones cycle by order.
+/// 3-step guided program creation: choose progression, name the program,
+/// then design the planned workouts. Calendar workouts must have a weekday
+/// assigned; sequential ones cycle by order.
 ///
 /// The program is created as soon as progression is chosen (step 1), then the
-/// wizard edits it via a real [ProgramDetailViewModel].
+/// wizard edits it via a real [ProgramDetailViewModel]. Goals are set later
+/// from the program detail screen once a run is active.
 class ProgramWizardScreen extends StatefulWidget {
   const ProgramWizardScreen({super.key});
 
@@ -35,8 +36,6 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
   ProgramDetailViewModel? _detailVm;
   final _nameCtrl = TextEditingController();
   final _descriptionCtrl = TextEditingController();
-  final _goalCtrl = TextEditingController();
-  final List<String> _goals = [];
 
   bool get _isCalendar => _progression == 'calendar';
 
@@ -44,7 +43,6 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
   void dispose() {
     _nameCtrl.dispose();
     _descriptionCtrl.dispose();
-    _goalCtrl.dispose();
     _detailVm?.dispose();
     super.dispose();
   }
@@ -65,13 +63,13 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
 
   String get _stepTitle => switch (_step) {
         0 => 'How will it progress?',
-        1 => 'Name & goals',
+        1 => 'Name your program',
         _ => 'Design workouts',
       };
 
   String get _stepSubtitle => switch (_step) {
         0 => 'Choose how the program schedules your training.',
-        1 => 'Give it a name and, optionally, a goal.',
+        1 => 'Give it a name and, optionally, a description.',
         _ => 'Add the workouts in the order they repeat.',
       };
 
@@ -95,11 +93,6 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
       _vm.setNameDraft(_nameCtrl.text);
       _vm.setDescriptionDraft(_descriptionCtrl.text);
       await _vm.saveProgramDetails();
-      // Persist goals (free-text; structured exercise targets use the
-      // "exercise 100kg x 1" form and are stored as text for now).
-      for (final g in _goals) {
-        await _vm.addProgramGoalText(g);
-      }
       if (!mounted) return;
       setState(() => _step = 2);
       return;
@@ -380,66 +373,6 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
           label: 'Description',
           placeholder: 'Optional program description',
           onChanged: (_) => setState(() {}),
-        ),
-        const SizedBox(height: AppSpacing.lg),
-        Text('Goals',
-            style: AppFonts.ui(
-                fontSize: AppTextStyles.md,
-                fontWeight: FontWeight.w700,
-                color: AppColors.primary)),
-        const SizedBox(height: AppSpacing.xs),
-        Text('Free text or exercise targets, e.g. "bench 100kg x 1"',
-            style: AppFonts.ui(fontSize: AppTextStyles.xs, color: AppColors.muted)),
-        const SizedBox(height: AppSpacing.sm),
-        for (final g in _goals) ...[
-          Container(
-            padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.md, vertical: AppSpacing.sm),
-            decoration: BoxDecoration(
-              color: AppColors.surfaceHigh,
-              borderRadius: BorderRadius.circular(AppRadius.md),
-              border: Border.all(color: AppColors.border),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(g,
-                      style: AppFonts.ui(
-                          fontSize: AppTextStyles.sm, color: AppColors.primary)),
-                ),
-                GestureDetector(
-                  onTap: () => setState(() => _goals.remove(g)),
-                  child: Icon(Icons.close, size: 16, color: AppColors.muted),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: AppSpacing.xs),
-        ],
-        const SizedBox(height: AppSpacing.xs),
-        Row(
-          children: [
-            Expanded(
-              child: LambdaInput(
-                controller: _goalCtrl,
-                placeholder: 'Add a goal…',
-                onChanged: (_) => setState(() {}),
-              ),
-            ),
-            const SizedBox(width: AppSpacing.sm),
-            GlassButton(
-              label: 'Add',
-              compact: true,
-              onPressed: () {
-                final text = _goalCtrl.text.trim();
-                if (text.isEmpty) return;
-                setState(() {
-                  _goals.add(text);
-                  _goalCtrl.clear();
-                });
-              },
-            ),
-          ],
         ),
       ],
     );

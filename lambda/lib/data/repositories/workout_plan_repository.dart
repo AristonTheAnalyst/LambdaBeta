@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:uuid/uuid.dart';
 import '../../core/powersync/database.dart' as ps;
+import '../../shared/utils/unique_name.dart';
 import '../models/workout_plan.dart';
 import '../models/workout_plan_set.dart';
 
@@ -10,6 +11,16 @@ const _uuid = Uuid();
 /// Owns standalone planned workouts (a single session not tied to a program)
 /// and their planned sets — mirrors the program planned-workout/set CRUD.
 class WorkoutPlanRepository {
+  /// Standalone workout names for [userId], used to bump auto-generated
+  /// defaults.
+  Future<Set<String>> _workoutNames(String userId) async {
+    final rows = await ps.db.getAll(
+      'SELECT workout_name FROM dim_workout WHERE user_id = ?',
+      [userId],
+    );
+    return rows.map((r) => r['workout_name'] as String).toSet();
+  }
+
   Future<bool> _nameExists(String userId, String name,
       {String? excludeWorkoutId}) async {
     final rows = await ps.db.getAll(
@@ -43,8 +54,24 @@ class WorkoutPlanRepository {
     return rows.map((r) => WorkoutPlan.fromMap(r)).toList();
   }
 
-  Future<WorkoutPlan> createWorkout(String userId, {required String name, String? notes}) async {
-    await _assertWorkoutNameUnique(userId, name);
+  /// Creates a standalone workout. When [name] is null the app auto-generates
+  /// one ("New Workout", "New Workout 2", …) bumped against the local mirror
+  /// so it never throws; when a user-typed [name] is given, it must be unique.
+  ///
+  /// Like all name-uniqueness in this app, the check is client-side against
+  /// the device's local PowerSync mirror — names are NOT unique at the
+  /// database level, so two offline devices can still independently create
+  /// (or rename to) the same string and the server accepts a cosmetic
+  /// duplicate after sync. Records are keyed by UUID, never by name.
+  Future<WorkoutPlan> createWorkout(String userId,
+      {String? name, String? notes}) async {
+    var finalName = name;
+    if (finalName == null) {
+      final names = await _workoutNames(userId);
+      finalName = uniqueName('New Workout', names);
+    } else {
+      await _assertWorkoutNameUnique(userId, finalName);
+    }
     final id = _uuid.v4();
     final createdDate = DateTime.now().toUtc();
     await ps.db.execute(
@@ -53,12 +80,12 @@ class WorkoutPlanRepository {
         (id, workout_id, user_id, workout_name, workout_notes, is_active, workout_created_date)
       VALUES (?, ?, ?, ?, ?, ?, ?)
       ''',
-      [id, id, userId, name, notes, 1, createdDate.toIso8601String()],
+      [id, id, userId, finalName, notes, 1, createdDate.toIso8601String()],
     );
     return WorkoutPlan(
       workoutId: id,
       userId: userId,
-      name: name,
+      name: finalName,
       notes: notes,
       isActive: true,
       createdDate: createdDate,
@@ -197,14 +224,9 @@ class WorkoutPlanRepository {
   Future<String> duplicateWorkout(String userId, WorkoutPlan source) async {
     final sets = await fetchSets(source.workoutId);
 
-    // Find a unique copy name.
-    var copyName = '${source.name} (Copy)';
-    if (await _nameExists(userId, copyName)) {
-      for (var i = 2;; i++) {
-        copyName = '${source.name} (Copy $i)';
-        if (!await _nameExists(userId, copyName)) break;
-      }
-    }
+    final names = await _workoutNames(userId);
+    final copyName = uniqueName('${source.name} (Copy)', names,
+        numbered: (n) => '${source.name} (Copy $n)');
 
     final newId = _uuid.v4();
     final createdDate = DateTime.now().toUtc();

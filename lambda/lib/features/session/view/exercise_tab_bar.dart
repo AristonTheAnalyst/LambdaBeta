@@ -6,9 +6,10 @@ import '../viewmodel/session_viewmodel.dart';
 import 'add_exercise_modal.dart';
 
 class ExerciseTabBar extends StatelessWidget {
-  const ExerciseTabBar({super.key, required this.vm});
+  const ExerciseTabBar({super.key, required this.vm, required this.onRemove});
 
   final SessionViewModel vm;
+  final void Function(int index) onRemove;
 
   String _label(SessionExerciseSlot slot, int supersetNumber) {
     if (slot.type == SessionSlotType.single) {
@@ -52,15 +53,11 @@ class ExerciseTabBar extends StatelessWidget {
                                   child: ExerciseTabChip(
                                     label: _label(vm.exerciseSlots[i], supersetNumbers[i]),
                                     isActive: i == vm.activeSlotIndex,
-                                    count: vm.exerciseSlots[i].type == SessionSlotType.superset
-                                        ? null
-                                        : vm.sets
-                                            .where((s) => s.exerciseId == vm.exerciseSlots[i].activeExerciseId)
-                                            .length,
                                     prefixIcon: vm.exerciseSlots[i].type == SessionSlotType.superset
                                         ? Icons.hexagon_outlined
                                         : null,
                                     onTap: () => vm.tapTab(i),
+                                    onRemove: () => onRemove(i),
                                   ),
                                 ),
                               ),
@@ -76,15 +73,11 @@ class ExerciseTabBar extends StatelessWidget {
                             ExerciseTabChip(
                               label: _label(vm.exerciseSlots[i], supersetNumbers[i]),
                               isActive: i == vm.activeSlotIndex,
-                              count: vm.exerciseSlots[i].type == SessionSlotType.superset
-                                  ? null
-                                  : vm.sets
-                                      .where((s) => s.exerciseId == vm.exerciseSlots[i].activeExerciseId)
-                                      .length,
                               prefixIcon: vm.exerciseSlots[i].type == SessionSlotType.superset
                                   ? Icons.hexagon_outlined
                                   : null,
                               onTap: () => vm.tapTab(i),
+                              onRemove: () => onRemove(i),
                             ),
                             const SizedBox(width: 6),
                           ],

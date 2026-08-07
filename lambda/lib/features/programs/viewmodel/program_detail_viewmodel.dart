@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
@@ -65,6 +67,9 @@ class ProgramDetailState {
     this.variationExerciseCounts = const {},
     this.newExCreating = false,
     this.newVarCreating = false,
+    // Goals
+    this.programGoals = const [],
+    this.goalsLoading = false,
     // Lessons (per-exercise, cross-session — reuses fact_lesson as-is)
     this.lessonsByExercise = const {},
     // History (read-only past-sets, reuses the session's read path as-is)
@@ -113,6 +118,9 @@ class ProgramDetailState {
   final Map<String, List<Lesson>> lessonsByExercise;
   final Map<String, List<ExerciseHistorySession>> historyByExercise;
   final bool pastSetsLoaded;
+
+  final List<ProgramGoal> programGoals;
+  final bool goalsLoading;
 
   bool get isCalendarMode => progressionModeDraft == 'calendar';
 
@@ -168,6 +176,8 @@ class ProgramDetailState {
     Map<String, List<Lesson>>? lessonsByExercise,
     Map<String, List<ExerciseHistorySession>>? historyByExercise,
     bool? pastSetsLoaded,
+    List<ProgramGoal>? programGoals,
+    bool? goalsLoading,
   }) =>
       ProgramDetailState(
         isLoading: isLoading ?? this.isLoading,
@@ -218,6 +228,8 @@ class ProgramDetailState {
         lessonsByExercise: lessonsByExercise ?? this.lessonsByExercise,
         historyByExercise: historyByExercise ?? this.historyByExercise,
         pastSetsLoaded: pastSetsLoaded ?? this.pastSetsLoaded,
+        programGoals: programGoals ?? this.programGoals,
+        goalsLoading: goalsLoading ?? this.goalsLoading,
       );
 }
 
@@ -238,6 +250,7 @@ class ProgramDetailViewModel {
 
   final ProgramRepository _repo;
   final ProgramRunRepository _runRepo;
+  final _uuid = const Uuid();
   final ExerciseRepository _exerciseRepo;
   final LessonRepository _lessonRepo;
   final WorkoutRepository _workoutRepo;
@@ -256,7 +269,7 @@ class ProgramDetailViewModel {
   Future<String?> createNewProgram(String progressionMode) async {
     try {
       final created = await _repo.createProgram(_userId,
-          name: 'New Program', progressionMode: progressionMode);
+          progressionMode: progressionMode);
       return created.programId;
     } catch (e) {
       state.value = state.value.copyWith(error: e.toString());
@@ -264,20 +277,52 @@ class ProgramDetailViewModel {
     }
   }
 
-  /// Adds a free-text program goal.
-  Future<void> addProgramGoalText(String text) async {
-    final programId = state.value.program?.programId;
-    if (programId == null || text.trim().isEmpty) return;
+  /// Adds an exercise-target goal (weight × reps for a specific exercise).
+  Future<void> addProgramGoal({
+    required String exerciseId,
+    required String exerciseName,
+    num? targetWeight,
+    int? targetReps,
+  }) async {
+    final runId = state.value.activeRun?.programRunId;
+    if (runId == null) return;
     final goal = ProgramGoal(
       goalId: Uuid().v4(),
-      programId: programId,
+      programRunId: runId,
       userId: _userId,
-      text: text.trim(),
+      text: exerciseName,
+      exerciseId: exerciseId,
+      targetWeight: targetWeight,
+      targetReps: targetReps,
     );
     try {
-      await _repo.createProgramGoal(_userId, programId, goal);
+      await _repo.createProgramGoal(_userId, runId, goal);
+      await _loadGoals();
     } catch (e) {
       state.value = state.value.copyWith(error: e.toString());
+    }
+  }
+
+  Future<void> deleteProgramGoal(String goalId) async {
+    try {
+      await _repo.deleteProgramGoal(goalId);
+      state.value = state.value.copyWith(
+        programGoals: state.value.programGoals.where((g) => g.goalId != goalId).toList(),
+      );
+    } catch (e) {
+      state.value = state.value.copyWith(error: e.toString());
+    }
+  }
+
+  Future<void> _loadGoals() async {
+    final runId = state.value.activeRun?.programRunId;
+    if (runId == null) return;
+    state.value = state.value.copyWith(goalsLoading: true);
+    try {
+      final goals = await _repo.fetchProgramGoals(runId).timeout(const Duration(seconds: 3));
+      state.value = state.value.copyWith(programGoals: goals, goalsLoading: false);
+    } catch (_) {
+      state.value = state.value.copyWith(goalsLoading: false);
     }
   }
 
@@ -323,6 +368,8 @@ class ProgramDetailViewModel {
         allVariations: variations,
         variationExerciseCounts: counts,
       );
+      // Goals load independently — they aren't critical for rendering.
+      _loadGoals();
     } catch (e) {
       state.value = state.value.copyWith(isLoading: false, error: e.toString());
     }
@@ -370,20 +417,36 @@ class ProgramDetailViewModel {
   }) async {
     final s = state.value;
     if (s.program == null || _disposed) return;
-    state.value = s.copyWith(settingCurrent: true, clearError: true);
-    try {
-      final run = await _runRepo.startProgramRun(_userId, s.program!.programId,
-          targetSessions: targetSessions,
-          targetWeeks: targetWeeks,
-          endDate: endDate);
-      if (_disposed) return;
-      state.value = state.value.copyWith(
-          settingCurrent: false, isCurrent: true, activeRun: run);
-    } catch (e) {
-      if (_disposed) return;
-      state.value =
-          state.value.copyWith(settingCurrent: false, error: e.toString());
-    }
+
+    // Optimistic: build the run locally and flip state immediately so the UI
+    // never blocks on the network.  The server write happens in the background
+    // (bounded by short timeouts inside the repository) and the run is picked
+    // up by PowerSync on the next successful sync.
+    final run = ProgramRun(
+      programRunId: _uuid.v4(),
+      programId: s.program!.programId,
+      userId: _userId,
+      startedDate: DateTime.now().toUtc(),
+      isCurrent: true,
+      targetSessions: targetSessions,
+      targetWeeks: targetWeeks,
+      endDate: endDate?.toUtc(),
+    );
+    state.value = s.copyWith(
+      settingCurrent: false,
+      isCurrent: true,
+      activeRun: run,
+      clearError: true,
+    );
+    // Fire-and-forget the persistence — must never hold up the UI.
+    unawaited(_runRepo.startProgramRun(
+      _userId,
+      s.program!.programId,
+      targetSessions: targetSessions,
+      targetWeeks: targetWeeks,
+      endDate: endDate,
+    ));
+    _loadGoals();
   }
 
   /// Updates the active run's duration config (mutable while running).
@@ -468,7 +531,6 @@ class ProgramDetailViewModel {
       final created = await _repo.createPlannedWorkout(
         _userId,
         programId,
-        name: 'New Workout',
         sequenceOrder: state.value.plannedWorkouts.length + 1,
       );
       final workouts = await _repo.fetchPlannedWorkouts(programId);
@@ -520,7 +582,15 @@ class ProgramDetailViewModel {
     await _ensureCatalog();
     final workouts = await _workoutPlanRepo.fetchWorkouts(_userId);
     final w = workouts.where((x) => x.workoutId == workoutId).firstOrNull;
-    if (w == null) return;
+    if (w == null) {
+      // Surfacing the failure keeps the editor from hanging on its loading
+      // spinner when a just-created row hasn't synced back yet.
+      state.value = state.value.copyWith(
+        workoutSetsLoading: false,
+        error: 'Could not open workout.',
+      );
+      return;
+    }
     state.value = state.value.copyWith(
       editingWorkout: PlannedWorkout(
         plannedWorkoutId: w.workoutId,
@@ -555,10 +625,43 @@ class ProgramDetailViewModel {
   /// Creates a brand-new standalone workout and opens it for editing.
   Future<void> createStandaloneWorkoutAndOpen() async {
     _standaloneWorkoutId = null;
+    state.value = state.value.copyWith(clearError: true);
     await _ensureCatalog();
     try {
-      final created = await _workoutPlanRepo.createWorkout(_userId, name: 'New Workout');
-      await openStandaloneWorkout(created.workoutId);
+      final created = await _workoutPlanRepo.createWorkout(_userId);
+      // Open the editor against the row we just created. Building state from
+      // the returned object (rather than re-fetching) avoids a race where the
+      // insert hasn't reflected into a follow-up SELECT yet — previously that
+      // left editingWorkout null and the screen on an eternal spinner.
+      state.value = state.value.copyWith(
+        editingWorkout: PlannedWorkout(
+          plannedWorkoutId: created.workoutId,
+          programId: '',
+          userId: created.userId,
+          name: created.name,
+          notes: created.notes,
+          sequenceOrder: 0,
+          isActive: true,
+        ),
+        workoutNameDraft: created.name,
+        workoutNotesDraft: created.notes ?? '',
+        workoutSetsLoading: true,
+      );
+      try {
+        final sets = await _workoutPlanRepo.fetchSets(created.workoutId);
+        state.value = state.value.copyWith(
+          workoutPlannedSets: _setsFromWorkoutSets(sets),
+          workoutExerciseSlots: _slotsFromWorkoutSets(sets),
+          activeSlotIndex: 0,
+          workoutSetsLoading: false,
+        );
+        for (final slot in state.value.workoutExerciseSlots) {
+          loadLessonsFor(slot.exerciseId);
+        }
+      } catch (e) {
+        state.value =
+            state.value.copyWith(workoutSetsLoading: false, error: e.toString());
+      }
     } catch (e) {
       state.value = state.value.copyWith(error: e.toString());
     }
@@ -761,6 +864,49 @@ class ProgramDetailViewModel {
       _persistEmptyPlannedSet(exerciseId, nextOrder);
     }
     loadLessonsFor(exerciseId);
+  }
+
+  /// Removes the exercise slot at [index] from the editing workout and deletes
+  /// all of its planned sets from the DB.  Active-index is clamped so the tab
+  /// bar never points past the new end.
+  Future<void> removePlannedExerciseGroup(int index) async {
+    final s = state.value;
+    final workout = s.editingWorkout;
+    if (workout == null || index < 0 || index >= s.workoutExerciseSlots.length) return;
+    final slot = s.workoutExerciseSlots[index];
+    final order = slot.exerciseSequenceOrder;
+
+    // Delete every planned set with this exercise's sequence order
+    final setsToDelete = s.workoutPlannedSets
+        .where((ps) => ps.exerciseSequenceOrder == order)
+        .toList();
+    for (final ps in setsToDelete) {
+      if (isStandaloneMode) {
+        await _workoutPlanRepo.deleteSet(ps.plannedSetId);
+      } else {
+        await _repo.deletePlannedSet(ps.plannedSetId);
+      }
+    }
+
+    // Remove the slot and clamp active index
+    final slots = [...s.workoutExerciseSlots]..removeAt(index);
+    int newActive = s.activeSlotIndex;
+    if (newActive >= slots.length) newActive = (slots.length - 1).clamp(0, slots.length);
+
+    // Re-fetch sets so the UI reflects the deletion
+    List<PlannedSet> plannedSets;
+    if (isStandaloneMode) {
+      plannedSets = _setsFromWorkoutSets(await _workoutPlanRepo.fetchSets(workout.plannedWorkoutId));
+    } else {
+      plannedSets = await _repo.fetchPlannedSets(workout.plannedWorkoutId);
+    }
+
+    state.value = s.copyWith(
+      workoutExerciseSlots: slots,
+      activeSlotIndex: newActive,
+      workoutPlannedSets: plannedSets,
+      workoutUnsavedChanges: true,
+    );
   }
 
   void tapTab(int index) => state.value = state.value.copyWith(activeSlotIndex: index);

@@ -665,6 +665,33 @@ class SessionViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Removes the exercise slot at [index] and all of its sets / drafts from
+  /// the current session.  The slot's exercises (single or superset) are each
+  /// cleaned up.  Active-index is clamped so the tab bar never points past the
+  /// new end.
+  Future<void> removeExerciseSlot(int index) async {
+    if (index < 0 || index >= exerciseSlots.length) return;
+    final slot = exerciseSlots.removeAt(index);
+
+    // Delete persisted sets for every exercise in the slot
+    for (final exerciseId in slot.exerciseIds) {
+      final exerciseSets = sets.where((s) => s.exerciseId == exerciseId).toList();
+      for (final s in exerciseSets) {
+        await _workoutRepo.deleteSet(s.setId);
+      }
+      sets.removeWhere((s) => s.exerciseId == exerciseId);
+      draftSlotsByExercise.remove(exerciseId);
+    }
+
+    // Adjust active tab index
+    if (activeSlotIndex >= exerciseSlots.length) {
+      activeSlotIndex = (exerciseSlots.length - 1).clamp(0, exerciseSlots.length);
+    }
+    _persistExerciseOrder();
+    _recomputePRs();
+    notifyListeners();
+  }
+
   /// The superset group to stamp onto a newly logged set for [exerciseId] —
   /// the containing slot's id if it's a superset tab, else null (a plain
   /// single-exercise slot is never "part of a superset"). This is the only

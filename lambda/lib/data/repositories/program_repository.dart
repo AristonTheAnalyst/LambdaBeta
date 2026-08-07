@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:uuid/uuid.dart';
@@ -6,8 +7,17 @@ import '../models/planned_set.dart';
 import '../models/planned_workout.dart';
 import '../models/program.dart';
 import '../models/program_goal.dart';
+import '../../shared/utils/unique_name.dart';
 
 const _uuid = Uuid();
+
+/// Bounded wrapper around PowerSync writes.  When PowerSync isn't initialised
+/// or is stuck reconciling a stale local DB, `ps.db.execute` can hang forever
+/// (freezing the UI).  This surfaces it as a thrown exception after a few
+/// seconds instead — the caller can catch and show an error.
+Future<void> _exec(String sql, [List<Object?> params = const []]) async {
+  await ps.db.execute(sql, params).timeout(const Duration(seconds: 5));
+}
 
 /// Turns a partial `{column: value}` update map into a `SET col = ?, ...`
 /// clause plus its bound parameters, for the dynamic partial-update methods
@@ -25,9 +35,19 @@ const _uuid = Uuid();
 class ProgramRepository {
   // ── Programs ─────────────────────────────────────────────────────────────
 
-  /// Throws if another active program owned by `userId` already has [name].
-  Future<void> _assertProgramNameUnique(
-      String userId, String name, {String? excludeProgramId}) async {
+  /// Active program names for [userId], used to bump auto-generated defaults.
+  Future<Set<String>> _programNames(String userId) async {
+    final rows = await ps.db.getAll(
+      'SELECT program_name FROM dim_program WHERE user_id = ? AND is_active = 1',
+      [userId],
+    );
+    return rows.map((r) => r['program_name'] as String).toSet();
+  }
+
+  /// Returns true if another active program owned by `userId` already has
+  /// [name] (ignoring [excludeProgramId] when provided).
+  Future<bool> _programNameExists(String userId, String name,
+      {String? excludeProgramId}) async {
     final rows = await ps.db.getAll(
       '''
       SELECT 1 FROM dim_program
@@ -41,7 +61,14 @@ class ProgramRepository {
         ?excludeProgramId,
       ],
     );
-    if (rows.isNotEmpty) {
+    return rows.isNotEmpty;
+  }
+
+  /// Throws if another active program owned by `userId` already has [name].
+  Future<void> _assertProgramNameUnique(
+      String userId, String name, {String? excludeProgramId}) async {
+    if (await _programNameExists(userId, name,
+        excludeProgramId: excludeProgramId)) {
       throw Exception('A program named "$name" already exists.');
     }
   }
@@ -63,19 +90,34 @@ class ProgramRepository {
     return Program.fromMap(rows.first);
   }
 
+  /// Creates a program. When [name] is null the app auto-generates one
+  /// ("New Program", "New Program 2", …) bumped against the local mirror so it
+  /// never throws; when a user-typed [name] is given, it must be unique.
+  ///
+  /// Like all name-uniqueness in this app, the check is client-side against
+  /// the device's local PowerSync mirror — names are NOT unique at the
+  /// database level, so two offline devices can still independently create
+  /// (or rename to) the same string and the server accepts a cosmetic
+  /// duplicate after sync. Records are keyed by UUID, never by name.
   Future<Program> createProgram(
     String userId, {
-    required String name,
+    String? name,
     String? description,
     int? lengthWeeks,
     String progressionMode = 'sequential',
   }) async {
-    await _assertProgramNameUnique(userId, name);
+    var finalName = name;
+    if (finalName == null) {
+      final names = await _programNames(userId);
+      finalName = uniqueName('New Program', names);
+    } else {
+      await _assertProgramNameUnique(userId, finalName);
+    }
     final id = _uuid.v4();
     // .toUtc() avoids a naive local-time string being reinterpreted as UTC
     // by Postgres's timestamptz column (see WorkoutRepository.createWorkout).
     final createdDate = DateTime.now().toUtc();
-    await ps.db.execute(
+    await _exec(
       '''
       INSERT INTO dim_program
         (id, program_id, user_id, program_name, program_description,
@@ -86,7 +128,7 @@ class ProgramRepository {
         id,
         id,
         userId,
-        name,
+        finalName,
         description,
         lengthWeeks,
         progressionMode,
@@ -97,7 +139,7 @@ class ProgramRepository {
     return Program(
       programId: id,
       userId: userId,
-      name: name,
+      name: finalName,
       description: description,
       lengthWeeks: lengthWeeks,
       progressionMode: progressionMode,
@@ -124,7 +166,7 @@ class ProgramRepository {
     if (progressionMode != null) updates['progression_mode'] = progressionMode;
     if (updates.isEmpty) return;
     final (setClause, params) = _buildSetClause(updates);
-    await ps.db.execute(
+    await _exec(
       'UPDATE dim_program SET $setClause WHERE program_id = ?',
       [...params, programId],
     );
@@ -146,9 +188,14 @@ class ProgramRepository {
       'DELETE FROM dim_planned_workout WHERE program_id = ?',
       [programId],
     );
-    // Delete program goals.
+    // Delete program goals (goals are scoped to program runs).
     await ps.db.execute(
-      'DELETE FROM dim_program_goal WHERE program_id = ?',
+      '''
+      DELETE FROM fact_program_goal
+      WHERE program_run_id IN (
+        SELECT program_run_id FROM fact_program_run WHERE program_id = ?
+      )
+      ''',
       [programId],
     );
     // Delete the program.
@@ -171,11 +218,16 @@ class ProgramRepository {
   Future<PlannedWorkout> createPlannedWorkout(
     String userId,
     String programId, {
-    required String name,
+    String? name,
     String? notes,
     required int sequenceOrder,
     int? dayOfWeek,
   }) async {
+    if (name == null) {
+      final existing = await fetchPlannedWorkouts(programId);
+      final names = existing.map((w) => w.name).toSet();
+      name = uniqueName('New Workout', names);
+    }
     final id = _uuid.v4();
     await ps.db.execute(
       '''
@@ -417,6 +469,11 @@ class ProgramRepository {
       String userId, PlannedWorkout source) async {
     final sets = await fetchPlannedSets(source.plannedWorkoutId);
 
+    final siblings = await fetchPlannedWorkouts(source.programId);
+    final siblingNames = siblings.map((w) => w.name).toSet();
+    final copyName = uniqueName('${source.name} (Copy)', siblingNames,
+        numbered: (n) => '${source.name} (Copy $n)');
+
     final newId = _uuid.v4();
     await ps.db.writeTransaction((tx) async {
       await tx.execute(
@@ -428,7 +485,7 @@ class ProgramRepository {
         ''',
         [
           newId, newId, source.programId, userId,
-          '${source.name} (Copy)', source.notes,
+          copyName, source.notes,
           source.sequenceOrder + 1, source.dayOfWeek, 1,
         ],
       );
@@ -469,18 +526,6 @@ class ProgramRepository {
     return newId;
   }
 
-  /// Returns a unique copy name, e.g. "Push Day (Copy)" → "Push Day (Copy 2)"
-  /// if "(Copy)" already exists.
-  Future<String> _uniqueCopyName(
-      String userId, String baseName, Future<bool> Function(String userId, String name) exists) async {
-    final copy = '$baseName (Copy)';
-    if (!await exists(userId, copy)) return copy;
-    for (var i = 2;; i++) {
-      final numbered = '$baseName (Copy $i)';
-      if (!await exists(userId, numbered)) return numbered;
-    }
-  }
-
   // ── Composite reads / duplication ────────────────────────────────────────
 
   Future<ProgramWithWorkouts?> fetchProgramWithWorkouts(String programId) async {
@@ -507,14 +552,9 @@ class ProgramRepository {
           await fetchPlannedSets(workout.plannedWorkoutId);
     }
 
-    final name = await _uniqueCopyName(userId, source.program.name,
-        (uid, n) async {
-      final rows = await ps.db.getAll(
-        'SELECT 1 FROM dim_program WHERE user_id = ? AND LOWER(program_name) = LOWER(?) LIMIT 1',
-        [uid, n],
-      );
-      return rows.isNotEmpty;
-    });
+    final programNames = await _programNames(userId);
+    final name = uniqueName('${source.program.name} (Copy)', programNames,
+        numbered: (n) => '${source.program.name} (Copy $n)');
 
     final newProgramId = _uuid.v4();
 
@@ -597,27 +637,34 @@ class ProgramRepository {
     return newProgramId;
   }
 
-  Future<void> createProgramGoal(String userId, String programId, ProgramGoal goal) async {
+  Future<void> createProgramGoal(String userId, String programRunId, ProgramGoal goal) async {
     final id = _uuid.v4();
     await ps.db.execute(
       '''
-      INSERT INTO dim_program_goal
-        (id, program_goal_id, program_id, user_id, goal_text, custom_exercise_id,
+      INSERT INTO fact_program_goal
+        (id, program_goal_id, program_run_id, user_id, goal_text, custom_exercise_id,
          target_weight, target_reps, goal_created_date)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       ''',
       [
-        id, id, programId, userId, goal.text, goal.exerciseId,
+        id, id, programRunId, userId, goal.text, goal.exerciseId,
         goal.targetWeight, goal.targetReps, DateTime.now().toUtc().toIso8601String(),
       ],
     );
   }
 
-  Future<List<ProgramGoal>> fetchProgramGoals(String programId) async {
+  Future<List<ProgramGoal>> fetchProgramGoals(String programRunId) async {
     final rows = await ps.db.getAll(
-      'SELECT * FROM dim_program_goal WHERE program_id = ? ORDER BY goal_created_date DESC',
-      [programId],
+      'SELECT * FROM fact_program_goal WHERE program_run_id = ? ORDER BY goal_created_date DESC',
+      [programRunId],
     );
     return rows.map((r) => ProgramGoal.fromMap(r)).toList();
+  }
+
+  Future<void> deleteProgramGoal(String goalId) async {
+    await ps.db.execute(
+      'DELETE FROM fact_program_goal WHERE program_goal_id = ?',
+      [goalId],
+    );
   }
 }

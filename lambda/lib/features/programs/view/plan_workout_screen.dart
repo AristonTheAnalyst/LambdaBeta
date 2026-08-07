@@ -129,6 +129,44 @@ class _PlanWorkoutScreenState extends State<PlanWorkoutScreen> with UnsavedChang
       builder: (context, state, _) {
         final workout = state.editingWorkout;
         if (workout == null) {
+          final err = state.error;
+          if (err != null) {
+            // A failed open must never hang on the loading spinner — show the
+            // reason and a way out instead.
+            return Scaffold(
+              backgroundColor: AppColors.bg,
+              body: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(AppSpacing.xl),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('Could not open workout',
+                          style: AppFonts.ui(
+                              fontSize: AppTextStyles.lg,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.primary)),
+                      const SizedBox(height: AppSpacing.sm),
+                      Text(err,
+                          style: AppFonts.ui(
+                              fontSize: AppTextStyles.sm,
+                              color: AppColors.danger),
+                          textAlign: TextAlign.center),
+                      const SizedBox(height: AppSpacing.lg),
+                      TextButton(
+                        onPressed: () => Navigator.of(context, rootNavigator: true)
+                            .pop(),
+                        child: Text('Close',
+                            style: AppFonts.ui(
+                                color: AppColors.accent,
+                                fontWeight: FontWeight.w600)),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          }
           return Scaffold(
             backgroundColor: AppColors.bg,
             body: Center(child: CircularProgressIndicator(color: AppColors.accent)),
@@ -219,9 +257,6 @@ class _PlanWorkoutScreenState extends State<PlanWorkoutScreen> with UnsavedChang
                           _PlanExerciseTabBar(
                             slots: state.workoutExerciseSlots,
                             activeIndex: state.activeSlotIndex,
-                            setCounts: state.workoutExerciseSlots
-                                .map((slot) => state.plannedSetsFor(slot.exerciseSequenceOrder).length)
-                                .toList(),
                             exerciseNames: state.workoutExerciseSlots.map((slot) {
                               final detail = state.exerciseDetailMap[slot.exerciseId];
                               return toProperCase(detail?.name ?? '');
@@ -230,6 +265,7 @@ class _PlanWorkoutScreenState extends State<PlanWorkoutScreen> with UnsavedChang
                             onAdd: _showAddExercise,
                             onReorder: (oldIndex, newIndex) =>
                                 widget.viewModel.reorderExercises(oldIndex, newIndex),
+                            onRemove: (i) => _confirmRemoveExercise(i),
                           ),
                           const SizedBox(height: AppSpacing.md),
                           if (state.activeSlot != null)
@@ -355,6 +391,38 @@ class _PlanWorkoutScreenState extends State<PlanWorkoutScreen> with UnsavedChang
     );
   }
 
+  void _confirmRemoveExercise(int index) {
+    final state = widget.viewModel.state.value;
+    if (index < 0 || index >= state.workoutExerciseSlots.length) return;
+    final slot = state.workoutExerciseSlots[index];
+    final name = toProperCase(state.exerciseDetailMap[slot.exerciseId]?.name ?? 'exercise');
+    final setCount = state.plannedSetsFor(slot.exerciseSequenceOrder).length;
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: Text('Remove Exercise',
+            style: AppFonts.ui(fontWeight: FontWeight.w800, color: AppColors.danger)),
+        content: Text(
+            'Remove $name from this workout?\n$setCount set${setCount == 1 ? '' : 's'} will be removed.',
+            style: AppFonts.ui(color: AppColors.muted)),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: Text('Keep', style: AppFonts.ui(color: AppColors.muted))),
+          TextButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                widget.viewModel.removePlannedExerciseGroup(index);
+              },
+              child: Text('Remove',
+                  style: AppFonts.ui(color: AppColors.danger, fontWeight: FontWeight.w600))),
+        ],
+      ),
+    );
+  }
+
   void _confirmDelete() {
     showDialog<void>(
       context: context,
@@ -415,20 +483,20 @@ class _PlanExerciseTabBar extends StatelessWidget {
   const _PlanExerciseTabBar({
     required this.slots,
     required this.activeIndex,
-    required this.setCounts,
     required this.exerciseNames,
     required this.onTap,
     required this.onAdd,
     this.onReorder,
+    this.onRemove,
   });
 
   final List<PlanExerciseSlot> slots;
   final int activeIndex;
-  final List<int> setCounts;
   final List<String> exerciseNames;
   final ValueChanged<int> onTap;
   final VoidCallback onAdd;
   final void Function(int oldIndex, int newIndex)? onReorder;
+  final void Function(int index)? onRemove;
 
   @override
   Widget build(BuildContext context) {
@@ -457,9 +525,9 @@ class _PlanExerciseTabBar extends StatelessWidget {
                               child: ExerciseTabChip(
                                 label: exerciseNames.length > i ? exerciseNames[i] : '',
                                 isActive: i == activeIndex,
-                                count: setCounts.length > i ? setCounts[i] : 0,
                                 activeColor: AppColors.success,
                                 onTap: () => onTap(i),
+                                onRemove: onRemove != null ? () => onRemove!(i) : null,
                               ),
                             ),
                           ),
@@ -475,9 +543,9 @@ class _PlanExerciseTabBar extends StatelessWidget {
                         ExerciseTabChip(
                           label: exerciseNames.length > i ? exerciseNames[i] : '',
                           isActive: i == activeIndex,
-                          count: setCounts.length > i ? setCounts[i] : 0,
                           activeColor: AppColors.success,
                           onTap: () => onTap(i),
+                          onRemove: onRemove != null ? () => onRemove!(i) : null,
                         ),
                         const SizedBox(width: 6),
                       ],

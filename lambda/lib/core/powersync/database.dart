@@ -32,7 +32,7 @@ const _pkColumns = {
   'fact_rest': 'rest_id',
   'dim_workout': 'workout_id',
   'dim_workout_set': 'workout_set_id',
-  'dim_program_goal': 'program_goal_id',
+  'fact_program_goal': 'program_goal_id',
 };
 
 // dim_exercise_variation_bridge is the one table with no single-column PK —
@@ -75,6 +75,7 @@ final _fatalCodes = [
   RegExp(r'^22...$'), // data exception
   RegExp(r'^23...$'), // integrity constraint violation
   RegExp(r'^42501$'), // insufficient privilege / RLS
+  RegExp(r'^PGRST205$'), // table not found in schema cache
 ];
 
 class SupabaseConnector extends PowerSyncBackendConnector {
@@ -124,6 +125,7 @@ class SupabaseConnector extends PowerSyncBackendConnector {
         if (op.op == UpdateType.put) {
           final data = _decodeArrayColumns(op.opData ?? {});
           if (compositeKey != null) {
+            data.remove('id');
             await table.upsert(data, onConflict: compositeKey.join(','));
           } else {
             data[pkCol] = op.id;
@@ -134,7 +136,9 @@ class SupabaseConnector extends PowerSyncBackendConnector {
             final localRows = await database
                 .getAll('SELECT * FROM ${op.table} WHERE id = ?', [op.id]);
             if (localRows.isEmpty) continue;
-            var query = table.update(_decodeArrayColumns(op.opData!));
+            final patchData = _decodeArrayColumns(op.opData!);
+            patchData.remove('id');
+            var query = table.update(patchData);
             for (final col in compositeKey) {
               query = query.eq(col, localRows.first[col]);
             }
@@ -143,7 +147,18 @@ class SupabaseConnector extends PowerSyncBackendConnector {
             await table.update(_decodeArrayColumns(op.opData!)).eq(pkCol, op.id);
           }
         } else if (op.op == UpdateType.delete) {
-          await table.delete().eq(pkCol, op.id);
+          if (compositeKey != null) {
+            final localRows = await database
+                .getAll('SELECT * FROM ${op.table} WHERE id = ?', [op.id]);
+            if (localRows.isEmpty) continue;
+            var query = table.delete();
+            for (final col in compositeKey) {
+              query = query.eq(col, localRows.first[col]);
+            }
+            await query;
+          } else {
+            await table.delete().eq(pkCol, op.id);
+          }
         }
       }
       await transaction.complete();
@@ -171,6 +186,20 @@ Future<void> openDatabase() async {
   );
   await db.initialize();
 
+  // Purge stale CRUD entries for tables that have been renamed or dropped.
+  // These entries will never succeed on upload and block the checkpoint from
+  // applying, stalling all sync. Only `dim_program_goal` is handled here
+  // right now — add to the list if more tables are renamed in the future.
+  try {
+    await db.writeTransaction((tx) async {
+      await tx.execute(
+        "DELETE FROM ps_crud WHERE table_name = 'dim_program_goal'",
+      );
+    });
+  } catch (_) {
+    // ps_crud may not exist yet if this is the very first run — harmless.
+  }
+
   SupabaseConnector? connector;
 
   if (isLoggedIn()) {
@@ -196,6 +225,21 @@ Future<void> openDatabase() async {
 
 Future<void> disconnectAndClear() async {
   await db.disconnectAndClear();
+}
+
+/// Rebuilds ONLY the local PowerSync database from the current schema.
+///
+/// The on-device SQLite can be left with a stale schema after schema changes
+/// (renamed tables, changed column types, new columns).  PowerSync then fails
+/// to reconcile it and `ps.db.execute()` writes can hang indefinitely.
+/// `disconnectAndClear` wipes the local DB and internal tracking, and
+/// reconnecting forces a fresh rebuild against `schema.dart` — while keeping
+/// the Supabase session and all server data intact.
+Future<void> rebuildLocalDatabase() async {
+  await db.disconnectAndClear();
+  if (isLoggedIn()) {
+    db.connect(connector: SupabaseConnector(db));
+  }
 }
 
 /// Wipes every row from **both the Supabase server and the local database**,

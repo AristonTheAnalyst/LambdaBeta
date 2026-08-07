@@ -36,6 +36,10 @@ class SlidePagesController {
     }
   }
 
+  /// The page the controller is currently on (or will be after the PageView
+  /// is laid out) — 0 = start, 1 = active.
+  int get currentPage => _initialPage;
+
   void dispose() => _pageController?.dispose();
 }
 

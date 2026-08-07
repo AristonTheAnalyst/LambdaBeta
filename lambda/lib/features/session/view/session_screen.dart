@@ -43,7 +43,15 @@ class _SessionScreenState extends State<SessionScreen> {
       // Returning to the tab: refresh the current program / planned workout so
       // a newly created or begun program shows without a full restart.
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _vm.refreshProgram();
+        if (mounted) {
+          _vm.refreshProgram();
+          // If the workout ended while we were on another tab, the cached VM
+          // still points at page 1 with no active workoutId — reset to the
+          // start page so the user isn't stuck staring at an empty card.
+          if (!_vm.hasActiveWorkout && _vm.slidePagesController.currentPage > 0) {
+            _vm.slidePagesController.resetToPage(0);
+          }
+        }
       });
     } else {
       _vm = SessionViewModel();
@@ -103,6 +111,37 @@ class _SessionScreenState extends State<SessionScreen> {
     );
   }
 
+  void _confirmRemoveExercise(int index) {
+    final slot = _vm.exerciseSlots[index];
+    // Get the display name for the first exercise in the slot
+    final exerciseId = slot.activeExerciseId;
+    final name = _vm.exerciseDetailMap[exerciseId]?.name ?? 'exercise';
+    final setCount = _vm.sets.where((s) => slot.exerciseIds.contains(s.exerciseId)).length;
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: Text('Remove Exercise', style: TextStyle(color: AppColors.danger)),
+        content: Text(
+            'Remove $name from this workout?\n$setCount set${setCount == 1 ? '' : 's'} will be removed.',
+            style: TextStyle(color: AppColors.muted)),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: Text('Keep', style: TextStyle(color: AppColors.muted))),
+          TextButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                _vm.removeExerciseSlot(index);
+              },
+              child: Text('Remove',
+                  style: TextStyle(color: AppColors.danger, fontWeight: FontWeight.w600))),
+        ],
+      ),
+    );
+  }
+
   void _confirmCancelWorkout() {
     showDialog<void>(
       context: context,
@@ -157,7 +196,7 @@ class _SessionScreenState extends State<SessionScreen> {
                     controller: _vm.slidePagesController,
                     children: [
                       _StartPage(vm: _vm, startNotesCtrl: _startNotesCtrl),
-                      _ActivePage(vm: _vm, onFinishWorkout: _openEndWorkoutModal),
+                      _ActivePage(vm: _vm, onFinishWorkout: _openEndWorkoutModal, onRemoveExercise: _confirmRemoveExercise),
                     ],
                   ),
                 ),
@@ -184,116 +223,92 @@ class _StartPage extends StatelessWidget {
           child: ListView(
             padding: const EdgeInsets.all(AppSpacing.lg),
             children: [
-              if (vm.exercises.isEmpty && !vm.catalogLoading)
-                Container(
-                  padding: const EdgeInsets.all(AppSpacing.lg),
-                  decoration: BoxDecoration(
-                    color: AppColors.surface,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: AppColors.border),
-                  ),
-                  child: Column(
-                    children: [
-                      Text('No exercises set up yet',
-                          style: TextStyle(
-                              fontSize: AppTextStyles.md, fontWeight: FontWeight.w600, color: AppColors.primary),
-                          textAlign: TextAlign.center),
-                      SizedBox(height: AppSpacing.sm),
-                      Text('Go to Exercises → Library to create your first exercise before logging a workout.',
-                          style: TextStyle(fontSize: AppTextStyles.sm, color: AppColors.muted),
-                          textAlign: TextAlign.center),
-                    ],
-                  ),
-                ),
-              if (vm.exercises.isNotEmpty) ...[
-                if (vm.selectedPlannedWorkout != null) ...[
-                  GestureDetector(
-                    onTap: vm.availableWorkouts.length > 1
-                        ? () => _showWorkoutPicker(context, vm)
-                        : null,
-                    child: Container(
-                      padding: const EdgeInsets.all(AppSpacing.md),
-                      decoration: BoxDecoration(
-                        color: AppColors.successBg,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                            color: AppColors.success.withValues(alpha: 0.3)),
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text('Week ${vm.programProgress!.weekNumber} · ${vm.programProgress!.program.name}',
-                                    style: AppFonts.mono(fontSize: 9, letterSpacing: 0.6, color: AppColors.success)),
-                                const SizedBox(height: 2),
-                                Text(vm.selectedPlannedWorkout!.name,
-                                    style: AppFonts.ui(
-                                        fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.primary)),
-                              ],
-                            ),
+              if (vm.selectedPlannedWorkout != null) ...[
+                GestureDetector(
+                  onTap: vm.availableWorkouts.length > 1
+                      ? () => _showWorkoutPicker(context, vm)
+                      : null,
+                  child: Container(
+                    padding: const EdgeInsets.all(AppSpacing.md),
+                    decoration: BoxDecoration(
+                      color: AppColors.successBg,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                          color: AppColors.success.withValues(alpha: 0.3)),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Week ${vm.programProgress!.weekNumber} · ${vm.programProgress!.program.name}',
+                                  style: AppFonts.mono(fontSize: 9, letterSpacing: 0.6, color: AppColors.success)),
+                              const SizedBox(height: 2),
+                              Text(vm.selectedPlannedWorkout!.name,
+                                  style: AppFonts.ui(
+                                      fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.primary)),
+                            ],
                           ),
-                          if (vm.availableWorkouts.length > 1)
-                            Icon(Icons.swap_vert, size: 18, color: AppColors.success),
-                        ],
-                      ),
+                        ),
+                        if (vm.availableWorkouts.length > 1)
+                          Icon(Icons.swap_vert, size: 18, color: AppColors.success),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: AppSpacing.lg),
-                ],
-                Text('How do you expect to perform?',
-                    style: TextStyle(fontSize: AppTextStyles.sm, fontWeight: FontWeight.w600, color: AppColors.primary)),
-                const SizedBox(height: AppSpacing.sm),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.start,
-                  children: List.generate(5, (i) {
-                    final n = i + 1;
-                    final selected = vm.sessionFeeling == n;
-                    return GestureDetector(
-                      onTap: () => vm.setSessionFeeling(n),
-                      child: Container(
-                        width: 52,
-                        height: 52,
-                        margin: const EdgeInsets.only(right: AppSpacing.sm),
-                        decoration: BoxDecoration(
-                          color: selected ? AppColors.accent : AppColors.surface,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: selected ? AppColors.accent : AppColors.border),
-                        ),
-                        child: Center(
-                          child: Text('$n',
-                              style: TextStyle(
-                                  fontSize: AppTextStyles.lg,
-                                  fontWeight: FontWeight.w700,
-                                  color: selected ? AppColors.accentText : AppColors.primary)),
-                        ),
-                      ),
-                    );
-                  }),
                 ),
                 const SizedBox(height: AppSpacing.lg),
-                LambdaInput(
-                  controller: startNotesCtrl,
-                  label: 'Pre-workout notes (optional)',
-                  placeholder: 'Sleep and eat well?\nHydrated?\nGoals today?',
-                  onChanged: (v) => vm.startNotes = v,
-                ),
               ],
+              Text('How do you expect to perform?',
+                  style: TextStyle(fontSize: AppTextStyles.sm, fontWeight: FontWeight.w600, color: AppColors.primary)),
+              const SizedBox(height: AppSpacing.sm),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.start,
+                children: List.generate(5, (i) {
+                  final n = i + 1;
+                  final selected = vm.sessionFeeling == n;
+                  return GestureDetector(
+                    onTap: () => vm.setSessionFeeling(n),
+                    child: Container(
+                      width: 52,
+                      height: 52,
+                      margin: const EdgeInsets.only(right: AppSpacing.sm),
+                      decoration: BoxDecoration(
+                        color: selected ? AppColors.accent : AppColors.surface,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: selected ? AppColors.accent : AppColors.border),
+                      ),
+                      child: Center(
+                        child: Text('$n',
+                            style: TextStyle(
+                                fontSize: AppTextStyles.lg,
+                                fontWeight: FontWeight.w700,
+                                color: selected ? AppColors.accentText : AppColors.primary)),
+                      ),
+                    ),
+                  );
+                }),
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              LambdaInput(
+                controller: startNotesCtrl,
+                label: 'Pre-workout notes (optional)',
+                placeholder: 'Sleep and eat well?\nHydrated?\nGoals today?',
+                onChanged: (v) => vm.startNotes = v,
+              ),
             ],
           ),
         ),
-        if (vm.exercises.isNotEmpty)
-          Container(
-            padding: EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.lg, AppSpacing.lg, bottomInset + AppSpacing.lg),
-            decoration: BoxDecoration(border: Border(top: BorderSide(color: AppColors.border, width: 0.5))),
-            child: LambdaButton(
-              label: 'Start Workout',
-              onPressed: vm.startWorkout,
-              loading: vm.startLoading,
-              disabled: vm.startLoading,
-            ),
+        Container(
+          padding: EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.lg, AppSpacing.lg, bottomInset + AppSpacing.lg),
+          decoration: BoxDecoration(border: Border(top: BorderSide(color: AppColors.border, width: 0.5))),
+          child: LambdaButton(
+            label: 'Start Workout',
+            onPressed: vm.startWorkout,
+            loading: vm.startLoading,
+            disabled: vm.startLoading,
           ),
+        ),
       ],
     );
   }
@@ -404,10 +419,11 @@ class _StartPage extends StatelessWidget {
 // ── Page 1: Active workout ─────────────────────────────────────────────────────
 
 class _ActivePage extends StatelessWidget {
-  const _ActivePage({required this.vm, required this.onFinishWorkout});
+  const _ActivePage({required this.vm, required this.onFinishWorkout, required this.onRemoveExercise});
 
   final SessionViewModel vm;
   final VoidCallback onFinishWorkout;
+  final void Function(int index) onRemoveExercise;
 
   String _elapsedLabel() {
     final started = vm.workoutStartedAt;
@@ -451,7 +467,7 @@ class _ActivePage extends StatelessWidget {
         const SizedBox(height: AppSpacing.sm),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-          child: ExerciseTabBar(vm: vm),
+          child: ExerciseTabBar(vm: vm, onRemove: onRemoveExercise),
         ),
         const SizedBox(height: AppSpacing.sm),
         Expanded(

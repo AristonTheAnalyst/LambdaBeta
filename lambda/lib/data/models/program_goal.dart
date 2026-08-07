@@ -3,7 +3,7 @@
 class ProgramGoal {
   const ProgramGoal({
     required this.goalId,
-    required this.programId,
+    required this.programRunId,
     required this.userId,
     this.text,
     this.exerciseId,
@@ -12,7 +12,7 @@ class ProgramGoal {
   });
 
   final String goalId;
-  final String programId;
+  final String programRunId;
   final String userId;
 
   /// Free-text goal. Set when there's no exercise target.
@@ -28,7 +28,7 @@ class ProgramGoal {
 
   factory ProgramGoal.fromMap(Map<String, dynamic> map) => ProgramGoal(
         goalId: map['program_goal_id'] as String,
-        programId: map['program_id'] as String,
+        programRunId: map['program_run_id'] as String,
         userId: map['user_id'] as String,
         text: map['goal_text'] as String?,
         exerciseId: map['custom_exercise_id'] as String?,
@@ -50,7 +50,7 @@ class ProgramGoal {
 
   Map<String, dynamic> toMap() => {
         'program_goal_id': goalId,
-        'program_id': programId,
+        'program_run_id': programRunId,
         'user_id': userId,
         'goal_text': text,
         'custom_exercise_id': exerciseId,
