@@ -11,7 +11,6 @@ import '../../../../data/models/exercise_detail.dart';
 import '../../../../data/models/planned_workout.dart';
 import '../../../../data/models/program_goal.dart';
 import '../../../../data/models/program_run.dart';
-import '../../../../data/repositories/program_repository.dart';
 import '../../../../data/repositories/workout_plan_repository.dart';
 import '../../../../shared/widgets/app_card.dart';
 import '../../../../shared/widgets/glass_button.dart';
