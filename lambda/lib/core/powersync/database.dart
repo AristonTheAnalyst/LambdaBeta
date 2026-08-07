@@ -175,8 +175,31 @@ class SupabaseConnector extends PowerSyncBackendConnector {
 
 late final PowerSyncDatabase db;
 
-bool isLoggedIn() =>
-    Supabase.instance.client.auth.currentSession?.accessToken != null;
+/// Registered by features (e.g. the session screen) to release their cached
+/// in-memory state when the user signs out — the local DB is being cleared,
+/// so any cached ViewModels must not survive into the next user's session.
+VoidCallback? onSignOutReset;
+
+/// Invoked by the auth handler in [openDatabase] after the local DB is
+/// cleared on sign-out. Kept here (core) rather than imported from a feature
+/// to preserve the core → features dependency direction.
+void resetForSignOut() {
+  final reset = onSignOutReset;
+  onSignOutReset = null;
+  reset?.call();
+}
+
+/// Whether the local app has a usable authenticated session — a session
+/// whose token has already expired is treated as signed out so PowerSync
+/// stops retrying a stale credential and the router can redirect.
+bool isLoggedIn() {
+  final session = Supabase.instance.client.auth.currentSession;
+  if (session?.accessToken == null) return false;
+  final expiresAt = session!.expiresAt;
+  if (expiresAt == null) return true;
+  // Buffer so a token expiring in the next 30s is already considered dead.
+  return DateTime.now().millisecondsSinceEpoch / 1000 < (expiresAt - 30);
+}
 
 Future<void> openDatabase() async {
   db = PowerSyncDatabase(
@@ -214,7 +237,12 @@ Future<void> openDatabase() async {
         db.connect(connector: connector!);
       case AuthChangeEvent.signedOut:
         connector = null;
-        await db.disconnect();
+        // Wipe the previous user's on-device rows AND their queued offline
+        // mutations — otherwise the next user on this device sees stale data
+        // and the previous user's ps_crud entries upload (and are discarded)
+        // under the new user's token.
+        await db.disconnectAndClear();
+        resetForSignOut();
       case AuthChangeEvent.tokenRefreshed:
         connector?.prefetchCredentials();
       default:

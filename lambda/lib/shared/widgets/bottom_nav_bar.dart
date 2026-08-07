@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_fonts.dart';
@@ -16,13 +17,15 @@ class BottomNavItem {
   final String route;
 }
 
-const _navItems = [
-  BottomNavItem(label: 'Statistics', icon: Icons.bar_chart, route: '/statistics'),
-  BottomNavItem(label: 'Logs',       icon: Icons.list_alt,  route: '/logs'),
-  BottomNavItem(label: 'Session',    icon: Icons.play_circle_outline, route: '/session'),
-  BottomNavItem(label: 'Exercises',  icon: Icons.fitness_center, route: '/exercises'),
-  BottomNavItem(label: 'Profile',    icon: Icons.person_outline, route: '/profile'),
-  BottomNavItem(label: 'Dev',        icon: Icons.code,      route: '/dev'),
+/// Dev tools (and the destructive server-side "Clear All Tables" action
+/// behind them) must never reach shipping builds — gate on debug/profile.
+final _navItems = [
+  const BottomNavItem(label: 'Statistics', icon: Icons.bar_chart, route: '/statistics'),
+  const BottomNavItem(label: 'Logs',       icon: Icons.list_alt,  route: '/logs'),
+  const BottomNavItem(label: 'Session',    icon: Icons.play_circle_outline, route: '/session'),
+  const BottomNavItem(label: 'Exercises',  icon: Icons.fitness_center, route: '/exercises'),
+  const BottomNavItem(label: 'Profile',    icon: Icons.person_outline, route: '/profile'),
+  if (!kReleaseMode) const BottomNavItem(label: 'Dev', icon: Icons.code, route: '/dev'),
 ];
 
 class BottomNavBar extends StatelessWidget {

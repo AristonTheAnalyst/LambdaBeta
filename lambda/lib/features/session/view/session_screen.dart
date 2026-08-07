@@ -5,6 +5,7 @@ import '../../../core/styles/app_radius.dart';
 import '../../../core/styles/app_spacing.dart';
 import '../../../core/styles/app_text_styles.dart';
 import '../../../core/utils/workout_format.dart';
+import '../../../core/powersync/database.dart' as ps;
 import '../../../shared/widgets/glass_button.dart';
 import '../../../shared/widgets/lambda_button.dart';
 import '../../../shared/widgets/lambda_input.dart';
@@ -29,6 +30,14 @@ class _SessionScreenState extends State<SessionScreen> {
 
   static void _clearCachedVm() => _cachedVm = null;
 
+  /// Releases the cached ViewModel (and cancels its rest timer) on sign-out —
+  /// the local DB is being cleared, so the next sign-in must build fresh.
+  static void _resetCachedVmOnSignOut() {
+    final vm = _cachedVm;
+    _cachedVm = null;
+    vm?.dispose();
+  }
+
   late final SessionViewModel _vm;
 
   final _startNotesCtrl = TextEditingController();
@@ -37,6 +46,7 @@ class _SessionScreenState extends State<SessionScreen> {
   @override
   void initState() {
     super.initState();
+    ps.onSignOutReset = _resetCachedVmOnSignOut;
     if (_cachedVm != null) {
       // Reuse across hot reload — workout state stays intact
       _vm = _cachedVm!;
@@ -70,6 +80,9 @@ class _SessionScreenState extends State<SessionScreen> {
 
   @override
   void dispose() {
+    if (ps.onSignOutReset == _resetCachedVmOnSignOut) {
+      ps.onSignOutReset = null;
+    }
     _vm.removeListener(_onVmChanged);
     _startNotesCtrl.dispose();
     _endNotesCtrl.dispose();

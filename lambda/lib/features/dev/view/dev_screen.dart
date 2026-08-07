@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -71,8 +72,11 @@ class DevScreen extends StatelessWidget {
                       ],
                     ),
                   ),
-                  const SizedBox(height: AppSpacing.sm),
-                  AppCard(
+                  // "Clear All Tables" permanently deletes the user's server
+                  // data — debug-only, never visible in any shipping build.
+                  if (kDebugMode) ...[
+                    const SizedBox(height: AppSpacing.sm),
+                    AppCard(
                     onTap: () => _confirmClearTables(context),
                     child: Row(
                       children: [
@@ -97,6 +101,7 @@ class DevScreen extends StatelessWidget {
                       ],
                     ),
                   ),
+                  ],
                   const SizedBox(height: AppSpacing.xl),
                   AppCard(
                     child: Column(

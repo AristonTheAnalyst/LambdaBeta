@@ -173,36 +173,50 @@ class ProgramRepository {
   }
 
   Future<void> deleteProgram(String programId) async {
-    // Delete planned sets for every planned workout under this program.
-    await ps.db.execute(
-      '''
-      DELETE FROM dim_planned_set
-      WHERE planned_workout_id IN (
-        SELECT planned_workout_id FROM dim_planned_workout WHERE program_id = ?
-      )
-      ''',
-      [programId],
-    );
-    // Delete the planned workouts themselves.
-    await ps.db.execute(
-      'DELETE FROM dim_planned_workout WHERE program_id = ?',
-      [programId],
-    );
-    // Delete program goals (goals are scoped to program runs).
-    await ps.db.execute(
-      '''
-      DELETE FROM fact_program_goal
-      WHERE program_run_id IN (
-        SELECT program_run_id FROM fact_program_run WHERE program_id = ?
-      )
-      ''',
-      [programId],
-    );
-    // Delete the program.
-    await ps.db.execute(
-      'DELETE FROM dim_program WHERE program_id = ?',
-      [programId],
-    );
+    // All deletes in one transaction so the local DB mirrors the server-side
+    // FK cascade atomically — deleting the program here also removes its runs
+    // and goals, otherwise a stale local run (or an offline delete) leaves the
+    // program "resurrecting" after sync. Dependency order: sets → workouts →
+    // goals → runs → program.
+    await ps.db.writeTransaction((tx) async {
+      // Delete planned sets for every planned workout under this program.
+      await tx.execute(
+        '''
+        DELETE FROM dim_planned_set
+        WHERE planned_workout_id IN (
+          SELECT planned_workout_id FROM dim_planned_workout WHERE program_id = ?
+        )
+        ''',
+        [programId],
+      );
+      // Delete the planned workouts themselves.
+      await tx.execute(
+        'DELETE FROM dim_planned_workout WHERE program_id = ?',
+        [programId],
+      );
+      // Delete program goals (goals are scoped to program runs).
+      await tx.execute(
+        '''
+        DELETE FROM fact_program_goal
+        WHERE program_run_id IN (
+          SELECT program_run_id FROM fact_program_run WHERE program_id = ?
+        )
+        ''',
+        [programId],
+      );
+      // Delete the program's runs — these reference the program server-side
+      // (FK no longer blocks after the cascade migration) and would otherwise
+      // orphan a current run whose progress points at a deleted program.
+      await tx.execute(
+        'DELETE FROM fact_program_run WHERE program_id = ?',
+        [programId],
+      );
+      // Delete the program.
+      await tx.execute(
+        'DELETE FROM dim_program WHERE program_id = ?',
+        [programId],
+      );
+    });
   }
 
   // ── Planned workouts ─────────────────────────────────────────────────────

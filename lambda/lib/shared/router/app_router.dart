@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -150,15 +151,17 @@ abstract final class AppRouter {
               ),
             ],
           ),
-          GoRoute(
-            path: '/dev',
-            builder: (_, _) => DevScreen(),
-            routes: [
-              GoRoute(path: 'gallery',      builder: (_, _) => GalleryScreen()),
-              GoRoute(path: 'experimental', builder: (_, _) => ExperimentalScreen()),
-              GoRoute(path: 'lesson-debug', builder: (_, _) => const LessonDebugScreen()),
-            ],
-          ),
+          // Dev routes exist only in debug/profile builds — never ship them.
+          if (!kReleaseMode)
+            GoRoute(
+              path: '/dev',
+              builder: (_, _) => DevScreen(),
+              routes: [
+                GoRoute(path: 'gallery',      builder: (_, _) => GalleryScreen()),
+                GoRoute(path: 'experimental', builder: (_, _) => ExperimentalScreen()),
+                GoRoute(path: 'lesson-debug', builder: (_, _) => const LessonDebugScreen()),
+              ],
+            ),
         ],
       ),
     ],
