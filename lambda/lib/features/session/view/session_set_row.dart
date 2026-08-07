@@ -11,6 +11,7 @@ import '../../../data/models/workout_set.dart';
 import '../../../shared/utils/pop_dialog.dart';
 import '../../../shared/widgets/dropdown_select.dart';
 import '../../../shared/widgets/swipe_actions.dart';
+import '../../../shared/widgets/variation_name_dialog.dart';
 import '../viewmodel/session_viewmodel.dart';
 import 'notes_modal.dart';
 
@@ -232,33 +233,10 @@ class _SessionSetRowState extends State<SessionSetRow> {
   }
 
   Future<String?> _promptForVariationName() {
-    final ctrl = TextEditingController();
     return showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        title: Text('New Variation', style: TextStyle(color: AppColors.primary)),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          textCapitalization: TextCapitalization.words,
-          style: TextStyle(color: AppColors.primary),
-          decoration: InputDecoration(hintText: 'Variation name', hintStyle: TextStyle(color: AppColors.muted)),
-          onSubmitted: (v) => popDialog(ctx, v),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => popDialog(ctx),
-              child: Text('Cancel', style: TextStyle(color: AppColors.muted))),
-          TextButton(
-              onPressed: () => popDialog(ctx, ctrl.text),
-              child: Text('Create', style: TextStyle(color: AppColors.accent, fontWeight: FontWeight.w600))),
-        ],
-      ),
-    ).then((v) {
-      ctrl.dispose();
-      return v;
-    });
+      builder: (_) => const VariationNameDialog(),
+    );
   }
 
   @override

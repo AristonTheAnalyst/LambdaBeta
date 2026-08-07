@@ -18,6 +18,7 @@ import '../../../shared/widgets/slide_up_modal.dart';
 import '../../../shared/widgets/stats_row.dart';
 import '../../../shared/widgets/swipe_actions.dart';
 import '../../../shared/widgets/dropdown_select.dart';
+import '../../../shared/widgets/variation_name_dialog.dart';
 import '../../session/model/session_local_state.dart' show ExerciseHistorySession;
 import '../../session/view/lessons_modal.dart';
 import '../../session/view/notes_modal.dart';
@@ -1129,33 +1130,10 @@ class _DetailSetRowState extends State<_DetailSetRow> {
   }
 
   Future<String?> _promptForVariationName() {
-    final ctrl = TextEditingController();
     return showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        title: Text('New Variation', style: TextStyle(color: AppColors.primary)),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          textCapitalization: TextCapitalization.words,
-          style: TextStyle(color: AppColors.primary),
-          decoration: InputDecoration(hintText: 'Variation name', hintStyle: TextStyle(color: AppColors.muted)),
-          onSubmitted: (v) => Navigator.of(ctx).pop(v),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: Text('Cancel', style: TextStyle(color: AppColors.muted))),
-          TextButton(
-              onPressed: () => Navigator.of(ctx).pop(ctrl.text),
-              child: Text('Create', style: TextStyle(color: AppColors.accent, fontWeight: FontWeight.w600))),
-        ],
-      ),
-    ).then((v) {
-      ctrl.dispose();
-      return v;
-    });
+      builder: (_) => const VariationNameDialog(),
+    );
   }
 
   @override
