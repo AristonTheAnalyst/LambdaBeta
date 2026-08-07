@@ -304,7 +304,6 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedC
   }
 
   void _openCreateWorkout() {
-    debugPrint('🔄 DETAIL: pushing PlanWorkoutScreen (create)');
     Navigator.of(context, rootNavigator: true)
         .push<bool>(
           MaterialPageRoute(
@@ -312,7 +311,6 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedC
           ),
         )
         .then((_) {
-          debugPrint('🔄 DETAIL: PlanWorkoutScreen popped (create), mounted=$mounted');
           if (mounted) _refreshAfterEdit();
         });
   }
@@ -469,7 +467,6 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedC
       );
       if (ok != true || !mounted) return;
     }
-    debugPrint('🔄 DETAIL: pushing PlanWorkoutScreen (edit: ${w.name})');
     Navigator.of(context, rootNavigator: true)
         .push<bool>(
           MaterialPageRoute(
@@ -477,23 +474,15 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedC
           ),
         )
         .then((_) {
-          debugPrint('🔄 DETAIL: PlanWorkoutScreen popped (edit), mounted=$mounted');
           if (mounted) _refreshAfterEdit();
         });
   }
 
-  /// Refreshes after returning from the workout editor.
+  /// Refreshes after returning from the workout editor by deferring a full
+  /// ViewModel reload past the current frame so the pop transition settles.
   void _refreshAfterEdit() {
-    debugPrint('🔄 DETAIL: _refreshAfterEdit called, deferring to post-frame');
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) {
-        debugPrint('🔄 DETAIL: _refreshAfterEdit post-frame — NOT mounted, aborting');
-        return;
-      }
-      debugPrint('🔄 DETAIL: _refreshAfterEdit post-frame — calling _vm.load()');
-      _vm.load(widget.programId).then((_) {
-        debugPrint('🔄 DETAIL: _vm.load() completed. plannedWorkouts count=${_vm.state.value.plannedWorkouts.length}');
-      });
+      if (mounted) _vm.load(widget.programId);
     });
   }
 

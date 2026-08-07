@@ -7,7 +7,6 @@ import '../../../../core/styles/app_text_styles.dart';
 import '../../../../core/utils/workout_format.dart';
 import '../../../../data/models/program.dart';
 import '../../../../data/models/program_progress.dart';
-import '../../../../shared/router/app_router.dart';
 import '../../../../shared/widgets/app_card.dart';
 import '../../../../shared/widgets/glass_button.dart';
 import '../../../../shared/widgets/lambda_input.dart';
@@ -29,36 +28,33 @@ class ProgramLibraryScreen extends StatefulWidget {
   State<ProgramLibraryScreen> createState() => _ProgramLibraryScreenState();
 }
 
-class _ProgramLibraryScreenState extends State<ProgramLibraryScreen>
-    with RouteAware {
+class _ProgramLibraryScreenState extends State<ProgramLibraryScreen> {
   final _viewModel = ProgramLibraryViewModel();
   final _createController = TextEditingController();
+  bool _needsRefresh = false;
 
   @override
   void initState() {
     super.initState();
     _viewModel.fetchAll();
+    GoRouter.of(context).routerDelegate.addListener(_onRouteChange);
   }
 
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    AppRouter.routeObserver.subscribe(this, ModalRoute.of(context)!);
+  void _onRouteChange() {
+    if (!mounted) return;
+    // Only refresh when we're on a screen that shows programs.
+    final loc = GoRouterState.of(context).uri.toString();
+    if (loc == '/exercises' || loc == '/session') {
+      setState(() => _needsRefresh = true);
+    }
   }
 
   @override
   void dispose() {
-    AppRouter.routeObserver.unsubscribe(this);
+    GoRouter.of(context).routerDelegate.removeListener(_onRouteChange);
     _viewModel.dispose();
     _createController.dispose();
     super.dispose();
-  }
-
-  /// Called when a route on top of this one is popped — refresh the
-  /// program list so edits made in the detail screen are visible.
-  @override
-  void didPopNext() {
-    _viewModel.fetchAll();
   }
 
   void _openCreate() {
@@ -170,6 +166,12 @@ class _ProgramLibraryScreenState extends State<ProgramLibraryScreen>
 
   @override
   Widget build(BuildContext context) {
+    if (_needsRefresh) {
+      _needsRefresh = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _viewModel.fetchAll();
+      });
+    }
     return Scaffold(
       backgroundColor: AppColors.bg,
       body: ValueListenableBuilder<ProgramLibraryState>(

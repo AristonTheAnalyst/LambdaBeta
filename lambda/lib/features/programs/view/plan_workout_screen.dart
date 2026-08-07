@@ -302,10 +302,7 @@ class _PlanWorkoutScreenState extends State<PlanWorkoutScreen> with UnsavedChang
             Positioned(left: 16,
               child: GestureDetector(
                 onTap: () async {
-                  final ok = await confirmBack();
-                  debugPrint('🔄 PLAN: back tapped, confirmBack=$ok, mounted=$mounted, unsaved=${widget.viewModel.state.value.workoutUnsavedChanges}');
-                  if (ok && mounted) {
-                    debugPrint('🔄 PLAN: popping route');
+                  if (await confirmBack() && mounted) {
                     Navigator.of(context, rootNavigator: true).pop();
                   }
                 },
