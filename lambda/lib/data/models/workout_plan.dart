@@ -1,5 +1,6 @@
-/// A standalone planned workout — a single session not tied to a program.
-/// Mirrors dim_planned_workout but lives in its own table.
+/// A planned workout — either standalone (program_id = null) or attached to a
+/// program. Lives in dim_workout; the program_id / sequence_order / day_of_week
+/// columns link it to a program when present.
 class WorkoutPlan {
   const WorkoutPlan({
     required this.workoutId,
@@ -8,6 +9,9 @@ class WorkoutPlan {
     required this.isActive,
     required this.createdDate,
     this.notes,
+    this.programId,
+    this.sequenceOrder,
+    this.dayOfWeek,
   });
 
   final String workoutId;
@@ -16,6 +20,9 @@ class WorkoutPlan {
   final String? notes;
   final bool isActive;
   final DateTime createdDate;
+  final String? programId;
+  final int? sequenceOrder;
+  final int? dayOfWeek;
 
   factory WorkoutPlan.fromMap(Map<String, dynamic> map) => WorkoutPlan(
         workoutId: map['workout_id'] as String,
@@ -24,6 +31,9 @@ class WorkoutPlan {
         notes: map['workout_notes'] as String?,
         isActive: _toBool(map['is_active']),
         createdDate: DateTime.parse(map['workout_created_date'] as String),
+        programId: map['program_id'] as String?,
+        sequenceOrder: map['sequence_order'] as int?,
+        dayOfWeek: map['day_of_week'] as int?,
       );
 
   static bool _toBool(dynamic v) {
@@ -39,5 +49,8 @@ class WorkoutPlan {
         'workout_notes': notes,
         'is_active': isActive,
         'workout_created_date': createdDate.toIso8601String(),
+        'program_id': programId,
+        'sequence_order': sequenceOrder,
+        'day_of_week': dayOfWeek,
       };
 }

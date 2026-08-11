@@ -177,6 +177,9 @@ const schema = Schema([
     Column.text('workout_notes'),
     Column.integer('is_active'),
     Column.text('workout_created_date'),
+    Column.text('program_id'),
+    Column.integer('sequence_order'),
+    Column.integer('day_of_week'),
   ]),
   Table('dim_workout_set', [
     Column.text('workout_set_id'),

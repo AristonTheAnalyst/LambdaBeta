@@ -46,10 +46,12 @@ class WorkoutPlanRepository {
     }
   }
 
-  Future<List<WorkoutPlan>> fetchWorkouts(String userId) async {
+  Future<List<WorkoutPlan>> fetchWorkouts(String userId, {String? programId}) async {
     final rows = await ps.db.getAll(
-      'SELECT * FROM dim_workout WHERE user_id = ? ORDER BY workout_created_date DESC',
-      [userId],
+      programId != null
+          ? 'SELECT * FROM dim_workout WHERE user_id = ? AND program_id = ? AND is_active = 1 ORDER BY sequence_order'
+          : 'SELECT * FROM dim_workout WHERE user_id = ? AND program_id IS NULL AND is_active = 1 ORDER BY workout_created_date DESC',
+      programId != null ? [userId, programId] : [userId],
     );
     return rows.map((r) => WorkoutPlan.fromMap(r)).toList();
   }
@@ -64,7 +66,7 @@ class WorkoutPlanRepository {
   /// (or rename to) the same string and the server accepts a cosmetic
   /// duplicate after sync. Records are keyed by UUID, never by name.
   Future<WorkoutPlan> createWorkout(String userId,
-      {String? name, String? notes}) async {
+      {String? name, String? notes, String? programId, int? sequenceOrder, int? dayOfWeek}) async {
     var finalName = name;
     if (finalName == null) {
       final names = await _workoutNames(userId);
@@ -77,10 +79,12 @@ class WorkoutPlanRepository {
     await ps.db.execute(
       '''
       INSERT INTO dim_workout
-        (id, workout_id, user_id, workout_name, workout_notes, is_active, workout_created_date)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+        (id, workout_id, user_id, workout_name, workout_notes, is_active, workout_created_date,
+         program_id, sequence_order, day_of_week)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ''',
-      [id, id, userId, finalName, notes, 1, createdDate.toIso8601String()],
+      [id, id, userId, finalName, notes, 1, createdDate.toIso8601String(),
+       programId, sequenceOrder, dayOfWeek],
     );
     return WorkoutPlan(
       workoutId: id,
@@ -93,13 +97,18 @@ class WorkoutPlanRepository {
   }
 
   Future<void> updateWorkout(String workoutId,
-      {String? name, String? notes, String userId = ''}) async {
+      {String? name, String? notes, int? dayOfWeek, bool clearDayOfWeek = false, String userId = ''}) async {
     if (name != null) {
       await _assertWorkoutNameUnique(userId, name, excludeWorkoutId: workoutId);
     }
     final updates = <String, dynamic>{};
     if (name != null) updates['workout_name'] = name;
     if (notes != null) updates['workout_notes'] = notes;
+    if (clearDayOfWeek) {
+      updates['day_of_week'] = null;
+    } else if (dayOfWeek != null) {
+      updates['day_of_week'] = dayOfWeek;
+    }
     if (updates.isEmpty) return;
     final setClause = updates.keys.map((k) => '$k = ?').join(', ');
     await ps.db.execute(
