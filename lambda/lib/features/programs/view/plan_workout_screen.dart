@@ -91,13 +91,15 @@ class _PlanWorkoutScreenState extends State<PlanWorkoutScreen> with UnsavedChang
 
   @override
   void dispose() {
+    // Final commit on dispose in case the user navigates back without blurring.
+    // Must happen before controller disposal — commit methods can trigger state
+    // updates that rebuild widgets referencing these controllers.
+    widget.viewModel.commitWorkoutName();
+    widget.viewModel.commitWorkoutNotes();
     _nameCtrl.dispose();
     _notesCtrl.dispose();
     _nameFocus.dispose();
     _notesFocus.dispose();
-    // Final commit on dispose in case the user navigates back without blurring
-    widget.viewModel.commitWorkoutName();
-    widget.viewModel.commitWorkoutNotes();
     super.dispose();
   }
 
