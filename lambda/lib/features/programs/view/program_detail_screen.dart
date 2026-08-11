@@ -181,6 +181,34 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedC
     return 'duration not set';
   }
 
+  Future<void> _confirmEndRun(BuildContext context) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: Text('End program?',
+            style: AppFonts.ui(fontWeight: FontWeight.w600, color: AppColors.primary)),
+        content: Text(
+          'Your progress will be saved. You can start this program again later.',
+          style: AppFonts.ui(color: AppColors.muted),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text('Cancel', style: AppFonts.ui(color: AppColors.muted)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text('End', style: AppFonts.ui(color: AppColors.danger)),
+          ),
+        ],
+      ),
+    );
+    if (ok == true) {
+      await _vm.endCurrentRun();
+    }
+  }
+
   /// Edits the active run's duration config while the program is running.
   Future<void> _editRunConfig(ProgramRun run) async {
     final isCalendar = _vm.state.value.program?.progressionMode == 'calendar';
@@ -642,6 +670,13 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedC
                             compact: true,
                             onPressed: () => _editRunConfig(state.activeRun!),
                           ),
+                          const SizedBox(height: AppSpacing.xs),
+                          GlassButton(
+                            label: 'End Program',
+                            icon: Icons.stop_circle_outlined,
+                            compact: true,
+                            onPressed: () => _confirmEndRun(context),
+                          ),
                         ],
                         if (state.isCurrent && state.activeRun != null) ...[
                           const SizedBox(height: AppSpacing.lg),
@@ -676,6 +711,7 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedC
                           ReorderableListView(
                             shrinkWrap: true,
                             physics: const NeverScrollableScrollPhysics(),
+                            buildDefaultDragHandles: false,
                             onReorderItem: (oldIndex, newIndex) {
                               final updated =
                                   List<PlannedWorkout>.from(state.plannedWorkouts);
@@ -684,16 +720,18 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedC
                               _vm.reorderWorkouts(updated,
                                   updated.map((w) => w.plannedWorkoutId).toList());
                             },
-                            children: state.plannedWorkouts
-                                .map((w) => _PlannedWorkoutRow(
-                                      key: ValueKey(w.plannedWorkoutId),
-                                      workout: w,
-                                      showDayOfWeek: state.isCalendarMode,
-                                      onTap: () => _openEditWorkout(w),
-                                      onDuplicate: () => _vm.duplicatePlannedWorkout(w),
-                                      onDelete: () => _confirmDeleteWorkout(w),
-                                    ))
-                                .toList(),
+                            children: [
+                              for (var i = 0; i < state.plannedWorkouts.length; i++)
+                                _PlannedWorkoutRow(
+                                  key: ValueKey(state.plannedWorkouts[i].plannedWorkoutId),
+                                  workout: state.plannedWorkouts[i],
+                                  showDayOfWeek: state.isCalendarMode,
+                                  index: i,
+                                  onTap: () => _openEditWorkout(state.plannedWorkouts[i]),
+                                  onDuplicate: () => _vm.duplicatePlannedWorkout(state.plannedWorkouts[i]),
+                                  onDelete: () => _confirmDeleteWorkout(state.plannedWorkouts[i]),
+                                ),
+                            ],
                           ),
                         const SizedBox(height: AppSpacing.xxl),
                       ],
@@ -1004,6 +1042,7 @@ class _PlannedWorkoutRow extends StatelessWidget {
     required this.onTap,
     required this.onDuplicate,
     required this.onDelete,
+    this.index,
   });
 
   final PlannedWorkout workout;
@@ -1011,10 +1050,11 @@ class _PlannedWorkoutRow extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onDuplicate;
   final VoidCallback onDelete;
+  final int? index;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
+    final row = Padding(
       padding: const EdgeInsets.only(bottom: AppSpacing.sm),
       child: SwipeActions(
         actions: [
@@ -1074,12 +1114,31 @@ class _PlannedWorkoutRow extends StatelessWidget {
                               : AppColors.danger)),
                 ),
                 const SizedBox(width: AppSpacing.sm),
+              ] else ...[
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: AppColors.accent.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(
+                        color: AppColors.accent.withValues(alpha: 0.4)),
+                  ),
+                  child: Text('Workout ${workout.sequenceOrder}',
+                      style: AppFonts.mono(
+                          fontSize: AppTextStyles.xs,
+                          color: AppColors.accent)),
+                ),
+                const SizedBox(width: AppSpacing.sm),
               ],
-              Icon(Icons.drag_handle, size: 18, color: AppColors.muted),
+              ReorderableDragStartListener(
+                index: index ?? 0,
+                child: Icon(Icons.drag_handle, size: 18, color: AppColors.muted),
+              ),
             ],
           ),
       ),
       ),
     );
+    return row;
   }
 }

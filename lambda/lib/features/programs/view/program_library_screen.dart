@@ -370,7 +370,6 @@ class _ProgramCard extends StatelessWidget {
                   ],
                 ),
               ),
-              Icon(Icons.chevron_right, size: 16, color: AppColors.muted),
             ],
           ),
           if (progress != null) ...[

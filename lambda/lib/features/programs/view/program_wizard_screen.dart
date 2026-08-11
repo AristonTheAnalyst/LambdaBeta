@@ -9,9 +9,11 @@ import '../../../../core/styles/app_text_styles.dart';
 import '../../../../core/utils/workout_format.dart';
 import '../../../../data/models/planned_workout.dart';
 import '../../../../data/repositories/workout_plan_repository.dart';
+import '../../../../shared/widgets/app_card.dart';
 import '../../../../shared/widgets/glass_button.dart';
 import '../../../../shared/widgets/lambda_input.dart';
 import '../../../../shared/widgets/page_header.dart';
+import '../../../../shared/widgets/swipe_actions.dart';
 import '../viewmodel/program_detail_viewmodel.dart';
 import 'plan_workout_screen.dart';
 
@@ -389,7 +391,7 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
           children: [
             Expanded(
               child: GlassButton(
-                label: '+ New',
+                label: 'New',
                 icon: Icons.add,
                 onPressed: _addWorkout,
               ),
@@ -414,43 +416,86 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
                       fontSize: AppTextStyles.sm, color: AppColors.muted)),
             ),
           ),
-        for (var i = 0; i < workouts.length; i++) ...[
-          const SizedBox(height: AppSpacing.sm),
-          GestureDetector(
-            onTap: () => _openWorkout(workouts[i]),
-            child: Container(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.md, vertical: AppSpacing.sm),
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(AppRadius.md),
-                border: Border.all(color: AppColors.border),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(toProperCase(workouts[i].name),
-                        style: AppFonts.ui(
-                            fontSize: AppTextStyles.md,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.primary)),
+        if (workouts.isNotEmpty)
+          ReorderableListView(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            buildDefaultDragHandles: false,
+            onReorderItem: (oldIndex, newIndex) {
+              final updated = List<PlannedWorkout>.from(workouts);
+              final item = updated.removeAt(oldIndex);
+              updated.insert(newIndex, item);
+              _vm.reorderWorkouts(
+                  updated, updated.map((w) => w.plannedWorkoutId).toList());
+            },
+            children: [
+              for (var i = 0; i < workouts.length; i++)
+                Padding(
+                  key: ValueKey(workouts[i].plannedWorkoutId),
+                  padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                  child: SwipeActions(
+                    actions: [
+                      SwipeAction(
+                        icon: Icons.copy_rounded,
+                        label: 'Duplicate',
+                        color: AppColors.accent,
+                        onTap: () => _vm.duplicatePlannedWorkout(workouts[i]),
+                      ),
+                      SwipeAction(
+                        icon: Icons.delete_outline,
+                        label: 'Delete',
+                        color: AppColors.danger,
+                        onTap: () {
+                          _vm.removePlannedWorkout(workouts[i]);
+                          setState(() {});
+                        },
+                      ),
+                    ],
+                    child: AppCard(
+                      onTap: () => _openWorkout(workouts[i]),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(toProperCase(workouts[i].name),
+                                    style: AppFonts.ui(
+                                        fontSize: AppTextStyles.md,
+                                        fontWeight: FontWeight.w600,
+                                        color: AppColors.primary)),
+                                if (workouts[i].notes?.isNotEmpty == true)
+                                  Text(workouts[i].notes!,
+                                      style: AppFonts.ui(
+                                          fontSize: AppTextStyles.xs,
+                                          color: AppColors.muted),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis),
+                              ],
+                            ),
+                          ),
+                          _badge(
+                              _isCalendar
+                                  ? (workouts[i].dayOfWeek != null
+                                      ? _dayOfWeekLabel(workouts[i].dayOfWeek)
+                                      : 'No day assigned')
+                                  : 'Workout ${workouts[i].sequenceOrder}',
+                              _isCalendar && workouts[i].dayOfWeek == null
+                                  ? AppColors.danger
+                                  : AppColors.accent),
+                          const SizedBox(width: AppSpacing.sm),
+                          ReorderableDragStartListener(
+                            index: i,
+                            child: Icon(Icons.drag_handle,
+                                size: 18, color: AppColors.muted),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
-                  _badge(
-                      _isCalendar
-                          ? (workouts[i].dayOfWeek != null
-                              ? _dayOfWeekLabel(workouts[i].dayOfWeek)
-                              : 'No day assigned')
-                          : 'Session ${i + 1}',
-                      _isCalendar && workouts[i].dayOfWeek == null
-                          ? AppColors.danger
-                          : AppColors.accent),
-                  const SizedBox(width: AppSpacing.sm),
-                  Icon(Icons.chevron_right, size: 16, color: AppColors.muted),
-                ],
-              ),
-            ),
+                ),
+            ],
           ),
-        ],
         if (missingDays) ...[
           const SizedBox(height: AppSpacing.md),
           Text('Calendar workouts need a day of the week — open each workout '

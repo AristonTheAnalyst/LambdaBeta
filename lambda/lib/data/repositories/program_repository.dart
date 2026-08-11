@@ -205,7 +205,23 @@ class ProgramRepository {
     // program "resurrecting" after sync. Dependency order: sets → workouts →
     // goals → runs → program.
     await ps.db.writeTransaction((tx) async {
-      // Delete planned sets for every planned workout under this program.
+      // Delete unified workout sets (dim_workout_set) for this program's
+      // workouts, then the workouts themselves.
+      await tx.execute(
+        '''
+        DELETE FROM dim_workout_set
+        WHERE workout_id IN (
+          SELECT workout_id FROM dim_workout WHERE program_id = ?
+        )
+        ''',
+        [programId],
+      );
+      await tx.execute(
+        'DELETE FROM dim_workout WHERE program_id = ?',
+        [programId],
+      );
+      // Delete legacy planned sets / workouts (for any rows created before the
+      // unification, or from an incomplete sync).
       await tx.execute(
         '''
         DELETE FROM dim_planned_set
@@ -215,7 +231,6 @@ class ProgramRepository {
         ''',
         [programId],
       );
-      // Delete the planned workouts themselves.
       await tx.execute(
         'DELETE FROM dim_planned_workout WHERE program_id = ?',
         [programId],
@@ -248,30 +263,31 @@ class ProgramRepository {
   // ── Planned workouts ─────────────────────────────────────────────────────
 
   Future<List<PlannedWorkout>> fetchPlannedWorkouts(String programId) async {
-    // 1. Try the local PowerSync mirror — fast and offline-safe.
+    // 1. Unified table (dim_workout) — all new data lands here.
+    try {
+      final rows = await ps.db.getAll(
+        '''
+        SELECT workout_id AS planned_workout_id, program_id, user_id,
+               workout_name AS planned_workout_name,
+               workout_notes AS planned_workout_notes,
+               sequence_order, day_of_week, is_active
+        FROM dim_workout WHERE program_id = ? AND is_active = 1
+        ORDER BY sequence_order
+        ''',
+        [programId],
+      ).timeout(const Duration(seconds: 3));
+      if (rows.isNotEmpty) return rows.map((r) => PlannedWorkout.fromMap(r)).toList();
+    } catch (_) {}
+
+    // 2. Legacy table (dim_planned_workout) — fallback for pre-unification data.
     try {
       final rows = await ps.db.getAll(
         'SELECT * FROM dim_planned_workout WHERE program_id = ? AND is_active = 1 ORDER BY sequence_order',
         [programId],
       ).timeout(const Duration(seconds: 3));
       if (rows.isNotEmpty) return rows.map((r) => PlannedWorkout.fromMap(r)).toList();
-    } catch (_) {
-      // Local read timed out or failed — fall through to REST.
-    }
-
-    // 2. Fall back to Supabase REST when PowerSync is stuck.
-    try {
-      final remote = await Supabase.instance.client
-          .from('dim_planned_workout')
-          .select('*')
-          .eq('program_id', programId)
-          .eq('is_active', true)
-          .order('sequence_order')
-          .timeout(const Duration(seconds: 5));
-      return remote.map((r) => PlannedWorkout.fromMap(r)).toList();
-    } catch (_) {
-      return [];
-    }
+    } catch (_) {}
+    return [];
   }
 
   Future<PlannedWorkout> createPlannedWorkout(
@@ -357,7 +373,31 @@ class ProgramRepository {
   // ── Planned sets ─────────────────────────────────────────────────────────
 
   Future<List<PlannedSet>> fetchPlannedSets(String plannedWorkoutId) async {
-    // 1. Try the local PowerSync mirror — fast and offline-safe.
+    // 1. Unified table (dim_workout_set) — all new data lands here.
+    try {
+      final rows = await ps.db.getAll(
+        '''
+        SELECT s.workout_set_id AS planned_set_id,
+               s.workout_id AS planned_workout_id,
+               s.user_id, s.custom_exercise_id, s.custom_variation_id,
+               s.exercise_sequence_order,
+               s.workout_set_number AS planned_set_number,
+               s.target_weight, s.target_reps, s.target_duration_seconds,
+               s.target_notes, s.is_active,
+               COALESCE(s.exercise_name, e.exercise_name) AS exercise_name,
+               COALESCE(s.variation_name, v.variation_name) AS variation_name
+        FROM dim_workout_set s
+        LEFT JOIN dim_exercise e ON e.custom_exercise_id = s.custom_exercise_id
+        LEFT JOIN dim_variation v ON v.custom_variation_id = s.custom_variation_id
+        WHERE s.workout_id = ? AND s.is_active = 1
+        ORDER BY s.exercise_sequence_order, s.workout_set_number
+        ''',
+        [plannedWorkoutId],
+      ).timeout(const Duration(seconds: 3));
+      if (rows.isNotEmpty) return rows.map((r) => PlannedSet.fromMap(r)).toList();
+    } catch (_) {}
+
+    // 2. Legacy table (dim_planned_set) — fallback for pre-unification data.
     try {
       final rows = await ps.db.getAll(
         '''
@@ -373,24 +413,8 @@ class ProgramRepository {
         [plannedWorkoutId],
       ).timeout(const Duration(seconds: 3));
       if (rows.isNotEmpty) return rows.map((r) => PlannedSet.fromMap(r)).toList();
-    } catch (_) {
-      // Local read timed out or failed — fall through to REST.
-    }
-
-    // 2. Fall back to Supabase REST.
-    try {
-      final remote = await Supabase.instance.client
-          .from('dim_planned_set')
-          .select('*')
-          .eq('planned_workout_id', plannedWorkoutId)
-          .eq('is_active', true)
-          .order('exercise_sequence_order')
-          .order('planned_set_number')
-          .timeout(const Duration(seconds: 5));
-      return remote.map((r) => PlannedSet.fromMap(r)).toList();
-    } catch (_) {
-      return [];
-    }
+    } catch (_) {}
+    return [];
   }
 
   Future<PlannedSet> createPlannedSet(
@@ -554,25 +578,26 @@ class ProgramRepository {
         numbered: (n) => '${source.name} (Copy $n)');
 
     final newId = _uuid.v4();
+    final createdDate = DateTime.now().toUtc().toIso8601String();
     await ps.db.writeTransaction((tx) async {
       await tx.execute(
         '''
-        INSERT INTO dim_planned_workout
-          (id, planned_workout_id, program_id, user_id, planned_workout_name,
-           planned_workout_notes, sequence_order, day_of_week, is_active)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO dim_workout
+          (id, workout_id, program_id, user_id, workout_name,
+           workout_notes, sequence_order, day_of_week, is_active, workout_created_date)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''',
         [
           newId, newId, source.programId, userId,
           copyName, source.notes,
-          source.sequenceOrder + 1, source.dayOfWeek, 1,
+          source.sequenceOrder + 1, source.dayOfWeek, 1, createdDate,
         ],
       );
 
       // Bump later workouts' sequence_order so the copy doesn't clobber.
       await tx.execute(
         '''
-        UPDATE dim_planned_workout
+        UPDATE dim_workout
         SET sequence_order = sequence_order + 1
         WHERE program_id = ? AND sequence_order > ?
         ''',
@@ -583,9 +608,9 @@ class ProgramRepository {
         final newSetId = _uuid.v4();
         await tx.execute(
           '''
-          INSERT INTO dim_planned_set
-            (id, planned_set_id, planned_workout_id, user_id, custom_exercise_id,
-             custom_variation_id, exercise_sequence_order, planned_set_number,
+          INSERT INTO dim_workout_set
+            (id, workout_set_id, workout_id, user_id, custom_exercise_id,
+             custom_variation_id, exercise_sequence_order, workout_set_number,
              target_weight, target_reps, target_duration_seconds, target_notes,
              is_active, exercise_name, variation_name)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -660,12 +685,13 @@ class ProgramRepository {
 
       for (final workout in source.plannedWorkouts) {
         final newWorkoutId = _uuid.v4();
+        final createdDate = DateTime.now().toUtc().toIso8601String();
         await tx.execute(
           '''
-          INSERT INTO dim_planned_workout
-            (id, planned_workout_id, program_id, user_id, planned_workout_name,
-             planned_workout_notes, sequence_order, day_of_week, is_active)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO dim_workout
+            (id, workout_id, program_id, user_id, workout_name,
+             workout_notes, sequence_order, day_of_week, is_active, workout_created_date)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ''',
           [
             newWorkoutId,
@@ -677,6 +703,7 @@ class ProgramRepository {
             workout.sequenceOrder,
             workout.dayOfWeek,
             1,
+            createdDate,
           ],
         );
 
@@ -685,9 +712,9 @@ class ProgramRepository {
           final newSetId = _uuid.v4();
           await tx.execute(
             '''
-            INSERT INTO dim_planned_set
-              (id, planned_set_id, planned_workout_id, user_id, custom_exercise_id, custom_variation_id,
-               exercise_sequence_order, planned_set_number, target_weight, target_reps,
+            INSERT INTO dim_workout_set
+              (id, workout_set_id, workout_id, user_id, custom_exercise_id, custom_variation_id,
+               exercise_sequence_order, workout_set_number, target_weight, target_reps,
                target_duration_seconds, target_notes, is_active, exercise_name, variation_name)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''',

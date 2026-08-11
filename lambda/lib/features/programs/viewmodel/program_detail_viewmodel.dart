@@ -466,6 +466,23 @@ class ProgramDetailViewModel {
     _loadGoals();
   }
 
+  /// Ends the current run for this program, marking it as no longer active.
+  Future<void> endCurrentRun() async {
+    final s = state.value;
+    // Optimistic: clear immediately so the UI never blocks.
+    state.value = s.copyWith(isCurrent: false, activeRun: null, clearError: true);
+    try {
+      await _runRepo.endCurrentRun(_userId);
+    } catch (e) {
+      // Roll back on failure.
+      state.value = state.value.copyWith(
+        isCurrent: s.isCurrent,
+        activeRun: s.activeRun,
+        error: e.toString(),
+      );
+    }
+  }
+
   /// Updates the active run's duration config (mutable while running).
   Future<void> updateRunConfig({
     int? targetSessions,
@@ -810,7 +827,13 @@ class ProgramDetailViewModel {
   Future<void> duplicatePlannedWorkout(PlannedWorkout source) async {
     final programId = state.value.program?.programId;
     if (programId == null) return;
-    await _workoutPlanRepo.duplicateWorkout(_userId, _toWorkoutPlan(source));
+    // Duplicate via the standalone repo (which copies sets), then patch in the
+    // program linkage columns.
+    final newId = await _workoutPlanRepo.duplicateWorkout(_userId, _toWorkoutPlan(source));
+    await ps.db.execute(
+      'UPDATE dim_workout SET program_id = ?, sequence_order = ?, day_of_week = ? WHERE workout_id = ?',
+      [programId, source.sequenceOrder + 1, source.dayOfWeek, newId],
+    );
     final wps = await _workoutPlanRepo.fetchWorkouts(_userId, programId: programId);
     state.value = state.value.copyWith(plannedWorkouts: wps.map(_toPlannedWorkout).toList());
   }
@@ -830,12 +853,29 @@ class ProgramDetailViewModel {
   /// Removes a planned workout from the current program (from the detail list).
   Future<void> removePlannedWorkout(PlannedWorkout w) async {
     await _workoutPlanRepo.deleteWorkout(w.plannedWorkoutId);
+    final updated = state.value.plannedWorkouts
+        .where((pw) => pw.plannedWorkoutId != w.plannedWorkoutId)
+        .toList();
+    state.value = state.value.copyWith(plannedWorkouts: updated);
   }
 
   Future<void> reorderWorkouts(
       List<PlannedWorkout> reordered, List<String> ids) async {
+    // Update in-memory sequenceOrder so labels refresh immediately.
+    for (var i = 0; i < reordered.length; i++) {
+      reordered[i] = PlannedWorkout(
+        plannedWorkoutId: reordered[i].plannedWorkoutId,
+        programId: reordered[i].programId,
+        userId: reordered[i].userId,
+        name: reordered[i].name,
+        notes: reordered[i].notes,
+        sequenceOrder: i + 1,
+        dayOfWeek: reordered[i].dayOfWeek,
+        isActive: reordered[i].isActive,
+      );
+    }
     state.value = state.value.copyWith(plannedWorkouts: reordered);
-    // Update sequence_order on each workout to match the new order.
+    // Persist sequence_order on each workout to match the new order.
     for (var i = 0; i < ids.length; i++) {
       await ps.db.execute(
         'UPDATE dim_workout SET sequence_order = ? WHERE workout_id = ?',
