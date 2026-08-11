@@ -37,8 +37,8 @@ class PrRepository {
         INSERT INTO fact_pr
           (id, pr_id, user_id, workout_set_id, custom_exercise_id,
            custom_variation_id, weight, reps, achieved_date, pr_type,
-           target_reps, target_weight, is_active)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           target_reps, target_weight, is_propagated, is_active)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''',
         [
           id,
@@ -53,6 +53,7 @@ class PrRepository {
           pr.type.name,
           pr.targetReps,
           pr.targetWeight,
+          pr.isPropagated ? 1 : 0,
           1,
         ],
       );

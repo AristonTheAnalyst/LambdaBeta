@@ -40,7 +40,7 @@ class _ExerciseCardState extends State<ExerciseCard> {
       builder: (context, _) {
         final exerciseId = widget.slot.activeExerciseId;
         final detail = vm.exerciseDetailMap[exerciseId];
-        final name = toProperCase(detail?.name ?? '');
+        final name = toProperCase(vm.exerciseDisplayName(exerciseId));
         final isSuperset = widget.slot.type == SessionSlotType.superset;
         final prCount = vm.prCountFor(exerciseId);
         final lessons = vm.lessonsFor(exerciseId);

@@ -31,6 +31,7 @@ class PrRecord {
     this.variationName,
     this.targetReps,
     this.targetWeight,
+    this.isPropagated = false,
   });
 
   final String exerciseId;
@@ -53,6 +54,12 @@ class PrRecord {
   /// For [PrType.weightMax]: which weight this improves ("most reps at X").
   final num? targetWeight;
 
+  /// True when this PR was inferred from a different performance rather
+  /// than directly achieved.  E.g. a 1RM record produced by a 5-rep set
+  /// is propagated (only the 5RM is explicit).  Weight-max records bumped
+  /// by a heavier lift are also propagated.
+  final bool isPropagated;
+
   /// Short label for the type, e.g. "1RM", "5RM", "100kg".
   String get typeLabel => switch (type) {
         PrType.repMax => '${targetReps ?? ''}RM',
@@ -74,6 +81,7 @@ class PrRecord {
         type: _typeFromString(map['pr_type'] as String? ?? 'repMax'),
         targetReps: _toInt(map['target_reps']),
         targetWeight: _toNumNullable(map['target_weight']),
+        isPropagated: _toBool(map['is_propagated']),
       );
 
   static DateTime _parseDate(dynamic v) {
@@ -92,6 +100,7 @@ class PrRecord {
         'pr_type': type.name,
         'target_reps': targetReps,
         'target_weight': targetWeight,
+        'is_propagated': isPropagated ? 1 : 0,
         'is_active': 1,
       };
 
@@ -105,6 +114,11 @@ class PrRecord {
   static num _toNum(dynamic v) => v is num ? v : double.tryParse('$v') ?? 0;
   static num? _toNumNullable(dynamic v) => v == null ? null : _toNum(v);
   static int? _toInt(dynamic v) => v == null ? null : (v is int ? v : int.tryParse('$v'));
+  static bool _toBool(dynamic v) {
+    if (v is bool) return v;
+    if (v is int) return v != 0;
+    return false;
+  }
 }
 
 /// The effective rep/volume value for a set — first reps entry, or duration
@@ -155,8 +169,11 @@ List<PrRecord> fullPrTimeline(List<PastSetRow> sets) {
     final exCurve = curve.putIfAbsent(s.exerciseId, () => {});
     final exMaxReps = maxRepsAtWeight.putIfAbsent(s.exerciseId, () => {});
 
+    final actualReps = reps.toInt();
+
     // Rep-max curve: one record per tracked rep count N ≤ reps that this set
-    // improves. Rep counts outside kTrackedRepCounts never become PR records.
+    // improves.  When N < actualReps the record is propagated (implied by the
+    // actual performance); when N == actualReps it is explicit.
     for (final n in kTrackedRepCounts) {
       if (n > reps) break;
       final current = exCurve[n];
@@ -174,14 +191,20 @@ List<PrRecord> fullPrTimeline(List<PastSetRow> sets) {
           setId: s.setId,
           type: PrType.repMax,
           targetReps: n,
+          isPropagated: n != actualReps,
         ));
       }
     }
 
-    // Weight-max: most reps done at exactly this weight
-    final curReps = exMaxReps[weight];
-    if (curReps == null || reps > curReps) {
-      exMaxReps[weight] = reps.toInt();
+    // Weight-max: most reps at a weight, monotone non-increasing.
+    // If you can lift W × R you can lift any lighter weight at least R times.
+    final newReps = actualReps;
+    final effectiveMax = exMaxReps.entries
+        .where((e) => e.key >= weight)
+        .fold<int>(0, (m, e) => e.value > m ? e.value : m);
+    if (newReps > effectiveMax) {
+      exMaxReps[weight] = newReps;
+      // Explicit weight-max record for the weight actually lifted.
       prs.add(PrRecord(
         exerciseId: s.exerciseId,
         exerciseName: s.exerciseName,
@@ -194,7 +217,29 @@ List<PrRecord> fullPrTimeline(List<PastSetRow> sets) {
         setId: s.setId,
         type: PrType.weightMax,
         targetWeight: weight,
+        isPropagated: false,
       ));
+      // Propagate downward: create propagated records for lighter weights
+      // whose implied max-reps also increased.
+      for (final entry in exMaxReps.entries.toList()) {
+        if (entry.key < weight && entry.value < newReps) {
+          exMaxReps[entry.key] = newReps;
+          prs.add(PrRecord(
+            exerciseId: s.exerciseId,
+            exerciseName: s.exerciseName,
+            variationId: s.variationId,
+            variationName: s.variationName,
+            weight: entry.key,
+            reps: newReps,
+            achievedDate: s.workoutCreatedDate,
+            workoutId: s.workoutId,
+            setId: s.setId,
+            type: PrType.weightMax,
+            targetWeight: entry.key,
+            isPropagated: true,
+          ));
+        }
+      }
     }
   }
 

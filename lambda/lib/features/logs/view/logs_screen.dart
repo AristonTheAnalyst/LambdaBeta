@@ -15,6 +15,7 @@ import '../../../../shared/widgets/page_header.dart';
 import '../../../../shared/widgets/press_squash.dart';
 import '../../../../shared/widgets/slide_tab_bar.dart';
 import '../../../../shared/widgets/slide_tab_view.dart';
+import '../../../../shared/router/app_router.dart';
 import '../viewmodel/logs_viewmodel.dart';
 
 class LogsScreen extends StatefulWidget {
@@ -24,7 +25,7 @@ class LogsScreen extends StatefulWidget {
   State<LogsScreen> createState() => _LogsScreenState();
 }
 
-class _LogsScreenState extends State<LogsScreen> {
+class _LogsScreenState extends State<LogsScreen> with RouteAware {
   final _viewModel     = LogsViewModel();
   final _tabController = SlideTabController();
   String?   _selectedExercise;
@@ -49,10 +50,26 @@ class _LogsScreenState extends State<LogsScreen> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Subscribe to route observer here — ModalRoute.of(context) depends on
+    // inherited widgets that aren't available during initState.
+    AppRouter.routeObserver.subscribe(this, ModalRoute.of(context)!);
+  }
+
+  @override
   void dispose() {
+    AppRouter.routeObserver.unsubscribe(this);
     _viewModel.dispose();
     _tabController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didPopNext() {
+    // Refresh when returning from workout detail so edits (added sets,
+    // changed notes, deleted sets) are reflected immediately.
+    _viewModel.load();
   }
 
   static String _formatDate(DateTime dt) =>

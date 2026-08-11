@@ -73,9 +73,13 @@ Map<String, dynamic> _decodeArrayColumns(Map<String, dynamic> data) {
 
 final _fatalCodes = [
   RegExp(r'^22...$'), // data exception
-  RegExp(r'^23...$'), // integrity constraint violation
+  RegExp(r'^23502$'), // NOT NULL violation (permanent)
+  RegExp(r'^23505$'), // unique violation (permanent)
+  RegExp(r'^23514$'), // check violation (permanent)
   RegExp(r'^42501$'), // insufficient privilege / RLS
-  RegExp(r'^PGRST205$'), // table not found in schema cache
+  RegExp(r'^PGRST205$'), // table not found in schema cache (transient but
+                         // unrecoverable — the row won't change, and retrying
+                         // the same op keeps failing the same way)
 ];
 
 class SupabaseConnector extends PowerSyncBackendConnector {
@@ -319,64 +323,6 @@ Future<void> openDatabase() async {
 
 Future<void> disconnectAndClear() async {
   await db.disconnectAndClear();
-}
-
-/// Rebuilds ONLY the local PowerSync database from the current schema.
-///
-/// The on-device SQLite can be left with a stale schema after schema changes
-/// (renamed tables, changed column types, new columns).  PowerSync then fails
-/// to reconcile it and `ps.db.execute()` writes can hang indefinitely.
-/// `disconnectAndClear` wipes the local DB and internal tracking, and
-/// reconnecting forces a fresh rebuild against `schema.dart` — while keeping
-/// the Supabase session and all server data intact.
-Future<void> rebuildLocalDatabase() async {
-  await db.disconnectAndClear();
-  if (isLoggedIn()) {
-    db.connect(connector: SupabaseConnector(db));
-  }
-}
-
-/// Wipes every row from **both the Supabase server and the local database**,
-/// then signs the user out so they get the login screen on next launch.
-/// Only for draft/dev use — there is no undo anywhere.
-Future<void> clearAllTables() async {
-  // 1. Delete every user-owned row from the Supabase server while we
-  //    still have a valid session.  Tables without a user_id column
-  //    (app_config) or with RLS that rejects anonymous deletes are
-  //    silently skipped.
-  final session = Supabase.instance.client.auth.currentSession;
-  if (session != null) {
-    final rest = Supabase.instance.client.rest;
-    final userId = session.user.id;
-
-    final tables = [
-      ..._pkColumns.keys,
-      'dim_exercise_variation_bridge',
-      'coaching_relationship',
-    ];
-    for (final table in tables) {
-      try {
-        await rest.from(table).delete().eq('user_id', userId);
-      } catch (_) {
-        // Silently skip — table may lack user_id or reject the op.
-      }
-    }
-  }
-
-  // 2. disconnectAndClear wipes the local database AND PowerSync
-  //    internal tracking tables, then disconnects.  Safer than raw
-  //    DELETEs which can leave stale sync metadata behind.
-  await db.disconnectAndClear();
-
-  // 3. Sign out — clears the Supabase session and redirects to login.
-  //    The onAuthStateChange handler fires signedOut → disconnect(),
-  //    which is harmless after disconnectAndClear (idempotent).
-  try {
-    await Supabase.instance.client.auth.signOut();
-  } catch (_) {
-    // signOut itself failed — still redirect to login via the
-    // auth-notifier so the user isn't stuck in a half-signed-in state.
-  }
 }
 
 Future<String> _dbPath() async {

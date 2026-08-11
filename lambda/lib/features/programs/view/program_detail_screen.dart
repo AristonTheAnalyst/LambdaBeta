@@ -368,13 +368,20 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedC
 
   /// Confirms and removes a planned workout from this program.
   Future<void> _confirmDeleteWorkout(PlannedWorkout w) async {
+    final isCurrent = _vm.state.value.isCurrent;
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
-        title: Text('Remove Workout',
+        title: Text(isCurrent ? 'Remove from active program?' : 'Remove Workout',
             style: AppFonts.ui(fontWeight: FontWeight.w800, color: AppColors.danger)),
-        content: Text('Remove "${toProperCase(w.name)}" from this program?',
+        content: Text(
+            isCurrent
+                ? '"${toProperCase(w.name)}" is part of your active program. '
+                    'Removing it changes the workout cycle — the next session '
+                    'will skip to the following workout. '
+                    'Past logged sets stay intact.'
+                : 'Remove "${toProperCase(w.name)}" from this program?',
             style: AppFonts.ui(color: AppColors.muted)),
         actions: [
           TextButton(

@@ -54,6 +54,7 @@ class _SessionScreenState extends State<SessionScreen> {
       // a newly created or begun program shows without a full restart.
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
+          _vm.refreshCatalog(); // always refresh exercise/variation catalog
           _vm.refreshProgram();
           // If the workout ended while we were on another tab, the cached VM
           // still points at page 1 with no active workoutId — reset to the
@@ -133,7 +134,7 @@ class _SessionScreenState extends State<SessionScreen> {
     final slot = _vm.exerciseSlots[index];
     // Get the display name for the first exercise in the slot
     final exerciseId = slot.activeExerciseId;
-    final name = _vm.exerciseDetailMap[exerciseId]?.name ?? 'exercise';
+    final name = toProperCase(_vm.exerciseDisplayName(exerciseId));
     final setCount = _vm.sets.where((s) => slot.exerciseIds.contains(s.exerciseId)).length;
 
     showDialog<void>(

@@ -65,15 +65,20 @@ class _ProgramLibraryScreenState extends State<ProgramLibraryScreen> {
     );
   }
 
-  void _confirmArchive(Program p) {
+  void _confirmDelete(Program p) {
+    final isCurrent = _viewModel.state.value.currentProgramId == p.programId;
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
-        title: Text('Archive Program',
+        title: Text('Delete Program',
             style: AppFonts.ui(fontWeight: FontWeight.w800, color: AppColors.danger)),
         content: Text(
-            'Archive "${toProperCase(p.name)}"? Past workouts logged from it stay intact.',
+            isCurrent
+                ? '${toProperCase(p.name)} is your active program. '
+                    'Deleting it will also delete your current run and its progress. '
+                    'Past workouts logged from it stay intact.'
+                : 'Delete "${toProperCase(p.name)}"? Past workouts logged from it stay intact.',
             style: AppFonts.ui(color: AppColors.muted)),
         actions: [
           TextButton(
@@ -259,7 +264,7 @@ class _ProgramLibraryScreenState extends State<ProgramLibraryScreen> {
                                     _beginProgram(p),
                                 onDuplicate: () =>
                                     _viewModel.duplicateProgram(p.programId),
-                                onDelete: () => _confirmArchive(p),
+                                onDelete: () => _confirmDelete(p),
                               );
                             },
                           ),

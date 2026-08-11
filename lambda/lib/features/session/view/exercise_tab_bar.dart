@@ -13,8 +13,7 @@ class ExerciseTabBar extends StatelessWidget {
 
   String _label(SessionExerciseSlot slot, int supersetNumber) {
     if (slot.type == SessionSlotType.single) {
-      final name = vm.exerciseDetailMap[slot.exerciseIds.first]?.name ?? '';
-      return toProperCase(name);
+      return toProperCase(vm.exerciseDisplayName(slot.exerciseIds.first));
     }
     return 'Superset $supersetNumber';
   }

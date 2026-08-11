@@ -163,6 +163,7 @@ const schema = Schema([
     Column.integer('target_reps'),
     Column.text('target_weight'),
     Column.integer('is_active'),
+    Column.integer('is_propagated'),
   ]),
   Table('coaching_relationship', [
     Column.text('coach_user_id'),

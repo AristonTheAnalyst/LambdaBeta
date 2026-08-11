@@ -60,6 +60,16 @@ class WorkoutRepository {
   }
 
   Future<void> cancelWorkout(String workoutId) async {
+    // Delete any PRs that reference sets in this workout before the sets
+    // themselves are removed (fact_pr.workout_set_id has no FK so the
+    // cascade doesn't reach it).  In normal use PRs are only persisted at
+    // endWorkout so a cancelled workout has none, but this is a safeguard
+    // if mid-session PR persistence is ever added.
+    await ps.db.execute(
+      'DELETE FROM fact_pr WHERE workout_set_id IN '
+      '(SELECT workout_set_id FROM fact_workout_set WHERE user_workout_id = ?)',
+      [workoutId],
+    );
     await ps.db.execute(
       'DELETE FROM fact_workout_set WHERE user_workout_id = ?',
       [workoutId],

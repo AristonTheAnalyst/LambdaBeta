@@ -153,6 +153,12 @@ class ProgramLibraryViewModel {
 
   Future<void> deleteProgram(String programId) async {
     try {
+      // If the user is deleting the currently-running program, end the run
+      // first so its progress is cleanly closed rather than silently lost
+      // in the cascade delete.
+      if (state.value.currentProgramId == programId) {
+        await _runRepo.endCurrentRun(_userId);
+      }
       await _repo.deleteProgram(programId);
       await fetchAll();
     } catch (e) {

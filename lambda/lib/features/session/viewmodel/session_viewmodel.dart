@@ -189,8 +189,12 @@ class SessionViewModel extends ChangeNotifier {
         supersetGroupNumber: s.supersetGroupNumber,
       ));
     }
-    // PRs in the current workout are those whose workoutId is the active one
-    return prsForWorkout(all, currentWorkoutId ?? '');
+    // PRs in the current workout are those whose workoutId is the active one.
+    // Only count explicit (non-propagated) PRs — the user sees what they
+    // directly achieved, not the knock-on records the engine inferred.
+    return prsForWorkout(all, currentWorkoutId ?? '')
+        .where((p) => !p.isPropagated)
+        .toList();
   }
 
   Future<void> _init() async {
@@ -206,7 +210,7 @@ class SessionViewModel extends ChangeNotifier {
     // In particular, _restoreActiveWorkout must run even if catalog fetch
     // fails, otherwise the active workout is invisible after a hot restart.
     try {
-      await _loadCatalog();
+      await refreshCatalog();
     } catch (_) {}
     try {
       await Future.wait([_loadPlannedWorkout(), _loadPastSets()]);
@@ -218,7 +222,7 @@ class SessionViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> _loadCatalog() async {
+  Future<void> refreshCatalog() async {
     catalogLoading = true;
     notifyListeners();
     try {
@@ -234,6 +238,21 @@ class SessionViewModel extends ChangeNotifier {
     } catch (_) {}
     catalogLoading = false;
     notifyListeners();
+  }
+
+  /// Display name for an exercise, falling back to the snapshot name on any
+  /// logged set when the exercise has been deactivated and is no longer in
+  /// the catalog.
+  String exerciseDisplayName(String exerciseId) {
+    final detail = exerciseDetailMap[exerciseId];
+    if (detail != null) return detail.name;
+    // Deactivated exercise — use the snapshot name from the first set.
+    for (final s in sets) {
+      if (s.exerciseId == exerciseId && s.exerciseName != null) {
+        return s.exerciseName!;
+      }
+    }
+    return exerciseId;
   }
 
   /// All of the user's variations (not just ones already assigned to some
@@ -374,10 +393,32 @@ class SessionViewModel extends ChangeNotifier {
 
   /// Refreshes the current program / planned-workout state — called when the
   /// session tab becomes active again so a newly created (or begun) program
-  /// shows without a full restart. Only refreshes when no workout is active.
+  /// shows without a full restart.
+  ///
+  /// When a workout is active, only validates that the program reference is
+  /// still alive (clears the header if the program was deleted).  Full reload
+  /// of available workouts and planned sets is deferred until the workout ends.
   Future<void> refreshProgram() async {
-    if (currentWorkoutId != null) return;
     try {
+      // Validate the program reference regardless of active-workout state:
+      // if the user deleted the program from the library mid-session, clear
+      // the stale header so we don't show a dangling "Week N · Program".
+      if (currentWorkoutId != null && programProgress != null) {
+        final program = await _programRepo.fetchProgram(
+            programProgress!.program.programId);
+        if (program == null) {
+          // Program was deleted — tear down the stale program state.
+          programProgress = null;
+          availableWorkouts = [];
+          selectedPlannedWorkout = null;
+          plannedSetsByExercise = {};
+          plannedExerciseOrder = [];
+          notifyListeners();
+        }
+        return;
+      }
+      if (currentWorkoutId != null) return;
+
       programProgress = await _programRunRepo.getProgress(_userId);
       final programId = programProgress?.program.programId;
       if (programId != null) {
@@ -1243,7 +1284,7 @@ class SessionViewModel extends ChangeNotifier {
         final exercise = await _exerciseRepo.createExercise(_userId, trimmed);
         id = exercise.exerciseId;
       }
-      await _loadCatalog();
+      await refreshCatalog();
       newExCreating = false;
       notifyListeners();
       return id;
@@ -1285,7 +1326,7 @@ class SessionViewModel extends ChangeNotifier {
         }
       }
       await _exerciseRepo.addBridge(_userId, exerciseId, id);
-      await _loadCatalog();
+      await refreshCatalog();
       newVarCreating = false;
       notifyListeners();
       return id;

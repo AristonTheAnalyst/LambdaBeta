@@ -209,8 +209,7 @@ class _WorkoutBody extends StatelessWidget {
                   slots: state.exerciseSlots,
                   activeIndex: state.activeSlotIndex,
                   exerciseNames: state.exerciseSlots.map((sl) {
-                    final detail = state.exerciseDetailMap[sl.exerciseId];
-                    return toProperCase(detail?.name ?? '');
+                    return toProperCase(viewModel.exerciseDisplayName(sl.exerciseId));
                   }).toList(),
                   onTap: (i) => viewModel.tapTab(i),
                   onAdd: state.isEditing ? () => _showAddExercise(context) : null,
@@ -442,8 +441,8 @@ class _DetailExerciseCardState extends State<_DetailExerciseCard> {
     final s = vm.state.value;
     final exerciseId = widget.slot.exerciseId;
     final order = widget.slot.groupOrder;
+    final name = toProperCase(vm.exerciseDisplayName(exerciseId));
     final detail = s.exerciseDetailMap[exerciseId];
-    final name = toProperCase(detail?.name ?? '');
     final lessons = vm.lessonsFor(exerciseId);
     final history = vm.historyFor(exerciseId);
     final planned = s.workout?.plannedWorkoutId != null;

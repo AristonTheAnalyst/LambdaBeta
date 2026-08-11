@@ -759,6 +759,24 @@ class WorkoutDetailViewModel {
   ExerciseDetail? getExerciseDetail(String exerciseId) =>
       state.value.exerciseDetailMap[exerciseId];
 
+  /// Display name for an exercise, falling back to the snapshot name on any
+  /// set when the exercise has been deactivated and is no longer in the
+  /// catalog.
+  String exerciseDisplayName(String exerciseId) {
+    final catalog = _exerciseName(exerciseId);
+    if (catalog != null) return catalog;
+    // Deactivated — use the snapshot name from the first set for this
+    // exercise.
+    for (final entry in state.value.setsByOrder.values) {
+      for (final s in entry) {
+        if (s.exerciseId == exerciseId && s.exerciseName != null) {
+          return s.exerciseName!;
+        }
+      }
+    }
+    return exerciseId;
+  }
+
   String? _exerciseName(String exerciseId) =>
       state.value.exerciseDetailMap[exerciseId]?.name;
 

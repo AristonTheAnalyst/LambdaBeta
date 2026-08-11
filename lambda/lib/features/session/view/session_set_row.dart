@@ -249,6 +249,7 @@ class _SessionSetRowState extends State<SessionSetRow> {
     final plannedReps = widget.plannedTarget?.targetReps.isNotEmpty == true
         ? widget.plannedTarget!.targetReps.first
         : null;
+    final plannedVariationId = widget.plannedTarget?.variationId;
 
     final variationId = _isDraft ? _draftVariationId : set!.variationId;
     final List<CustomVariation> assigned = [...(widget.detail?.assignedVariations ?? const <CustomVariation>[])]
@@ -353,7 +354,7 @@ class _SessionSetRowState extends State<SessionSetRow> {
                     options: variationOptions,
                     value: variationId,
                     compact: true,
-                    valueColor: AppColors.success,
+                    valueColor: plannedVariationId != null ? AppColors.success : AppColors.primary,
                     createNewLabel: 'New Variation',
                     onCreateNew: _handleCreateVariation,
                     onChange: (id) {
