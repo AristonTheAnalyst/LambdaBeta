@@ -4,10 +4,10 @@ import 'dart:convert';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 import '../../core/powersync/database.dart' as ps;
-import '../models/planned_set.dart';
-import '../models/planned_workout.dart';
+import '../models/planned_session_set.dart';
+import '../models/planned_session.dart';
 import '../models/program.dart';
-import '../models/program_goal.dart';
+import '../models/goal.dart';
 import '../../shared/utils/unique_name.dart';
 
 const _uuid = Uuid();
@@ -20,31 +20,29 @@ const _uuid = Uuid();
   return (clause, updates.values.toList());
 }
 
-/// Program library CRUD — creating/editing/browsing programs, their planned
-/// workouts, and per-set targets.  Deletes ARE hard deletes because every
-/// completed workout already denormalises `program_name` and
-/// `planned_workout_name` into its own `fact_workout` row, so there are no
-/// dangling references to protect.
+/// Program library CRUD — programs (dimensions), their planned sessions, and
+/// goals. Programs are soft-deleted via is_archived so run history never
+/// dangles.
 class ProgramRepository {
   // ── Programs ─────────────────────────────────────────────────────────────
 
-  /// Active program names for [userId], used to bump auto-generated defaults.
+  /// Program names for [userId], used to bump auto-generated defaults.
   Future<Set<String>> _programNames(String userId) async {
     final rows = await ps.db.getAll(
-      'SELECT program_name FROM dim_program WHERE user_id = ? AND is_active = 1',
+      'SELECT program_name FROM dim_program WHERE user_id = ? AND is_archived = 0',
       [userId],
     );
     return rows.map((r) => r['program_name'] as String).toSet();
   }
 
-  /// Returns true if another active program owned by `userId` already has
-  /// [name] (ignoring [excludeProgramId] when provided).
+  /// Returns true if another program owned by `userId` already has [name]
+  /// (ignoring [excludeProgramId] when provided).
   Future<bool> _programNameExists(String userId, String name,
       {String? excludeProgramId}) async {
     final rows = await ps.db.getAll(
       '''
       SELECT 1 FROM dim_program
-      WHERE user_id = ? AND LOWER(program_name) = LOWER(?)
+      WHERE user_id = ? AND is_archived = 0 AND LOWER(program_name) = LOWER(?)
         ${excludeProgramId != null ? 'AND program_id != ?' : ''}
       LIMIT 1
       ''',
@@ -57,7 +55,7 @@ class ProgramRepository {
     return rows.isNotEmpty;
   }
 
-  /// Throws if another active program owned by `userId` already has [name].
+  /// Throws if another program owned by `userId` already has [name].
   Future<void> _assertProgramNameUnique(
       String userId, String name, {String? excludeProgramId}) async {
     if (await _programNameExists(userId, name,
@@ -70,7 +68,7 @@ class ProgramRepository {
     // 1. Try the local PowerSync mirror.
     try {
       final rows = await ps.db.getAll(
-        'SELECT * FROM dim_program WHERE user_id = ? AND is_active = 1 ORDER BY program_created_date DESC',
+        'SELECT * FROM dim_program WHERE user_id = ? AND is_archived = 0 ORDER BY program_created_date DESC',
         [userId],
       ).timeout(const Duration(seconds: 3));
       if (rows.isNotEmpty) return rows.map((r) => Program.fromMap(r)).toList();
@@ -84,7 +82,7 @@ class ProgramRepository {
           .from('dim_program')
           .select('*')
           .eq('user_id', userId)
-          .eq('is_active', true)
+          .eq('is_archived', false)
           .order('program_created_date', ascending: false)
           .timeout(const Duration(seconds: 5));
       return remote.map((r) => Program.fromMap(r)).toList();
@@ -143,7 +141,7 @@ class ProgramRepository {
     }
     final id = _uuid.v4();
     // .toUtc() avoids a naive local-time string being reinterpreted as UTC
-    // by Postgres's timestamptz column (see WorkoutRepository.createWorkout).
+    // by Postgres's timestamptz column (see SessionRepository.createSession).
     final createdDate = DateTime.now().toUtc();
 
     // 1. Authoritative write — hits Supabase directly so the program exists
@@ -155,7 +153,7 @@ class ProgramRepository {
       'program_description': description,
       'program_length_weeks': lengthWeeks,
       'progression_mode': progressionMode,
-      'is_active': true,
+      'is_archived': false,
       'program_created_date': createdDate.toIso8601String(),
     }).timeout(const Duration(seconds: 8));
 
@@ -169,7 +167,7 @@ class ProgramRepository {
       description: description,
       lengthWeeks: lengthWeeks,
       progressionMode: progressionMode,
-      isActive: true,
+      isArchived: false,
       createdDate: createdDate,
     );
   }
@@ -198,381 +196,70 @@ class ProgramRepository {
     );
   }
 
+  /// Soft-deletes a program (is_archived = 1). Planned sessions attached to
+  /// the program are unlinked (program_id = NULL) and become standalone —
+  /// they stay usable as templates. Runs are historical facts and remain.
   Future<void> deleteProgram(String programId) async {
-    // All deletes in one transaction so the local DB mirrors the server-side
-    // FK cascade atomically — deleting the program here also removes its runs
-    // and goals, otherwise a stale local run (or an offline delete) leaves the
-    // program "resurrecting" after sync. Dependency order: sets → workouts →
-    // goals → runs → program.
     await ps.db.writeTransaction((tx) async {
-      // Delete unified workout sets (dim_workout_set) for this program's
-      // workouts, then the workouts themselves.
+      // Unlink planned sessions so they become standalone templates.
       await tx.execute(
-        '''
-        DELETE FROM dim_workout_set
-        WHERE workout_id IN (
-          SELECT workout_id FROM dim_workout WHERE program_id = ?
-        )
-        ''',
+        'UPDATE dim_planned_session SET program_id = NULL, sequence_order = NULL, day_of_week = NULL WHERE program_id = ?',
         [programId],
       );
+      // Archive the program.
       await tx.execute(
-        'DELETE FROM dim_workout WHERE program_id = ?',
-        [programId],
-      );
-      // Delete legacy planned sets / workouts (for any rows created before the
-      // unification, or from an incomplete sync).
-      await tx.execute(
-        '''
-        DELETE FROM dim_planned_set
-        WHERE planned_workout_id IN (
-          SELECT planned_workout_id FROM dim_planned_workout WHERE program_id = ?
-        )
-        ''',
-        [programId],
-      );
-      await tx.execute(
-        'DELETE FROM dim_planned_workout WHERE program_id = ?',
-        [programId],
-      );
-      // Delete program goals (goals are scoped to program runs).
-      await tx.execute(
-        '''
-        DELETE FROM fact_program_goal
-        WHERE program_run_id IN (
-          SELECT program_run_id FROM fact_program_run WHERE program_id = ?
-        )
-        ''',
-        [programId],
-      );
-      // Delete the program's runs — these reference the program server-side
-      // (FK no longer blocks after the cascade migration) and would otherwise
-      // orphan a current run whose progress points at a deleted program.
-      await tx.execute(
-        'DELETE FROM fact_program_run WHERE program_id = ?',
-        [programId],
-      );
-      // Delete the program.
-      await tx.execute(
-        'DELETE FROM dim_program WHERE program_id = ?',
+        'UPDATE dim_program SET is_archived = 1 WHERE program_id = ?',
         [programId],
       );
     });
   }
 
-  // ── Planned workouts ─────────────────────────────────────────────────────
+  // ── Planned sessions (delegating reads to the unified table) ─────────────
 
-  Future<List<PlannedWorkout>> fetchPlannedWorkouts(String programId) async {
-    // 1. Unified table (dim_workout) — all new data lands here.
+  Future<List<PlannedSession>> fetchPlannedSessions(String programId) async {
     try {
       final rows = await ps.db.getAll(
         '''
-        SELECT workout_id AS planned_workout_id, program_id, user_id,
-               workout_name AS planned_workout_name,
-               workout_notes AS planned_workout_notes,
-               sequence_order, day_of_week, is_active
-        FROM dim_workout WHERE program_id = ? AND is_active = 1
+        SELECT * FROM dim_planned_session
+        WHERE program_id = ? AND is_archived = 0
         ORDER BY sequence_order
         ''',
         [programId],
       ).timeout(const Duration(seconds: 3));
-      if (rows.isNotEmpty) return rows.map((r) => PlannedWorkout.fromMap(r)).toList();
-    } catch (_) {}
-
-    // 2. Legacy table (dim_planned_workout) — fallback for pre-unification data.
-    try {
-      final rows = await ps.db.getAll(
-        'SELECT * FROM dim_planned_workout WHERE program_id = ? AND is_active = 1 ORDER BY sequence_order',
-        [programId],
-      ).timeout(const Duration(seconds: 3));
-      if (rows.isNotEmpty) return rows.map((r) => PlannedWorkout.fromMap(r)).toList();
+      if (rows.isNotEmpty) return rows.map((r) => PlannedSession.fromMap(r)).toList();
     } catch (_) {}
     return [];
   }
 
-  Future<PlannedWorkout> createPlannedWorkout(
-    String userId,
-    String programId, {
-    String? name,
-    String? notes,
-    required int sequenceOrder,
-    int? dayOfWeek,
-  }) async {
-    if (name == null) {
-      final existing = await fetchPlannedWorkouts(programId);
-      final names = existing.map((w) => w.name).toSet();
-      name = uniqueName('New Workout', names);
-    }
-    final id = _uuid.v4();
-    await ps.db.execute(
-      '''
-      INSERT INTO dim_planned_workout
-        (id, planned_workout_id, program_id, user_id, planned_workout_name,
-         planned_workout_notes, sequence_order, day_of_week, is_active)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ''',
-      [id, id, programId, userId, name, notes, sequenceOrder, dayOfWeek, 1],
-    );
-    return PlannedWorkout(
-      plannedWorkoutId: id,
-      programId: programId,
-      userId: userId,
-      name: name,
-      notes: notes,
-      sequenceOrder: sequenceOrder,
-      dayOfWeek: dayOfWeek,
-      isActive: true,
-    );
-  }
-
-  Future<void> updatePlannedWorkout(
-    String plannedWorkoutId, {
-    String? name,
-    String? notes,
-    int? sequenceOrder,
-    int? dayOfWeek,
-    bool clearDayOfWeek = false,
-  }) async {
-    final updates = <String, dynamic>{};
-    if (name != null) updates['planned_workout_name'] = name;
-    if (notes != null) updates['planned_workout_notes'] = notes;
-    if (sequenceOrder != null) updates['sequence_order'] = sequenceOrder;
-    if (clearDayOfWeek) {
-      updates['day_of_week'] = null;
-    } else if (dayOfWeek != null) {
-      updates['day_of_week'] = dayOfWeek;
-    }
-    if (updates.isEmpty) return;
-    final (setClause, params) = _buildSetClause(updates);
-    await ps.db.execute(
-      'UPDATE dim_planned_workout SET $setClause WHERE planned_workout_id = ?',
-      [...params, plannedWorkoutId],
-    );
-  }
-
-  Future<void> deletePlannedWorkout(String plannedWorkoutId) async {
-    await ps.db.execute(
-      'DELETE FROM dim_planned_set WHERE planned_workout_id = ?',
-      [plannedWorkoutId],
-    );
-    await ps.db.execute(
-      'DELETE FROM dim_planned_workout WHERE planned_workout_id = ?',
-      [plannedWorkoutId],
-    );
-  }
-
-  Future<void> reorderPlannedWorkouts(List<String> orderedIds) async {
-    for (var i = 0; i < orderedIds.length; i++) {
-      await ps.db.execute(
-        'UPDATE dim_planned_workout SET sequence_order = ? WHERE planned_workout_id = ?',
-        [i + 1, orderedIds[i]],
-      );
-    }
-  }
-
-  // ── Planned sets ─────────────────────────────────────────────────────────
-
-  Future<List<PlannedSet>> fetchPlannedSets(String plannedWorkoutId) async {
-    // 1. Unified table (dim_workout_set) — all new data lands here.
-    try {
-      final rows = await ps.db.getAll(
-        '''
-        SELECT s.workout_set_id AS planned_set_id,
-               s.workout_id AS planned_workout_id,
-               s.user_id, s.custom_exercise_id, s.custom_variation_id,
-               s.exercise_sequence_order,
-               s.workout_set_number AS planned_set_number,
-               s.target_weight, s.target_reps, s.target_duration_seconds,
-               s.target_notes, s.is_active,
-               COALESCE(s.exercise_name, e.exercise_name) AS exercise_name,
-               COALESCE(s.variation_name, v.variation_name) AS variation_name
-        FROM dim_workout_set s
-        LEFT JOIN dim_exercise e ON e.custom_exercise_id = s.custom_exercise_id
-        LEFT JOIN dim_variation v ON v.custom_variation_id = s.custom_variation_id
-        WHERE s.workout_id = ? AND s.is_active = 1
-        ORDER BY s.exercise_sequence_order, s.workout_set_number
-        ''',
-        [plannedWorkoutId],
-      ).timeout(const Duration(seconds: 3));
-      if (rows.isNotEmpty) return rows.map((r) => PlannedSet.fromMap(r)).toList();
-    } catch (_) {}
-
-    // 2. Legacy table (dim_planned_set) — fallback for pre-unification data.
+  Future<List<PlannedSessionSet>> fetchPlannedSessionSets(
+      String sessionId) async {
     try {
       final rows = await ps.db.getAll(
         '''
         SELECT s.*,
                COALESCE(s.exercise_name, e.exercise_name) AS exercise_name,
                COALESCE(s.variation_name, v.variation_name) AS variation_name
-        FROM dim_planned_set s
+        FROM dim_planned_session_set s
         LEFT JOIN dim_exercise e ON e.custom_exercise_id = s.custom_exercise_id
         LEFT JOIN dim_variation v ON v.custom_variation_id = s.custom_variation_id
-        WHERE s.planned_workout_id = ? AND s.is_active = 1
-        ORDER BY s.exercise_sequence_order, s.planned_set_number
+        WHERE s.session_id = ? AND s.is_archived = 0
+        ORDER BY s.exercise_sequence_order, s.set_number
         ''',
-        [plannedWorkoutId],
+        [sessionId],
       ).timeout(const Duration(seconds: 3));
-      if (rows.isNotEmpty) return rows.map((r) => PlannedSet.fromMap(r)).toList();
+      if (rows.isNotEmpty) return rows.map((r) => PlannedSessionSet.fromMap(r)).toList();
     } catch (_) {}
     return [];
   }
 
-  Future<PlannedSet> createPlannedSet(
-    String userId,
-    String plannedWorkoutId, {
-    required String exerciseId,
-    String? variationId,
-    required int exerciseSequenceOrder,
-    required int setNumber,
-    double? targetWeight,
-    List<num> targetReps = const [],
-    List<num> targetDuration = const [],
-    String? targetNotes,
-    String? exerciseName,
-    String? variationName,
-  }) async {
-    final id = _uuid.v4();
-    await ps.db.execute(
-      '''
-      INSERT INTO dim_planned_set
-        (id, planned_set_id, planned_workout_id, user_id, custom_exercise_id, custom_variation_id,
-         exercise_sequence_order, planned_set_number, target_weight, target_reps,
-         target_duration_seconds, target_notes, is_active, exercise_name, variation_name)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ''',
-      [
-        id,
-        id,
-        plannedWorkoutId,
-        userId,
-        exerciseId,
-        variationId,
-        exerciseSequenceOrder,
-        setNumber,
-        targetWeight,
-        jsonEncode(targetReps),
-        jsonEncode(targetDuration),
-        targetNotes,
-        1,
-        exerciseName,
-        variationName,
-      ],
-    );
-    return PlannedSet(
-      plannedSetId: id,
-      plannedWorkoutId: plannedWorkoutId,
-      userId: userId,
-      exerciseId: exerciseId,
-      variationId: variationId,
-      exerciseSequenceOrder: exerciseSequenceOrder,
-      setNumber: setNumber,
-      targetWeight: targetWeight,
-      targetReps: targetReps,
-      targetDuration: targetDuration,
-      targetNotes: targetNotes,
-      isActive: true,
-    );
-  }
-
-  Future<void> updatePlannedSet(
-    String plannedSetId, {
-    String? exerciseId,
-    String? variationId,
-    bool clearVariation = false,
-    int? exerciseSequenceOrder,
-    int? setNumber,
-    double? targetWeight,
-    bool clearTargetWeight = false,
-    List<num>? targetReps,
-    List<num>? targetDuration,
-    String? targetNotes,
-    bool clearTargetNotes = false,
-    String? exerciseName,
-    String? variationName,
-  }) async {
-    final updates = <String, dynamic>{};
-    if (exerciseId != null) updates['custom_exercise_id'] = exerciseId;
-    if (exerciseName != null) updates['exercise_name'] = exerciseName;
-    if (clearVariation) {
-      updates['custom_variation_id'] = null;
-      updates['variation_name'] = null;
-    } else if (variationId != null) {
-      updates['custom_variation_id'] = variationId;
-    }
-    if (exerciseSequenceOrder != null) {
-      updates['exercise_sequence_order'] = exerciseSequenceOrder;
-    }
-    if (setNumber != null) updates['planned_set_number'] = setNumber;
-    if (clearTargetWeight) {
-      updates['target_weight'] = null;
-    } else if (targetWeight != null) {
-      updates['target_weight'] = targetWeight;
-    }
-    if (targetReps != null) updates['target_reps'] = jsonEncode(targetReps);
-    if (targetDuration != null) {
-      updates['target_duration_seconds'] = jsonEncode(targetDuration);
-    }
-    if (clearTargetNotes) {
-      updates['target_notes'] = null;
-    } else if (targetNotes != null) {
-      updates['target_notes'] = targetNotes;
-    }
-    if (updates.isEmpty) return;
-    final (setClause, params) = _buildSetClause(updates);
-    await ps.db.execute(
-      'UPDATE dim_planned_set SET $setClause WHERE planned_set_id = ?',
-      [...params, plannedSetId],
-    );
-  }
-
-  Future<void> deletePlannedSet(String plannedSetId) async {
-    await ps.db.execute(
-      'DELETE FROM dim_planned_set WHERE planned_set_id = ?',
-      [plannedSetId],
-    );
-  }
-
-  /// Swaps exerciseSequenceOrder for all planned sets between two exercises
-  /// within the same workout, effectively reordering the exercise tabs.
-  Future<void> swapPlannedExerciseOrders(
-    String plannedWorkoutId,
-    int orderA,
-    int orderB,
-  ) async {
-    if (orderA == orderB) return;
-    // Use a temp value to avoid collisions during the swap
-    const temp = -9999;
-    await ps.db.execute(
-      'UPDATE dim_planned_set SET exercise_sequence_order = ? WHERE planned_workout_id = ? AND exercise_sequence_order = ?',
-      [temp, plannedWorkoutId, orderA],
-    );
-    await ps.db.execute(
-      'UPDATE dim_planned_set SET exercise_sequence_order = ? WHERE planned_workout_id = ? AND exercise_sequence_order = ?',
-      [orderA, plannedWorkoutId, orderB],
-    );
-    await ps.db.execute(
-      'UPDATE dim_planned_set SET exercise_sequence_order = ? WHERE planned_workout_id = ? AND exercise_sequence_order = ?',
-      [orderB, plannedWorkoutId, temp],
-    );
-  }
-
-  Future<void> reorderPlannedSets(List<String> orderedIds) async {
-    for (var i = 0; i < orderedIds.length; i++) {
-      await ps.db.execute(
-        'UPDATE dim_planned_set SET planned_set_number = ? WHERE planned_set_id = ?',
-        [i + 1, orderedIds[i]],
-      );
-    }
-  }
-
-  /// Deep-copies one planned workout (and its sets) within the same program.
+  /// Deep-copies one planned session (and its sets) within the same program.
   /// The copy gets a fresh UUID, "(Copy)" suffix on the name, and is placed
   /// immediately after the source in sequence order.
-  Future<String> duplicatePlannedWorkout(
-      String userId, PlannedWorkout source) async {
-    final sets = await fetchPlannedSets(source.plannedWorkoutId);
+  Future<String> duplicatePlannedSession(
+      String userId, PlannedSession source) async {
+    final sets = await fetchPlannedSessionSets(source.sessionId);
 
-    final siblings = await fetchPlannedWorkouts(source.programId);
+    final siblings = await fetchPlannedSessions(source.programId ?? '');
     final siblingNames = siblings.map((w) => w.name).toSet();
     final copyName = uniqueName('${source.name} (Copy)', siblingNames,
         numbered: (n) => '${source.name} (Copy $n)');
@@ -582,37 +269,37 @@ class ProgramRepository {
     await ps.db.writeTransaction((tx) async {
       await tx.execute(
         '''
-        INSERT INTO dim_workout
-          (id, workout_id, program_id, user_id, workout_name,
-           workout_notes, sequence_order, day_of_week, is_active, workout_created_date)
+        INSERT INTO dim_planned_session
+          (id, session_id, program_id, user_id, name,
+           notes, sequence_order, day_of_week, is_archived, created_date)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''',
         [
           newId, newId, source.programId, userId,
           copyName, source.notes,
-          source.sequenceOrder + 1, source.dayOfWeek, 1, createdDate,
+          (source.sequenceOrder ?? 0) + 1, source.dayOfWeek, 0, createdDate,
         ],
       );
 
-      // Bump later workouts' sequence_order so the copy doesn't clobber.
+      // Bump later sessions' sequence_order so the copy doesn't clobber.
       await tx.execute(
         '''
-        UPDATE dim_workout
+        UPDATE dim_planned_session
         SET sequence_order = sequence_order + 1
         WHERE program_id = ? AND sequence_order > ?
         ''',
-        [source.programId, source.sequenceOrder],
+        [source.programId, source.sequenceOrder ?? 0],
       );
 
       for (final set in sets) {
         final newSetId = _uuid.v4();
         await tx.execute(
           '''
-          INSERT INTO dim_workout_set
-            (id, workout_set_id, workout_id, user_id, custom_exercise_id,
-             custom_variation_id, exercise_sequence_order, workout_set_number,
+          INSERT INTO dim_planned_session_set
+            (id, set_id, session_id, user_id, custom_exercise_id,
+             custom_variation_id, exercise_sequence_order, set_number,
              target_weight, target_reps, target_duration_seconds, target_notes,
-             is_active, exercise_name, variation_name)
+             is_archived, exercise_name, variation_name)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ''',
           [
@@ -621,7 +308,7 @@ class ProgramRepository {
             set.exerciseSequenceOrder, set.setNumber,
             set.targetWeight, jsonEncode(set.targetReps),
             jsonEncode(set.targetDuration), set.targetNotes,
-            1, set.exerciseName, set.variationName,
+            0, set.exerciseName, set.variationName,
           ],
         );
       }
@@ -632,28 +319,28 @@ class ProgramRepository {
 
   // ── Composite reads / duplication ────────────────────────────────────────
 
-  Future<ProgramWithWorkouts?> fetchProgramWithWorkouts(String programId) async {
+  Future<ProgramWithSessions?> fetchProgramWithSessions(String programId) async {
     final program = await fetchProgram(programId);
     if (program == null) return null;
-    final workouts = await fetchPlannedWorkouts(programId);
-    return ProgramWithWorkouts(program: program, plannedWorkouts: workouts);
+    final sessions = await fetchPlannedSessions(programId);
+    return ProgramWithSessions(program: program, plannedSessions: sessions);
   }
 
-  /// Deep-copies a program (and its planned workouts/sets) with fresh UUIDs.
+  /// Deep-copies a program (and its planned sessions/sets) with fresh UUIDs.
   /// The copy is a brand-new program with no run history of its own. All
   /// inserts happen in a single local transaction so the copy either lands
   /// completely or not at all.
   Future<String> duplicateProgram(String userId, String programId) async {
-    final source = await fetchProgramWithWorkouts(programId);
+    final source = await fetchProgramWithSessions(programId);
     if (source == null) throw StateError('Program not found: $programId');
 
-    // Read every source workout's sets up front — querying ps.db from inside
+    // Read every source session's sets up front — querying ps.db from inside
     // a writeTransaction callback below could contend with the write lock
     // that transaction holds.
-    final setsByWorkoutId = <String, List<PlannedSet>>{};
-    for (final workout in source.plannedWorkouts) {
-      setsByWorkoutId[workout.plannedWorkoutId] =
-          await fetchPlannedSets(workout.plannedWorkoutId);
+    final setsBySessionId = <String, List<PlannedSessionSet>>{};
+    for (final session in source.plannedSessions) {
+      setsBySessionId[session.sessionId] =
+          await fetchPlannedSessionSets(session.sessionId);
     }
 
     final programNames = await _programNames(userId);
@@ -667,7 +354,7 @@ class ProgramRepository {
         '''
         INSERT INTO dim_program
           (id, program_id, user_id, program_name, program_description,
-           program_length_weeks, progression_mode, is_active, program_created_date)
+           program_length_weeks, progression_mode, is_archived, program_created_date)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''',
         [
@@ -678,50 +365,50 @@ class ProgramRepository {
           source.program.description,
           source.program.lengthWeeks,
           source.program.progressionMode,
-          1,
+          0,
           DateTime.now().toUtc().toIso8601String(),
         ],
       );
 
-      for (final workout in source.plannedWorkouts) {
-        final newWorkoutId = _uuid.v4();
+      for (final session in source.plannedSessions) {
+        final newSessionId = _uuid.v4();
         final createdDate = DateTime.now().toUtc().toIso8601String();
         await tx.execute(
           '''
-          INSERT INTO dim_workout
-            (id, workout_id, program_id, user_id, workout_name,
-             workout_notes, sequence_order, day_of_week, is_active, workout_created_date)
+          INSERT INTO dim_planned_session
+            (id, session_id, program_id, user_id, name,
+             notes, sequence_order, day_of_week, is_archived, created_date)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ''',
           [
-            newWorkoutId,
-            newWorkoutId,
+            newSessionId,
+            newSessionId,
             newProgramId,
             userId,
-            workout.name,
-            workout.notes,
-            workout.sequenceOrder,
-            workout.dayOfWeek,
-            1,
+            session.name,
+            session.notes,
+            session.sequenceOrder,
+            session.dayOfWeek,
+            0,
             createdDate,
           ],
         );
 
-        final sets = setsByWorkoutId[workout.plannedWorkoutId] ?? const [];
+        final sets = setsBySessionId[session.sessionId] ?? const [];
         for (final set in sets) {
           final newSetId = _uuid.v4();
           await tx.execute(
             '''
-            INSERT INTO dim_workout_set
-              (id, workout_set_id, workout_id, user_id, custom_exercise_id, custom_variation_id,
-               exercise_sequence_order, workout_set_number, target_weight, target_reps,
-               target_duration_seconds, target_notes, is_active, exercise_name, variation_name)
+            INSERT INTO dim_planned_session_set
+              (id, set_id, session_id, user_id, custom_exercise_id, custom_variation_id,
+               exercise_sequence_order, set_number, target_weight, target_reps,
+               target_duration_seconds, target_notes, is_archived, exercise_name, variation_name)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''',
             [
               newSetId,
               newSetId,
-              newWorkoutId,
+              newSessionId,
               userId,
               set.exerciseId,
               set.variationId,
@@ -731,7 +418,7 @@ class ProgramRepository {
               jsonEncode(set.targetReps),
               jsonEncode(set.targetDuration),
               set.targetNotes,
-              1,
+              0,
               set.exerciseName,
               set.variationName,
             ],
@@ -743,33 +430,43 @@ class ProgramRepository {
     return newProgramId;
   }
 
-  Future<void> createProgramGoal(String userId, String programRunId, ProgramGoal goal) async {
-    final id = _uuid.v4();
+  // ── Goals ────────────────────────────────────────────────────────────────
+
+  Future<List<Goal>> fetchGoals(String userId, {String? programRunId}) async {
+    final rows = await ps.db.getAll(
+      programRunId != null
+          ? 'SELECT * FROM fact_goal WHERE user_id = ? AND program_run_id = ? ORDER BY goal_created_date'
+          : 'SELECT * FROM fact_goal WHERE user_id = ? AND program_run_id IS NULL ORDER BY goal_created_date',
+      programRunId != null ? [userId, programRunId] : [userId],
+    );
+    return rows.map((r) => Goal.fromMap(r)).toList();
+  }
+
+  Future<void> createGoal(String userId, String runId, Goal goal) async {
     await ps.db.execute(
       '''
-      INSERT INTO fact_program_goal
-        (id, program_goal_id, program_run_id, user_id, goal_text, custom_exercise_id,
+      INSERT INTO fact_goal
+        (id, goal_id, program_run_id, user_id, goal_text, custom_exercise_id,
          target_weight, target_reps, goal_created_date)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       ''',
       [
-        id, id, programRunId, userId, goal.text, goal.exerciseId,
-        goal.targetWeight, goal.targetReps, DateTime.now().toUtc().toIso8601String(),
+        goal.goalId,
+        goal.goalId,
+        runId,
+        userId,
+        goal.text,
+        goal.exerciseId,
+        goal.targetWeight,
+        goal.targetReps,
+        DateTime.now().toUtc().toIso8601String(),
       ],
     );
   }
 
-  Future<List<ProgramGoal>> fetchProgramGoals(String programRunId) async {
-    final rows = await ps.db.getAll(
-      'SELECT * FROM fact_program_goal WHERE program_run_id = ? ORDER BY goal_created_date DESC',
-      [programRunId],
-    );
-    return rows.map((r) => ProgramGoal.fromMap(r)).toList();
-  }
-
-  Future<void> deleteProgramGoal(String goalId) async {
+  Future<void> deleteGoal(String goalId) async {
     await ps.db.execute(
-      'DELETE FROM fact_program_goal WHERE program_goal_id = ?',
+      'DELETE FROM fact_goal WHERE goal_id = ?',
       [goalId],
     );
   }

@@ -3,10 +3,10 @@ import 'package:flutter/services.dart';
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
 import '../../../core/styles/app_radius.dart';
-import '../../../core/utils/workout_format.dart';
+import '../../../core/utils/session_format.dart';
 import '../../../data/models/custom_variation.dart';
 import '../../../data/models/exercise_detail.dart';
-import '../../../data/models/planned_set.dart';
+import '../../../data/models/planned_session_set.dart';
 import '../../../shared/utils/pop_dialog.dart';
 import '../../../shared/widgets/dropdown_select.dart';
 import '../../../shared/widgets/swipe_actions.dart';
@@ -15,7 +15,7 @@ import '../../session/view/notes_modal.dart';
 import '../viewmodel/program_detail_viewmodel.dart';
 
 /// One row of the plan-workout screen's target-set grid — either an
-/// already-saved [PlannedSet] (editable in place) or an unsaved draft row
+/// already-saved [PlannedSessionSet] (editable in place) or an unsaved draft row
 /// (promoted to a real planned set the moment a target is entered and the
 /// field loses focus). Mirrors `lib/features/session/view/session_set_row.dart`'s
 /// `SessionSetRow` exactly (same cell shapes, swipe drawer, "did you mean?"
@@ -38,7 +38,7 @@ class PlanSetRow extends StatefulWidget {
   final int exerciseSequenceOrder;
   final int displayIndex;
   final ExerciseDetail? detail;
-  final PlannedSet? set;
+  final PlannedSessionSet? set;
   final int? draftId;
 
   @override
@@ -91,7 +91,7 @@ class _PlanSetRowState extends State<PlanSetRow> {
     if (_isDraft) {
       // Commit even with no targets — an empty planned set is valid (it shows
       // as a blank row to fill during the session).
-      await widget.viewModel.quickCreatePlannedSet(
+      await widget.viewModel.quickCreatePlannedSessionSet(
         exerciseId: widget.exerciseId,
         exerciseSequenceOrder: widget.exerciseSequenceOrder,
         draftId: widget.draftId!,
@@ -108,7 +108,7 @@ class _PlanSetRowState extends State<PlanSetRow> {
     final currentWeight = set.targetWeight;
     final currentReps = set.targetReps.isNotEmpty ? set.targetReps.first : null;
     if (weight == currentWeight && reps == currentReps) return;
-    await widget.viewModel.quickUpdatePlannedSet(
+    await widget.viewModel.quickUpdatePlannedSessionSet(
       set,
       weight: weight,
       clearWeight: weight == null,
@@ -125,7 +125,7 @@ class _PlanSetRowState extends State<PlanSetRow> {
         if (_isDraft) {
           setState(() => _draftNotes = value);
         } else {
-          widget.viewModel.quickUpdatePlannedSet(widget.set!,
+          widget.viewModel.quickUpdatePlannedSessionSet(widget.set!,
               notes: value.trim().isEmpty ? null : value.trim(),
               clearNotes: value.trim().isEmpty);
         }
@@ -135,15 +135,15 @@ class _PlanSetRowState extends State<PlanSetRow> {
 
   void _delete() {
     if (_isDraft) {
-      widget.viewModel.removeDraftPlannedSet(widget.exerciseSequenceOrder, widget.draftId!);
+      widget.viewModel.removeDraftPlannedSessionSet(widget.exerciseSequenceOrder, widget.draftId!);
     } else {
-      widget.viewModel.deletePlannedSet(widget.set!.plannedSetId);
+      widget.viewModel.deletePlannedSessionSet(widget.set!.setId);
     }
   }
 
   void _duplicate() {
     if (_isDraft) return; // nothing persisted yet to copy
-    widget.viewModel.duplicatePlannedSet(widget.set!);
+    widget.viewModel.duplicatePlannedSessionSet(widget.set!);
   }
 
   Future<void> _handleCreateVariation(String query) async {
@@ -172,7 +172,7 @@ class _PlanSetRowState extends State<PlanSetRow> {
     if (_isDraft) {
       setState(() => _draftVariationId = id);
     } else {
-      widget.viewModel.quickUpdatePlannedSet(widget.set!, variationId: id);
+      widget.viewModel.quickUpdatePlannedSessionSet(widget.set!, variationId: id);
     }
   }
 
@@ -334,7 +334,7 @@ class _PlanSetRowState extends State<PlanSetRow> {
                       if (_isDraft) {
                         setState(() => _draftVariationId = id);
                       } else {
-                        widget.viewModel.quickUpdatePlannedSet(set!, variationId: id, clearVariation: id == null);
+                        widget.viewModel.quickUpdatePlannedSessionSet(set!, variationId: id, clearVariation: id == null);
                       }
                     },
                   ),

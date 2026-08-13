@@ -5,11 +5,11 @@ import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
 import '../../../core/styles/app_radius.dart';
 import '../../../core/styles/app_spacing.dart';
-import '../../../core/utils/workout_format.dart';
+import '../../../core/utils/session_format.dart';
 import '../../../data/models/custom_variation.dart';
 import '../../../data/models/exercise_detail.dart';
 import '../../../data/models/lesson.dart';
-import '../../../data/models/workout_set.dart';
+import '../../../data/models/session_set.dart';
 import '../../../shared/mixins/unsaved_changes_guard.dart';
 import '../../../shared/widgets/page_header.dart';
 import '../../../shared/widgets/exercise_tab_chip.dart';
@@ -23,25 +23,25 @@ import '../../session/model/session_local_state.dart' show ExerciseHistorySessio
 import '../../session/view/lessons_modal.dart';
 import '../../session/view/notes_modal.dart';
 import '../../session/view/pr_modal.dart';
-import '../viewmodel/workout_detail_viewmodel.dart';
+import '../viewmodel/session_detail_viewmodel.dart';
 
-class WorkoutDetailScreen extends StatefulWidget {
-  const WorkoutDetailScreen({super.key, required this.workoutId});
-  final String workoutId;
+class SessionDetailScreen extends StatefulWidget {
+  const SessionDetailScreen({super.key, required this.sessionId});
+  final String sessionId;
 
   @override
-  State<WorkoutDetailScreen> createState() => _WorkoutDetailScreenState();
+  State<SessionDetailScreen> createState() => _SessionDetailScreenState();
 }
 
-class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> with UnsavedChangesGuard<WorkoutDetailScreen> {
-  late final WorkoutDetailViewModel _vm;
+class _SessionDetailScreenState extends State<SessionDetailScreen> with UnsavedChangesGuard<SessionDetailScreen> {
+  late final SessionDetailViewModel _vm;
 
   @override
   void initState() {
     super.initState();
-    _vm = WorkoutDetailViewModel();
+    _vm = SessionDetailViewModel();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _vm.load(widget.workoutId);
+      _vm.load(widget.sessionId);
     });
   }
 
@@ -58,7 +58,7 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> with UnsavedC
 
   @override
   Future<void> onSave() async {
-    await _vm.saveNotes(widget.workoutId);
+    await _vm.saveNotes(widget.sessionId);
   }
 
   @override
@@ -70,7 +70,7 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> with UnsavedC
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.bg,
-      body: ValueListenableBuilder<WorkoutDetailState>(
+      body: ValueListenableBuilder<SessionDetailState>(
         valueListenable: _vm.state,
         builder: (context, state, _) {
           if (state.isLoading) {
@@ -103,7 +103,7 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> with UnsavedC
                             compact: true,
                             loading: state.isSaving,
                             disabled: state.isSaving,
-                            onPressed: () => _vm.saveNotes(widget.workoutId),
+                            onPressed: () => _vm.saveNotes(widget.sessionId),
                           )
                         : GlassButton(
                             label: 'Edit',
@@ -112,7 +112,7 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> with UnsavedC
                           ),
                   ),
                   Expanded(
-                    child: _WorkoutBody(
+                    child: _SessionBody(
                       viewModel: _vm,
                       state: state,
                     ),
@@ -130,11 +130,11 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> with UnsavedC
 
 // ── Body ─────────────────────────────────────────────────────────────────────
 
-class _WorkoutBody extends StatelessWidget {
-  const _WorkoutBody({required this.viewModel, required this.state});
+class _SessionBody extends StatelessWidget {
+  const _SessionBody({required this.viewModel, required this.state});
 
-  final WorkoutDetailViewModel viewModel;
-  final WorkoutDetailState state;
+  final SessionDetailViewModel viewModel;
+  final SessionDetailState state;
 
   @override
   Widget build(BuildContext context) {
@@ -153,10 +153,10 @@ class _WorkoutBody extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                if (state.workout?.plannedWorkoutName != null)
+                if (state.session?.parentSessionName != null)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 6),
-                    child: Text(state.workout!.plannedWorkoutName!,
+                    child: Text(state.session!.parentSessionName!,
                         style: AppFonts.mono(fontSize: 10, letterSpacing: 0.6, color: AppColors.success)),
                   ),
                 StatsRow(tiles: [
@@ -172,7 +172,7 @@ class _WorkoutBody extends StatelessWidget {
                   StatsTile(label: 'EXERCISES', value: '${state.exerciseSlots.length}'),
                   const StatsTile(label: 'AVG REST', value: '—'),
                 ]),
-                if (state.workout?.preFeeling != null)
+                if (state.session?.preFeeling != null)
                   Padding(
                     padding: const EdgeInsets.only(top: AppSpacing.sm, bottom: AppSpacing.xs),
                     child: Row(
@@ -181,7 +181,7 @@ class _WorkoutBody extends StatelessWidget {
                             style: AppFonts.ui(fontSize: 11, color: AppColors.muted)),
                         ...List.generate(5, (i) {
                           final n = i + 1;
-                          final selected = state.workout!.preFeeling! >= n;
+                          final selected = state.session!.preFeeling! >= n;
                           return Container(
                             width: 20,
                             height: 20,
@@ -233,9 +233,9 @@ class _WorkoutBody extends StatelessWidget {
             ),
             child: Row(
               children: [
-                Expanded(child: _notesButton(context, 'Pre-Notes', state.workout?.preNotes ?? '', 'pre', state.isEditing)),
+                Expanded(child: _notesButton(context, 'Pre-Notes', state.session?.preNotes ?? '', 'pre', state.isEditing)),
                 const SizedBox(width: AppSpacing.sm),
-                Expanded(child: _notesButton(context, 'Post-Notes', state.workout?.postNotes ?? '', 'post', state.isEditing)),
+                Expanded(child: _notesButton(context, 'Post-Notes', state.session?.postNotes ?? '', 'post', state.isEditing)),
               ],
             ),
           ),
@@ -348,7 +348,7 @@ class _DetailExerciseTabBar extends StatelessWidget {
     this.onReorder,
   });
 
-  final List<WorkoutDetailExerciseSlot> slots;
+  final List<SessionDetailExerciseSlot> slots;
   final int activeIndex;
   final List<String> exerciseNames;
   final ValueChanged<int> onTap;
@@ -419,8 +419,8 @@ class _DetailExerciseTabBar extends StatelessWidget {
 class _DetailExerciseCard extends StatefulWidget {
   const _DetailExerciseCard({required this.viewModel, required this.slot});
 
-  final WorkoutDetailViewModel viewModel;
-  final WorkoutDetailExerciseSlot slot;
+  final SessionDetailViewModel viewModel;
+  final SessionDetailExerciseSlot slot;
 
   @override
   State<_DetailExerciseCard> createState() => _DetailExerciseCardState();
@@ -445,7 +445,7 @@ class _DetailExerciseCardState extends State<_DetailExerciseCard> {
     final detail = s.exerciseDetailMap[exerciseId];
     final lessons = vm.lessonsFor(exerciseId);
     final history = vm.historyFor(exerciseId);
-    final planned = s.workout?.plannedWorkoutId != null;
+    final planned = s.session?.parentSessionId != null;
     final prCount = vm.prCountFor(exerciseId);
     final sets = s.setsFor(order);
     final draftIds = s.workoutSetDrafts[order] ?? const <int>[];
@@ -741,7 +741,7 @@ class _DetailExerciseCardState extends State<_DetailExerciseCard> {
   }
 
   Widget _setsGrid(
-    List<WorkoutSet> sets,
+    List<SessionSet> sets,
     List<int> draftIds,
     String exerciseId,
     int order,
@@ -772,7 +772,7 @@ class _DetailExerciseCardState extends State<_DetailExerciseCard> {
         const SizedBox(height: 6),
         for (var i = 0; i < sets.length; i++)
           _DetailSetRow(
-            key: ValueKey(sets[i].setId),
+            key: ValueKey(sets[i].sessionSetId),
             viewModel: widget.viewModel,
             exerciseId: exerciseId,
             groupOrder: order,
@@ -780,7 +780,7 @@ class _DetailExerciseCardState extends State<_DetailExerciseCard> {
             detail: detail,
             set: sets[i],
             readOnly: !isEditing,
-            isPr: prSetIds.contains(sets[i].setId),
+            isPr: prSetIds.contains(sets[i].sessionSetId),
           ),
         for (var i = 0; i < draftIds.length; i++)
           _DetailSetRow(
@@ -891,12 +891,12 @@ class _DetailSetRow extends StatefulWidget {
     this.isPr = false,
   }) : assert(set != null || draftId != null);
 
-  final WorkoutDetailViewModel viewModel;
+  final SessionDetailViewModel viewModel;
   final String exerciseId;
   final int groupOrder;
   final int displayIndex;
   final ExerciseDetail? detail;
-  final WorkoutSet? set;
+  final SessionSet? set;
   final int? draftId;
   final bool readOnly;
   final bool isPr;
@@ -1002,7 +1002,7 @@ class _DetailSetRowState extends State<_DetailSetRow> {
     final set = widget.set!;
     // In-memory PR count from the already-computed workout PR records.
     final prCount = widget.viewModel.state.value.prRecords
-        .where((r) => r.setId == set.setId)
+        .where((r) => r.setId == set.sessionSetId)
         .length;
 
     final ok = await showDialog<bool>(
@@ -1028,7 +1028,7 @@ class _DetailSetRowState extends State<_DetailSetRow> {
       ),
     );
     if (ok == true && mounted) {
-      await widget.viewModel.deleteSetCascade(set.setId, set.exerciseId);
+      await widget.viewModel.deleteSetCascade(set.sessionSetId, set.exerciseId);
       _showDeleteErrorIfAny();
     }
   }
@@ -1312,7 +1312,7 @@ class _DetailSetRowState extends State<_DetailSetRow> {
 class _DetailAddExerciseContent extends StatefulWidget {
   const _DetailAddExerciseContent({required this.viewModel});
 
-  final WorkoutDetailViewModel viewModel;
+  final SessionDetailViewModel viewModel;
 
   @override
   State<_DetailAddExerciseContent> createState() => _DetailAddExerciseContentState();
@@ -1385,7 +1385,7 @@ class _DetailAddExerciseContentState extends State<_DetailAddExerciseContent> {
             const SizedBox(height: AppSpacing.sm),
             ConstrainedBox(
               constraints: const BoxConstraints(maxHeight: 260),
-              child: ValueListenableBuilder<WorkoutDetailState>(
+              child: ValueListenableBuilder<SessionDetailState>(
                 valueListenable: widget.viewModel.state,
                 builder: (context, state, _) => ListView(
                   shrinkWrap: true,

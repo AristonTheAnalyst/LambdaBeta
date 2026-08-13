@@ -1,4 +1,4 @@
-import 'planned_workout.dart';
+import 'planned_session.dart';
 
 class Program {
   const Program({
@@ -6,7 +6,7 @@ class Program {
     required this.userId,
     required this.name,
     required this.progressionMode,
-    required this.isActive,
+    required this.isArchived,
     required this.createdDate,
     this.description,
     this.lengthWeeks,
@@ -18,7 +18,7 @@ class Program {
   final String? description;
   final int? lengthWeeks;
   final String progressionMode; // 'sequential' | 'calendar'
-  final bool isActive;
+  final bool isArchived;
   final DateTime createdDate;
 
   factory Program.fromMap(Map<String, dynamic> map) => Program(
@@ -28,7 +28,7 @@ class Program {
         description: map['program_description'] as String?,
         lengthWeeks: _toInt(map['program_length_weeks']),
         progressionMode: map['progression_mode'] as String? ?? 'sequential',
-        isActive: _toBool(map['is_active']),
+        isArchived: _toBool(map['is_archived']),
         createdDate: DateTime.parse(map['program_created_date'] as String),
       );
 
@@ -52,13 +52,13 @@ class Program {
         'program_description': description,
         'program_length_weeks': lengthWeeks,
         'progression_mode': progressionMode,
-        'is_active': isActive,
+        'is_archived': isArchived,
         'program_created_date': createdDate.toIso8601String(),
       };
 }
 
-class ProgramWithWorkouts {
-  const ProgramWithWorkouts({required this.program, required this.plannedWorkouts});
+class ProgramWithSessions {
+  const ProgramWithSessions({required this.program, required this.plannedSessions});
   final Program program;
-  final List<PlannedWorkout> plannedWorkouts;
+  final List<PlannedSession> plannedSessions;
 }

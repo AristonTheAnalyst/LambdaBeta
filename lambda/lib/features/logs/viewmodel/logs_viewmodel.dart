@@ -1,15 +1,15 @@
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../../../data/models/workout.dart';
-import '../../../data/models/workout_set.dart';
-import '../../../data/repositories/workout_repository.dart';
+import '../../../data/models/session.dart';
+import '../../../data/models/session_set.dart';
+import '../../../data/repositories/session_repository.dart';
 
 class LogsState {
   const LogsState({
     this.isLoading = false,
     this.isRefreshing = false,
     this.error,
-    this.workouts = const [],
+    this.sessions = const [],
     this.pastSets = const [],
     this.activeTab = 0,
   });
@@ -17,7 +17,7 @@ class LogsState {
   final bool isLoading;
   final bool isRefreshing;
   final String? error;
-  final List<WorkoutWithSets> workouts;
+  final List<SessionWithSets> sessions;
   final List<PastSetRow> pastSets;
   final int activeTab;
 
@@ -26,7 +26,7 @@ class LogsState {
     bool? isRefreshing,
     String? error,
     bool clearError = false,
-    List<WorkoutWithSets>? workouts,
+    List<SessionWithSets>? sessions,
     List<PastSetRow>? pastSets,
     int? activeTab,
   }) =>
@@ -34,17 +34,17 @@ class LogsState {
         isLoading: isLoading ?? this.isLoading,
         isRefreshing: isRefreshing ?? this.isRefreshing,
         error: clearError ? null : error ?? this.error,
-        workouts: workouts ?? this.workouts,
+        sessions: sessions ?? this.sessions,
         pastSets: pastSets ?? this.pastSets,
         activeTab: activeTab ?? this.activeTab,
       );
 }
 
 class LogsViewModel {
-  LogsViewModel({WorkoutRepository? repo})
-      : _repo = repo ?? WorkoutRepository();
+  LogsViewModel({SessionRepository? repo})
+      : _repo = repo ?? SessionRepository();
 
-  final WorkoutRepository _repo;
+  final SessionRepository _repo;
   final state = ValueNotifier(const LogsState());
 
   String get _userId => Supabase.instance.client.auth.currentUser!.id;
@@ -53,12 +53,12 @@ class LogsViewModel {
     state.value = state.value.copyWith(isLoading: true, clearError: true);
     try {
       final results = await Future.wait([
-        _repo.loadWorkoutsWithSets(_userId),
+        _repo.loadSessionsWithSets(_userId),
         _repo.loadPastSetsTimeline(_userId),
       ]);
       state.value = state.value.copyWith(
         isLoading: false,
-        workouts: results[0] as List<WorkoutWithSets>,
+        sessions: results[0] as List<SessionWithSets>,
         pastSets: results[1] as List<PastSetRow>,
       );
     } catch (e) {
@@ -71,12 +71,12 @@ class LogsViewModel {
     state.value = state.value.copyWith(isRefreshing: true, clearError: true);
     try {
       final results = await Future.wait([
-        _repo.loadWorkoutsWithSets(_userId),
+        _repo.loadSessionsWithSets(_userId),
         _repo.loadPastSetsTimeline(_userId),
       ]);
       state.value = state.value.copyWith(
         isRefreshing: false,
-        workouts: results[0] as List<WorkoutWithSets>,
+        sessions: results[0] as List<SessionWithSets>,
         pastSets: results[1] as List<PastSetRow>,
       );
     } catch (e) {

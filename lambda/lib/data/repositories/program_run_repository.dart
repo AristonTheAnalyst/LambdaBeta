@@ -1,7 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 import '../../core/powersync/database.dart' as ps;
-import '../models/planned_workout.dart';
+import '../models/planned_session.dart';
 import '../models/program_progress.dart';
 import '../models/program_run.dart';
 import 'program_repository.dart';
@@ -148,7 +148,7 @@ class ProgramRunRepository {
 
   Future<int> _completedWorkoutCount(String programRunId) async {
     final rows = await ps.db.getAll(
-      'SELECT COUNT(*) as cnt FROM fact_workout WHERE program_run_id = ? AND is_active = 0',
+      'SELECT COUNT(*) as cnt FROM fact_session WHERE program_run_id = ? AND is_active = 0',
       [programRunId],
     );
     if (rows.isEmpty) return 0;
@@ -163,12 +163,12 @@ class ProgramRunRepository {
   ///   based on calendar gaps.
   /// - calendar: whichever planned workout's day_of_week matches today; null
   ///   (rest day / free-form only) when nothing matches.
-  Future<PlannedWorkout?> getNextPlannedWorkout(
+  Future<PlannedSession?> getNextPlannedSession(
     String programId,
     String programRunId, {
     required String progressionMode,
   }) async {
-    final workouts = await _programRepo.fetchPlannedWorkouts(programId);
+    final workouts = await _programRepo.fetchPlannedSessions(programId);
     if (workouts.isEmpty) return null;
 
     if (progressionMode == 'calendar') {
@@ -189,7 +189,7 @@ class ProgramRunRepository {
     final program = await _programRepo.fetchProgram(run.programId);
     if (program == null) return null;
 
-    final workouts = await _programRepo.fetchPlannedWorkouts(program.programId);
+    final workouts = await _programRepo.fetchPlannedSessions(program.programId);
     final completed = await _completedWorkoutCount(run.programRunId);
     final totalInCycle = workouts.length;
 
@@ -209,7 +209,7 @@ class ProgramRunRepository {
     final weekNumber =
         totalWeeks != null && rawWeek > totalWeeks ? totalWeeks : rawWeek;
 
-    final next = await getNextPlannedWorkout(
+    final next = await getNextPlannedSession(
       program.programId,
       run.programRunId,
       progressionMode: program.progressionMode,
@@ -223,7 +223,7 @@ class ProgramRunRepository {
       workoutsCompletedInCycle: workoutsCompletedInCycle,
       totalWorkoutsInCycle: effectiveTotal,
       totalWorkoutsCompleted: completed,
-      nextPlannedWorkout: next,
+      nextPlannedSession: next,
     );
 
     // A completed program stops being "current" — end the run so the session

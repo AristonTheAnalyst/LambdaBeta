@@ -4,9 +4,9 @@ import '../../../core/styles/app_fonts.dart';
 import '../../../core/styles/app_radius.dart';
 import '../../../core/styles/app_spacing.dart';
 import '../../../core/styles/app_text_styles.dart';
-import '../../../core/utils/workout_format.dart';
-import '../../../data/models/planned_set.dart';
-import '../../../data/models/planned_workout.dart';
+import '../../../core/utils/session_format.dart';
+import '../../../data/models/planned_session_set.dart';
+import '../../../data/models/planned_session.dart';
 import '../../../shared/mixins/unsaved_changes_guard.dart';
 import '../../../shared/widgets/exercise_tab_chip.dart';
 import '../../../shared/widgets/segmented_control.dart';
@@ -29,8 +29,8 @@ const _dayOfWeekOptions = [
 /// tabbed by exercise, inline editable set grid (PlanSetRow), auto-commit on
 /// blur, Lessons/History per exercise, swipe-to-reveal delete/duplicate.
 /// Pushed via [program_detail_screen.dart] on create or edit.
-class PlanWorkoutScreen extends StatefulWidget {
-  const PlanWorkoutScreen({
+class PlanSessionScreen extends StatefulWidget {
+  const PlanSessionScreen({
     super.key,
     required this.viewModel,
     this.workout,
@@ -39,7 +39,7 @@ class PlanWorkoutScreen extends StatefulWidget {
   });
 
   final ProgramDetailViewModel viewModel;
-  final PlannedWorkout? workout; // null = new workout
+  final PlannedSession? workout; // null = new workout
 
   /// When true, a new workout is a standalone workout (no program).
   final bool standalone;
@@ -48,10 +48,10 @@ class PlanWorkoutScreen extends StatefulWidget {
   final String? standaloneWorkoutId;
 
   @override
-  State<PlanWorkoutScreen> createState() => _PlanWorkoutScreenState();
+  State<PlanSessionScreen> createState() => _PlanSessionScreenState();
 }
 
-class _PlanWorkoutScreenState extends State<PlanWorkoutScreen> with UnsavedChangesGuard<PlanWorkoutScreen> {
+class _PlanSessionScreenState extends State<PlanSessionScreen> with UnsavedChangesGuard<PlanSessionScreen> {
   late final TextEditingController _nameCtrl;
   late final TextEditingController _notesCtrl;
   final _nameFocus = FocusNode();
@@ -63,7 +63,7 @@ class _PlanWorkoutScreenState extends State<PlanWorkoutScreen> with UnsavedChang
     // Initialize controllers from the workout param directly, NOT from the
     // viewmodel state (which may be stale from a previous closeWorkoutEditor).
     // This ensures the TextField shows the correct text from the start.
-    _nameCtrl = TextEditingController(text: widget.workout?.name ?? 'New Workout');
+    _nameCtrl = TextEditingController(text: widget.workout?.name ?? 'New Session');
     _notesCtrl = TextEditingController(text: widget.workout?.notes ?? '');
     _nameFocus.addListener(() {
       if (!_nameFocus.hasFocus) widget.viewModel.commitWorkoutName();
@@ -118,7 +118,7 @@ class _PlanWorkoutScreenState extends State<PlanWorkoutScreen> with UnsavedChang
     // If the workout has no exercises, treat it as abandoned — delete it from
     // the DB rather than leaving an empty orphan row.
     if (widget.viewModel.state.value.workoutExerciseSlots.isEmpty) {
-      widget.viewModel.deleteWorkout();
+      widget.viewModel.deletePlannedSession();
     } else {
       widget.viewModel.closeWorkoutEditor();
     }
@@ -211,7 +211,7 @@ class _PlanWorkoutScreenState extends State<PlanWorkoutScreen> with UnsavedChang
                         ],
                         const SizedBox(height: AppSpacing.lg),
                         _PlanStatsBar(
-                          setCount: state.workoutPlannedSets.length,
+                          setCount: state.workoutPlannedSessionSets.length,
                           exerciseCount: state.workoutExerciseSlots.length,
                         ),
                         const SizedBox(height: AppSpacing.md),
@@ -325,7 +325,7 @@ class _PlanWorkoutScreenState extends State<PlanWorkoutScreen> with UnsavedChang
                   style: AppFonts.ui(fontSize: 17, fontWeight: FontWeight.w600, color: AppColors.primary),
                   decoration: const InputDecoration(
                     border: InputBorder.none,
-                    hintText: 'Workout name',
+                    hintText: 'Session name',
                     contentPadding: EdgeInsets.zero,
                     isDense: true,
                   ),
@@ -430,7 +430,7 @@ class _PlanWorkoutScreenState extends State<PlanWorkoutScreen> with UnsavedChang
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
-        title: Text('Delete Workout',
+        title: Text('Delete Session',
             style: AppFonts.ui(fontWeight: FontWeight.w800, color: AppColors.danger)),
         content: Text('Remove this planned workout and its sets?',
             style: AppFonts.ui(color: AppColors.muted)),
@@ -441,7 +441,7 @@ class _PlanWorkoutScreenState extends State<PlanWorkoutScreen> with UnsavedChang
           TextButton(
             onPressed: () {
               Navigator.of(ctx).pop();
-              widget.viewModel.deleteWorkout();
+              widget.viewModel.deletePlannedSession();
               Navigator.of(context, rootNavigator: true).pop();
             },
             child: Text('Delete',
@@ -610,7 +610,7 @@ class _PlanExerciseCardState extends State<_PlanExerciseCard> {
   }
 
   Widget _setsGrid(
-    List<PlannedSet> sets,
+    List<PlannedSessionSet> sets,
     List<int> draftIds,
     String exerciseId,
     int order,
@@ -638,7 +638,7 @@ class _PlanExerciseCardState extends State<_PlanExerciseCard> {
         const SizedBox(height: 6),
         for (var i = 0; i < sets.length; i++)
           PlanSetRow(
-            key: ValueKey(sets[i].plannedSetId),
+            key: ValueKey(sets[i].setId),
             viewModel: widget.viewModel,
             exerciseId: exerciseId,
             exerciseSequenceOrder: order,
@@ -658,7 +658,7 @@ class _PlanExerciseCardState extends State<_PlanExerciseCard> {
           ),
         const SizedBox(height: 2),
         GestureDetector(
-          onTap: () => widget.viewModel.addDraftPlannedSet(order),
+          onTap: () => widget.viewModel.addDraftPlannedSessionSet(order),
           child: Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(vertical: 10),

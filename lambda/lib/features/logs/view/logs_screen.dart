@@ -7,8 +7,8 @@ import '../../../../core/styles/app_radius.dart';
 import '../../../../core/styles/app_spacing.dart';
 import '../../../../core/styles/app_text_styles.dart';
 import '../../../../data/models/exercise_usage.dart';
-import '../../../../data/models/workout.dart';
-import '../../../../data/models/workout_set.dart';
+import '../../../../data/models/session.dart';
+import '../../../../data/models/session_set.dart';
 import '../../../../shared/widgets/app_card.dart';
 import '../../../../shared/widgets/dropdown_select.dart';
 import '../../../../shared/widgets/page_header.dart';
@@ -116,8 +116,8 @@ class _LogsScreenState extends State<LogsScreen> with RouteAware {
 
           // ── derive filter options ─────────────────────────────────────────────
           final allSets = isWorkouts
-              ? state.workouts.expand((w) => w.sets).toList()
-              : state.pastSets.cast<WorkoutSet>();
+              ? state.sessions.expand((w) => w.sets).toList()
+              : state.pastSets.cast<SessionSet>();
 
           // Most recently used first (names derived from the dated timeline).
           final byId = lastUsedByEntity(state.pastSets);
@@ -154,11 +154,11 @@ class _LogsScreenState extends State<LogsScreen> with RouteAware {
             ..sort((a, b) => _byNameRecency(a, b, lastUsed));
 
           // ── client-side filtering ─────────────────────────────────────────────
-          bool matchesExercise(WorkoutSet s) =>
+          bool matchesExercise(SessionSet s) =>
               _selectedExercise == null ||
               (s.exerciseName ?? s.exerciseId) == _selectedExercise;
 
-          bool matchesVariation(WorkoutSet s) =>
+          bool matchesVariation(SessionSet s) =>
               _selectedVariation == null ||
               s.variationName == _selectedVariation;
 
@@ -169,8 +169,8 @@ class _LogsScreenState extends State<LogsScreen> with RouteAware {
             return true;
           }
 
-          final filteredWorkouts = state.workouts.where((w) {
-            if (!matchesDate(w.workout.createdDate)) return false;
+          final filteredWorkouts = state.sessions.where((w) {
+            if (!matchesDate(w.session.createdDate)) return false;
             return w.sets.any((s) => matchesExercise(s) && matchesVariation(s));
           }).toList();
 
@@ -178,7 +178,7 @@ class _LogsScreenState extends State<LogsScreen> with RouteAware {
               .where((s) =>
                   matchesExercise(s) &&
                   matchesVariation(s) &&
-                  matchesDate(s.workoutCreatedDate))
+                  matchesDate(s.sessionCreatedDate))
               .toList();
 
           return Column(
@@ -639,7 +639,7 @@ class _WorkoutsPanel extends StatelessWidget {
     required this.onTap,
   });
 
-  final List<WorkoutWithSets> workouts;
+  final List<SessionWithSets> workouts;
   final bool isRefreshing;
   final Future<void> Function() onRefresh;
   final String Function(DateTime) formatDate;
@@ -665,20 +665,20 @@ class _WorkoutsPanel extends StatelessWidget {
           return Padding(
             padding: const EdgeInsets.only(bottom: AppSpacing.md),
             child: PressSquash(
-              onTap: () => onTap(w.workout.workoutId),
+              onTap: () => onTap(w.session.sessionId),
               child: AppCard(
                 padding: const EdgeInsets.all(AppSpacing.lg),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     Text(
-                      formatDate(w.workout.createdDate),
+                      formatDate(w.session.createdDate),
                       style: AppFonts.mono(
                           fontSize: AppTextStyles.sm,
                           fontWeight: FontWeight.w700,
                           color: AppColors.accent),
                     ),
-                    if (w.workout.plannedWorkoutName != null) ...[
+                    if (w.session.parentSessionName != null) ...[
                       const SizedBox(height: AppSpacing.xs),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -688,7 +688,7 @@ class _WorkoutsPanel extends StatelessWidget {
                           border: Border.all(color: AppColors.success.withValues(alpha: 0.35)),
                         ),
                         child: Text(
-                          w.workout.plannedWorkoutName!,
+                          w.session.parentSessionName!,
                           style: AppFonts.ui(
                               fontSize: AppTextStyles.xs,
                               fontWeight: FontWeight.w700,
@@ -696,10 +696,10 @@ class _WorkoutsPanel extends StatelessWidget {
                         ),
                       ),
                     ],
-                    if (w.workout.preNotes?.isNotEmpty == true) ...[
+                    if (w.session.preNotes?.isNotEmpty == true) ...[
                       const SizedBox(height: AppSpacing.xs),
                       Text(
-                        '"${w.workout.preNotes}"',
+                        '"${w.session.preNotes}"',
                         style: AppFonts.ui(
                             fontSize: AppTextStyles.xs,
                             color: AppColors.muted)
@@ -713,10 +713,10 @@ class _WorkoutsPanel extends StatelessWidget {
                       const SizedBox(height: AppSpacing.sm),
                       ..._exerciseSummaries(w.sets),
                     ],
-                    if (w.workout.postNotes?.isNotEmpty == true) ...[
+                    if (w.session.postNotes?.isNotEmpty == true) ...[
                       const SizedBox(height: AppSpacing.xs),
                       Text(
-                        '"${w.workout.postNotes}"',
+                        '"${w.session.postNotes}"',
                         style: AppFonts.ui(
                             fontSize: AppTextStyles.xs,
                             color: AppColors.muted)
@@ -736,7 +736,7 @@ class _WorkoutsPanel extends StatelessWidget {
     );
   }
 
-  List<Widget> _exerciseSummaries(List<WorkoutSet> sets) {
+  List<Widget> _exerciseSummaries(List<SessionSet> sets) {
     final order  = <String>[];
     final counts = <String, int>{};
     final names  = <String, String>{};
@@ -813,7 +813,7 @@ class _SetsPanel extends StatelessWidget {
           final row = pastSets[i];
           final prev = i > 0 ? pastSets[i - 1] : null;
           final isNewDate = prev == null ||
-              !_sameDay(prev.workoutCreatedDate, row.workoutCreatedDate);
+              !_sameDay(prev.sessionCreatedDate, row.sessionCreatedDate);
 
           final isReps    = row.duration.isEmpty;
           final vals      = isReps ? row.reps : row.duration;
@@ -835,7 +835,7 @@ class _SetsPanel extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(
                       horizontal: AppSpacing.lg),
                   child: Text(
-                    formatDate(row.workoutCreatedDate),
+                    formatDate(row.sessionCreatedDate),
                     style: AppFonts.mono(
                         fontSize: AppTextStyles.sm,
                         fontWeight: FontWeight.w700,

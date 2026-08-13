@@ -5,12 +5,12 @@ import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
 import '../../../core/styles/app_spacing.dart';
 import '../../../core/styles/app_text_styles.dart';
-import '../../../core/utils/workout_format.dart';
+import '../../../core/utils/session_format.dart';
 import '../../../data/models/exercise_detail.dart';
 import '../../../data/models/exercise_usage.dart';
 import '../../../data/repositories/exercise_repository.dart';
 import '../../../data/repositories/pr_repository.dart';
-import '../../../data/repositories/workout_repository.dart';
+import '../../../data/repositories/session_repository.dart';
 import '../../../shared/widgets/app_card.dart';
 import '../../../shared/widgets/glass_button.dart';
 import '../../../shared/widgets/page_header.dart';
@@ -29,7 +29,7 @@ class PrCatalogScreen extends StatefulWidget {
 class _PrCatalogScreenState extends State<PrCatalogScreen> {
   final _exerciseRepo = ExerciseRepository();
   final _prRepo = PrRepository();
-  final _workoutRepo = WorkoutRepository();
+  final _sessionRepo = SessionRepository();
   Map<String, ExerciseDetail>? _exerciseMap;
   List<PrRecord> _prs = const [];
   String? _error;
@@ -46,7 +46,7 @@ class _PrCatalogScreenState extends State<PrCatalogScreen> {
 
   Future<void> _load() async {
     try {
-      final timeline = await _workoutRepo.loadPastSetsTimeline(_userId);
+      final timeline = await _sessionRepo.loadPastSetsTimeline(_userId);
       final prs = await _prRepo.loadAllWithBackfill(_userId, () async => timeline);
       final map = await _exerciseRepo.fetchExerciseDetailMap(_userId);
       if (!mounted) return;

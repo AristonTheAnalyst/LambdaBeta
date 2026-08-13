@@ -2,7 +2,7 @@ class RestPeriod {
   const RestPeriod({
     required this.restId,
     required this.userId,
-    required this.workoutId,
+    required this.sessionId,
     required this.plannedSeconds,
     required this.actualSeconds,
     required this.createdDate,
@@ -11,7 +11,7 @@ class RestPeriod {
 
   final String restId;
   final String userId;
-  final String workoutId;
+  final String sessionId;
   final String? exerciseId;
   final int plannedSeconds;
   final int actualSeconds;
@@ -20,7 +20,7 @@ class RestPeriod {
   factory RestPeriod.fromMap(Map<String, dynamic> map) => RestPeriod(
         restId: map['rest_id'] as String,
         userId: map['user_id'] as String,
-        workoutId: map['user_workout_id'] as String,
+        sessionId: map['session_id'] as String,
         exerciseId: map['custom_exercise_id'] as String?,
         plannedSeconds: map['planned_seconds'] as int,
         actualSeconds: map['actual_seconds'] as int,
@@ -30,7 +30,7 @@ class RestPeriod {
   Map<String, dynamic> toMap() => {
         'rest_id': restId,
         'user_id': userId,
-        'user_workout_id': workoutId,
+        'session_id': sessionId,
         'custom_exercise_id': exerciseId,
         'planned_seconds': plannedSeconds,
         'actual_seconds': actualSeconds,

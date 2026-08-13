@@ -15,7 +15,7 @@ import '../../features/exercises/view/exercise_hub_screen.dart';
 import '../../features/exercises/view/exercise_library_screen.dart';
 import '../../features/exercises/view/guide_screen.dart';
 import '../../features/logs/view/logs_screen.dart';
-import '../../features/logs/view/workout_detail_screen.dart';
+import '../../features/logs/view/session_detail_screen.dart';
 import '../../features/onboarding/view/onboarding_screen.dart';
 import '../../features/programs/view/program_detail_screen.dart';
 import '../../features/programs/view/program_library_screen.dart';
@@ -104,8 +104,8 @@ abstract final class AppRouter {
             routes: [
               GoRoute(
                 path: ':id',
-                builder: (_, state) => WorkoutDetailScreen(
-                  workoutId: state.pathParameters['id']!,
+                builder: (_, state) => SessionDetailScreen(
+                  sessionId: state.pathParameters['id']!,
                 ),
               ),
             ],

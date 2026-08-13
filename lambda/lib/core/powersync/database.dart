@@ -18,21 +18,19 @@ const _powersyncUrl =
 // PowerSync uses 'id' internally; we remap on upload.
 const _pkColumns = {
   'dim_user': 'user_id',
-  'fact_workout': 'user_workout_id',
+  'fact_session': 'session_id',
   'dim_exercise': 'custom_exercise_id',
   'dim_variation': 'custom_variation_id',
   'fact_bodyweight': 'user_weight_id',
-  'fact_workout_set': 'workout_set_id',
+  'fact_session_set': 'session_set_id',
   'dim_program': 'program_id',
-  'dim_planned_workout': 'planned_workout_id',
-  'dim_planned_set': 'planned_set_id',
   'fact_program_run': 'program_run_id',
   'fact_pr': 'pr_id',
-  'fact_lesson': 'lesson_id',
+  'dim_lesson': 'lesson_id',
   'fact_rest': 'rest_id',
-  'dim_workout': 'workout_id',
-  'dim_workout_set': 'workout_set_id',
-  'fact_program_goal': 'program_goal_id',
+  'dim_planned_session': 'session_id',
+  'dim_planned_session_set': 'set_id',
+  'fact_goal': 'goal_id',
 };
 
 // dim_exercise_variation_bridge is the one table with no single-column PK —
@@ -52,8 +50,8 @@ const _compositeKeyTables = {
 // encoding on the way back up, or PostgREST receives a string instead of an
 // array.
 const _arrayColumns = {
-  'workout_set_reps',
-  'workout_set_duration_seconds',
+  'reps',
+  'duration_seconds',
   'target_reps',
   'target_duration_seconds',
 };
@@ -284,10 +282,24 @@ Future<void> openDatabase() async {
       await tx.execute(
         "DELETE FROM ps_crud WHERE table_name = 'coaching_relationship'",
       );
-      // Old table name — renamed to fact_program_goal in a past migration.
-      await tx.execute(
-        "DELETE FROM ps_crud WHERE table_name = 'dim_program_goal'",
-      );
+      // Tables renamed in the session-model redesign (2026-08-13) — queued
+      // entries under the old names can never upload.
+      for (final old in [
+        'dim_workout',
+        'dim_workout_set',
+        'fact_workout',
+        'fact_workout_set',
+        'fact_program_goal',
+        'fact_lesson',
+        'dim_planned_workout',
+        'dim_planned_set',
+        'dim_program_goal',
+      ]) {
+        await tx.execute(
+          'DELETE FROM ps_crud WHERE table_name = ?',
+          [old],
+        );
+      }
     });
   } catch (_) {
     // ps_crud may not exist yet if this is the very first run — harmless.

@@ -7,10 +7,10 @@ import '../../../core/styles/app_fonts.dart';
 import '../../../core/styles/app_radius.dart';
 import '../../../core/styles/app_spacing.dart';
 import '../../../core/styles/app_text_styles.dart';
-import '../../../core/utils/workout_format.dart';
+import '../../../core/utils/session_format.dart';
 import '../../../data/models/exercise_usage.dart';
-import '../../../data/models/workout_set.dart';
-import '../../../data/repositories/workout_repository.dart';
+import '../../../data/models/session_set.dart';
+import '../../../data/repositories/session_repository.dart';
 import '../../../shared/widgets/app_card.dart';
 import '../../../shared/widgets/glass_button.dart';
 import '../../../shared/widgets/multi_select_sheet.dart';
@@ -33,7 +33,7 @@ class InsightsScreen extends StatefulWidget {
 class _InsightsScreenState extends State<InsightsScreen> {
   static const _noVariation = '__none__'; // sentinel: sets logged without a variation
 
-  final _workoutRepo = WorkoutRepository();
+  final _sessionRepo = SessionRepository();
   List<PastSetRow>? _sets;
   List<PrRecord>? _prs;
   String? _error;
@@ -54,7 +54,7 @@ class _InsightsScreenState extends State<InsightsScreen> {
 
   Future<void> _load() async {
     try {
-      final sets = await _workoutRepo.loadPastSetsTimeline(_userId);
+      final sets = await _sessionRepo.loadPastSetsTimeline(_userId);
       final prs = fullPrTimeline(sets);
       if (mounted) {
         setState(() {
@@ -442,7 +442,7 @@ class _InsightsScreenState extends State<InsightsScreen> {
     final sets = _filteredSets;
     final buckets = bucketsFor(_range, DateTime.now());
     final counts = countsPerBucket(buckets,
-        [for (final s in sets) s.workoutCreatedDate], _range);
+        [for (final s in sets) s.sessionCreatedDate], _range);
     final m = setMetrics(sets, _range);
     final n = buckets.length;
 

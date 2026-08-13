@@ -3,7 +3,7 @@ import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
 import '../../../core/styles/app_radius.dart';
 import '../../../core/styles/app_spacing.dart';
-import '../../../core/utils/workout_format.dart';
+import '../../../core/utils/session_format.dart';
 import '../../../shared/widgets/glass_button.dart';
 import '../../../shared/widgets/slide_up_modal.dart';
 import '../viewmodel/session_viewmodel.dart';

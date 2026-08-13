@@ -6,12 +6,12 @@ import '../../../../core/styles/app_radius.dart';
 import '../../../../core/styles/app_fonts.dart';
 import '../../../../core/styles/app_spacing.dart';
 import '../../../../core/styles/app_text_styles.dart';
-import '../../../../core/utils/workout_format.dart';
+import '../../../../core/utils/session_format.dart';
 import '../../../../data/models/exercise_detail.dart';
-import '../../../../data/models/planned_workout.dart';
-import '../../../../data/models/program_goal.dart';
+import '../../../../data/models/planned_session.dart';
+import '../../../../data/models/goal.dart';
 import '../../../../data/models/program_run.dart';
-import '../../../../data/repositories/workout_plan_repository.dart';
+import '../../../../data/repositories/planned_session_repository.dart';
 import '../../../../shared/widgets/app_card.dart';
 import '../../../../shared/widgets/glass_button.dart';
 import '../../../../shared/widgets/lambda_input.dart';
@@ -21,7 +21,7 @@ import '../../../../shared/utils/pop_dialog.dart';
 import '../../../../shared/mixins/unsaved_changes_guard.dart';
 import '../../../../shared/widgets/swipe_actions.dart';
 import '../viewmodel/program_detail_viewmodel.dart';
-import 'plan_workout_screen.dart';
+import 'plan_session_screen.dart';
 
 String _dayOfWeekLabel(int? d) => switch (d) {
       1 => 'Mon',
@@ -335,7 +335,7 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedC
     Navigator.of(context, rootNavigator: true)
         .push<bool>(
           MaterialPageRoute(
-            builder: (_) => PlanWorkoutScreen(viewModel: _vm),
+            builder: (_) => PlanSessionScreen(viewModel: _vm),
           ),
         )
         .then((_) {
@@ -395,13 +395,13 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedC
   }
 
   /// Confirms and removes a planned workout from this program.
-  Future<void> _confirmDeleteWorkout(PlannedWorkout w) async {
+  Future<void> _confirmDeleteWorkout(PlannedSession w) async {
     final isCurrent = _vm.state.value.isCurrent;
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
-        title: Text(isCurrent ? 'Remove from active program?' : 'Remove Workout',
+        title: Text(isCurrent ? 'Remove from active program?' : 'Remove Session',
             style: AppFonts.ui(fontWeight: FontWeight.w800, color: AppColors.danger)),
         content: Text(
             isCurrent
@@ -424,14 +424,14 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedC
       ),
     );
     if (ok == true && mounted) {
-      await _vm.removePlannedWorkout(w);
+      await _vm.removePlannedSession(w);
     }
   }
 
   /// Lets the user pick a standalone workout to copy into this program.
   Future<void> _addExistingWorkout() async {
-    final repo = WorkoutPlanRepository();
-    final workouts = await repo.fetchWorkouts(
+    final repo = PlannedSessionRepository();
+    final workouts = await repo.fetchPlannedSessions(
         Supabase.instance.client.auth.currentUser!.id);
     if (workouts.isEmpty || !mounted) return;
     final chosen = await showModalBottomSheet<String>(
@@ -459,7 +459,7 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedC
                 title: Text(toProperCase(w.name),
                     style: AppFonts.ui(
                         fontSize: AppTextStyles.md, color: AppColors.primary)),
-                onTap: () => Navigator.of(ctx).pop(w.workoutId),
+                onTap: () => Navigator.of(ctx).pop(w.sessionId),
               ),
             const SizedBox(height: AppSpacing.md),
           ],
@@ -470,7 +470,7 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedC
     await _vm.copyWorkoutIntoProgram(chosen);
   }
 
-  Future<void> _openEditWorkout(PlannedWorkout w) async {
+  Future<void> _openEditWorkout(PlannedSession w) async {
     // Informational confirm when editing a workout in a running program:
     // changes apply to future sessions only; already-logged sets are snapshots
     // and won't change.
@@ -505,7 +505,7 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedC
     Navigator.of(context, rootNavigator: true)
         .push<bool>(
           MaterialPageRoute(
-            builder: (_) => PlanWorkoutScreen(viewModel: _vm, workout: w),
+            builder: (_) => PlanSessionScreen(viewModel: _vm, workout: w),
           ),
         )
         .then((_) {
@@ -714,21 +714,21 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedC
                             buildDefaultDragHandles: false,
                             onReorderItem: (oldIndex, newIndex) {
                               final updated =
-                                  List<PlannedWorkout>.from(state.plannedWorkouts);
+                                  List<PlannedSession>.from(state.plannedWorkouts);
                               final item = updated.removeAt(oldIndex);
                               updated.insert(newIndex, item);
                               _vm.reorderWorkouts(updated,
-                                  updated.map((w) => w.plannedWorkoutId).toList());
+                                  updated.map((w) => w.sessionId).toList());
                             },
                             children: [
                               for (var i = 0; i < state.plannedWorkouts.length; i++)
-                                _PlannedWorkoutRow(
-                                  key: ValueKey(state.plannedWorkouts[i].plannedWorkoutId),
+                                _PlannedSessionRow(
+                                  key: ValueKey(state.plannedWorkouts[i].sessionId),
                                   workout: state.plannedWorkouts[i],
                                   showDayOfWeek: state.isCalendarMode,
                                   index: i,
                                   onTap: () => _openEditWorkout(state.plannedWorkouts[i]),
-                                  onDuplicate: () => _vm.duplicatePlannedWorkout(state.plannedWorkouts[i]),
+                                  onDuplicate: () => _vm.duplicatePlannedSession(state.plannedWorkouts[i]),
                                   onDelete: () => _confirmDeleteWorkout(state.plannedWorkouts[i]),
                                 ),
                             ],
@@ -781,7 +781,7 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedC
                   child: _goalLabel(g, state),
                 ),
                 GestureDetector(
-                  onTap: () => _vm.deleteProgramGoal(g.goalId),
+                  onTap: () => _vm.deleteGoal(g.goalId),
                   child: Icon(Icons.close, size: 16, color: AppColors.muted),
                 ),
               ],
@@ -793,7 +793,7 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedC
         _GoalPicker(
           detailMap: state.exerciseDetailMap,
           onAdd: (exerciseId, exerciseName, weight, reps) {
-            _vm.addProgramGoal(
+            _vm.addGoal(
               exerciseId: exerciseId,
               exerciseName: exerciseName,
               targetWeight: weight,
@@ -805,7 +805,7 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedC
     );
   }
 
-  Widget _goalLabel(ProgramGoal goal, ProgramDetailState state) {
+  Widget _goalLabel(Goal goal, ProgramDetailState state) {
     final exerciseName = toProperCase(state.exerciseDetailMap[goal.exerciseId]?.name ?? goal.text ?? '');
     final weightStr = goal.targetWeight != null ? '${_fmtNum(goal.targetWeight!)} kg' : '';
     final repsStr = goal.targetReps != null ? '${goal.targetReps} rep${goal.targetReps == 1 ? '' : 's'}' : '';
@@ -1034,8 +1034,8 @@ class _GoalPickerState extends State<_GoalPicker> {
 
 // ── Rows ─────────────────────────────────────────────────────────────────────
 
-class _PlannedWorkoutRow extends StatelessWidget {
-  const _PlannedWorkoutRow({
+class _PlannedSessionRow extends StatelessWidget {
+  const _PlannedSessionRow({
     super.key,
     required this.workout,
     required this.showDayOfWeek,
@@ -1045,7 +1045,7 @@ class _PlannedWorkoutRow extends StatelessWidget {
     this.index,
   });
 
-  final PlannedWorkout workout;
+  final PlannedSession workout;
   final bool showDayOfWeek;
   final VoidCallback onTap;
   final VoidCallback onDuplicate;
@@ -1123,7 +1123,7 @@ class _PlannedWorkoutRow extends StatelessWidget {
                     border: Border.all(
                         color: AppColors.accent.withValues(alpha: 0.4)),
                   ),
-                  child: Text('Workout ${workout.sequenceOrder}',
+                  child: Text('Session ${workout.sequenceOrder}',
                       style: AppFonts.mono(
                           fontSize: AppTextStyles.xs,
                           color: AppColors.accent)),

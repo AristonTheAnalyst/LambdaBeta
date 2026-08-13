@@ -1,37 +1,40 @@
-import 'workout_set.dart';
+import 'session_set.dart';
 
-class Workout {
-  const Workout({
-    required this.workoutId,
+/// A logged session — the fact record of one workout. When started from a
+/// planned session, [parentSessionId] links back to the template; the name
+/// snapshots on this row survive later template edits.
+class Session {
+  const Session({
+    required this.sessionId,
     required this.userId,
     required this.createdDate,
     required this.isActive,
     this.preNotes,
     this.postNotes,
     this.preFeeling,
-    this.userWorkoutFeeling,
+    this.feeling,
     this.programId,
     this.programName,
     this.programRunId,
-    this.plannedWorkoutId,
-    this.plannedWorkoutName,
+    this.parentSessionId,
+    this.parentSessionName,
     this.exerciseOrder,
     this.deletedLocally = false,
   });
 
-  final String workoutId;
+  final String sessionId;
   final String userId;
   final String? preNotes;
   final String? postNotes;
   final DateTime createdDate;
   final bool isActive;
   final int? preFeeling;
-  final int? userWorkoutFeeling;
+  final int? feeling;
   final String? programId;
   final String? programName;
   final String? programRunId;
-  final String? plannedWorkoutId;
-  final String? plannedWorkoutName;
+  final String? parentSessionId;
+  final String? parentSessionName;
 
   /// JSON string of the session's exercise tab slots (order + superset
   /// grouping), so the tab bar survives a hot restart.
@@ -39,20 +42,20 @@ class Workout {
 
   final bool deletedLocally;
 
-  factory Workout.fromMap(Map<String, dynamic> map) => Workout(
-        workoutId: map['user_workout_id'] as String,
+  factory Session.fromMap(Map<String, dynamic> map) => Session(
+        sessionId: map['session_id'] as String,
         userId: map['user_id'] as String,
-        preNotes: map['user_pre_workout_notes'] as String?,
-        postNotes: map['user_post_workout_notes'] as String?,
-        createdDate: DateTime.parse(map['user_workout_created_date'] as String),
+        preNotes: map['pre_notes'] as String?,
+        postNotes: map['post_notes'] as String?,
+        createdDate: DateTime.parse(map['created_date'] as String),
         isActive: _toBool(map['is_active']),
         preFeeling: map['pre_workout_feeling'] as int?,
-        userWorkoutFeeling: map['user_workout_feeling'] as int?,
+        feeling: map['user_workout_feeling'] as int?,
         programId: map['program_id'] as String?,
         programName: map['program_name'] as String?,
         programRunId: map['program_run_id'] as String?,
-        plannedWorkoutId: map['planned_workout_id'] as String?,
-        plannedWorkoutName: map['planned_workout_name'] as String?,
+        parentSessionId: map['parent_session_id'] as String?,
+        parentSessionName: map['parent_session_name'] as String?,
         exerciseOrder: map['exercise_order'] as String?,
         deletedLocally: _toBool(map['deleted_locally']),
       );
@@ -64,26 +67,26 @@ class Workout {
   }
 
   Map<String, dynamic> toMap() => {
-        'user_workout_id': workoutId,
+        'session_id': sessionId,
         'user_id': userId,
-        'user_pre_workout_notes': preNotes,
-        'user_post_workout_notes': postNotes,
-        'user_workout_created_date': createdDate.toIso8601String(),
+        'pre_notes': preNotes,
+        'post_notes': postNotes,
+        'created_date': createdDate.toIso8601String(),
         'is_active': isActive,
         'pre_workout_feeling': preFeeling,
-        'user_workout_feeling': userWorkoutFeeling,
+        'user_workout_feeling': feeling,
         'program_id': programId,
         'program_name': programName,
         'program_run_id': programRunId,
-        'planned_workout_id': plannedWorkoutId,
-        'planned_workout_name': plannedWorkoutName,
+        'parent_session_id': parentSessionId,
+        'parent_session_name': parentSessionName,
         'exercise_order': exerciseOrder,
         'deleted_locally': deletedLocally,
       };
 }
 
-class WorkoutWithSets {
-  const WorkoutWithSets({required this.workout, required this.sets});
-  final Workout workout;
-  final List<WorkoutSet> sets;
+class SessionWithSets {
+  const SessionWithSets({required this.session, required this.sets});
+  final Session session;
+  final List<SessionSet> sets;
 }

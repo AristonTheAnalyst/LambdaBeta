@@ -4,7 +4,7 @@ import '../../../core/styles/app_fonts.dart';
 import '../../../core/styles/app_radius.dart';
 import '../../../core/styles/app_spacing.dart';
 import '../../../core/styles/app_text_styles.dart';
-import '../../../core/utils/workout_format.dart';
+import '../../../core/utils/session_format.dart';
 import '../../../core/powersync/database.dart' as ps;
 import '../../../shared/widgets/glass_button.dart';
 import '../../../shared/widgets/lambda_button.dart';
@@ -57,7 +57,7 @@ class _SessionScreenState extends State<SessionScreen> {
           _vm.refreshCatalog(); // always refresh exercise/variation catalog
           _vm.refreshProgram();
           // If the workout ended while we were on another tab, the cached VM
-          // still points at page 1 with no active workoutId — reset to the
+          // still points at page 1 with no active sessionId — reset to the
           // start page so the user isn't stuck staring at an empty card.
           if (!_vm.hasActiveWorkout && _vm.slidePagesController.currentPage > 0) {
             _vm.slidePagesController.resetToPage(0);
@@ -166,7 +166,7 @@ class _SessionScreenState extends State<SessionScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
-        title: Text('Cancel Workout', style: TextStyle(color: AppColors.danger)),
+        title: Text('Cancel Session', style: TextStyle(color: AppColors.danger)),
         content: Text('Discard this workout and all logged sets?', style: TextStyle(color: AppColors.muted)),
         actions: [
           TextButton(
@@ -175,7 +175,7 @@ class _SessionScreenState extends State<SessionScreen> {
           TextButton(
               onPressed: () {
                 Navigator.of(ctx).pop();
-                _vm.cancelWorkout();
+                _vm.cancelSession();
               },
               child: Text('Discard',
                   style: TextStyle(color: AppColors.danger, fontWeight: FontWeight.w600))),
@@ -242,7 +242,7 @@ class _StartPage extends StatelessWidget {
           child: ListView(
             padding: const EdgeInsets.all(AppSpacing.lg),
             children: [
-              if (vm.selectedPlannedWorkout != null) ...[
+              if (vm.selectedPlannedSession != null) ...[
                 GestureDetector(
                   onTap: vm.availableWorkouts.length > 1
                       ? () => _showWorkoutPicker(context, vm)
@@ -264,7 +264,7 @@ class _StartPage extends StatelessWidget {
                               Text('Week ${vm.programProgress!.weekNumber} · ${vm.programProgress!.program.name}',
                                   style: AppFonts.mono(fontSize: 9, letterSpacing: 0.6, color: AppColors.success)),
                               const SizedBox(height: 2),
-                              Text(vm.selectedPlannedWorkout!.name,
+                              Text(vm.selectedPlannedSession!.name,
                                   style: AppFonts.ui(
                                       fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.primary)),
                             ],
@@ -322,7 +322,7 @@ class _StartPage extends StatelessWidget {
           padding: EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.lg, AppSpacing.lg, bottomInset + AppSpacing.lg),
           decoration: BoxDecoration(border: Border(top: BorderSide(color: AppColors.border, width: 0.5))),
           child: LambdaButton(
-            label: 'Start Workout',
+            label: 'Start Session',
             onPressed: vm.startWorkout,
             loading: vm.startLoading,
             disabled: vm.startLoading,
@@ -371,7 +371,7 @@ class _StartPage extends StatelessWidget {
                   child: Container(
                     padding: const EdgeInsets.symmetric(
                         horizontal: AppSpacing.lg, vertical: AppSpacing.md),
-                    color: w.workoutId == vm.selectedStandaloneWorkout?.workoutId
+                    color: w.sessionId == vm.selectedStandaloneWorkout?.sessionId
                         ? AppColors.accentBg
                         : Colors.transparent,
                     child: Row(
@@ -383,7 +383,7 @@ class _StartPage extends StatelessWidget {
                                   fontWeight: FontWeight.w600,
                                   color: AppColors.primary)),
                         ),
-                        if (w.workoutId == vm.selectedStandaloneWorkout?.workoutId)
+                        if (w.sessionId == vm.selectedStandaloneWorkout?.sessionId)
                           Icon(Icons.check, size: 18, color: AppColors.accent),
                       ],
                     ),
@@ -402,13 +402,13 @@ class _StartPage extends StatelessWidget {
               for (final w in vm.availableWorkouts)
                 InkWell(
                   onTap: () {
-                    vm.selectPlannedWorkout(w);
+                    vm.selectPlannedSession(w);
                     Navigator.of(ctx).pop();
                   },
                   child: Container(
                     padding: const EdgeInsets.symmetric(
                         horizontal: AppSpacing.lg, vertical: AppSpacing.md),
-                    color: w.plannedWorkoutId == vm.selectedPlannedWorkout?.plannedWorkoutId
+                    color: w.sessionId == vm.selectedPlannedSession?.sessionId
                         ? AppColors.accentBg
                         : Colors.transparent,
                     child: Row(
@@ -420,7 +420,7 @@ class _StartPage extends StatelessWidget {
                                   fontWeight: FontWeight.w600,
                                   color: AppColors.primary)),
                         ),
-                        if (w.plannedWorkoutId == vm.selectedPlannedWorkout?.plannedWorkoutId)
+                        if (w.sessionId == vm.selectedPlannedSession?.sessionId)
                           Icon(Icons.check, size: 18, color: AppColors.accent),
                       ],
                     ),
@@ -458,10 +458,10 @@ class _ActivePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final plannedWorkout = vm.programProgress?.nextPlannedWorkout;
+    final plannedWorkout = vm.programProgress?.nextPlannedSession;
     final subtitle = plannedWorkout != null
         ? 'Week ${vm.programProgress!.weekNumber} · ${plannedWorkout.name}'
-        : 'Freestyle Workout';
+        : 'Freestyle Session';
 
     return Column(
       children: [
@@ -556,7 +556,7 @@ class _EmptySlotsHint extends StatelessWidget {
   }
 }
 
-// ── End Workout Modal ──────────────────────────────────────────────────────────
+// ── End Session Modal ──────────────────────────────────────────────────────────
 
 class _EndWorkoutModal extends StatelessWidget {
   const _EndWorkoutModal({required this.vm, required this.notesCtrl});
@@ -575,7 +575,7 @@ class _EndWorkoutModal extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text('End Workout',
+              Text('End Session',
                   style: TextStyle(fontSize: AppTextStyles.lg, fontWeight: FontWeight.w700, color: AppColors.primary)),
               const SizedBox(height: AppSpacing.md),
               Text('How did it feel?',
@@ -629,13 +629,13 @@ class _EndWorkoutModal extends StatelessWidget {
                   const SizedBox(width: AppSpacing.sm),
                   Expanded(
                     child: GlassButton(
-                      label: 'End Workout',
+                      label: 'End Session',
                       compact: true,
                       loading: vm.endLoading,
                       disabled: vm.endLoading,
                       onPressed: () async {
                         Navigator.of(context, rootNavigator: true).pop();
-                        await vm.endWorkout();
+                        await vm.endSession();
                       },
                     ),
                   ),

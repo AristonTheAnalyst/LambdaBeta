@@ -2,34 +2,34 @@ import 'dart:convert';
 
 import 'package:uuid/uuid.dart';
 import '../../core/powersync/database.dart' as ps;
-import '../models/workout.dart';
-import '../models/workout_set.dart';
+import '../models/session.dart';
+import '../models/session_set.dart';
 
 const _uuid = Uuid();
 
-class WorkoutRepository {
-  Future<String> createWorkout(
+class SessionRepository {
+  Future<String> createSession(
     String userId, {
     String? preNotes,
     String? programId,
     String? programName,
     String? programRunId,
-    String? plannedWorkoutId,
-    String? plannedWorkoutName,
+    String? parentSessionId,
+    String? parentSessionName,
     int? preFeeling,
   }) async {
-    final workoutId = _uuid.v4();
+    final sessionId = _uuid.v4();
     await ps.db.execute(
       '''
-      INSERT INTO fact_workout
-        (id, user_workout_id, user_id, user_pre_workout_notes, user_workout_created_date,
-         is_active, program_id, program_name, program_run_id, planned_workout_id,
-         planned_workout_name, pre_workout_feeling)
+      INSERT INTO fact_session
+        (id, session_id, user_id, pre_notes, created_date,
+         is_active, program_id, program_name, program_run_id, parent_session_id,
+         parent_session_name, pre_workout_feeling)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ''',
       [
-        workoutId,
-        workoutId,
+        sessionId,
+        sessionId,
         userId,
         preNotes?.isNotEmpty == true ? preNotes : null,
         DateTime.now().toUtc().toIso8601String(),
@@ -37,64 +37,65 @@ class WorkoutRepository {
         programId,
         programName,
         programRunId,
-        plannedWorkoutId,
-        plannedWorkoutName,
+        parentSessionId,
+        parentSessionName,
         preFeeling,
       ],
     );
-    return workoutId;
+    return sessionId;
   }
 
-  Future<void> endWorkout(String workoutId, {String? postNotes, int? feeling}) async {
+  Future<void> endSession(String sessionId,
+      {String? postNotes, int? feeling}) async {
     await ps.db.execute(
-      'UPDATE fact_workout SET is_active = 0, user_post_workout_notes = ?, user_workout_feeling = ? WHERE user_workout_id = ?',
-      [postNotes?.isNotEmpty == true ? postNotes : null, feeling, workoutId],
+      'UPDATE fact_session SET is_active = 0, post_notes = ?, user_workout_feeling = ? WHERE session_id = ?',
+      [postNotes?.isNotEmpty == true ? postNotes : null, feeling, sessionId],
     );
   }
 
-  Future<void> saveExerciseOrder(String workoutId, String orderJson) async {
+  Future<void> saveExerciseOrder(String sessionId, String orderJson) async {
     await ps.db.execute(
-      'UPDATE fact_workout SET exercise_order = ? WHERE user_workout_id = ?',
-      [orderJson, workoutId],
+      'UPDATE fact_session SET exercise_order = ? WHERE session_id = ?',
+      [orderJson, sessionId],
     );
   }
 
-  Future<void> cancelWorkout(String workoutId) async {
-    // Delete any PRs that reference sets in this workout before the sets
-    // themselves are removed (fact_pr.workout_set_id has no FK so the
+  Future<void> cancelSession(String sessionId) async {
+    // Delete any PRs that reference sets in this session before the sets
+    // themselves are removed (fact_pr.session_set_id has no FK so the
     // cascade doesn't reach it).  In normal use PRs are only persisted at
-    // endWorkout so a cancelled workout has none, but this is a safeguard
+    // endSession so a cancelled session has none, but this is a safeguard
     // if mid-session PR persistence is ever added.
     await ps.db.execute(
-      'DELETE FROM fact_pr WHERE workout_set_id IN '
-      '(SELECT workout_set_id FROM fact_workout_set WHERE user_workout_id = ?)',
-      [workoutId],
+      'DELETE FROM fact_pr WHERE session_set_id IN '
+      '(SELECT session_set_id FROM fact_session_set WHERE session_id = ?)',
+      [sessionId],
     );
     await ps.db.execute(
-      'DELETE FROM fact_workout_set WHERE user_workout_id = ?',
-      [workoutId],
+      'DELETE FROM fact_session_set WHERE session_id = ?',
+      [sessionId],
     );
     await ps.db.execute(
-      'DELETE FROM fact_rest WHERE user_workout_id = ?',
-      [workoutId],
+      'DELETE FROM fact_rest WHERE session_id = ?',
+      [sessionId],
     );
     await ps.db.execute(
-      'DELETE FROM fact_workout WHERE user_workout_id = ?',
-      [workoutId],
+      'DELETE FROM fact_session WHERE session_id = ?',
+      [sessionId],
     );
   }
 
-  Future<String?> getActiveWorkoutId(String userId) async {
+  Future<String?> getActiveSessionId(String userId) async {
     final rows = await ps.db.getAll(
-      'SELECT user_workout_id FROM fact_workout WHERE user_id = ? AND is_active = 1 LIMIT 1',
+      'SELECT session_id FROM fact_session WHERE user_id = ? AND is_active = 1 LIMIT 1',
       [userId],
     );
     if (rows.isEmpty) return null;
-    return rows.first['user_workout_id'] as String?;
+    return rows.first['session_id'] as String?;
   }
 
-  Future<WorkoutSet> insertSet({
-    required String workoutId,
+  Future<SessionSet> insertSet({
+    required String sessionId,
     required String userId,
     required String exerciseId,
     String? variationId,
@@ -104,7 +105,7 @@ class WorkoutRepository {
     required List<num> duration,
     String? notes,
     String? programId,
-    String? plannedSetId,
+    String? parentSetId,
     int? supersetGroupNumber,
     String? exerciseName,
     String? variationName,
@@ -112,17 +113,17 @@ class WorkoutRepository {
     final setId = _uuid.v4();
     await ps.db.execute(
       '''
-      INSERT INTO fact_workout_set
-        (id, workout_set_id, user_workout_id, user_id, custom_exercise_id, custom_variation_id,
-         workout_set_number, workout_set_weight, workout_set_reps, workout_set_duration_seconds,
-         workout_set_notes, program_id, planned_set_id, superset_group_number,
+      INSERT INTO fact_session_set
+        (id, session_set_id, session_id, user_id, custom_exercise_id, custom_variation_id,
+         set_number, weight, reps, duration_seconds,
+         notes, program_id, parent_set_id, superset_group_number,
          exercise_name, variation_name)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ''',
       [
         setId,
         setId,
-        workoutId,
+        sessionId,
         userId,
         exerciseId,
         variationId,
@@ -132,15 +133,15 @@ class WorkoutRepository {
         jsonEncode(duration),
         notes?.isNotEmpty == true ? notes : null,
         programId,
-        plannedSetId,
+        parentSetId,
         supersetGroupNumber,
         exerciseName,
         variationName,
       ],
     );
-    return WorkoutSet(
-      setId: setId,
-      workoutId: workoutId,
+    return SessionSet(
+      sessionSetId: setId,
+      sessionId: sessionId,
       userId: userId,
       exerciseId: exerciseId,
       variationId: variationId,
@@ -151,7 +152,7 @@ class WorkoutRepository {
       notes: notes?.isNotEmpty == true ? notes : null,
       supersetGroupNumber: supersetGroupNumber,
       programId: programId,
-      plannedSetId: plannedSetId,
+      parentSetId: parentSetId,
     );
   }
 
@@ -192,100 +193,100 @@ class WorkoutRepository {
       params.add(variationName);
     }
     if (clearWeight) {
-      setClauses.add('workout_set_weight = ?');
+      setClauses.add('weight = ?');
       params.add(null);
     } else if (weight != null) {
-      setClauses.add('workout_set_weight = ?');
+      setClauses.add('weight = ?');
       params.add(weight);
     }
     if (reps != null) {
-      setClauses.add('workout_set_reps = ?');
+      setClauses.add('reps = ?');
       params.add(jsonEncode(reps));
     }
     if (duration != null) {
-      setClauses.add('workout_set_duration_seconds = ?');
+      setClauses.add('duration_seconds = ?');
       params.add(jsonEncode(duration));
     }
     if (clearNotes) {
-      setClauses.add('workout_set_notes = ?');
+      setClauses.add('notes = ?');
       params.add(null);
     } else if (notes != null) {
-      setClauses.add('workout_set_notes = ?');
+      setClauses.add('notes = ?');
       params.add(notes.isNotEmpty ? notes : null);
     }
     if (setClauses.isEmpty) return;
 
     params.add(setId);
     await ps.db.execute(
-      'UPDATE fact_workout_set SET ${setClauses.join(', ')} WHERE workout_set_id = ?',
+      'UPDATE fact_session_set SET ${setClauses.join(', ')} WHERE session_set_id = ?',
       params,
     );
   }
 
   Future<void> deleteSet(String setId) async {
     await ps.db.execute(
-      'DELETE FROM fact_workout_set WHERE workout_set_id = ?',
+      'DELETE FROM fact_session_set WHERE session_set_id = ?',
       [setId],
     );
   }
 
-  Future<List<WorkoutSet>> loadSetsForWorkout(String workoutId) async {
+  Future<List<SessionSet>> loadSetsForSession(String sessionId) async {
     final rows = await ps.db.getAll(
-      'SELECT * FROM fact_workout_set WHERE user_workout_id = ? ORDER BY workout_set_number',
-      [workoutId],
+      'SELECT * FROM fact_session_set WHERE session_id = ? ORDER BY set_number',
+      [sessionId],
     );
-    return rows.map((r) => WorkoutSet.fromMap(r)).toList();
+    return rows.map((r) => SessionSet.fromMap(r)).toList();
   }
 
   Future<void> reorderSets(
-      String workoutId, List<String> orderedSetIds) async {
+      String sessionId, List<String> orderedSetIds) async {
     for (var i = 0; i < orderedSetIds.length; i++) {
       await ps.db.execute(
-        'UPDATE fact_workout_set SET workout_set_number = ? WHERE workout_set_id = ?',
+        'UPDATE fact_session_set SET set_number = ? WHERE session_set_id = ?',
         [i + 1, orderedSetIds[i]],
       );
     }
   }
 
-  Future<List<WorkoutWithSets>> loadWorkoutsWithSets(String userId) async {
-    final workoutRows = await ps.db.getAll(
+  Future<List<SessionWithSets>> loadSessionsWithSets(String userId) async {
+    final sessionRows = await ps.db.getAll(
       '''
-      SELECT * FROM fact_workout
+      SELECT * FROM fact_session
       WHERE user_id = ? AND is_active = 0
-      ORDER BY user_workout_created_date DESC
+      ORDER BY created_date DESC
       ''',
       [userId],
     );
-    if (workoutRows.isEmpty) return [];
+    if (sessionRows.isEmpty) return [];
 
-    final workouts = workoutRows.map((r) => Workout.fromMap(r)).toList();
+    final sessions = sessionRows.map((r) => Session.fromMap(r)).toList();
 
     final setRows = await ps.db.getAll(
       '''
       SELECT s.*,
              COALESCE(s.exercise_name, e.exercise_name) AS exercise_name,
              COALESCE(s.variation_name, v.variation_name) AS variation_name
-      FROM fact_workout_set s
+      FROM fact_session_set s
       LEFT JOIN dim_exercise e ON e.custom_exercise_id = s.custom_exercise_id
       LEFT JOIN dim_variation v ON v.custom_variation_id = s.custom_variation_id
-      WHERE s.user_workout_id IN (
-        SELECT user_workout_id FROM fact_workout WHERE user_id = ? AND is_active = 0
+      WHERE s.session_id IN (
+        SELECT session_id FROM fact_session WHERE user_id = ? AND is_active = 0
       )
-      ORDER BY s.user_workout_id, s.workout_set_number
+      ORDER BY s.session_id, s.set_number
       ''',
       [userId],
     );
 
-    final setsByWorkout = <String, List<WorkoutSet>>{};
+    final setsBySession = <String, List<SessionSet>>{};
     for (final row in setRows) {
-      final s = WorkoutSet.fromMap(row);
-      setsByWorkout.putIfAbsent(s.workoutId, () => []).add(s);
+      final s = SessionSet.fromMap(row);
+      setsBySession.putIfAbsent(s.sessionId, () => []).add(s);
     }
 
-    return workouts
-        .map((w) => WorkoutWithSets(
-              workout: w,
-              sets: setsByWorkout[w.workoutId] ?? [],
+    return sessions
+        .map((w) => SessionWithSets(
+              session: w,
+              sets: setsBySession[w.sessionId] ?? [],
             ))
         .toList();
   }
@@ -293,48 +294,48 @@ class WorkoutRepository {
   Future<List<PastSetRow>> loadPastSetsTimeline(String userId) async {
     final rows = await ps.db.getAll(
       '''
-      SELECT s.*, w.user_workout_created_date,
+      SELECT s.*, w.created_date,
              COALESCE(s.exercise_name, e.exercise_name) AS exercise_name,
              COALESCE(s.variation_name, v.variation_name) AS variation_name
-      FROM fact_workout_set s
-      INNER JOIN fact_workout w ON w.user_workout_id = s.user_workout_id
+      FROM fact_session_set s
+      INNER JOIN fact_session w ON w.session_id = s.session_id
       LEFT JOIN dim_exercise e ON e.custom_exercise_id = s.custom_exercise_id
       LEFT JOIN dim_variation v ON v.custom_variation_id = s.custom_variation_id
       WHERE w.user_id = ? AND w.is_active = 0
-      ORDER BY w.user_workout_created_date DESC, s.workout_set_number
+      ORDER BY w.created_date DESC, s.set_number
       ''',
       [userId],
     );
     return rows.map((r) => PastSetRow.fromMap(r)).toList();
   }
 
-  Future<Workout?> fetchWorkout(String workoutId) async {
+  Future<Session?> fetchSession(String sessionId) async {
     final rows = await ps.db.getAll(
-      'SELECT * FROM fact_workout WHERE user_workout_id = ?',
-      [workoutId],
+      'SELECT * FROM fact_session WHERE session_id = ?',
+      [sessionId],
     );
     if (rows.isEmpty) return null;
-    return Workout.fromMap(rows.first);
+    return Session.fromMap(rows.first);
   }
 
-  /// The most recently logged set for this exercise (any workout, any
+  /// The most recently logged set for this exercise (any session, any
   /// variation) — used to prefill weight/variation/volume-type defaults when
   /// the user selects an exercise while logging a new set.
-  Future<WorkoutSet?> findLastSetForExercise(
+  Future<SessionSet?> findLastSetForExercise(
       String userId, String exerciseId) async {
     final rows = await ps.db.getAll(
       '''
       SELECT s.*
-      FROM fact_workout_set s
-      INNER JOIN fact_workout w ON w.user_workout_id = s.user_workout_id
+      FROM fact_session_set s
+      INNER JOIN fact_session w ON w.session_id = s.session_id
       WHERE w.user_id = ? AND s.custom_exercise_id = ?
-      ORDER BY w.user_workout_created_date DESC, s.workout_set_number DESC
+      ORDER BY w.created_date DESC, s.set_number DESC
       LIMIT 1
       ''',
       [userId, exerciseId],
     );
     if (rows.isEmpty) return null;
-    return WorkoutSet.fromMap(rows.first);
+    return SessionSet.fromMap(rows.first);
   }
 
   /// The most recently logged set for this exact exercise+variation pair
@@ -342,20 +343,20 @@ class WorkoutRepository {
   /// progressive-overload reference shown in the Log Set composer. `IS ?`
   /// instead of `= ?` so a null variationId matches sets logged with no
   /// variation, rather than matching nothing.
-  Future<WorkoutSet?> findLastSetForExerciseVariation(
+  Future<SessionSet?> findLastSetForExerciseVariation(
       String userId, String exerciseId, String? variationId) async {
     final rows = await ps.db.getAll(
       '''
       SELECT s.*
-      FROM fact_workout_set s
-      INNER JOIN fact_workout w ON w.user_workout_id = s.user_workout_id
+      FROM fact_session_set s
+      INNER JOIN fact_session w ON w.session_id = s.session_id
       WHERE w.user_id = ? AND s.custom_exercise_id = ? AND s.custom_variation_id IS ?
-      ORDER BY w.user_workout_created_date DESC, s.workout_set_number DESC
+      ORDER BY w.created_date DESC, s.set_number DESC
       LIMIT 1
       ''',
       [userId, exerciseId, variationId],
     );
     if (rows.isEmpty) return null;
-    return WorkoutSet.fromMap(rows.first);
+    return SessionSet.fromMap(rows.first);
   }
 }

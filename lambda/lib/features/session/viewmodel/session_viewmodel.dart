@@ -3,18 +3,16 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:logging/logging.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' hide Session;
 import '../../../data/models/custom_variation.dart';
 import '../../../data/models/exercise_detail.dart';
 import '../../../data/models/lesson.dart';
-import '../../../data/models/planned_set.dart';
-import '../../../data/models/planned_workout.dart';
+import '../../../data/models/planned_session_set.dart';
+import '../../../data/models/planned_session.dart';
 import '../../../data/models/program_progress.dart';
-import '../../../data/models/workout.dart';
-import '../../../data/models/workout_plan.dart';
-import '../../../data/models/workout_plan_set.dart';
+import '../../../data/models/session.dart';
 import '../../../data/models/exercise_usage.dart';
-import '../../../data/models/workout_set.dart';
+import '../../../data/models/session_set.dart';
 import '../../../core/powersync/database.dart' as ps;
 import '../../../data/repositories/exercise_repository.dart';
 import '../../../data/repositories/lesson_repository.dart';
@@ -22,8 +20,8 @@ import '../../../data/repositories/pr_repository.dart';
 import '../../../data/repositories/program_repository.dart';
 import '../../../data/repositories/program_run_repository.dart';
 import '../../../data/repositories/rest_period_repository.dart';
-import '../../../data/repositories/workout_plan_repository.dart';
-import '../../../data/repositories/workout_repository.dart';
+import '../../../data/repositories/planned_session_repository.dart';
+import '../../../data/repositories/session_repository.dart';
 import '../../../shared/widgets/slide_pages.dart';
 import '../model/pr_engine.dart' hide bestEverForExercise;
 import '../model/session_local_state.dart';
@@ -33,28 +31,28 @@ const restPresets = [60, 90, 120, 180];
 
 class SessionViewModel extends ChangeNotifier {
   SessionViewModel({
-    WorkoutRepository? workoutRepo,
+    SessionRepository? workoutRepo,
     ExerciseRepository? exerciseRepo,
     ProgramRepository? programRepo,
     ProgramRunRepository? programRunRepo,
     LessonRepository? lessonRepo,
     RestPeriodRepository? restPeriodRepo,
     PrRepository? prRepo,
-    WorkoutPlanRepository? workoutPlanRepo,
-  })  : _workoutRepo = workoutRepo ?? WorkoutRepository(),
+    PlannedSessionRepository? workoutPlanRepo,
+  })  : _sessionRepo = workoutRepo ?? SessionRepository(),
         _exerciseRepo = exerciseRepo ?? ExerciseRepository(),
         _programRepo = programRepo ?? ProgramRepository(),
         _programRunRepo = programRunRepo ?? ProgramRunRepository(),
         _lessonRepo = lessonRepo ?? LessonRepository(),
         _restPeriodRepo = restPeriodRepo ?? RestPeriodRepository(),
-        _workoutPlanRepo = workoutPlanRepo ?? WorkoutPlanRepository(),
+        _plannedSessionRepo = workoutPlanRepo ?? PlannedSessionRepository(),
         _prRepo = prRepo ?? PrRepository() {
     slidePagesController = SlidePagesController();
     _init();
   }
 
-  final WorkoutRepository _workoutRepo;
-  final WorkoutPlanRepository _workoutPlanRepo;
+  final SessionRepository _sessionRepo;
+  final PlannedSessionRepository _plannedSessionRepo;
   final ExerciseRepository _exerciseRepo;
   final ProgramRepository _programRepo;
   final ProgramRunRepository _programRunRepo;
@@ -78,8 +76,8 @@ class SessionViewModel extends ChangeNotifier {
 
   /// The active workout row fetched at restore — carries `exerciseOrder` so
   /// the tab arrangement (incl. supersets) can be rebuilt after a hot restart.
-  Workout? _workout;
-  List<WorkoutSet> sets = [];
+  Session? _session;
+  List<SessionSet> sets = [];
   bool setsLoading = false;
 
   /// Ids of sets that are PRs right now, per the engine's multi-axis model
@@ -109,7 +107,7 @@ class SessionViewModel extends ChangeNotifier {
 
   // ── Today's planned workout (read-only reuse of the Programs feature) ────
   ProgramProgress? programProgress;
-  Map<String, List<PlannedSet>> plannedSetsByExercise = {};
+  Map<String, List<PlannedSessionSet>> plannedSetsByExercise = {};
   List<String> plannedExerciseOrder = [];
 
   // ── Exercise tabs ──────────────────────────────────────────────────────────
@@ -173,14 +171,14 @@ class SessionViewModel extends ChangeNotifier {
     final now = DateTime.now();
     for (final s in sets) {
       all.add(PastSetRow(
-        setId: s.setId,
-        workoutId: s.workoutId,
+        sessionSetId: s.sessionSetId,
+        sessionId: s.sessionId,
         userId: s.userId,
         exerciseId: s.exerciseId,
         setNumber: s.setNumber,
         reps: s.reps,
         duration: s.duration,
-        workoutCreatedDate: now,
+        sessionCreatedDate: now,
         variationId: s.variationId,
         weight: s.weight,
         notes: s.notes,
@@ -189,7 +187,7 @@ class SessionViewModel extends ChangeNotifier {
         supersetGroupNumber: s.supersetGroupNumber,
       ));
     }
-    // PRs in the current workout are those whose workoutId is the active one.
+    // PRs in the current workout are those whose sessionId is the active one.
     // Only count explicit (non-propagated) PRs — the user sees what they
     // directly achieved, not the knock-on records the engine inferred.
     return prsForWorkout(all, currentWorkoutId ?? '')
@@ -213,7 +211,7 @@ class SessionViewModel extends ChangeNotifier {
       await refreshCatalog();
     } catch (_) {}
     try {
-      await Future.wait([_loadPlannedWorkout(), _loadPastSets()]);
+      await Future.wait([_loadPlannedSession(), _loadPastSets()]);
     } catch (_) {}
     try {
       await _restoreActiveWorkout();
@@ -277,67 +275,67 @@ class SessionViewModel extends ChangeNotifier {
 
   /// Planned workouts available for the current program, so the user can pick
   /// one to log rather than always taking the auto-suggested next workout.
-  List<PlannedWorkout> availableWorkouts = [];
+  List<PlannedSession> availableWorkouts = [];
 
   /// The planned workout the user selected (or the auto-next by default).
-  PlannedWorkout? selectedPlannedWorkout;
+  PlannedSession? selectedPlannedSession;
 
   /// Standalone workouts (no program) the user can log.
-  List<WorkoutPlan> standaloneWorkouts = [];
+  List<PlannedSession> standaloneWorkouts = [];
 
   /// The standalone workout selected to log (mutually exclusive with
-  /// [selectedPlannedWorkout]).
-  WorkoutPlan? selectedStandaloneWorkout;
+  /// [selectedPlannedSession]).
+  PlannedSession? selectedStandaloneWorkout;
 
-  Future<void> _loadPlannedWorkout() async {
+  Future<void> _loadPlannedSession() async {
     try {
       programProgress = await _programRunRepo.getProgress(_userId);
       final programId = programProgress?.program.programId;
       if (programId != null) {
         availableWorkouts =
-            await _programRepo.fetchPlannedWorkouts(programId);
-        selectedPlannedWorkout =
-            programProgress?.nextPlannedWorkout ?? availableWorkouts.firstOrNull;
+            await _programRepo.fetchPlannedSessions(programId);
+        selectedPlannedSession =
+            programProgress?.nextPlannedSession ?? availableWorkouts.firstOrNull;
       }
-      standaloneWorkouts = await _workoutPlanRepo.fetchWorkouts(_userId);
-      await _loadSelectedWorkoutSets();
+      standaloneWorkouts = await _plannedSessionRepo.fetchPlannedSessions(_userId);
+      await _loadSelectedSessionSets();
     } catch (_) {}
     notifyListeners();
   }
 
   /// Loads the planned sets for the currently selected workout (program or
   /// standalone).
-  Future<void> _loadSelectedWorkoutSets() async {
+  Future<void> _loadSelectedSessionSets() async {
     if (selectedStandaloneWorkout != null) {
-      final sets = await _workoutPlanRepo.fetchSets(selectedStandaloneWorkout!.workoutId);
-      plannedSetsByExercise = _plannedMapFromWorkoutSets(sets);
-      plannedExerciseOrder = _plannedOrderFromWorkoutSets(sets);
+      final sets = await _plannedSessionRepo.fetchPlannedSets(selectedStandaloneWorkout!.sessionId);
+      plannedSetsByExercise = _plannedMapFromSessionSets(sets);
+      plannedExerciseOrder = _plannedOrderFromSessionSets(sets);
       return;
     }
-    final pw = selectedPlannedWorkout;
+    final pw = selectedPlannedSession;
     if (pw == null) {
       plannedSetsByExercise = {};
       plannedExerciseOrder = [];
       return;
     }
     try {
-      final plannedSets = await _programRepo.fetchPlannedSets(pw.plannedWorkoutId);
+      final plannedSets = await _programRepo.fetchPlannedSessionSets(pw.sessionId);
       plannedSetsByExercise = _plannedMapFromSets(plannedSets);
       plannedExerciseOrder = _plannedOrderFromSets(plannedSets);
     } catch (_) {}
   }
 
-  Map<String, List<PlannedSet>> _plannedMapFromSets(List<PlannedSet> sets) {
+  Map<String, List<PlannedSessionSet>> _plannedMapFromSets(List<PlannedSessionSet> sets) {
     final sorted = [...sets]
       ..sort((a, b) => a.exerciseSequenceOrder.compareTo(b.exerciseSequenceOrder));
-    final byExercise = <String, List<PlannedSet>>{};
+    final byExercise = <String, List<PlannedSessionSet>>{};
     for (final p in sorted) {
       byExercise.putIfAbsent(p.exerciseId, () => []).add(p);
     }
     return byExercise;
   }
 
-  List<String> _plannedOrderFromSets(List<PlannedSet> sets) {
+  List<String> _plannedOrderFromSets(List<PlannedSessionSet> sets) {
     final sorted = [...sets]
       ..sort((a, b) => a.exerciseSequenceOrder.compareTo(b.exerciseSequenceOrder));
     final order = <String>[];
@@ -347,17 +345,17 @@ class SessionViewModel extends ChangeNotifier {
     return order;
   }
 
-  Map<String, List<PlannedSet>> _plannedMapFromWorkoutSets(List<WorkoutPlanSet> sets) =>
-      _plannedMapFromSets(_setsFromWorkoutSets(sets));
+  Map<String, List<PlannedSessionSet>> _plannedMapFromSessionSets(List<PlannedSessionSet> sets) =>
+      _plannedMapFromSets(_setsFromSessionSets(sets));
 
-  List<String> _plannedOrderFromWorkoutSets(List<WorkoutPlanSet> sets) =>
-      _plannedOrderFromSets(_setsFromWorkoutSets(sets));
+  List<String> _plannedOrderFromSessionSets(List<PlannedSessionSet> sets) =>
+      _plannedOrderFromSets(_setsFromSessionSets(sets));
 
-  List<PlannedSet> _setsFromWorkoutSets(List<WorkoutPlanSet> sets) => [
+  List<PlannedSessionSet> _setsFromSessionSets(List<PlannedSessionSet> sets) => [
         for (final s in sets)
-          PlannedSet(
-            plannedSetId: s.setId,
-            plannedWorkoutId: s.workoutId,
+          PlannedSessionSet(
+            setId: s.setId,
+            sessionId: s.sessionId,
             userId: s.userId,
             exerciseId: s.exerciseId,
             variationId: s.variationId,
@@ -369,25 +367,25 @@ class SessionViewModel extends ChangeNotifier {
             targetNotes: s.targetNotes,
             exerciseName: s.exerciseName,
             variationName: s.variationName,
-            isActive: true,
+            isArchived: false,
           ),
       ];
 
   /// Picks a standalone workout to log.
-  Future<void> selectStandaloneWorkout(WorkoutPlan w) async {
+  Future<void> selectStandaloneWorkout(PlannedSession w) async {
     selectedStandaloneWorkout = w;
-    selectedPlannedWorkout = null;
-    final sets = await _workoutPlanRepo.fetchSets(w.workoutId);
-    plannedSetsByExercise = _plannedMapFromWorkoutSets(sets);
-    plannedExerciseOrder = _plannedOrderFromWorkoutSets(sets);
+    selectedPlannedSession = null;
+    final sets = await _plannedSessionRepo.fetchPlannedSets(w.sessionId);
+    plannedSetsByExercise = _plannedMapFromSessionSets(sets);
+    plannedExerciseOrder = _plannedOrderFromSessionSets(sets);
     notifyListeners();
   }
 
   /// Picks a different planned workout to log and loads its planned sets.
-  Future<void> selectPlannedWorkout(PlannedWorkout w) async {
-    selectedPlannedWorkout = w;
+  Future<void> selectPlannedSession(PlannedSession w) async {
+    selectedPlannedSession = w;
     selectedStandaloneWorkout = null;
-    await _loadSelectedWorkoutSets();
+    await _loadSelectedSessionSets();
     notifyListeners();
   }
 
@@ -410,7 +408,7 @@ class SessionViewModel extends ChangeNotifier {
           // Program was deleted — tear down the stale program state.
           programProgress = null;
           availableWorkouts = [];
-          selectedPlannedWorkout = null;
+          selectedPlannedSession = null;
           plannedSetsByExercise = {};
           plannedExerciseOrder = [];
           notifyListeners();
@@ -423,23 +421,23 @@ class SessionViewModel extends ChangeNotifier {
       final programId = programProgress?.program.programId;
       if (programId != null) {
         availableWorkouts =
-            await _programRepo.fetchPlannedWorkouts(programId);
-        selectedPlannedWorkout =
-            programProgress?.nextPlannedWorkout ?? availableWorkouts.firstOrNull;
+            await _programRepo.fetchPlannedSessions(programId);
+        selectedPlannedSession =
+            programProgress?.nextPlannedSession ?? availableWorkouts.firstOrNull;
       } else {
         availableWorkouts = [];
-        selectedPlannedWorkout = null;
+        selectedPlannedSession = null;
         plannedSetsByExercise = {};
         plannedExerciseOrder = [];
       }
-      await _loadSelectedWorkoutSets();
+      await _loadSelectedSessionSets();
       notifyListeners();
     } catch (_) {}
   }
 
   Future<void> _loadPastSets() async {
     try {
-      _pastSets = await _workoutRepo.loadPastSetsTimeline(_userId);
+      _pastSets = await _sessionRepo.loadPastSetsTimeline(_userId);
       historyByExercise = groupHistoryByExercise(_pastSets);
       lastUsedByExercise = lastUsedByEntity(_pastSets);
       final byExercise = <String, List<PastSetRow>>{};
@@ -454,11 +452,11 @@ class SessionViewModel extends ChangeNotifier {
   }
 
   Future<void> _restoreActiveWorkout() async {
-    final activeId = await _workoutRepo.getActiveWorkoutId(_userId);
+    final activeId = await _sessionRepo.getActiveSessionId(_userId);
     if (activeId != null) {
       currentWorkoutId = activeId;
-      final workout = await _workoutRepo.fetchWorkout(activeId);
-      _workout = workout;
+      final workout = await _sessionRepo.fetchSession(activeId);
+      _session = workout;
       workoutStartedAt = workout?.createdDate;
       slidePagesController.resetToPage(1);
       await _loadSets();
@@ -470,7 +468,7 @@ class SessionViewModel extends ChangeNotifier {
     if (currentWorkoutId == null) return;
     setsLoading = true;
     notifyListeners();
-    sets = await _workoutRepo.loadSetsForWorkout(currentWorkoutId!);
+    sets = await _sessionRepo.loadSetsForSession(currentWorkoutId!);
     setsLoading = false;
     _recomputePRs();
     notifyListeners();
@@ -487,20 +485,20 @@ class SessionViewModel extends ChangeNotifier {
       return;
     }
     final combined = <PastSetRow>[
-      ..._pastSets.where((s) => s.workoutId != id),
+      ..._pastSets.where((s) => s.sessionId != id),
     ];
     final sessionDate = workoutStartedAt ?? DateTime.now();
     final ordered = [...sets]..sort((a, b) => a.setNumber.compareTo(b.setNumber));
     for (final s in ordered) {
       combined.add(PastSetRow(
-        setId: s.setId,
-        workoutId: s.workoutId,
+        sessionSetId: s.sessionSetId,
+        sessionId: s.sessionId,
         userId: s.userId,
         exerciseId: s.exerciseId,
         setNumber: s.setNumber,
         reps: s.reps,
         duration: s.duration,
-        workoutCreatedDate: sessionDate,
+        sessionCreatedDate: sessionDate,
         variationId: s.variationId,
         weight: s.weight,
         notes: s.notes,
@@ -585,10 +583,10 @@ class SessionViewModel extends ChangeNotifier {
   }
 
   /// Reorders the freshly-seeded slots to match the persisted
-  /// `fact_workout.exercise_order` (preserves the user's tab arrangement and
+  /// `fact_session.exercise_order` (preserves the user's tab arrangement and
   /// the superset grouping across a hot restart).
   void _applyPersistedOrder() {
-    final order = _workout?.exerciseOrder;
+    final order = _session?.exerciseOrder;
     if (order == null || order.isEmpty) return;
     List<dynamic>? parsed;
     try {
@@ -642,7 +640,7 @@ class SessionViewModel extends ChangeNotifier {
   }
 
   /// Serializes the current tab slots (order + superset grouping) to
-  /// `fact_workout.exercise_order` so the tab bar survives a hot restart.
+  /// `fact_session.exercise_order` so the tab bar survives a hot restart.
   void _persistExerciseOrder() {
     final id = currentWorkoutId;
     if (id == null) return;
@@ -654,7 +652,7 @@ class SessionViewModel extends ChangeNotifier {
           'exerciseIds': slot.exerciseIds,
         },
     ];
-    _workoutRepo.saveExerciseOrder(id, jsonEncode(payload));
+    _sessionRepo.saveExerciseOrder(id, jsonEncode(payload));
   }
 
   /// Jumps a superset tab straight to one of its exercises — the in-card
@@ -684,7 +682,7 @@ class SessionViewModel extends ChangeNotifier {
     exerciseSlots.add(SessionExerciseSlot(
         id: _nextSlotId++, type: SessionSlotType.single, exerciseIds: [exerciseId]));
     // Persist an empty set row so the exercise survives a hot restart — the
-    // restore path only rediscovers exercises that exist in fact_workout_set.
+    // restore path only rediscovers exercises that exist in fact_session_set.
     addDraftSet(exerciseId);
     _persistExerciseOrder();
     loadLessonsFor(exerciseId);
@@ -718,7 +716,7 @@ class SessionViewModel extends ChangeNotifier {
     for (final exerciseId in slot.exerciseIds) {
       final exerciseSets = sets.where((s) => s.exerciseId == exerciseId).toList();
       for (final s in exerciseSets) {
-        await _workoutRepo.deleteSet(s.setId);
+        await _sessionRepo.deleteSet(s.sessionSetId);
       }
       sets.removeWhere((s) => s.exerciseId == exerciseId);
       draftSlotsByExercise.remove(exerciseId);
@@ -737,7 +735,7 @@ class SessionViewModel extends ChangeNotifier {
   /// the containing slot's id if it's a superset tab, else null (a plain
   /// single-exercise slot is never "part of a superset"). This is the only
   /// place a superset's grouping survives past the in-memory session state:
-  /// once stamped onto `fact_workout_set.superset_group_number` it's
+  /// once stamped onto `fact_session_set.superset_group_number` it's
   /// queryable/excludable in analytics even after the session ends.
   int? _supersetGroupFor(String exerciseId) {
     final slot = exerciseSlots.firstWhereOrNull(
@@ -763,8 +761,8 @@ class SessionViewModel extends ChangeNotifier {
     final nextNum = sets.isEmpty
         ? 1
         : sets.map((s) => s.setNumber).reduce((a, b) => a > b ? a : b) + 1;
-    _workoutRepo.insertSet(
-      workoutId: currentWorkoutId!,
+    _sessionRepo.insertSet(
+      sessionId: currentWorkoutId!,
       userId: _userId,
       exerciseId: exerciseId,
       exerciseName: exerciseDetailMap[exerciseId]?.name,
@@ -806,8 +804,8 @@ class SessionViewModel extends ChangeNotifier {
       (s) => s.exerciseId == exerciseId && s.reps.isEmpty && s.duration.isEmpty);
     try {
       if (emptyIdx >= 0) {
-        await _workoutRepo.updateSet(
-          sets[emptyIdx].setId,
+        await _sessionRepo.updateSet(
+          sets[emptyIdx].sessionSetId,
           variationId: variationId,
           clearVariation: variationId == null,
           weight: weight,
@@ -818,8 +816,8 @@ class SessionViewModel extends ChangeNotifier {
           clearNotes: notes == null || notes.isEmpty,
         );
       } else {
-        await _workoutRepo.insertSet(
-          workoutId: currentWorkoutId!,
+        await _sessionRepo.insertSet(
+          sessionId: currentWorkoutId!,
           userId: _userId,
           exerciseId: exerciseId,
           exerciseName: exerciseDetailMap[exerciseId]?.name,
@@ -844,7 +842,7 @@ class SessionViewModel extends ChangeNotifier {
   }
 
   Future<void> updateSetField(
-    WorkoutSet set, {
+    SessionSet set, {
     double? weight,
     bool clearWeight = false,
     List<num>? reps,
@@ -855,8 +853,8 @@ class SessionViewModel extends ChangeNotifier {
     bool clearNotes = false,
   }) async {
     try {
-      await _workoutRepo.updateSet(
-        set.setId,
+      await _sessionRepo.updateSet(
+        set.sessionSetId,
         weight: weight,
         clearWeight: clearWeight,
         reps: reps,
@@ -884,8 +882,8 @@ class SessionViewModel extends ChangeNotifier {
     List<num>? reps,
   }) async {
     try {
-      await _workoutRepo.updateSet(
-        set.setId,
+      await _sessionRepo.updateSet(
+        set.sessionSetId,
         weight: weight,
         clearWeight: clearWeight,
         reps: reps,
@@ -898,20 +896,20 @@ class SessionViewModel extends ChangeNotifier {
   }
 
   Future<void> deleteSetById(String setId) async {
-    await _workoutRepo.deleteSet(setId);
+    await _sessionRepo.deleteSet(setId);
     await _loadSets();
   }
 
   /// Inserts a new set copying [set]'s weight/reps/variation/notes — the
   /// grid row's swipe-action "Duplicate" button.
-  Future<void> duplicateSet(WorkoutSet set) async {
+  Future<void> duplicateSet(SessionSet set) async {
     if (currentWorkoutId == null) return;
     final nextNum = sets.isEmpty
         ? 1
         : sets.map((s) => s.setNumber).reduce((a, b) => a > b ? a : b) + 1;
     try {
-      await _workoutRepo.insertSet(
-        workoutId: currentWorkoutId!,
+      await _sessionRepo.insertSet(
+        sessionId: currentWorkoutId!,
         userId: _userId,
         exerciseId: set.exerciseId,
         exerciseName: set.exerciseName ?? exerciseDetailMap[set.exerciseId]?.name,
@@ -1002,7 +1000,7 @@ class SessionViewModel extends ChangeNotifier {
     ({num weight, num reps})? sessionBest;
     for (final s in sets) {
       if (s.exerciseId != exerciseId) continue;
-      if (excludingSetId != null && s.setId == excludingSetId) continue;
+      if (excludingSetId != null && s.sessionSetId == excludingSetId) continue;
       final weight = s.weight ?? 0;
       final reps = s.reps.isNotEmpty ? s.reps.first : (s.duration.isNotEmpty ? s.duration.first : null);
       if (reps == null) continue;
@@ -1022,7 +1020,7 @@ class SessionViewModel extends ChangeNotifier {
   }
 
   int prCountFor(String exerciseId) =>
-      sets.where((s) => s.exerciseId == exerciseId && prSetIds.contains(s.setId)).length;
+      sets.where((s) => s.exerciseId == exerciseId && prSetIds.contains(s.sessionSetId)).length;
 
   // ── Rest timer ─────────────────────────────────────────────────────────────
   // Every rest period is logged to fact_rest as its own event
@@ -1081,12 +1079,12 @@ class SessionViewModel extends ChangeNotifier {
 
   Future<void> _logRestIfInProgress() async {
     final remaining = restRemaining;
-    final workoutId = currentWorkoutId;
-    if (workoutId == null || remaining == null || remaining <= 0) return;
+    final sessionId = currentWorkoutId;
+    if (sessionId == null || remaining == null || remaining <= 0) return;
     try {
       await _restPeriodRepo.logRestPeriod(
         _userId,
-        workoutId,
+        sessionId,
         exerciseId: _restExerciseId,
         plannedSeconds: restTotal,
         actualSeconds: restTotal - remaining,
@@ -1103,12 +1101,12 @@ class SessionViewModel extends ChangeNotifier {
         restRunning = false;
         restRemaining = 0;
         restDurationsThisSession.add(restTotal);
-        final workoutId = currentWorkoutId;
-        if (workoutId != null) {
+        final sessionId = currentWorkoutId;
+        if (sessionId != null) {
           try {
             await _restPeriodRepo.logRestPeriod(
               _userId,
-              workoutId,
+              sessionId,
               exerciseId: _restExerciseId,
               plannedSeconds: restTotal,
               actualSeconds: restTotal,
@@ -1129,7 +1127,7 @@ class SessionViewModel extends ChangeNotifier {
     error = null;
     notifyListeners();
     try {
-      final id = await _workoutRepo.createWorkout(
+      final id = await _sessionRepo.createSession(
         _userId,
         preNotes: startNotes.trim().isEmpty ? null : startNotes.trim(),
         programId: selectedStandaloneWorkout != null
@@ -1141,12 +1139,12 @@ class SessionViewModel extends ChangeNotifier {
         programRunId: selectedStandaloneWorkout != null
             ? null
             : programProgress?.run.programRunId,
-        plannedWorkoutId: selectedStandaloneWorkout != null
+        parentSessionId: selectedStandaloneWorkout != null
             ? null
-            : selectedPlannedWorkout?.plannedWorkoutId,
-        plannedWorkoutName: selectedStandaloneWorkout != null
+            : selectedPlannedSession?.sessionId,
+        parentSessionName: selectedStandaloneWorkout != null
             ? null
-            : selectedPlannedWorkout?.name,
+            : selectedPlannedSession?.name,
         preFeeling: sessionFeeling,
       );
       currentWorkoutId = id;
@@ -1163,7 +1161,7 @@ class SessionViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> endWorkout() async {
+  Future<void> endSession() async {
     if (currentWorkoutId == null) return;
     endLoading = true;
     notifyListeners();
@@ -1174,7 +1172,7 @@ class SessionViewModel extends ChangeNotifier {
       await _logRestIfInProgress();
       await _purgeEmptySets();
       await _persistPRs();
-      await _workoutRepo.endWorkout(
+      await _sessionRepo.endSession(
           currentWorkoutId!,
           postNotes: endNotes.trim().isEmpty ? null : endNotes.trim(),
           feeling: endFeeling);
@@ -1188,14 +1186,14 @@ class SessionViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> cancelWorkout() async {
+  Future<void> cancelSession() async {
     if (currentWorkoutId == null) return;
     final id = currentWorkoutId!;
     _resetActiveWorkoutState();
     slidePagesController.slideOut();
     notifyListeners();
     onWorkoutEnded?.call();
-    await _workoutRepo.cancelWorkout(id);
+    await _sessionRepo.cancelSession(id);
   }
 
   Future<void> _purgeEmptySets() async {
@@ -1203,7 +1201,7 @@ class SessionViewModel extends ChangeNotifier {
     final empty = sets.where((s) => s.reps.isEmpty && s.duration.isEmpty).toList();
     for (final s in empty) {
       try {
-        await _workoutRepo.deleteSet(s.setId);
+        await _sessionRepo.deleteSet(s.sessionSetId);
       } catch (_) {}
     }
   }
@@ -1212,20 +1210,20 @@ class SessionViewModel extends ChangeNotifier {
   Future<void> _persistPRs() async {
     if (currentWorkoutId == null) return;
     try {
-      final workoutId = currentWorkoutId!;
+      final sessionId = currentWorkoutId!;
       // History (excluding this workout) + this session's committed sets
-      final history = _pastSets.where((s) => s.workoutId != workoutId).toList();
+      final history = _pastSets.where((s) => s.sessionId != sessionId).toList();
       final combined = [...history];
       for (final s in sets) {
         combined.add(PastSetRow(
-          setId: s.setId,
-          workoutId: s.workoutId,
+          sessionSetId: s.sessionSetId,
+          sessionId: s.sessionId,
           userId: s.userId,
           exerciseId: s.exerciseId,
           setNumber: s.setNumber,
           reps: s.reps,
           duration: s.duration,
-          workoutCreatedDate: DateTime.now(),
+          sessionCreatedDate: DateTime.now(),
           variationId: s.variationId,
           weight: s.weight,
           notes: s.notes,
@@ -1234,7 +1232,7 @@ class SessionViewModel extends ChangeNotifier {
           supersetGroupNumber: s.supersetGroupNumber,
         ));
       }
-      final records = prsForWorkout(combined, workoutId);
+      final records = prsForWorkout(combined, sessionId);
       if (records.isNotEmpty) {
         await _prRepo.insertPrs(_userId, records);
       }
@@ -1244,7 +1242,7 @@ class SessionViewModel extends ChangeNotifier {
   void _resetActiveWorkoutState() {
     currentWorkoutId = null;
     workoutStartedAt = null;
-    _workout = null;
+    _session = null;
     sets = [];
     endNotes = '';
     endFeeling = null;
@@ -1272,7 +1270,7 @@ class SessionViewModel extends ChangeNotifier {
       final existing = await _exerciseRepo.findExerciseByName(_userId, trimmed);
       String id;
       if (existing != null) {
-        if (existing.isActive) {
+        if (existing.isArchived) {
           error = '"$trimmed" already exists.';
           newExCreating = false;
           notifyListeners();
@@ -1312,13 +1310,13 @@ class SessionViewModel extends ChangeNotifier {
       if (useExistingId != null) {
         id = useExistingId;
         final existing = allVariations.firstWhereOrNull((v) => v.variationId == useExistingId);
-        if (existing != null && !existing.isActive) {
+        if (existing != null && !existing.isArchived) {
           await _exerciseRepo.reactivateVariation(id);
         }
       } else {
         final existing = await _exerciseRepo.findVariationByName(_userId, trimmed);
         if (existing != null) {
-          if (!existing.isActive) await _exerciseRepo.reactivateVariation(existing.variationId);
+          if (!existing.isArchived) await _exerciseRepo.reactivateVariation(existing.variationId);
           id = existing.variationId;
         } else {
           final variation = await _exerciseRepo.createVariation(_userId, trimmed);

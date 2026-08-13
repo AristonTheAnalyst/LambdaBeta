@@ -6,7 +6,7 @@ import '../../../../core/styles/app_radius.dart';
 import '../../../../core/styles/app_spacing.dart';
 import '../../../../core/styles/app_text_styles.dart';
 import '../../../../shared/widgets/app_card.dart';
-import '../../../../core/utils/workout_format.dart';
+import '../../../../core/utils/session_format.dart';
 import '../../../../data/models/custom_exercise.dart';
 import '../../../../data/models/custom_variation.dart';
 import '../../../../data/models/exercise_usage.dart';

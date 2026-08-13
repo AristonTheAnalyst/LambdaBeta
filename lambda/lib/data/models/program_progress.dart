@@ -1,4 +1,4 @@
-import 'planned_workout.dart';
+import 'planned_session.dart';
 import 'program.dart';
 import 'program_run.dart';
 
@@ -13,7 +13,7 @@ class ProgramProgress {
     required this.totalWorkoutsInCycle,
     required this.totalWorkoutsCompleted,
     this.totalWeeks,
-    this.nextPlannedWorkout,
+    this.nextPlannedSession,
   });
 
   final Program program;
@@ -25,7 +25,7 @@ class ProgramProgress {
 
   /// Raw count of completed workouts for the run (not modulo'd by the cycle).
   final int totalWorkoutsCompleted;
-  final PlannedWorkout? nextPlannedWorkout;
+  final PlannedSession? nextPlannedSession;
 
   /// Whether the program's cycle is complete. Sequential: the configured
   /// session count (or the planned-workout cycle) has been worked through.

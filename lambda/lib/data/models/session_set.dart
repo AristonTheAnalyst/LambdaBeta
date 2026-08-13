@@ -1,9 +1,10 @@
 import 'dart:convert';
 
-class WorkoutSet {
-  const WorkoutSet({
-    required this.setId,
-    required this.workoutId,
+/// One logged set within a session (fact).
+class SessionSet {
+  const SessionSet({
+    required this.sessionSetId,
+    required this.sessionId,
     required this.userId,
     required this.exerciseId,
     required this.setNumber,
@@ -16,12 +17,12 @@ class WorkoutSet {
     this.variationName,
     this.supersetGroupNumber,
     this.programId,
-    this.plannedSetId,
+    this.parentSetId,
     this.deletedLocally = false,
   });
 
-  final String setId;
-  final String workoutId;
+  final String sessionSetId;
+  final String sessionId;
   final String userId;
   final String exerciseId;
   final String? variationId;
@@ -34,25 +35,25 @@ class WorkoutSet {
   final String? variationName;
   final int? supersetGroupNumber;
   final String? programId;
-  final String? plannedSetId;
+  final String? parentSetId;
   final bool deletedLocally;
 
-  factory WorkoutSet.fromMap(Map<String, dynamic> map) => WorkoutSet(
-        setId: map['workout_set_id'] as String,
-        workoutId: map['user_workout_id'] as String,
+  factory SessionSet.fromMap(Map<String, dynamic> map) => SessionSet(
+        sessionSetId: map['session_set_id'] as String,
+        sessionId: map['session_id'] as String,
         userId: map['user_id'] as String,
         exerciseId: map['custom_exercise_id'] as String,
         variationId: map['custom_variation_id'] as String?,
-        setNumber: map['workout_set_number'] as int,
-        weight: _toDouble(map['workout_set_weight']),
-        reps: _toNumList(map['workout_set_reps']),
-        duration: _toNumList(map['workout_set_duration_seconds']),
-        notes: map['workout_set_notes'] as String?,
+        setNumber: map['set_number'] as int,
+        weight: _toDouble(map['weight']),
+        reps: _toNumList(map['reps']),
+        duration: _toNumList(map['duration_seconds']),
+        notes: map['notes'] as String?,
         exerciseName: map['exercise_name'] as String?,
         variationName: map['variation_name'] as String?,
         supersetGroupNumber: map['superset_group_number'] as int?,
         programId: map['program_id'] as String?,
-        plannedSetId: map['planned_set_id'] as String?,
+        parentSetId: map['parent_set_id'] as String?,
         deletedLocally: _toBool(map['deleted_locally']),
       );
 
@@ -63,21 +64,21 @@ class WorkoutSet {
   }
 
   Map<String, dynamic> toMap() => {
-        'workout_set_id': setId,
-        'user_workout_id': workoutId,
+        'session_set_id': sessionSetId,
+        'session_id': sessionId,
         'user_id': userId,
         'custom_exercise_id': exerciseId,
         'custom_variation_id': variationId,
-        'workout_set_number': setNumber,
-        'workout_set_weight': weight,
-        'workout_set_reps': reps,
-        'workout_set_duration_seconds': duration,
-        'workout_set_notes': notes,
+        'set_number': setNumber,
+        'weight': weight,
+        'reps': reps,
+        'duration_seconds': duration,
+        'notes': notes,
         'superset_group_number': supersetGroupNumber,
         'exercise_name': exerciseName,
         'variation_name': variationName,
         'program_id': programId,
-        'planned_set_id': plannedSetId,
+        'parent_set_id': parentSetId,
         'deleted_locally': deletedLocally,
       };
 
@@ -102,16 +103,18 @@ class WorkoutSet {
   }
 }
 
-class PastSetRow extends WorkoutSet {
+/// A logged set joined with its session's created date, for the
+/// per-exercise history timeline.
+class PastSetRow extends SessionSet {
   const PastSetRow({
-    required super.setId,
-    required super.workoutId,
+    required super.sessionSetId,
+    required super.sessionId,
     required super.userId,
     required super.exerciseId,
     required super.setNumber,
     required super.reps,
     required super.duration,
-    required this.workoutCreatedDate,
+    required this.sessionCreatedDate,
     super.variationId,
     super.weight,
     super.notes,
@@ -119,29 +122,29 @@ class PastSetRow extends WorkoutSet {
     super.variationName,
     super.supersetGroupNumber,
     super.programId,
-    super.plannedSetId,
+    super.parentSetId,
     super.deletedLocally,
   });
 
-  final DateTime workoutCreatedDate;
+  final DateTime sessionCreatedDate;
 
   factory PastSetRow.fromMap(Map<String, dynamic> map) => PastSetRow(
-        setId: map['workout_set_id'] as String,
-        workoutId: map['user_workout_id'] as String,
+        sessionSetId: map['session_set_id'] as String,
+        sessionId: map['session_id'] as String,
         userId: map['user_id'] as String,
         exerciseId: map['custom_exercise_id'] as String,
         variationId: map['custom_variation_id'] as String?,
-        setNumber: map['workout_set_number'] as int,
-        weight: WorkoutSet._toDouble(map['workout_set_weight']),
-        reps: WorkoutSet._toNumList(map['workout_set_reps']),
-        duration: WorkoutSet._toNumList(map['workout_set_duration_seconds']),
-        notes: map['workout_set_notes'] as String?,
-        workoutCreatedDate: DateTime.parse(map['user_workout_created_date'] as String),
+        setNumber: map['set_number'] as int,
+        weight: SessionSet._toDouble(map['weight']),
+        reps: SessionSet._toNumList(map['reps']),
+        duration: SessionSet._toNumList(map['duration_seconds']),
+        notes: map['notes'] as String?,
+        sessionCreatedDate: DateTime.parse(map['created_date'] as String),
         exerciseName: map['exercise_name'] as String?,
         variationName: map['variation_name'] as String?,
         supersetGroupNumber: map['superset_group_number'] as int?,
         programId: map['program_id'] as String?,
-        plannedSetId: map['planned_set_id'] as String?,
-        deletedLocally: WorkoutSet._toBool(map['deleted_locally']),
+        parentSetId: map['parent_set_id'] as String?,
+        deletedLocally: SessionSet._toBool(map['deleted_locally']),
       );
 }

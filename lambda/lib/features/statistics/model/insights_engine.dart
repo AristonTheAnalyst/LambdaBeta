@@ -1,4 +1,4 @@
-import '../../../data/models/workout_set.dart';
+import '../../../data/models/session_set.dart';
 import '../../session/model/pr_engine.dart';
 
 /// Pure computation module for the Insights screen — no DB, no widgets.
@@ -82,7 +82,7 @@ List<PastSetRow> filterSets(
   DateTime now,
 ) {
   return sets.where((s) {
-    if (!_inWindow(s.workoutCreatedDate, range, now)) return false;
+    if (!_inWindow(s.sessionCreatedDate, range, now)) return false;
     if (exercises.isNotEmpty && !exercises.contains(s.exerciseId)) return false;
     if (variations.isNotEmpty && !variations.contains(s.variationId)) return false;
     return true;
@@ -109,7 +109,7 @@ List<PrRecord> filterPrs(
 
 /// The effective rep value for a set — first reps entry, else duration as a
 /// proxy for timed exercises (mirrors the PR engine's semantics).
-num? effectiveReps(WorkoutSet s) =>
+num? effectiveReps(SessionSet s) =>
     s.reps.isNotEmpty ? s.reps.first : (s.duration.isNotEmpty ? s.duration.first : null);
 
 /// Weight distribution. Bodyweight (null weight) counts as 0kg; keys are

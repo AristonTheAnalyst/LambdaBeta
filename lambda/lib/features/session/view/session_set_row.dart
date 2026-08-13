@@ -3,11 +3,11 @@ import 'package:flutter/services.dart';
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
 import '../../../core/styles/app_radius.dart';
-import '../../../core/utils/workout_format.dart';
+import '../../../core/utils/session_format.dart';
 import '../../../data/models/custom_variation.dart';
 import '../../../data/models/exercise_detail.dart';
-import '../../../data/models/planned_set.dart';
-import '../../../data/models/workout_set.dart';
+import '../../../data/models/planned_session_set.dart';
+import '../../../data/models/session_set.dart';
 import '../../../shared/utils/pop_dialog.dart';
 import '../../../shared/widgets/dropdown_select.dart';
 import '../../../shared/widgets/swipe_actions.dart';
@@ -16,7 +16,7 @@ import '../viewmodel/session_viewmodel.dart';
 import 'notes_modal.dart';
 
 /// One row of the exercise card's set grid — either an already-logged
-/// [WorkoutSet] (editable in place) or an unsaved draft row (promoted to a
+/// [SessionSet] (editable in place) or an unsaved draft row (promoted to a
 /// real set the moment reps are entered and the field loses focus).
 class SessionSetRow extends StatefulWidget {
   const SessionSetRow({
@@ -34,9 +34,9 @@ class SessionSetRow extends StatefulWidget {
   final String exerciseId;
   final int displayIndex;
   final ExerciseDetail? detail;
-  final WorkoutSet? set;
+  final SessionSet? set;
   final int? draftId;
-  final PlannedSet? plannedTarget;
+  final PlannedSessionSet? plannedTarget;
 
   @override
   State<SessionSetRow> createState() => _SessionSetRowState();
@@ -132,7 +132,7 @@ class _SessionSetRowState extends State<SessionSetRow> {
     if (_isDraft) {
       widget.vm.removeDraftSet(widget.exerciseId, widget.draftId!);
     } else {
-      widget.vm.deleteSetById(widget.set!.setId);
+      widget.vm.deleteSetById(widget.set!.sessionSetId);
     }
   }
 
@@ -243,7 +243,7 @@ class _SessionSetRowState extends State<SessionSetRow> {
   Widget build(BuildContext context) {
     final vm = widget.vm;
     final set = widget.set;
-    final pr = set != null && vm.isPrSet(set.setId);
+    final pr = set != null && vm.isPrSet(set.sessionSetId);
     final hasNotes = _isDraft ? (_draftNotes?.trim().isNotEmpty ?? false) : (set!.notes?.isNotEmpty ?? false);
     final plannedWeight = widget.plannedTarget?.targetWeight;
     final plannedReps = widget.plannedTarget?.targetReps.isNotEmpty == true

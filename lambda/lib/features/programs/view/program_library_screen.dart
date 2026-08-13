@@ -4,7 +4,7 @@ import '../../../../core/styles/app_colors.dart';
 import '../../../../core/styles/app_fonts.dart';
 import '../../../../core/styles/app_spacing.dart';
 import '../../../../core/styles/app_text_styles.dart';
-import '../../../../core/utils/workout_format.dart';
+import '../../../../core/utils/session_format.dart';
 import '../../../../data/models/program.dart';
 import '../../../../data/models/program_progress.dart';
 import '../../../../shared/widgets/app_card.dart';

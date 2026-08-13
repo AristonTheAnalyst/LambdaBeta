@@ -6,16 +6,16 @@ import '../../../../core/styles/app_fonts.dart';
 import '../../../../core/styles/app_radius.dart';
 import '../../../../core/styles/app_spacing.dart';
 import '../../../../core/styles/app_text_styles.dart';
-import '../../../../core/utils/workout_format.dart';
-import '../../../../data/models/planned_workout.dart';
-import '../../../../data/repositories/workout_plan_repository.dart';
+import '../../../../core/utils/session_format.dart';
+import '../../../../data/models/planned_session.dart';
+import '../../../../data/repositories/planned_session_repository.dart';
 import '../../../../shared/widgets/app_card.dart';
 import '../../../../shared/widgets/glass_button.dart';
 import '../../../../shared/widgets/lambda_input.dart';
 import '../../../../shared/widgets/page_header.dart';
 import '../../../../shared/widgets/swipe_actions.dart';
 import '../viewmodel/program_detail_viewmodel.dart';
-import 'plan_workout_screen.dart';
+import 'plan_session_screen.dart';
 
 /// 3-step guided program creation: choose progression, name the program,
 /// then design the planned workouts. Calendar workouts must have a weekday
@@ -112,7 +112,7 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
 
   Future<void> _addWorkout() async {
     await Navigator.of(context, rootNavigator: true).push(
-      MaterialPageRoute(builder: (_) => PlanWorkoutScreen(viewModel: _vm)),
+      MaterialPageRoute(builder: (_) => PlanSessionScreen(viewModel: _vm)),
     );
     if (mounted) setState(() {});
   }
@@ -120,8 +120,8 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
   /// Copies an existing standalone workout into the program as a planned
   /// workout (including its exercises and sets).
   Future<void> _addExistingWorkout() async {
-    final repo = WorkoutPlanRepository();
-    final workouts = await repo.fetchWorkouts(
+    final repo = PlannedSessionRepository();
+    final workouts = await repo.fetchPlannedSessions(
         Supabase.instance.client.auth.currentUser!.id);
     if (workouts.isEmpty || !mounted) return;
     final chosen = await showModalBottomSheet<String>(
@@ -146,7 +146,7 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
             ),
             for (final w in workouts)
               InkWell(
-                onTap: () => Navigator.of(ctx).pop(w.workoutId),
+                onTap: () => Navigator.of(ctx).pop(w.sessionId),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
                       horizontal: AppSpacing.lg, vertical: AppSpacing.md),
@@ -167,10 +167,10 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
     if (mounted) setState(() {});
   }
 
-  Future<void> _openWorkout(PlannedWorkout w) async {
+  Future<void> _openWorkout(PlannedSession w) async {
     await Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(
-          builder: (_) => PlanWorkoutScreen(viewModel: _vm, workout: w)),
+          builder: (_) => PlanSessionScreen(viewModel: _vm, workout: w)),
     );
     if (mounted) setState(() {});
   }
@@ -422,16 +422,16 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
             physics: const NeverScrollableScrollPhysics(),
             buildDefaultDragHandles: false,
             onReorderItem: (oldIndex, newIndex) {
-              final updated = List<PlannedWorkout>.from(workouts);
+              final updated = List<PlannedSession>.from(workouts);
               final item = updated.removeAt(oldIndex);
               updated.insert(newIndex, item);
               _vm.reorderWorkouts(
-                  updated, updated.map((w) => w.plannedWorkoutId).toList());
+                  updated, updated.map((w) => w.sessionId).toList());
             },
             children: [
               for (var i = 0; i < workouts.length; i++)
                 Padding(
-                  key: ValueKey(workouts[i].plannedWorkoutId),
+                  key: ValueKey(workouts[i].sessionId),
                   padding: const EdgeInsets.only(bottom: AppSpacing.sm),
                   child: SwipeActions(
                     actions: [
@@ -439,14 +439,14 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
                         icon: Icons.copy_rounded,
                         label: 'Duplicate',
                         color: AppColors.accent,
-                        onTap: () => _vm.duplicatePlannedWorkout(workouts[i]),
+                        onTap: () => _vm.duplicatePlannedSession(workouts[i]),
                       ),
                       SwipeAction(
                         icon: Icons.delete_outline,
                         label: 'Delete',
                         color: AppColors.danger,
                         onTap: () {
-                          _vm.removePlannedWorkout(workouts[i]);
+                          _vm.removePlannedSession(workouts[i]);
                           setState(() {});
                         },
                       ),
@@ -479,7 +479,7 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
                                   ? (workouts[i].dayOfWeek != null
                                       ? _dayOfWeekLabel(workouts[i].dayOfWeek)
                                       : 'No day assigned')
-                                  : 'Workout ${workouts[i].sequenceOrder}',
+                                  : 'Session ${workouts[i].sequenceOrder}',
                               _isCalendar && workouts[i].dayOfWeek == null
                                   ? AppColors.danger
                                   : AppColors.accent),

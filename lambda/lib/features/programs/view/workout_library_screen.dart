@@ -4,15 +4,15 @@ import '../../../../core/styles/app_colors.dart';
 import '../../../../core/styles/app_fonts.dart';
 import '../../../../core/styles/app_spacing.dart';
 import '../../../../core/styles/app_text_styles.dart';
-import '../../../../core/utils/workout_format.dart';
-import '../../../../data/models/workout_plan.dart';
-import '../../../../data/repositories/workout_plan_repository.dart';
+import '../../../../core/utils/session_format.dart';
+import '../../../../data/models/planned_session.dart';
+import '../../../../data/repositories/planned_session_repository.dart';
 import '../../../../shared/widgets/app_card.dart';
 import '../../../../shared/widgets/swipe_actions.dart';
 import '../../../../shared/widgets/glass_button.dart';
 import '../../../../shared/widgets/page_header.dart';
 import '../viewmodel/program_detail_viewmodel.dart';
-import 'plan_workout_screen.dart';
+import 'plan_session_screen.dart';
 
 /// Library of standalone planned workouts (a single session, no program).
 class WorkoutLibraryScreen extends StatefulWidget {
@@ -28,8 +28,8 @@ class WorkoutLibraryScreen extends StatefulWidget {
 }
 
 class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
-  final _repo = WorkoutPlanRepository();
-  List<WorkoutPlan> _workouts = const [];
+  final _repo = PlannedSessionRepository();
+  List<PlannedSession> _workouts = const [];
   bool _loading = true;
   String? _error;
 
@@ -47,7 +47,7 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
       _error = null;
     });
     try {
-      final w = await _repo.fetchWorkouts(_userId);
+      final w = await _repo.fetchPlannedSessions(_userId);
       if (mounted) {
         setState(() {
           _workouts = w;
@@ -68,34 +68,34 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
     final vm = ProgramDetailViewModel();
     await Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(
-          builder: (_) => PlanWorkoutScreen(viewModel: vm, standalone: true)),
+          builder: (_) => PlanSessionScreen(viewModel: vm, standalone: true)),
     );
     vm.dispose();
     await _load();
   }
 
-  Future<void> _edit(WorkoutPlan w) async {
+  Future<void> _edit(PlannedSession w) async {
     final vm = ProgramDetailViewModel();
     await Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(
-          builder: (_) => PlanWorkoutScreen(
-              viewModel: vm, standaloneWorkoutId: w.workoutId)),
+          builder: (_) => PlanSessionScreen(
+              viewModel: vm, standaloneWorkoutId: w.sessionId)),
     );
     vm.dispose();
     await _load();
   }
 
-  Future<void> _duplicate(WorkoutPlan w) async {
-    await _repo.duplicateWorkout(_userId, w);
+  Future<void> _duplicate(PlannedSession w) async {
+    await _repo.duplicatePlannedSession(_userId, w);
     await _load();
   }
 
-  Future<void> _delete(WorkoutPlan w) async {
+  Future<void> _delete(PlannedSession w) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
-        title: Text('Delete Workout',
+        title: Text('Delete Session',
             style: AppFonts.ui(fontWeight: FontWeight.w800, color: AppColors.danger)),
         content: Text('Delete "${toProperCase(w.name)}"?',
             style: AppFonts.ui(color: AppColors.muted)),
@@ -112,7 +112,7 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
       ),
     );
     if (ok == true) {
-      await _repo.deleteWorkout(w.workoutId);
+      await _repo.deletePlannedSession(w.sessionId);
       await _load();
     }
   }
@@ -172,7 +172,7 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
                             children: [
                               Expanded(
                                 child: GlassButton(
-                                  label: 'New Workout',
+                                  label: 'New Session',
                                   icon: Icons.add,
                                   onPressed: _create,
                                 ),

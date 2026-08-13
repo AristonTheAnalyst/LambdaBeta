@@ -421,7 +421,7 @@ class ExerciseViewModel {
       final existing = await _repo.findExerciseByName(_userId, name);
       String id;
       if (existing != null) {
-        if (existing.isActive) {
+        if (existing.isArchived) {
           state.value = state.value.copyWith(
               isCreatingEx: false,
               error: '"$name" already exists.');
@@ -460,7 +460,7 @@ class ExerciseViewModel {
       final existing = await _repo.findVariationByName(_userId, name);
       String id;
       if (existing != null) {
-        if (existing.isActive) {
+        if (existing.isArchived) {
           state.value = state.value.copyWith(
               isCreatingVar: false, error: '"$name" already exists.');
           return null;

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../../core/utils/workout_format.dart';
+import '../../../core/utils/session_format.dart';
 import '../../../shared/widgets/exercise_tab_chip.dart';
 import '../model/session_local_state.dart';
 import '../viewmodel/session_viewmodel.dart';

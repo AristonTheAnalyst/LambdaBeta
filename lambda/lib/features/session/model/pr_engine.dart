@@ -1,4 +1,4 @@
-import '../../../data/models/workout_set.dart';
+import '../../../data/models/session_set.dart';
 
 /// Personal-record computation engine.
 ///
@@ -23,7 +23,7 @@ class PrRecord {
     required this.weight,
     required this.reps,
     required this.achievedDate,
-    required this.workoutId,
+    required this.sessionId,
     required this.type,
     this.setId,
     this.exerciseName,
@@ -41,7 +41,7 @@ class PrRecord {
   final num weight;
   final num reps;
   final DateTime achievedDate;
-  final String workoutId;
+  final String sessionId;
 
   /// The source set that produced this record. Plain reference (no FK) so
   /// the snapshot survives the set being deleted.
@@ -76,8 +76,8 @@ class PrRecord {
         weight: _toNum(map['weight']),
         reps: _toNum(map['reps']),
         achievedDate: _parseDate(map['achieved_date']),
-        workoutId: (map['user_workout_id'] as String?) ?? _workoutIdFromSet(map['workout_set_id'] as String?),
-        setId: map['workout_set_id'] as String?,
+        sessionId: (map['session_id'] as String?) ?? _sessionIdFromSet(map['session_set_id'] as String?),
+        setId: map['session_set_id'] as String?,
         type: _typeFromString(map['pr_type'] as String? ?? 'repMax'),
         targetReps: _toInt(map['target_reps']),
         targetWeight: _toNumNullable(map['target_weight']),
@@ -91,7 +91,7 @@ class PrRecord {
   }
 
   Map<String, dynamic> toMap() => {
-        'workout_set_id': setId,
+        'session_set_id': setId,
         'custom_exercise_id': exerciseId,
         'custom_variation_id': variationId,
         'weight': weight,
@@ -104,7 +104,7 @@ class PrRecord {
         'is_active': 1,
       };
 
-  static String _workoutIdFromSet(String? setId) => setId ?? '';
+  static String _sessionIdFromSet(String? setId) => setId ?? '';
 
   static PrType _typeFromString(String s) => switch (s) {
         'weightMax' || 'weightClass' => PrType.weightMax, // weightClass = legacy
@@ -123,7 +123,7 @@ class PrRecord {
 
 /// The effective rep/volume value for a set — first reps entry, or duration
 /// as a proxy for timed exercises. Null if the set has neither.
-num? _effectiveReps(WorkoutSet s) =>
+num? _effectiveReps(SessionSet s) =>
     s.reps.isNotEmpty ? s.reps.first : (s.duration.isNotEmpty ? s.duration.first : null);
 
 /// The best weight ever lifted for "at least [repCount] reps" across
@@ -151,9 +151,9 @@ Map<int, num> repMaxCurve(List<PastSetRow> sets, String exerciseId) {
 ///   - a running rep-max curve (`curve[N]` = best weight for ≥ N reps)
 ///   - the max reps done at each weight (weight-max)
 ///
-/// [sets] may be in any order; this sorts by [PastSetRow.workoutCreatedDate].
+/// [sets] may be in any order; this sorts by [PastSetRow.sessionCreatedDate].
 List<PrRecord> fullPrTimeline(List<PastSetRow> sets) {
-  final ordered = [...sets]..sort((a, b) => a.workoutCreatedDate.compareTo(b.workoutCreatedDate));
+  final ordered = [...sets]..sort((a, b) => a.sessionCreatedDate.compareTo(b.sessionCreatedDate));
 
   final curve = <String, Map<int, num>>{}; // exerciseId → repCount → bestWeight
   final maxRepsAtWeight = <String, Map<num, int>>{}; // exerciseId → weight → maxReps
@@ -186,9 +186,9 @@ List<PrRecord> fullPrTimeline(List<PastSetRow> sets) {
           variationName: s.variationName,
           weight: weight,
           reps: reps,
-          achievedDate: s.workoutCreatedDate,
-          workoutId: s.workoutId,
-          setId: s.setId,
+          achievedDate: s.sessionCreatedDate,
+          sessionId: s.sessionId,
+          setId: s.sessionSetId,
           type: PrType.repMax,
           targetReps: n,
           isPropagated: n != actualReps,
@@ -212,9 +212,9 @@ List<PrRecord> fullPrTimeline(List<PastSetRow> sets) {
         variationName: s.variationName,
         weight: weight,
         reps: reps,
-        achievedDate: s.workoutCreatedDate,
-        workoutId: s.workoutId,
-        setId: s.setId,
+        achievedDate: s.sessionCreatedDate,
+        sessionId: s.sessionId,
+        setId: s.sessionSetId,
         type: PrType.weightMax,
         targetWeight: weight,
         isPropagated: false,
@@ -231,9 +231,9 @@ List<PrRecord> fullPrTimeline(List<PastSetRow> sets) {
             variationName: s.variationName,
             weight: entry.key,
             reps: newReps,
-            achievedDate: s.workoutCreatedDate,
-            workoutId: s.workoutId,
-            setId: s.setId,
+            achievedDate: s.sessionCreatedDate,
+            sessionId: s.sessionId,
+            setId: s.sessionSetId,
             type: PrType.weightMax,
             targetWeight: entry.key,
             isPropagated: true,
@@ -247,8 +247,8 @@ List<PrRecord> fullPrTimeline(List<PastSetRow> sets) {
 }
 
 /// PRs set during a single workout.
-List<PrRecord> prsForWorkout(List<PastSetRow> sets, String workoutId) {
-  return fullPrTimeline(sets).where((p) => p.workoutId == workoutId).toList();
+List<PrRecord> prsForWorkout(List<PastSetRow> sets, String sessionId) {
+  return fullPrTimeline(sets).where((p) => p.sessionId == sessionId).toList();
 }
 
 /// PRs for a specific exercise (all types).

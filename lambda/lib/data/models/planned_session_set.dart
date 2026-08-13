@@ -1,88 +1,73 @@
 import 'dart:convert';
 
-class PlannedSet {
-  const PlannedSet({
-    required this.plannedSetId,
-    required this.plannedWorkoutId,
+/// A planned set within a planned session (template target row).
+class PlannedSessionSet {
+  const PlannedSessionSet({
+    required this.setId,
+    required this.sessionId,
     required this.userId,
     required this.exerciseId,
     required this.exerciseSequenceOrder,
     required this.setNumber,
-    required this.targetReps,
-    required this.targetDuration,
-    required this.isActive,
     this.variationId,
     this.targetWeight,
+    this.targetReps = const [],
+    this.targetDuration = const [],
     this.targetNotes,
     this.exerciseName,
     this.variationName,
+    this.isArchived = false,
   });
 
-  final String plannedSetId;
-  final String plannedWorkoutId;
+  final String setId;
+  final String sessionId;
   final String userId;
   final String exerciseId;
-  final String? variationId;
   final int exerciseSequenceOrder;
   final int setNumber;
-  final double? targetWeight;
+  final String? variationId;
+  final num? targetWeight;
   final List<num> targetReps;
   final List<num> targetDuration;
   final String? targetNotes;
-  final bool isActive;
   final String? exerciseName;
   final String? variationName;
+  final bool isArchived;
 
-  factory PlannedSet.fromMap(Map<String, dynamic> map) => PlannedSet(
-        plannedSetId: map['planned_set_id'] as String,
-        plannedWorkoutId: map['planned_workout_id'] as String,
+  factory PlannedSessionSet.fromMap(Map<String, dynamic> map) =>
+      PlannedSessionSet(
+        setId: map['set_id'] as String,
+        sessionId: map['session_id'] as String,
         userId: map['user_id'] as String,
         exerciseId: map['custom_exercise_id'] as String,
-        variationId: map['custom_variation_id'] as String?,
         exerciseSequenceOrder: _toInt(map['exercise_sequence_order']) ?? 0,
-        setNumber: _toInt(map['planned_set_number']) ?? 1,
-        targetWeight: _toDouble(map['target_weight']),
+        setNumber: _toInt(map['set_number']) ?? 1,
+        variationId: map['custom_variation_id'] as String?,
+        targetWeight: _toNum(map['target_weight']),
         targetReps: _toNumList(map['target_reps']),
         targetDuration: _toNumList(map['target_duration_seconds']),
         targetNotes: map['target_notes'] as String?,
-        isActive: _toBool(map['is_active']),
         exerciseName: map['exercise_name'] as String?,
         variationName: map['variation_name'] as String?,
+        isArchived: _toBool(map['is_archived']),
       );
-
-  Map<String, dynamic> toMap() => {
-        'planned_set_id': plannedSetId,
-        'planned_workout_id': plannedWorkoutId,
-        'user_id': userId,
-        'custom_exercise_id': exerciseId,
-        'custom_variation_id': variationId,
-        'exercise_sequence_order': exerciseSequenceOrder,
-        'planned_set_number': setNumber,
-        'target_weight': targetWeight,
-        'target_reps': targetReps,
-        'target_duration_seconds': targetDuration,
-        'target_notes': targetNotes,
-        'is_active': isActive,
-      };
 
   static bool _toBool(dynamic v) {
     if (v is bool) return v;
     if (v is int) return v != 0;
-    return true;
+    return false;
   }
 
   static int? _toInt(dynamic v) {
     if (v == null) return null;
     if (v is int) return v;
-    if (v is String) return int.tryParse(v);
-    return null;
+    return int.tryParse('$v');
   }
 
-  static double? _toDouble(dynamic v) {
+  static num? _toNum(dynamic v) {
     if (v == null) return null;
-    if (v is num) return v.toDouble();
-    if (v is String) return double.tryParse(v);
-    return null;
+    if (v is num) return v;
+    return num.tryParse('$v');
   }
 
   static List<num> _toNumList(dynamic value) {
@@ -97,4 +82,21 @@ class PlannedSet {
     }
     return [];
   }
+
+  Map<String, dynamic> toMap() => {
+        'set_id': setId,
+        'session_id': sessionId,
+        'user_id': userId,
+        'custom_exercise_id': exerciseId,
+        'custom_variation_id': variationId,
+        'exercise_sequence_order': exerciseSequenceOrder,
+        'set_number': setNumber,
+        'target_weight': targetWeight,
+        'target_reps': targetReps,
+        'target_duration_seconds': targetDuration,
+        'target_notes': targetNotes,
+        'exercise_name': exerciseName,
+        'variation_name': variationName,
+        'is_archived': isArchived,
+      };
 }

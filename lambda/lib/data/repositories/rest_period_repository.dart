@@ -17,7 +17,7 @@ class RestPeriodRepository {
     await ps.db.execute(
       '''
       INSERT INTO fact_rest
-        (id, rest_id, user_id, user_workout_id, custom_exercise_id,
+        (id, rest_id, user_id, session_id, custom_exercise_id,
          planned_seconds, actual_seconds, rest_created_date)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       ''',
@@ -36,7 +36,7 @@ class RestPeriodRepository {
 
   Future<void> deleteForWorkout(String workoutId) async {
     await ps.db.execute(
-      'DELETE FROM fact_rest WHERE user_workout_id = ?',
+      'DELETE FROM fact_rest WHERE session_id = ?',
       [workoutId],
     );
   }

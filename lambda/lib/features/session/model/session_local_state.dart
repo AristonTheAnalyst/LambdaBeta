@@ -1,4 +1,4 @@
-import '../../../data/models/workout_set.dart';
+import '../../../data/models/session_set.dart';
 
 /// Pure local/in-memory state for the session screen — never persisted.
 /// A history "session" is a display-only grouping of already-persisted
@@ -19,12 +19,12 @@ Map<String, List<ExerciseHistorySession>> groupHistoryByExercise(
   final byExercise = <String, Map<String, List<PastSetRow>>>{};
   for (final s in pastSets) {
     final byWorkout = byExercise.putIfAbsent(s.exerciseId, () => {});
-    byWorkout.putIfAbsent(s.workoutId, () => []).add(s);
+    byWorkout.putIfAbsent(s.sessionId, () => []).add(s);
   }
   return byExercise.map((exerciseId, byWorkout) {
     final sessions = byWorkout.values
         .map((sets) => ExerciseHistorySession(
-              date: sets.first.workoutCreatedDate,
+              date: sets.first.sessionCreatedDate,
               sets: sets,
             ))
         .toList()
@@ -52,7 +52,7 @@ Map<String, List<ExerciseHistorySession>> groupHistoryByExercise(
 /// Whether [set] beats the PR baseline — a PR when the weight exceeds the
 /// baseline, or ties it with more reps. A null/absent baseline means "no
 /// history yet," and the first-ever lift is by definition a PR.
-bool isPr(WorkoutSet set, ({num weight, num reps})? bestEver) {
+bool isPr(SessionSet set, ({num weight, num reps})? bestEver) {
   final weight = set.weight ?? 0; // bodyweight sets count as 0kg
   final reps = set.reps.isNotEmpty ? set.reps.first : (set.duration.isNotEmpty ? set.duration.first : null);
   if (reps == null) return false;

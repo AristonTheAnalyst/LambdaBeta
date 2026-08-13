@@ -37,7 +37,7 @@ class _LessonDebugScreenState extends State<LessonDebugScreen> {
         '''
         SELECT l.lesson_id, l.custom_exercise_id, l.lesson_text, l.pinned,
                l.is_active, l.lesson_created_date, e.exercise_name
-        FROM fact_lesson l
+        FROM dim_lesson l
         LEFT JOIN dim_exercise e ON e.custom_exercise_id = l.custom_exercise_id
         WHERE l.user_id = ?
         ORDER BY l.lesson_created_date DESC
@@ -84,7 +84,7 @@ class _LessonDebugScreenState extends State<LessonDebugScreen> {
                 : ListView(
                     padding: const EdgeInsets.all(AppSpacing.lg),
                     children: [
-                      Text('fact_lesson: ${_rows.length} row(s) for this user',
+                      Text('dim_lesson: ${_rows.length} row(s) for this user',
                           style: AppFonts.mono(fontSize: 12, color: AppColors.accent)),
                       const SizedBox(height: AppSpacing.sm),
                       if (_error != null)

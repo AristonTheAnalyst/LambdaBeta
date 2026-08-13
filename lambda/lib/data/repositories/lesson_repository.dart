@@ -17,8 +17,8 @@ class LessonRepository {
   Future<List<Lesson>> fetchLessons(String userId, String exerciseId) async {
     final rows = await _db.getAll(
       '''
-      SELECT * FROM fact_lesson
-      WHERE user_id = ? AND custom_exercise_id = ? AND is_active = 1
+      SELECT * FROM dim_lesson
+      WHERE user_id = ? AND custom_exercise_id = ? AND is_archived = 0
       ORDER BY pinned DESC, lesson_created_date DESC
       ''',
       [userId, exerciseId],
@@ -31,11 +31,11 @@ class LessonRepository {
     final createdDate = DateTime.now().toUtc();
     await _db.execute(
       '''
-      INSERT INTO fact_lesson
-        (id, lesson_id, user_id, custom_exercise_id, lesson_text, pinned, is_active, lesson_created_date)
+      INSERT INTO dim_lesson
+        (id, lesson_id, user_id, custom_exercise_id, lesson_text, pinned, is_archived, lesson_created_date)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       ''',
-      [id, id, userId, exerciseId, text, 0, 1, createdDate.toIso8601String()],
+      [id, id, userId, exerciseId, text, 0, 0, createdDate.toIso8601String()],
     );
     _log.info('createLesson → id=$id exercise=$exerciseId countAfter=${(await fetchLessons(userId, exerciseId)).length}');
     return Lesson(
@@ -55,14 +55,14 @@ class LessonRepository {
     if (pinned) {
       await _db.execute(
         '''
-        UPDATE fact_lesson SET pinned = 0
-        WHERE user_id = ? AND custom_exercise_id = ? AND is_active = 1
+        UPDATE dim_lesson SET pinned = 0
+        WHERE user_id = ? AND custom_exercise_id = ? AND is_archived = 0
         ''',
         [userId, exerciseId],
       );
     }
     await _db.execute(
-      'UPDATE fact_lesson SET pinned = ? WHERE lesson_id = ?',
+      'UPDATE dim_lesson SET pinned = ? WHERE lesson_id = ?',
       [pinned ? 1 : 0, lessonId],
     );
     _log.info('setPinned → id=$lessonId pinned=$pinned countAfter=${(await fetchLessons(userId, exerciseId)).length}');
@@ -70,7 +70,7 @@ class LessonRepository {
 
   Future<void> deleteLesson(String lessonId) async {
     await _db.execute(
-      'UPDATE fact_lesson SET is_active = 0 WHERE lesson_id = ?',
+      'UPDATE dim_lesson SET is_archived = 1 WHERE lesson_id = ?',
       [lessonId],
     );
     _log.info('deleteLesson → id=$lessonId');

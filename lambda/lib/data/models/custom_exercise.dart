@@ -3,19 +3,19 @@ class CustomExercise {
     required this.exerciseId,
     required this.userId,
     required this.name,
-    required this.isActive,
+    required this.isArchived,
   });
 
   final String exerciseId;
   final String userId;
   final String name;
-  final bool isActive;
+  final bool isArchived;
 
   factory CustomExercise.fromMap(Map<String, dynamic> map) => CustomExercise(
         exerciseId: map['custom_exercise_id'] as String,
         userId: map['user_id'] as String,
         name: map['exercise_name'] as String,
-        isActive: _toBool(map['is_active']),
+        isArchived: _toBool(map['is_archived']),
       );
 
   static bool _toBool(dynamic v) {
@@ -28,6 +28,6 @@ class CustomExercise {
         'custom_exercise_id': exerciseId,
         'user_id': userId,
         'exercise_name': name,
-        'is_active': isActive,
+        'is_archived': isArchived,
       };
 }

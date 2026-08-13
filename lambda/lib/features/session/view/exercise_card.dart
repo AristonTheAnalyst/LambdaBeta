@@ -4,9 +4,9 @@ import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
 import '../../../core/styles/app_radius.dart';
 import '../../../core/styles/app_spacing.dart';
-import '../../../core/utils/workout_format.dart';
+import '../../../core/utils/session_format.dart';
 import '../../../data/models/lesson.dart';
-import '../../../data/models/workout_set.dart';
+import '../../../data/models/session_set.dart';
 import '../../../shared/widgets/glass_button.dart';
 import '../model/session_local_state.dart';
 import '../viewmodel/session_viewmodel.dart';
@@ -391,7 +391,7 @@ class _ExerciseCardState extends State<ExerciseCard> {
   Widget _setsGrid(
     SessionViewModel vm,
     String exerciseId,
-    List<WorkoutSet> realSets,
+    List<SessionSet> realSets,
     List<int> draftIds,
     List plannedSets,
     dynamic detail,
@@ -418,7 +418,7 @@ class _ExerciseCardState extends State<ExerciseCard> {
         const SizedBox(height: 6),
         for (var i = 0; i < realSets.length; i++)
           SessionSetRow(
-            key: ValueKey(realSets[i].setId),
+            key: ValueKey(realSets[i].sessionSetId),
             vm: vm,
             exerciseId: exerciseId,
             displayIndex: i + 1,

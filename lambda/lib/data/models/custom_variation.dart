@@ -3,14 +3,14 @@ class CustomVariation {
     required this.variationId,
     required this.userId,
     required this.name,
-    required this.isActive,
+    required this.isArchived,
     this.lastUsed,
   });
 
   final String variationId;
   final String userId;
   final String name;
-  final bool isActive;
+  final bool isArchived;
 
   /// Most recent workout date this variation appeared in, if any — used to
   /// order variation lists/pickers by "most recently used".
@@ -20,7 +20,7 @@ class CustomVariation {
         variationId: map['custom_variation_id'] as String,
         userId: map['user_id'] as String,
         name: map['variation_name'] as String,
-        isActive: _toBool(map['is_active']),
+        isArchived: _toBool(map['is_archived']),
       );
 
   static bool _toBool(dynamic v) {
@@ -43,7 +43,7 @@ class CustomVariation {
         variationId: variationId,
         userId: userId,
         name: name,
-        isActive: isActive,
+        isArchived: isArchived,
         lastUsed: lastUsed ?? this.lastUsed,
       );
 
@@ -51,6 +51,6 @@ class CustomVariation {
         'custom_variation_id': variationId,
         'user_id': userId,
         'variation_name': name,
-        'is_active': isActive,
+        'is_archived': isArchived,
       };
 }
