@@ -1,27 +1,41 @@
 import 'package:flutter/material.dart';
 
-class SlidePagesController {
+/// Controller for [SlidePages] — a swipeable horizontal pager whose current
+/// page is observable ([ChangeNotifier]) so callers can render tab indicators
+/// and navigate programmatically.
+class SlidePagesController extends ChangeNotifier {
   SlidePagesController();
 
   int _initialPage = 0;
+  int _currentPage = 0;
   PageController? _pageController;
 
   PageController get pageController {
-    _pageController ??= PageController(initialPage: _initialPage);
+    _pageController ??=
+        PageController(initialPage: _initialPage)..addListener(_onPageChanged);
     return _pageController!;
   }
 
-  void slideIn() {
-    pageController.animateToPage(
-      1,
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeInOut,
-    );
+  void _onPageChanged() {
+    final p = _pageController!.page?.round() ?? _currentPage;
+    if (p != _currentPage) {
+      _currentPage = p;
+      notifyListeners();
+    }
   }
 
-  void slideOut() {
+  /// Slides to page 1 (the second page).
+  void slideIn() => slideToPage(1);
+
+  /// Slides back to page 0.
+  void slideOut() => slideToPage(0);
+
+  /// Animates to [page] and notifies listeners.
+  void slideToPage(int page) {
+    _currentPage = page;
+    notifyListeners();
     pageController.animateToPage(
-      0,
+      page,
       duration: const Duration(milliseconds: 300),
       curve: Curves.easeInOut,
     );
@@ -31,16 +45,21 @@ class SlidePagesController {
   /// target so the next PageController construction picks it up.
   void resetToPage(int page) {
     _initialPage = page;
+    _currentPage = page;
+    notifyListeners();
     if (_pageController != null && _pageController!.hasClients) {
       _pageController!.jumpToPage(page);
     }
   }
 
-  /// The page the controller is currently on (or will be after the PageView
-  /// is laid out) — 0 = start, 1 = active.
-  int get currentPage => _initialPage;
+  /// The page currently showing (0-based).
+  int get currentPage => _currentPage;
 
-  void dispose() => _pageController?.dispose();
+  @override
+  void dispose() {
+    _pageController?.dispose();
+    super.dispose();
+  }
 }
 
 class SlidePages extends StatelessWidget {
@@ -48,7 +67,7 @@ class SlidePages extends StatelessWidget {
     super.key,
     required this.controller,
     required this.children,
-  }) : assert(children.length == 2, 'SlidePages requires exactly 2 children');
+  });
 
   final SlidePagesController controller;
   final List<Widget> children;
@@ -57,7 +76,7 @@ class SlidePages extends StatelessWidget {
   Widget build(BuildContext context) {
     return PageView(
       controller: controller.pageController,
-      physics: const NeverScrollableScrollPhysics(),
+      physics: const PageScrollPhysics(),
       children: children,
     );
   }

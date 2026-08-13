@@ -12,7 +12,6 @@ import '../../../shared/widgets/lambda_button.dart';
 import '../../../shared/widgets/lambda_input.dart';
 import '../../../shared/widgets/page_header.dart';
 import '../../../shared/widgets/slide_pages.dart';
-import '../../../shared/widgets/slide_up_modal.dart';
 import '../model/session_local_state.dart';
 import '../viewmodel/session_viewmodel.dart';
 import 'add_exercise_modal.dart';
@@ -93,19 +92,20 @@ class _SessionScreenState extends State<SessionScreen> {
 
   // ── Modals ─────────────────────────────────────────────────────────────────
 
-  void _openEndWorkoutModal() {
+  void _goToReflection() {
     if (_vm.sets.isEmpty) {
       _showNoSetsDialog();
       return;
     }
-    _endNotesCtrl.clear();
-    _vm.endNotes = '';
-    showLambdaModal(
-      context,
-      fitContent: true,
-      keyboardAware: true,
-      child: _EndWorkoutModal(vm: _vm, notesCtrl: _endNotesCtrl),
-    );
+    _vm.slidePagesController.slideToPage(2);
+  }
+
+  Future<void> _endFromReflection() async {
+    if (_vm.sets.isEmpty) {
+      _showNoSetsDialog();
+      return;
+    }
+    await _vm.endSession();
   }
 
   void _showNoSetsDialog() {
@@ -196,9 +196,11 @@ class _SessionScreenState extends State<SessionScreen> {
                       ? GlassButton(label: 'Cancel', color: AppColors.danger, compact: true, onPressed: _confirmCancelWorkout)
                       : null,
                   right: _vm.hasActiveWorkout
-                      ? GlassButton(label: 'Finish', compact: true, onPressed: _openEndWorkoutModal)
+                      ? GlassButton(label: 'Finish', compact: true, onPressed: _goToReflection)
                       : null,
                 ),
+                if (_vm.hasActiveWorkout)
+                  _SessionTabs(controller: _vm.slidePagesController),
                 if (_vm.error != null)
                   GestureDetector(
                     onTap: _vm.clearError,
@@ -215,9 +217,17 @@ class _SessionScreenState extends State<SessionScreen> {
                     children: [
                       _StartPage(vm: _vm, startNotesCtrl: _startNotesCtrl),
                       _ActivePage(vm: _vm, onRemoveExercise: _confirmRemoveExercise),
+                      _ReflectionPage(vm: _vm, notesCtrl: _endNotesCtrl, onEnd: _endFromReflection),
                     ],
                   ),
                 ),
+                if (_vm.hasActiveWorkout)
+                  Padding(
+                    padding: EdgeInsets.fromLTRB(
+                        AppSpacing.lg, 0, AppSpacing.lg,
+                        MediaQuery.of(context).padding.bottom + AppSpacing.sm),
+                    child: SessionStatsBar(vm: _vm),
+                  ),
               ],
             ),
     );
@@ -523,11 +533,6 @@ class _ActivePage extends StatelessWidget {
         const SizedBox(height: AppSpacing.sm),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-          child: SessionStatsBar(vm: vm),
-        ),
-        const SizedBox(height: AppSpacing.sm),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
           child: ListenableBuilder(
             listenable: vm,
             builder: (context, _) {
@@ -592,94 +597,150 @@ class _EmptySlotsHint extends StatelessWidget {
   }
 }
 
-// ── End Session Modal ──────────────────────────────────────────────────────────
 
-class _EndWorkoutModal extends StatelessWidget {
-  const _EndWorkoutModal({required this.vm, required this.notesCtrl});
 
-  final SessionViewModel vm;
-  final TextEditingController notesCtrl;
+// ── Session flow tabs (Prep / Training / Reflection) ─────────────────────────
+
+class _SessionTabs extends StatelessWidget {
+  const _SessionTabs({required this.controller});
+
+  final SlidePagesController controller;
+
+  static const _tabs = ['Prep', 'Training', 'Reflection'];
 
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: vm,
-      builder: (context, _) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.xl),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text('End Session',
-                  style: TextStyle(fontSize: AppTextStyles.lg, fontWeight: FontWeight.w700, color: AppColors.primary)),
-              const SizedBox(height: AppSpacing.md),
-              Text('How did it feel?',
-                  style: TextStyle(fontSize: AppTextStyles.sm, fontWeight: FontWeight.w600, color: AppColors.primary)),
-              const SizedBox(height: AppSpacing.sm),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.start,
-                children: List.generate(5, (i) {
-                  final n = i + 1;
-                  final selected = vm.endFeeling == n;
-                  return GestureDetector(
-                    onTap: () => vm.setEndFeeling(n),
-                    child: Container(
-                      width: 52,
-                      height: 52,
-                      margin: const EdgeInsets.only(right: AppSpacing.sm),
-                      decoration: BoxDecoration(
-                        color: selected ? AppColors.accent : AppColors.surface,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: selected ? AppColors.accent : AppColors.border),
-                      ),
-                      child: Center(
-                        child: Text('$n',
-                            style: TextStyle(
-                                fontSize: AppTextStyles.lg,
-                                fontWeight: FontWeight.w700,
-                                color: selected ? AppColors.accentText : AppColors.primary)),
+      listenable: controller,
+      builder: (context, _) => Padding(
+        padding: const EdgeInsets.fromLTRB(AppSpacing.lg, 0, AppSpacing.lg, AppSpacing.sm),
+        child: Row(
+          children: [
+            for (var i = 0; i < _tabs.length; i++) ...[
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => controller.slideToPage(i),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    decoration: BoxDecoration(
+                      border: Border(
+                        bottom: BorderSide(
+                          color: controller.currentPage == i
+                              ? AppColors.accent
+                              : AppColors.border,
+                          width: controller.currentPage == i ? 2 : 1,
+                        ),
                       ),
                     ),
-                  );
-                }),
-              ),
-              const SizedBox(height: AppSpacing.lg),
-              LambdaInput(
-                controller: notesCtrl,
-                label: 'Post-workout notes (optional)',
-                placeholder: 'Notes…',
-                onChanged: (v) => vm.endNotes = v,
-              ),
-              const SizedBox(height: AppSpacing.lg),
-              Row(
-                children: [
-                  Expanded(
-                    child: GlassButton(
-                      label: 'Cancel',
-                      color: AppColors.danger,
-                      compact: true,
-                      onPressed: () => Navigator.of(context, rootNavigator: true).pop(),
+                    alignment: Alignment.center,
+                    child: Text(
+                      _tabs[i],
+                      style: AppFonts.ui(
+                        fontSize: AppTextStyles.sm,
+                        fontWeight: controller.currentPage == i
+                            ? FontWeight.w700
+                            : FontWeight.w500,
+                        color: controller.currentPage == i
+                            ? AppColors.primary
+                            : AppColors.muted,
+                      ),
                     ),
                   ),
-                  const SizedBox(width: AppSpacing.sm),
-                  Expanded(
-                    child: GlassButton(
-                      label: 'End Session',
-                      compact: true,
-                      loading: vm.endLoading,
-                      disabled: vm.endLoading,
-                      onPressed: () async {
-                        Navigator.of(context, rootNavigator: true).pop();
-                        await vm.endSession();
-                      },
-                    ),
-                  ),
-                ],
+                ),
               ),
+              if (i < _tabs.length - 1) const SizedBox(width: AppSpacing.sm),
             ],
-          ),
+          ],
         ),
+      ),
+    );
+  }
+}
+
+// ── Page 2: Reflection ───────────────────────────────────────────────────────
+
+class _ReflectionPage extends StatelessWidget {
+  const _ReflectionPage({
+    required this.vm,
+    required this.notesCtrl,
+    required this.onEnd,
+  });
+
+  final SessionViewModel vm;
+  final TextEditingController notesCtrl;
+  final Future<void> Function() onEnd;
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.of(context).padding.bottom;
+    return ListenableBuilder(
+      listenable: vm,
+      builder: (context, _) => Column(
+        children: [
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.all(AppSpacing.lg),
+              children: [
+                Text('How did it feel?',
+                    style: AppFonts.ui(
+                        fontSize: AppTextStyles.sm,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.primary)),
+                const SizedBox(height: AppSpacing.sm),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.start,
+                  children: List.generate(5, (i) {
+                    final n = i + 1;
+                    final selected = vm.endFeeling == n;
+                    return GestureDetector(
+                      onTap: () => vm.setEndFeeling(n),
+                      child: Container(
+                        width: 52,
+                        height: 52,
+                        margin: const EdgeInsets.only(right: AppSpacing.sm),
+                        decoration: BoxDecoration(
+                          color: selected ? AppColors.accent : AppColors.surface,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                              color: selected ? AppColors.accent : AppColors.border),
+                        ),
+                        child: Center(
+                          child: Text('$n',
+                              style: AppFonts.ui(
+                                  fontSize: AppTextStyles.lg,
+                                  fontWeight: FontWeight.w700,
+                                  color: selected
+                                      ? AppColors.accentText
+                                      : AppColors.primary)),
+                        ),
+                      ),
+                    );
+                  }),
+                ),
+                const SizedBox(height: AppSpacing.lg),
+                LambdaInput(
+                  controller: notesCtrl,
+                  label: 'Post-workout notes (optional)',
+                  placeholder: 'Notes…',
+                  onChanged: (v) => vm.endNotes = v,
+                ),
+              ],
+            ),
+          ),
+          Container(
+            padding: EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.lg, AppSpacing.lg,
+                bottomInset + AppSpacing.lg),
+            decoration: BoxDecoration(
+                border: Border(
+                    top: BorderSide(color: AppColors.border, width: 0.5))),
+            child: LambdaButton(
+              label: 'End Session',
+              onPressed: onEnd,
+              loading: vm.endLoading,
+              disabled: vm.endLoading,
+            ),
+          ),
+        ],
       ),
     );
   }

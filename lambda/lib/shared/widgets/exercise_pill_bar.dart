@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/styles/app_colors.dart';
 import 'exercise_tab_chip.dart';
 
 /// The horizontally-scrollable exercise pill bar shared by the session
@@ -81,48 +82,96 @@ class _ExercisePillBarState extends State<ExercisePillBar> {
     );
   }
 
+  /// The non-reorderable path: centered when the pills fit the viewport,
+  /// left-aligned + scrollable when they don't.
+  Widget _scrollablePills() {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          controller: _scrollCtrl,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minWidth: constraints.maxWidth),
+            child: Center(child: Row(children: _pills())),
+          ),
+        );
+      },
+    );
+  }
+
+  /// The pill list, feathered on the right edge so pills fade out before the
+  /// "+" button instead of clipping hard against it.
+  Widget _feathered(Widget pills) {
+    return Stack(
+      children: [
+        pills,
+        Positioned(
+          top: 0,
+          bottom: 0,
+          right: 0,
+          width: 14,
+          child: IgnorePointer(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.centerLeft,
+                  end: Alignment.centerRight,
+                  colors: [
+                    AppColors.bg.withValues(alpha: 0),
+                    AppColors.bg,
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
         Expanded(
           child: SizedBox(
-            // Extra 6px below the pills gives the scrollbar thumb its own
-            // strip. The Scrollbar fades in while scrolling and fades out
-            // when idle.
-            height: 48,
-            child: Scrollbar(
-              controller: _scrollCtrl,
-              thickness: 3,
-              radius: const Radius.circular(2),
-              child: Align(
-                alignment: Alignment.topCenter,
-                child: SizedBox(
-                  height: 42,
-                  child: _reorderable
-                      ? ReorderableListView(
-                          scrollDirection: Axis.horizontal,
-                          scrollController: _scrollCtrl,
-                          onReorderItem: (oldIndex, newIndex) =>
-                              widget.onReorder!(oldIndex, newIndex),
-                          buildDefaultDragHandles: false,
-                          proxyDecorator: (child, index, _) => Material(
-                            color: Colors.transparent,
-                            child: Opacity(opacity: 0.85, child: child),
-                          ),
-                          children: _pills(),
-                        )
-                      : SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          controller: _scrollCtrl,
-                          child: Row(children: _pills()),
-                        ),
+            // Pills (42) + 3px gap + scrollbar thumb (3px) + 3px gap below —
+            // even breathing room on both sides of the thumb.
+            height: 51,
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 3),
+              child: Scrollbar(
+                controller: _scrollCtrl,
+                thickness: 3,
+                radius: const Radius.circular(2),
+                child: Align(
+                  alignment: Alignment.topCenter,
+                  child: SizedBox(
+                    height: 42,
+                    child: _reorderable
+                        ? _feathered(ReorderableListView(
+                            scrollDirection: Axis.horizontal,
+                            scrollController: _scrollCtrl,
+                            onReorderItem: (oldIndex, newIndex) =>
+                                widget.onReorder!(oldIndex, newIndex),
+                            buildDefaultDragHandles: false,
+                            proxyDecorator: (child, index, _) => Material(
+                              color: Colors.transparent,
+                              child: Opacity(opacity: 0.85, child: child),
+                            ),
+                            children: _pills(),
+                          ))
+                        : _feathered(_scrollablePills()),
+                  ),
                 ),
               ),
             ),
           ),
         ),
-        if (widget.onAdd != null) AddExerciseButton(onTap: widget.onAdd!),
+        if (widget.onAdd != null) ...[
+          const SizedBox(width: 6),
+          AddExerciseButton(onTap: widget.onAdd!),
+        ],
       ],
     );
   }
