@@ -160,7 +160,7 @@ class _AddExerciseModalContentState extends State<_AddExerciseModalContent> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon, color: AppColors.accent, size: 22),
+            Icon(icon, color: AppColors.primary, size: 22),
             const SizedBox(height: AppSpacing.sm),
             Text(label, style: AppFonts.ui(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.primary)),
             const SizedBox(height: 2),
@@ -188,18 +188,18 @@ class _AddExerciseModalContentState extends State<_AddExerciseModalContent> {
                   decoration: BoxDecoration(
                     color: AppColors.accentBg,
                     borderRadius: BorderRadius.circular(999),
-                    border: Border.all(color: AppColors.accent.withValues(alpha: 0.35)),
+                    border: Border.all(color: AppColors.primary.withValues(alpha: 0.35)),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(name,
                           style:
-                              AppFonts.ui(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.accent)),
+                              AppFonts.ui(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.primary)),
                       const SizedBox(width: 6),
                       GestureDetector(
                         onTap: () => setState(() => _selectedIds.remove(id)),
-                        child: Icon(Icons.close, size: 12, color: AppColors.accent),
+                        child: Icon(Icons.close, size: 12, color: AppColors.primary),
                       ),
                     ],
                   ),
@@ -274,14 +274,14 @@ class _AddExerciseModalContentState extends State<_AddExerciseModalContent> {
             color: AppColors.surfaceHigh,
             borderRadius: BorderRadius.circular(AppRadius.md),
             border: Border.all(
-                color: accent ? AppColors.accent.withValues(alpha: 0.35) : AppColors.border,
+                color: accent ? AppColors.primary.withValues(alpha: 0.35) : AppColors.border,
                 style: accent ? BorderStyle.solid : BorderStyle.solid),
           ),
           child: Text(label,
               style: AppFonts.ui(
                   fontSize: 14,
                   fontWeight: accent ? FontWeight.w700 : FontWeight.w600,
-                  color: accent ? AppColors.accent : AppColors.primary)),
+                  color: accent ? AppColors.primary : AppColors.primary)),
         ),
       ),
     );

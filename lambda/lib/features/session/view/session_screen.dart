@@ -128,7 +128,7 @@ class _SessionScreenState extends State<SessionScreen> {
         actions: [
           TextButton(
               onPressed: () => Navigator.of(ctx).pop(),
-              child: Text('Got It', style: TextStyle(color: AppColors.accent, fontWeight: FontWeight.w600))),
+              child: Text('Got It', style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.w600))),
         ],
       ),
     );
@@ -321,7 +321,7 @@ class _StartPage extends StatelessWidget {
                           color: vm.selectedPlannedSession != null
                               ? AppColors.planned.withValues(alpha: 0.3)
                               : vm.selectedStandaloneWorkout != null
-                                  ? AppColors.accent.withValues(alpha: 0.3)
+                                  ? AppColors.planned.withValues(alpha: 0.3)
                                   : AppColors.border),
                     ),
                     child: Row(
@@ -339,7 +339,7 @@ class _StartPage extends StatelessWidget {
                                         fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.primary)),
                               ] else if (vm.selectedStandaloneWorkout != null) ...[
                                 Text('Standalone session',
-                                    style: AppFonts.mono(fontSize: 9, letterSpacing: 0.6, color: AppColors.accent)),
+                                    style: AppFonts.mono(fontSize: 9, letterSpacing: 0.6, color: AppColors.planned)),
                                 const SizedBox(height: 2),
                                 Text(vm.selectedStandaloneWorkout!.name,
                                     style: AppFonts.ui(
@@ -359,7 +359,7 @@ class _StartPage extends StatelessWidget {
                             color: vm.selectedPlannedSession != null
                                 ? AppColors.planned
                                 : vm.selectedStandaloneWorkout != null
-                                    ? AppColors.accent
+                                    ? AppColors.planned
                                     : AppColors.muted),
                       ],
                     ),
@@ -476,7 +476,7 @@ class _StartPage extends StatelessWidget {
                     ),
                     if (vm.selectedPlannedSession == null &&
                         vm.selectedStandaloneWorkout == null)
-                      Icon(Icons.check, size: 18, color: AppColors.accent),
+                      Icon(Icons.check, size: 18, color: AppColors.primary),
                   ],
                 ),
               ),
@@ -511,7 +511,7 @@ class _StartPage extends StatelessWidget {
                                   color: AppColors.primary)),
                         ),
                         if (w.sessionId == vm.selectedStandaloneWorkout?.sessionId)
-                          Icon(Icons.check, size: 18, color: AppColors.accent),
+                          Icon(Icons.check, size: 18, color: AppColors.primary),
                       ],
                     ),
                   ),
@@ -548,7 +548,7 @@ class _StartPage extends StatelessWidget {
                                   color: AppColors.primary)),
                         ),
                         if (w.sessionId == vm.selectedPlannedSession?.sessionId)
-                          Icon(Icons.check, size: 18, color: AppColors.accent),
+                          Icon(Icons.check, size: 18, color: AppColors.primary),
                       ],
                     ),
                   ),

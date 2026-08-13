@@ -171,7 +171,7 @@ class _ExerciseCardState extends State<ExerciseCard> {
             ),
       child: Container(
         width: double.infinity,
-        color: AppColors.accentBg,
+        color: AppColors.surfaceHigh,
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
         child: Row(
           children: [
@@ -179,12 +179,12 @@ class _ExerciseCardState extends State<ExerciseCard> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 if (lesson.pinned) ...[
-                  Icon(Icons.push_pin, size: 10, color: AppColors.accent),
+                  Icon(Icons.push_pin, size: 10, color: AppColors.primary),
                   const SizedBox(width: 4),
                 ],
                 Text('LESSON',
                     style: AppFonts.mono(
-                        fontSize: 9, letterSpacing: 0.8, color: AppColors.accent)),
+                        fontSize: 9, letterSpacing: 0.8, color: AppColors.primary)),
               ],
             ),
             const SizedBox(width: 8),
@@ -237,7 +237,7 @@ class _ExerciseCardState extends State<ExerciseCard> {
                 icon: Icons.menu_book_outlined,
                 label: lessonsCount > 0 ? '$lessonsCount Lessons' : 'Lessons',
                 active: lessonsCount > 0,
-                color: AppColors.accent,
+                color: AppColors.primary,
                 onTap: () => showLessonsModal(
                     context,
                     listenable: widget.vm,
@@ -463,9 +463,9 @@ class _SupersetPill extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
         decoration: BoxDecoration(
-          color: isActive ? AppColors.accentBg : Colors.transparent,
+          color: isActive ? AppColors.surfaceHigh : Colors.transparent,
           borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: isActive ? AppColors.accent : AppColors.border),
+          border: Border.all(color: isActive ? AppColors.primary : AppColors.border),
         ),
         child: Text(label,
             style: AppFonts.mono(

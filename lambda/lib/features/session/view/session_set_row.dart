@@ -206,7 +206,7 @@ class _SessionSetRowState extends State<SessionSetRow> {
                       children: [
                         Expanded(
                           child: Text(s.name,
-                              style: TextStyle(color: AppColors.accent, fontWeight: FontWeight.w600)),
+                              style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.w600)),
                         ),
                         Text('${s.exerciseCount} exercise${s.exerciseCount == 1 ? '' : 's'}',
                             style: TextStyle(color: AppColors.muted, fontSize: 12)),
@@ -224,7 +224,7 @@ class _SessionSetRowState extends State<SessionSetRow> {
           TextButton(
             onPressed: () => popDialog(ctx, (createNew: true, existingId: null)),
             child: Text('Create "$typedName" anyway',
-                style: TextStyle(color: AppColors.accent, fontWeight: FontWeight.w600)),
+                style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.w600)),
           ),
         ],
       ),

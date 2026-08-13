@@ -99,6 +99,7 @@ class SessionStatsBar extends StatelessWidget {
       fitContent: true,
       child: _BreakdownSheet(
         title: 'Session Lessons',
+        accent: false,
         rows: [
           for (final r in rows)
             (label: r.label, count: r.count, exerciseId: r.exerciseId),
@@ -216,9 +217,11 @@ class _BreakdownSheet extends StatelessWidget {
     required this.title,
     required this.rows,
     required this.onRowTap,
+    this.accent = true,
   });
 
   final String title;
+  final bool accent;
   final List<({String label, int count, String exerciseId})> rows;
   final void Function(String exerciseId) onRowTap;
 
@@ -265,12 +268,17 @@ class _BreakdownSheet extends StatelessWidget {
                           padding: const EdgeInsets.symmetric(
                               horizontal: 8, vertical: 2),
                           decoration: BoxDecoration(
-                            color: AppColors.accentBg,
+                            color: accent
+                                ? AppColors.accentBg
+                                : AppColors.surfaceHigh,
                             borderRadius: BorderRadius.circular(AppRadius.md),
                           ),
                           child: Text('${r.count}',
                               style: AppFonts.mono(
-                                  fontSize: 11, color: AppColors.accent)),
+                                  fontSize: 11,
+                                  color: accent
+                                      ? AppColors.accent
+                                      : AppColors.primary)),
                         ),
                         const SizedBox(width: AppSpacing.sm),
                         Icon(Icons.chevron_right,

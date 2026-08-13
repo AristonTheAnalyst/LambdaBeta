@@ -771,9 +771,9 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedC
             width: double.infinity,
             padding: const EdgeInsets.all(AppSpacing.md),
             decoration: BoxDecoration(
-              color: AppColors.successBg,
+              color: AppColors.surface,
               borderRadius: BorderRadius.circular(AppRadius.md),
-              border: Border.all(color: AppColors.success.withValues(alpha: 0.3)),
+              border: Border.all(color: AppColors.border),
             ),
             child: Row(
               children: [
@@ -814,7 +814,7 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedC
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(targetStr.isNotEmpty ? '$exerciseName — $targetStr' : exerciseName,
-            style: AppFonts.ui(fontSize: AppTextStyles.sm, fontWeight: FontWeight.w600, color: AppColors.success)),
+            style: AppFonts.ui(fontSize: AppTextStyles.sm, fontWeight: FontWeight.w600, color: AppColors.primary)),
       ],
     );
   }

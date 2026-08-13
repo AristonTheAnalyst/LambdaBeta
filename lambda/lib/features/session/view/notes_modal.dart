@@ -91,16 +91,16 @@ class _NotesModalContentState extends State<_NotesModalContent> {
               Container(
                 padding: const EdgeInsets.all(AppSpacing.sm),
                 decoration: BoxDecoration(
-                  color: AppColors.successBg,
+                  color: AppColors.plannedBg,
                   borderRadius: BorderRadius.circular(AppRadius.md),
-                  border: Border.all(color: AppColors.success.withValues(alpha: 0.3)),
+                  border: Border.all(color: AppColors.planned.withValues(alpha: 0.3)),
                 ),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text('PLANNED  ',
                         style: AppFonts.mono(
-                            fontSize: 9, fontWeight: FontWeight.w700, color: AppColors.success)),
+                            fontSize: 9, fontWeight: FontWeight.w700, color: AppColors.planned)),
                     Expanded(
                       child: Text(widget.plannedNote!,
                           style: AppFonts.ui(fontSize: 13, color: AppColors.muted)),

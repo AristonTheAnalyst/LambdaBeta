@@ -683,16 +683,16 @@ class _WorkoutsPanel extends StatelessWidget {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                         decoration: BoxDecoration(
-                          color: AppColors.successBg,
+                          color: AppColors.plannedBg,
                           borderRadius: BorderRadius.circular(999),
-                          border: Border.all(color: AppColors.success.withValues(alpha: 0.35)),
+                          border: Border.all(color: AppColors.planned.withValues(alpha: 0.35)),
                         ),
                         child: Text(
                           w.session.parentSessionName!,
                           style: AppFonts.ui(
                               fontSize: AppTextStyles.xs,
                               fontWeight: FontWeight.w700,
-                              color: AppColors.success),
+                              color: AppColors.planned),
                         ),
                       ),
                     ],

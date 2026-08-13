@@ -147,7 +147,7 @@ class _LessonsModalContentState extends State<_LessonsModalContent> {
                       fillColor: AppColors.surfaceHigh,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(AppRadius.md),
-                        borderSide: BorderSide(color: AppColors.accent),
+                        borderSide: BorderSide(color: AppColors.primary),
                       ),
                     ),
                   ),
@@ -231,7 +231,7 @@ class _LessonRow extends StatelessWidget {
           color: lesson.pinned ? AppColors.accentBg : AppColors.surfaceHigh,
           borderRadius: BorderRadius.circular(AppRadius.md),
           border: Border.all(
-              color: lesson.pinned ? AppColors.accent.withValues(alpha: 0.3) : AppColors.border),
+              color: lesson.pinned ? AppColors.primary.withValues(alpha: 0.3) : AppColors.border),
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -250,10 +250,10 @@ class _LessonRow extends StatelessWidget {
                   color: lesson.pinned ? AppColors.accentBg : Colors.transparent,
                   borderRadius: BorderRadius.circular(6),
                   border: Border.all(
-                      color: lesson.pinned ? AppColors.accent : AppColors.border),
+                      color: lesson.pinned ? AppColors.primary : AppColors.border),
                 ),
                 child: Icon(Icons.push_pin,
-                    size: 14, color: lesson.pinned ? AppColors.accent : AppColors.muted),
+                    size: 14, color: lesson.pinned ? AppColors.primary : AppColors.muted),
               ),
             ),
             Expanded(
@@ -266,7 +266,7 @@ class _LessonRow extends StatelessWidget {
                   Text(DateFormat('MMM d · h:mm a').format(lesson.createdDate),
                       style: AppFonts.mono(
                           fontSize: 9,
-                          color: lesson.pinned ? AppColors.accent : AppColors.muted)),
+                          color: lesson.pinned ? AppColors.primary : AppColors.muted)),
                 ],
               ),
             ),
