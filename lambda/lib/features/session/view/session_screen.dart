@@ -43,6 +43,7 @@ class _SessionScreenState extends State<SessionScreen> {
 
   final _startNotesCtrl = TextEditingController();
   final _endNotesCtrl = TextEditingController();
+  bool _showCompleteBanner = false;
 
   @override
   void initState() {
@@ -107,6 +108,12 @@ class _SessionScreenState extends State<SessionScreen> {
       return;
     }
     await _vm.endSession();
+    if (!mounted) return;
+    // Transient "Workout Complete" toast that fades back out.
+    setState(() => _showCompleteBanner = true);
+    Future.delayed(const Duration(milliseconds: 2200), () {
+      if (mounted) setState(() => _showCompleteBanner = false);
+    });
   }
 
   void _showNoSetsDialog() {
@@ -187,7 +194,9 @@ class _SessionScreenState extends State<SessionScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.bg,
-      body: _vm.initLoading
+      body: Stack(
+        children: [
+          _vm.initLoading
           ? const Center(child: CircularProgressIndicator())
           : Column(
               children: [
@@ -213,6 +222,10 @@ class _SessionScreenState extends State<SessionScreen> {
                     ),
                   ),
                 Expanded(
+                  // Key keeps this element stable when _SessionTabs is
+                  // inserted above on workout start — otherwise the PageView
+                  // is recreated and its page position resets to Prep.
+                  key: const ValueKey('sessionPages'),
                   child: SlidePages(
                     controller: _vm.slidePagesController,
                     children: [
@@ -238,6 +251,36 @@ class _SessionScreenState extends State<SessionScreen> {
                   ),
               ],
             ),
+          if (_showCompleteBanner)
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 64,
+              left: 0,
+              right: 0,
+              child: IgnorePointer(
+                child: AnimatedOpacity(
+                  opacity: _showCompleteBanner ? 1 : 0,
+                  duration: const Duration(milliseconds: 400),
+                  child: Center(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.lg, vertical: AppSpacing.md),
+                      decoration: BoxDecoration(
+                        color: AppColors.successBg,
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(color: AppColors.success),
+                      ),
+                      child: Text('Workout Complete',
+                          style: AppFonts.ui(
+                              fontSize: AppTextStyles.sm,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.success)),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }
