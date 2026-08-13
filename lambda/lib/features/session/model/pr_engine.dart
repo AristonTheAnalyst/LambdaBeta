@@ -177,25 +177,29 @@ List<PrRecord> fullPrTimeline(List<PastSetRow> sets) {
     // Rep-max curve: one record per tracked rep count N ≤ reps that this set
     // improves.  When N < actualReps the record is propagated (implied by the
     // actual performance); when N == actualReps it is explicit.
-    for (final n in kTrackedRepCounts) {
-      if (n > reps) break;
-      final current = exCurve[n];
-      if (current == null || weight > current) {
-        exCurve[n] = weight;
-        prs.add(PrRecord(
-          exerciseId: s.exerciseId,
-          exerciseName: s.exerciseName,
-          variationId: s.variationId,
-          variationName: s.variationName,
-          weight: weight,
-          reps: reps,
-          achievedDate: s.sessionCreatedDate,
-          sessionId: s.sessionId,
-          setId: s.sessionSetId,
-          type: PrType.repMax,
-          targetReps: n,
-          isPropagated: n != actualReps,
-        ));
+    // Bodyweight (weight <= 0) never feeds this curve — a bodyweight 10-rep
+    // set is not a comparable "5RM of 0kg" against a 5kg set.
+    if (weight > 0) {
+      for (final n in kTrackedRepCounts) {
+        if (n > reps) break;
+        final current = exCurve[n];
+        if (current == null || weight > current) {
+          exCurve[n] = weight;
+          prs.add(PrRecord(
+            exerciseId: s.exerciseId,
+            exerciseName: s.exerciseName,
+            variationId: s.variationId,
+            variationName: s.variationName,
+            weight: weight,
+            reps: reps,
+            achievedDate: s.sessionCreatedDate,
+            sessionId: s.sessionId,
+            setId: s.sessionSetId,
+            type: PrType.repMax,
+            targetReps: n,
+            isPropagated: n != actualReps,
+          ));
+        }
       }
     }
 
@@ -203,7 +207,7 @@ List<PrRecord> fullPrTimeline(List<PastSetRow> sets) {
     // If you can lift W × R you can lift any lighter weight at least R times.
     final newReps = actualReps;
     final effectiveMax = exMaxReps.entries
-        .where((e) => e.key >= weight)
+        .where((e) => e.key >= weight && (weight > 0 || e.key == 0))
         .fold<int>(0, (m, e) => e.value > m ? e.value : m);
     if (newReps > effectiveMax) {
       exMaxReps[weight] = newReps;
@@ -223,9 +227,10 @@ List<PrRecord> fullPrTimeline(List<PastSetRow> sets) {
         isPropagated: false,
       ));
       // Propagate downward: create propagated records for lighter weights
-      // whose implied max-reps also increased.
+      // whose implied max-reps also increased. Never reaches 0kg — the
+      // bodyweight axis tracks its own reps independently.
       for (final entry in exMaxReps.entries.toList()) {
-        if (entry.key < weight && entry.value < newReps) {
+        if (entry.key < weight && entry.key > 0 && entry.value < newReps) {
           exMaxReps[entry.key] = newReps;
           prs.add(PrRecord(
             exerciseId: s.exerciseId,

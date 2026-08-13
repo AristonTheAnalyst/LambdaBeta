@@ -104,6 +104,45 @@ void main() {
       expect(regularMax.first.reps, 3);
     });
 
+    test('bodyweight sets never feed the weighted rep-max curve', () {
+      // 10 bodyweight reps, then 5kg x 5: the 5kg set must NOT generate
+      // rep-max records comparing against 0kg, and the bodyweight 10 reps
+      // must not be beaten by 5 weighted reps on the weight-max axis.
+      final sets = [
+        _set('s1', exerciseId: 'pushup', weight: 0, reps: 10,
+            date: DateTime(2024, 1, 1)),
+        _set('s2', exerciseId: 'pushup', weight: 5, reps: 5,
+            date: DateTime(2024, 1, 2)),
+      ];
+      final prs = fullPrTimeline(sets);
+
+      // The bodyweight 10-rep set generates NO rep-max records — 0kg never
+      // feeds the weighted curve.
+      final repMaxFromBodyweight = prs.where((p) =>
+          p.type == PrType.repMax && p.weight == 0);
+      expect(repMaxFromBodyweight, isEmpty);
+
+      // The 5kg set gets its own rep-max records (1-5RM at 5kg) — the
+      // previous 0kg curve is not consulted, so the display's "before" is
+      // absent rather than 0kg.
+      final repMax5 = prs.where((p) =>
+          p.type == PrType.repMax && p.weight == 5 && p.targetReps == 5);
+      expect(repMax5.length, 1);
+      expect(repMax5.first.isPropagated, isFalse);
+
+      // The bodyweight 10-rep weight-max (at 0kg) is not beaten by 5 reps.
+      final zeroWeightMax = prs.where((p) =>
+          p.type == PrType.weightMax && p.targetWeight == 0);
+      expect(zeroWeightMax.length, 1);
+      expect(zeroWeightMax.first.reps, 10);
+
+      // The 5kg lift creates its own weight-max record (5 reps at 5kg).
+      final fiveWeightMax = prs.where((p) =>
+          p.type == PrType.weightMax && p.targetWeight == 5);
+      expect(fiveWeightMax.length, 1);
+      expect(fiveWeightMax.first.reps, 5);
+    });
+
     test('same variation curve evolves chronologically', () {
       final sets = [
         _set('s1',

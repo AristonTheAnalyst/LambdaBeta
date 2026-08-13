@@ -12,6 +12,7 @@ import '../../../shared/widgets/lambda_button.dart';
 import '../../../shared/widgets/lambda_input.dart';
 import '../../../shared/widgets/page_header.dart';
 import '../../../shared/widgets/slide_pages.dart';
+import '../model/pr_engine.dart';
 import '../model/session_local_state.dart';
 import '../viewmodel/session_viewmodel.dart';
 import 'add_exercise_modal.dart';
@@ -680,51 +681,18 @@ class _ReflectionPage extends StatelessWidget {
   static String _fmt(num n) =>
       n == n.roundToDouble() ? n.toInt().toString() : n.toString();
 
-  /// PR showcase (old best → session best per exercise × variation) plus
-  /// the exercise's lessons — the session-at-a-glance summary.
+  /// PR showcase — the axes beaten this session per exercise × variation,
+  /// each with its before/after, plus the exercise's lessons.
   List<Widget> _summarySections() {
     final sections = <Widget>[];
+    final prs = vm.prsThisSession;
     for (final slot in vm.exerciseSlots) {
       for (final exerciseId in slot.exerciseIds) {
         final exerciseName =
             toProperCase(vm.exerciseDisplayName(exerciseId));
-        final exSets =
-            vm.sets.where((s) => s.exerciseId == exerciseId).toList();
-
-        final prCards = <Widget>[];
-        final seenVariations = <String?>{};
-        for (final s in exSets) {
-          if (!seenVariations.add(s.variationId)) continue;
-          final varSets = exSets
-              .where((x) => x.variationId == s.variationId)
-              .toList();
-          ({double weight, num reps})? best;
-          for (final x in varSets) {
-            final w = x.weight ?? 0;
-            final reps = x.reps.isNotEmpty ? x.reps.first : null;
-            if (reps == null) continue;
-            if (best == null ||
-                w > best.weight ||
-                (w == best.weight && reps > best.reps)) {
-              best = (weight: w.toDouble(), reps: reps);
-            }
-          }
-          if (best == null) continue;
-          final prev =
-              vm.prevBestByExerciseVariation[(exerciseId, s.variationId)];
-          final beaten = prev == null ||
-              best.weight > prev.weight ||
-              (best.weight == prev.weight && best.reps > prev.reps);
-          if (!beaten) continue;
-          prCards.add(_prCard(
-            variationName: s.variationName,
-            prev: prev,
-            best: best,
-          ));
-        }
-
+        final exPrs = prs.where((p) => p.exerciseId == exerciseId).toList();
         final lessons = vm.lessonsFor(exerciseId);
-        if (prCards.isEmpty && lessons.isEmpty) continue;
+        if (exPrs.isEmpty && lessons.isEmpty) continue;
 
         sections.add(Padding(
           padding: const EdgeInsets.only(top: AppSpacing.lg, bottom: AppSpacing.sm),
@@ -734,7 +702,9 @@ class _ReflectionPage extends StatelessWidget {
                   fontWeight: FontWeight.w700,
                   color: AppColors.primary)),
         ));
-        sections.addAll(prCards);
+        for (final p in exPrs) {
+          sections.add(_prCard(p));
+        }
         if (lessons.isNotEmpty) {
           sections.add(const SizedBox(height: AppSpacing.xs));
           sections.add(Padding(
@@ -767,11 +737,23 @@ class _ReflectionPage extends StatelessWidget {
     return sections;
   }
 
-  Widget _prCard({
-    String? variationName,
-    ({num weight, num reps})? prev,
-    required ({double weight, num reps}) best,
-  }) {
+  /// One PR row: the axis beaten this session with its before/after.
+  /// rep-max: "5RM: 0kg → 5kg"; weight-max: "100kg: 3 → 5 reps".
+  Widget _prCard(PrRecord p) {
+    final String before;
+    final String after;
+    final String axisLabel;
+    if (p.type == PrType.repMax) {
+      final prev = vm.previousRepMax(p.exerciseId, p.variationId, p.targetReps ?? p.reps.toInt());
+      before = prev != null ? '${_fmt(prev.weight)}kg' : '—';
+      after = '${_fmt(p.weight)}kg';
+      axisLabel = '${p.targetReps ?? ''}RM';
+    } else {
+      final prev = vm.previousWeightMax(p.exerciseId, p.variationId, p.targetWeight ?? p.weight);
+      before = prev != null ? '${_fmt(prev.reps)} reps' : '—';
+      after = '${_fmt(p.reps)} reps';
+      axisLabel = '${_fmt(p.targetWeight ?? p.weight)}kg';
+    }
     return Container(
       margin: const EdgeInsets.only(bottom: AppSpacing.sm),
       padding: const EdgeInsets.symmetric(
@@ -789,21 +771,17 @@ class _ReflectionPage extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (variationName != null)
-                  Text(toProperCase(variationName),
+                if (p.variationName != null)
+                  Text(toProperCase(p.variationName!),
                       style: AppFonts.mono(
                           fontSize: 9,
                           letterSpacing: 0.6,
                           color: AppColors.accent)),
-                Text(
-                  prev != null
-                      ? '${_fmt(prev.weight)}kg × ${_fmt(prev.reps)}  →  ${_fmt(best.weight)}kg × ${_fmt(best.reps)}'
-                      : 'New PR — ${_fmt(best.weight)}kg × ${_fmt(best.reps)}',
-                  style: AppFonts.ui(
-                      fontSize: AppTextStyles.sm,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.accent),
-                ),
+                Text('$axisLabel: $before  →  $after',
+                    style: AppFonts.ui(
+                        fontSize: AppTextStyles.sm,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.accent)),
               ],
             ),
           ),

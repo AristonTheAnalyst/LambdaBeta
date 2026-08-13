@@ -127,6 +127,17 @@ class SessionViewModel extends ChangeNotifier {
   /// per exercise × variation, so the live-session baseline must be too.
   Map<(String, String?), ({num weight, num reps})?> prevBestByExerciseVariation = {};
 
+  /// Previous-best records per axis (rep-max N, weight-max W) derived from
+  /// completed history only — used by the reflection page's before/after.
+  final _prevRepMax = <(String, String?, int), PrRecord>{};
+  final _prevWeightMax = <(String, String?, num), PrRecord>{};
+
+  PrRecord? previousRepMax(String exerciseId, String? variationId, int reps) =>
+      _prevRepMax[(exerciseId, variationId, reps)];
+
+  PrRecord? previousWeightMax(String exerciseId, String? variationId, num weight) =>
+      _prevWeightMax[(exerciseId, variationId, weight)];
+
   // ── Historical set editing ─────────────────────────────────────────────────
   bool historyEditConfirmed = false;
 
@@ -433,6 +444,17 @@ class SessionViewModel extends ChangeNotifier {
       _pastSets = await _sessionRepo.loadPastSetsTimeline(_userId);
       historyByExercise = groupHistoryByExercise(_pastSets);
       lastUsedByExercise = lastUsedByEntity(_pastSets);
+      // Index the last record per axis from completed history — the
+      // "before" values for the reflection page's PR showcase.
+      _prevRepMax.clear();
+      _prevWeightMax.clear();
+      for (final r in fullPrTimeline(_pastSets)) {
+        if (r.type == PrType.repMax && r.targetReps != null) {
+          _prevRepMax[(r.exerciseId, r.variationId, r.targetReps!)] = r;
+        } else if (r.type == PrType.weightMax && r.targetWeight != null) {
+          _prevWeightMax[(r.exerciseId, r.variationId, r.targetWeight!)] = r;
+        }
+      }
       final byKey = <(String, String?), List<PastSetRow>>{};
       for (final s in _pastSets) {
         byKey.putIfAbsent((s.exerciseId, s.variationId), () => []).add(s);
