@@ -19,6 +19,8 @@ class LambdaColors {
   final Color dangerBorder;
   final Color success;
   final Color successBg;
+  final Color planned;
+  final Color plannedBg;
   final Color history;
   final Color historyBg;
 
@@ -37,6 +39,8 @@ class LambdaColors {
     required this.dangerBorder,
     required this.success,
     required this.successBg,
+    required this.planned,
+    required this.plannedBg,
     required this.history,
     required this.historyBg,
   });
@@ -56,6 +60,8 @@ class LambdaColors {
     dangerBorder: Color(0xFF7A2020),
     success:      Color(0xFF4ADE80),
     successBg:    Color(0xFF16321F),
+    planned:      Color(0xFF60A5FA),
+    plannedBg:    Color(0xFF16253A),
     history:      Color(0xFF6B9BFF),
     historyBg:    Color(0xFF16233F),
   );
@@ -75,6 +81,8 @@ class LambdaColors {
     dangerBorder: Color(0xFFE8A8A8),
     success:      Color(0xFF2E7D46),
     successBg:    Color(0xFFEAF6EE),
+    planned:      Color(0xFF2563EB),
+    plannedBg:    Color(0xFFDBEAFE),
     history:      Color(0xFF3B6FD6),
     historyBg:    Color(0xFFE8F0FC),
   );

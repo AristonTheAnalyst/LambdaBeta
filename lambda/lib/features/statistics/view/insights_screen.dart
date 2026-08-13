@@ -163,7 +163,7 @@ class _InsightsScreenState extends State<InsightsScreen> {
                 : 'Insights',
             left: GestureDetector(
               onTap: () => Navigator.of(context).pop(),
-              child: Icon(Icons.arrow_back_ios_new, size: 18, color: AppColors.accent),
+              child: Icon(Icons.arrow_back_ios_new, size: 18, color: AppColors.primary),
             ),
             right: widget.headerRight,
           ),

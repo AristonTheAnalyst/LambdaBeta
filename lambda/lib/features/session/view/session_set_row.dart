@@ -284,14 +284,14 @@ class _SessionSetRowState extends State<SessionSetRow> {
             color: pr
                 ? AppColors.accentBg
                 : widget.plannedTarget != null
-                    ? AppColors.successBg
+                    ? AppColors.plannedBg
                     : AppColors.surfaceHigh,
             borderRadius: BorderRadius.circular(AppRadius.md),
             border: Border.all(
               color: pr
                   ? AppColors.accent
                   : widget.plannedTarget != null
-                      ? AppColors.success.withValues(alpha: 0.35)
+                      ? AppColors.planned.withValues(alpha: 0.35)
                       : AppColors.border,
               width: pr ? 1.2 : 0.5,
             ),
@@ -353,7 +353,7 @@ class _SessionSetRowState extends State<SessionSetRow> {
                     options: variationOptions,
                     value: variationId,
                     compact: true,
-                    valueColor: plannedVariationId != null ? AppColors.success : AppColors.primary,
+                    valueColor: plannedVariationId != null ? AppColors.planned : AppColors.primary,
                     createNewLabel: 'New Variation',
                     onCreateNew: _handleCreateVariation,
                     onChange: (id) {
@@ -399,17 +399,17 @@ class _SessionSetRowState extends State<SessionSetRow> {
           contentPadding: const EdgeInsets.symmetric(vertical: 8),
           hintText: hint,
           hintStyle: AppFonts.mono(
-              fontSize: 14, color: ghost ? AppColors.success : AppColors.muted.withValues(alpha: 0.6)),
+              fontSize: 14, color: ghost ? AppColors.planned : AppColors.muted.withValues(alpha: 0.6)),
           filled: true,
-          fillColor: ghost ? AppColors.successBg : AppColors.bg,
+          fillColor: ghost ? AppColors.plannedBg : AppColors.bg,
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(6),
             borderSide: BorderSide(
-                color: ghost ? AppColors.success.withValues(alpha: 0.5) : AppColors.border, width: 0.5),
+                color: ghost ? AppColors.planned.withValues(alpha: 0.5) : AppColors.border, width: 0.5),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(6),
-            borderSide: BorderSide(color: AppColors.accent, width: 1.5),
+            borderSide: BorderSide(color: AppColors.primary, width: 1.5),
           ),
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
         ),
@@ -429,11 +429,11 @@ class _SessionSetRowState extends State<SessionSetRow> {
         height: 32,
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: active ? AppColors.accentBg : Colors.transparent,
+          color: active ? AppColors.surfaceHigh : Colors.transparent,
           borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: active ? AppColors.accent.withValues(alpha: 0.4) : AppColors.border),
+          border: Border.all(color: active ? AppColors.border : AppColors.border),
         ),
-        child: Icon(icon, size: 15, color: active ? AppColors.accent : AppColors.muted),
+        child: Icon(icon, size: 15, color: active ? AppColors.primary : AppColors.muted),
       ),
     );
   }

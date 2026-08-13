@@ -30,7 +30,7 @@ class SlideTabBar extends StatelessWidget {
               decoration: BoxDecoration(
                 border: Border(
                   bottom: BorderSide(
-                    color: isActive ? AppColors.accent : Colors.transparent,
+                    color: isActive ? AppColors.primary : Colors.transparent,
                     width: 2,
                   ),
                 ),
@@ -40,7 +40,7 @@ class SlideTabBar extends StatelessWidget {
                 style: TextStyle(
                   fontSize: AppTextStyles.sm,
                   fontWeight: FontWeight.w600,
-                  color: isActive ? AppColors.accent : AppColors.muted,
+                  color: isActive ? AppColors.primary : AppColors.muted,
                 ),
               ),
             ),

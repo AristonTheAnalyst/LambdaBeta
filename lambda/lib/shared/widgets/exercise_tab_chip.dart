@@ -22,8 +22,7 @@ class ExerciseTabChip extends StatelessWidget {
   final int? count;
   final IconData? prefixIcon;
 
-  /// The active-pill color — defaults to the accent orange, but the planner
-  /// passes green so its planned-exercise pills read as "planned".
+  /// The active-pill color — defaults to the neutral primary.
   final Color? activeColor;
   final VoidCallback onTap;
 
@@ -34,7 +33,7 @@ class ExerciseTabChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = activeColor ?? AppColors.accent;
+    final color = activeColor ?? AppColors.primary;
     return GestureDetector(
       onTap: onTap,
       child: Container(

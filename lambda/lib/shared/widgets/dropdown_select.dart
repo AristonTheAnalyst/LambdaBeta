@@ -145,7 +145,7 @@ class DropdownSelect<T> extends StatelessWidget {
                   style: AppFonts.ui(
                     fontSize: AppTextStyles.sm,
                     fontWeight: FontWeight.w500,
-                    color: hasValue ? (valueColor ?? AppColors.accent) : AppColors.muted,
+                    color: hasValue ? (valueColor ?? AppColors.primary) : AppColors.muted,
                   ),
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -311,7 +311,7 @@ class _DropdownSheetContentState<T> extends State<_DropdownSheetContent<T>> {
       if (widget.onCreateNew != null)
         _SheetRow(
           label: widget.createNewLabel,
-          color: AppColors.accent,
+          color: AppColors.primary,
           isSelected: false,
           onTap: () {
             widget.onClose();
@@ -370,13 +370,13 @@ class _SheetRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final effectiveColor =
-        color ?? (isSelected ? AppColors.accent : AppColors.primary);
+        color ?? (isSelected ? AppColors.primary : AppColors.primary);
     return InkWell(
       onTap: onTap,
       child: Container(
         padding:
             const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
-        color: isSelected ? AppColors.accentBg : Colors.transparent,
+        color: isSelected ? Colors.transparent : Colors.transparent,
         child: Row(
           children: [
             Expanded(
@@ -391,7 +391,7 @@ class _SheetRow extends StatelessWidget {
               ),
             ),
             if (isSelected)
-              Icon(Icons.check, size: 18, color: AppColors.accent),
+              Icon(Icons.check, size: 18, color: AppColors.primary),
           ],
         ),
       ),

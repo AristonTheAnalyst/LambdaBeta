@@ -196,7 +196,7 @@ class _SessionScreenState extends State<SessionScreen> {
                       ? GlassButton(label: 'Cancel', color: AppColors.danger, compact: true, onPressed: _confirmCancelWorkout)
                       : null,
                   right: _vm.hasActiveWorkout
-                      ? GlassButton(label: 'Finish', compact: true, onPressed: _goToReflection)
+                      ? GlassButton(label: 'Finish', color: AppColors.success, compact: true, onPressed: _goToReflection)
                       : null,
                 ),
                 if (_vm.hasActiveWorkout)
@@ -261,14 +261,14 @@ class _StartPage extends StatelessWidget {
                     padding: const EdgeInsets.all(AppSpacing.md),
                     decoration: BoxDecoration(
                       color: vm.selectedPlannedSession != null
-                          ? AppColors.successBg
+                          ? AppColors.plannedBg
                           : vm.selectedStandaloneWorkout != null
                               ? AppColors.accentBg
                               : AppColors.surface,
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(
                           color: vm.selectedPlannedSession != null
-                              ? AppColors.success.withValues(alpha: 0.3)
+                              ? AppColors.planned.withValues(alpha: 0.3)
                               : vm.selectedStandaloneWorkout != null
                                   ? AppColors.accent.withValues(alpha: 0.3)
                                   : AppColors.border),
@@ -281,7 +281,7 @@ class _StartPage extends StatelessWidget {
                             children: [
                               if (vm.selectedPlannedSession != null) ...[
                                 Text('Week ${vm.programProgress!.weekNumber} · ${vm.programProgress!.program.name}',
-                                    style: AppFonts.mono(fontSize: 9, letterSpacing: 0.6, color: AppColors.success)),
+                                    style: AppFonts.mono(fontSize: 9, letterSpacing: 0.6, color: AppColors.planned)),
                                 const SizedBox(height: 2),
                                 Text(vm.selectedPlannedSession!.name,
                                     style: AppFonts.ui(
@@ -306,7 +306,7 @@ class _StartPage extends StatelessWidget {
                         ),
                         Icon(Icons.swap_vert, size: 18,
                             color: vm.selectedPlannedSession != null
-                                ? AppColors.success
+                                ? AppColors.planned
                                 : vm.selectedStandaloneWorkout != null
                                     ? AppColors.accent
                                     : AppColors.muted),
@@ -626,7 +626,7 @@ class _SessionTabs extends StatelessWidget {
                       border: Border(
                         bottom: BorderSide(
                           color: controller.currentPage == i
-                              ? AppColors.accent
+                              ? AppColors.primary
                               : AppColors.border,
                           width: controller.currentPage == i ? 2 : 1,
                         ),
@@ -734,6 +734,7 @@ class _ReflectionPage extends StatelessWidget {
                 border: Border(
                     top: BorderSide(color: AppColors.border, width: 0.5))),
             child: LambdaButton(
+              variant: ButtonVariant.success,
               label: 'End Session',
               onPressed: onEnd,
               loading: vm.endLoading,

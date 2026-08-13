@@ -71,7 +71,7 @@ class _LessonDebugScreenState extends State<LessonDebugScreen> {
             title: 'Lesson Debug',
             left: GestureDetector(
               onTap: () => Navigator.of(context).pop(),
-              child: Icon(Icons.arrow_back_ios_new, size: 18, color: AppColors.accent),
+              child: Icon(Icons.arrow_back_ios_new, size: 18, color: AppColors.primary),
             ),
             right: GestureDetector(
               onTap: _load,

@@ -3,7 +3,7 @@ import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_fonts.dart';
 import '../../core/styles/app_text_styles.dart';
 
-enum ButtonVariant { primary, ghost, danger }
+enum ButtonVariant { primary, ghost, danger, success }
 
 class LambdaButton extends StatelessWidget {
   const LambdaButton({
@@ -24,19 +24,21 @@ class LambdaButton extends StatelessWidget {
   final bool fullWidth;
 
   Color get _bg => switch (variant) {
-        ButtonVariant.primary => AppColors.accent,
+        ButtonVariant.primary => AppColors.primary,
         ButtonVariant.ghost   => Colors.transparent,
         ButtonVariant.danger  => AppColors.danger,
+        ButtonVariant.success => AppColors.success,
       };
 
   Color get _fg => switch (variant) {
-        ButtonVariant.primary => AppColors.accentText,
-        ButtonVariant.ghost   => AppColors.accent,
+        ButtonVariant.primary => AppColors.bg,
+        ButtonVariant.ghost   => AppColors.primary,
         ButtonVariant.danger  => AppColors.accentText,
+        ButtonVariant.success => AppColors.bg,
       };
 
   BorderSide get _border => switch (variant) {
-        ButtonVariant.ghost => BorderSide(color: AppColors.accent),
+        ButtonVariant.ghost => BorderSide(color: AppColors.primary),
         _                   => BorderSide.none,
       };
 

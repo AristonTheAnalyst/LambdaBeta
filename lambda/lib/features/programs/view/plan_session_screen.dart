@@ -310,7 +310,7 @@ class _PlanSessionScreenState extends State<PlanSessionScreen> with UnsavedChang
                     Navigator.of(context, rootNavigator: true).pop();
                   }
                 },
-                child: Icon(Icons.arrow_back_ios_new, size: 18, color: AppColors.accent),
+                child: Icon(Icons.arrow_back_ios_new, size: 18, color: AppColors.primary),
               ),
             ),
             Positioned(
@@ -345,12 +345,12 @@ class _PlanSessionScreenState extends State<PlanSessionScreen> with UnsavedChang
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
-                          color: AppColors.accentBg,
+                          color: AppColors.successBg,
                           borderRadius: BorderRadius.circular(AppRadius.md),
-                          border: Border.all(color: AppColors.accent),
+                          border: Border.all(color: AppColors.success),
                         ),
                         child: Text('Save',
-                            style: AppFonts.ui(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.accent)),
+                            style: AppFonts.ui(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.success)),
                       ),
                     ),
                   const SizedBox(width: 10),

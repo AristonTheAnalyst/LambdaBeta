@@ -153,6 +153,8 @@ class SessionStatsBar extends StatelessWidget {
                 label: 'LESSONS',
                 value: '$lessons',
                 highlighted: lessons > 0,
+                highlightColor: AppColors.primary,
+                highlightBg: AppColors.surfaceHigh,
                 onTap: lessons > 0 ? () => _openLessonsBreakdown(context) : null,
               ),
             ),
@@ -169,15 +171,19 @@ class SessionStatsBar extends StatelessWidget {
     required String label,
     required String value,
     required bool highlighted,
+    Color? highlightColor,
+    Color? highlightBg,
     VoidCallback? onTap,
   }) {
+    final color = highlightColor ?? AppColors.accent;
+    final bg = highlightBg ?? AppColors.accentBg;
     final tile = Container(
       padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 4),
       decoration: BoxDecoration(
-        color: highlighted ? AppColors.accentBg : AppColors.surface,
+        color: highlighted ? bg : AppColors.surface,
         borderRadius: BorderRadius.circular(AppRadius.md),
         border: Border.all(
-          color: highlighted ? AppColors.accent : AppColors.border,
+          color: highlighted ? color : AppColors.border,
           width: highlighted ? 1.2 : 0.5,
         ),
       ),
@@ -188,13 +194,13 @@ class SessionStatsBar extends StatelessWidget {
               style: AppFonts.mono(
                   fontSize: 15,
                   letterSpacing: 0.8,
-                  color: highlighted ? AppColors.accent : AppColors.muted)),
+                  color: highlighted ? color : AppColors.muted)),
           const SizedBox(width: 6),
           Text(value,
               style: AppFonts.mono(
                   fontSize: 15,
                   fontWeight: FontWeight.w500,
-                  color: highlighted ? AppColors.accent : AppColors.primary)),
+                  color: highlighted ? color : AppColors.primary)),
         ],
       ),
     );

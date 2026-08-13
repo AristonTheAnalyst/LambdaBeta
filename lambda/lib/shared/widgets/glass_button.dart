@@ -30,8 +30,14 @@ class GlassButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final effectiveColor = color ?? AppColors.accent;
-    final fgColor = solid ? AppColors.accentText : effectiveColor;
+    final effectiveColor = color ?? AppColors.primary;
+    // Solid fills use the page background as text: readable on cream
+    // (primary) and bright green (success) alike.
+    final fgColor = solid
+        ? (effectiveColor == AppColors.danger
+            ? AppColors.accentText
+            : AppColors.bg)
+        : effectiveColor;
     final isDisabled = disabled || loading;
 
     return Opacity(

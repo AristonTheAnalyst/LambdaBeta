@@ -271,10 +271,10 @@ class _PlanSetRowState extends State<PlanSetRow> {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
           decoration: BoxDecoration(
-            color: AppColors.successBg,
+            color: AppColors.plannedBg,
             borderRadius: BorderRadius.circular(AppRadius.md),
             border: Border.all(
-                color: AppColors.success.withValues(alpha: 0.4), width: 0.5),
+                color: AppColors.planned.withValues(alpha: 0.4), width: 0.5),
           ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
@@ -291,7 +291,7 @@ class _PlanSetRowState extends State<PlanSetRow> {
                         margin: const EdgeInsets.only(top: 2),
                         width: 5,
                         height: 5,
-                        decoration: BoxDecoration(color: AppColors.success, shape: BoxShape.circle),
+                        decoration: BoxDecoration(color: AppColors.planned, shape: BoxShape.circle),
                       ),
                   ],
                 ),
@@ -313,12 +313,12 @@ class _PlanSetRowState extends State<PlanSetRow> {
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
                     color: variationId != null
-                        ? AppColors.successBg
+                        ? AppColors.plannedBg
                         : AppColors.bg,
                     borderRadius: BorderRadius.circular(6),
                     border: Border.all(
                         color: variationId != null
-                            ? AppColors.success.withValues(alpha: 0.4)
+                            ? AppColors.planned.withValues(alpha: 0.4)
                             : AppColors.border,
                         width: 0.5),
                   ),
@@ -326,7 +326,7 @@ class _PlanSetRowState extends State<PlanSetRow> {
                     options: variationOptions,
                     value: variationId,
                     compact: true,
-                    valueColor: AppColors.success,
+                    valueColor: AppColors.planned,
                     createNewLabel: 'New Variation',
                     onCreateNew: _handleCreateVariation,
                     onChange: (id) {
@@ -373,21 +373,21 @@ class _PlanSetRowState extends State<PlanSetRow> {
           hintStyle: AppFonts.mono(
               fontSize: 14,
               color: highlighted
-                  ? AppColors.success.withValues(alpha: 0.7)
+                  ? AppColors.planned.withValues(alpha: 0.7)
                   : AppColors.muted.withValues(alpha: 0.6)),
           filled: true,
-          fillColor: highlighted ? AppColors.successBg : AppColors.bg,
+          fillColor: highlighted ? AppColors.plannedBg : AppColors.bg,
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(6),
             borderSide: BorderSide(
                 color: highlighted
-                    ? AppColors.success.withValues(alpha: 0.4)
+                    ? AppColors.planned.withValues(alpha: 0.4)
                     : AppColors.border,
                 width: 0.5),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(6),
-            borderSide: BorderSide(color: AppColors.accent, width: 1.5),
+            borderSide: BorderSide(color: AppColors.primary, width: 1.5),
           ),
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
         ),
@@ -403,15 +403,15 @@ class _PlanSetRowState extends State<PlanSetRow> {
         height: 32,
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: active ? AppColors.successBg : Colors.transparent,
+          color: active ? AppColors.plannedBg : Colors.transparent,
           borderRadius: BorderRadius.circular(6),
           border: Border.all(
               color: active
-                  ? AppColors.success.withValues(alpha: 0.4)
+                  ? AppColors.planned.withValues(alpha: 0.4)
                   : AppColors.border),
         ),
         child: Icon(icon,
-            size: 15, color: active ? AppColors.success : AppColors.muted),
+            size: 15, color: active ? AppColors.planned : AppColors.muted),
       ),
     );
   }

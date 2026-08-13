@@ -95,7 +95,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> with UnsavedC
                           Navigator.of(context).pop();
                         }
                       },
-                      child: Icon(Icons.arrow_back_ios_new, size: 18, color: AppColors.accent),
+                      child: Icon(Icons.arrow_back_ios_new, size: 18, color: AppColors.primary),
                     ),
                     right: state.isEditing
                         ? GlassButton(
@@ -157,7 +157,7 @@ class _SessionBody extends StatelessWidget {
                   Padding(
                     padding: const EdgeInsets.only(bottom: 6),
                     child: Text(state.session!.parentSessionName!,
-                        style: AppFonts.mono(fontSize: 10, letterSpacing: 0.6, color: AppColors.success)),
+                        style: AppFonts.mono(fontSize: 10, letterSpacing: 0.6, color: AppColors.planned)),
                   ),
                 StatsRow(tiles: [
                   StatsTile(label: 'SETS', value: '${state.setsByOrder.values.expand((l) => l).length}'),
@@ -498,16 +498,16 @@ class _DetailExerciseCardState extends State<_DetailExerciseCard> {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                       decoration: BoxDecoration(
-                        color: planned ? AppColors.successBg : AppColors.accentBg,
+                        color: planned ? AppColors.plannedBg : AppColors.accentBg,
                         borderRadius: BorderRadius.circular(999),
-                        border: Border.all(color: planned ? AppColors.success.withValues(alpha: 0.35) : AppColors.accent.withValues(alpha: 0.35)),
+                        border: Border.all(color: planned ? AppColors.planned.withValues(alpha: 0.35) : AppColors.accent.withValues(alpha: 0.35)),
                       ),
                       child: Text(planned ? 'PLANNED' : 'UNPLANNED',
                           style: AppFonts.ui(
                               fontSize: 10,
                               fontWeight: FontWeight.w700,
                               letterSpacing: 0.5,
-                              color: planned ? AppColors.success : AppColors.accent)),
+                              color: planned ? AppColors.planned : AppColors.accent)),
                     ),
                     if (prCount > 0) ...[
                       const SizedBox(width: 6),
@@ -1221,7 +1221,7 @@ class _DetailSetRowState extends State<_DetailSetRow> {
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(6),
-            borderSide: BorderSide(color: AppColors.accent, width: 1.5),
+            borderSide: BorderSide(color: AppColors.primary, width: 1.5),
           ),
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
         ),

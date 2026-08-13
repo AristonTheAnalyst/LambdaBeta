@@ -35,12 +35,12 @@ class SegmentedControl<T> extends StatelessWidget {
         final Color fg;
         if (subtle) {
           bg = Colors.transparent;
-          borderColor = isActive ? AppColors.accent : AppColors.border;
-          fg = isActive ? AppColors.accent : AppColors.muted;
+          borderColor = isActive ? AppColors.primary : AppColors.border;
+          fg = isActive ? AppColors.primary : AppColors.muted;
         } else {
-          bg = isActive ? AppColors.accent : AppColors.surface;
-          borderColor = isActive ? AppColors.accent : AppColors.border;
-          fg = isActive ? AppColors.accentText : AppColors.muted;
+          bg = isActive ? AppColors.primary : AppColors.surface;
+          borderColor = isActive ? AppColors.primary : AppColors.border;
+          fg = isActive ? AppColors.bg : AppColors.muted;
         }
         return Expanded(
           child: GestureDetector(

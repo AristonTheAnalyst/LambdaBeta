@@ -126,7 +126,7 @@ class _ExerciseCardState extends State<ExerciseCard> {
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       child: Row(
         children: [
-          Icon(Icons.hexagon_outlined, size: 12, color: AppColors.accent),
+          Icon(Icons.hexagon_outlined, size: 12, color: AppColors.primary),
           const SizedBox(width: 8),
           Expanded(
             child: SingleChildScrollView(
