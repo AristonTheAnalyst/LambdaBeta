@@ -32,12 +32,15 @@ class _ProgramLibraryScreenState extends State<ProgramLibraryScreen> {
   final _viewModel = ProgramLibraryViewModel();
   final _createController = TextEditingController();
   bool _needsRefresh = false;
+  late final GoRouter _router;
 
   @override
   void initState() {
     super.initState();
+    // Capture the router once — dispose() can't look up ancestors.
+    _router = GoRouter.of(context);
+    _router.routerDelegate.addListener(_onRouteChange);
     _viewModel.fetchAll();
-    GoRouter.of(context).routerDelegate.addListener(_onRouteChange);
   }
 
   void _onRouteChange() {
@@ -51,7 +54,7 @@ class _ProgramLibraryScreenState extends State<ProgramLibraryScreen> {
 
   @override
   void dispose() {
-    GoRouter.of(context).routerDelegate.removeListener(_onRouteChange);
+    _router.routerDelegate.removeListener(_onRouteChange);
     _viewModel.dispose();
     _createController.dispose();
     super.dispose();
