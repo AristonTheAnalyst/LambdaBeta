@@ -42,7 +42,6 @@ class _ExerciseCardState extends State<ExerciseCard> {
         final detail = vm.exerciseDetailMap[exerciseId];
         final name = toProperCase(vm.exerciseDisplayName(exerciseId));
         final isSuperset = widget.slot.type == SessionSlotType.superset;
-        final prCount = vm.prCountFor(exerciseId);
         final lessons = vm.lessonsFor(exerciseId);
         final history = vm.historyFor(exerciseId);
         final realSets = vm.sets.where((s) => s.exerciseId == exerciseId).toList()
@@ -64,7 +63,14 @@ class _ExerciseCardState extends State<ExerciseCard> {
           decoration: BoxDecoration(
             color: AppColors.surface,
             borderRadius: BorderRadius.circular(AppRadius.lg),
-            border: Border.all(color: viewingHistory ? AppColors.history : AppColors.border),
+            border: Border.all(
+              color: viewingHistory
+                  ? AppColors.history
+                  : widget.slot.planned
+                      ? AppColors.planned
+                      : AppColors.border,
+              width: widget.slot.planned && !viewingHistory ? 1.2 : 0.5,
+            ),
           ),
           clipBehavior: Clip.antiAlias,
           child: Column(
@@ -79,7 +85,6 @@ class _ExerciseCardState extends State<ExerciseCard> {
               _header(
                 name: name,
                 planned: widget.slot.planned,
-                prCount: viewingHistory ? 0 : prCount,
                 lessonsCount: lessons.length,
                 historyCount: history.length,
                 exerciseId: exerciseId,
@@ -203,7 +208,6 @@ class _ExerciseCardState extends State<ExerciseCard> {
   Widget _header({
     required String name,
     required bool planned,
-    required int prCount,
     required int lessonsCount,
     required int historyCount,
     required String exerciseId,
@@ -218,34 +222,7 @@ class _ExerciseCardState extends State<ExerciseCard> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: [
-                    if (planned)
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: AppColors.successBg,
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Text('PLANNED',
-                            style: AppFonts.ui(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: 0.5,
-                                color: AppColors.success)),
-                      ),
-                    if (prCount > 0) ...[
-                      const SizedBox(width: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1),
-                        decoration: BoxDecoration(color: AppColors.accent, borderRadius: BorderRadius.circular(999)),
-                        child: Text('$prCount PR${prCount > 1 ? 's' : ''}',
-                            style: AppFonts.ui(
-                                fontSize: 10, fontWeight: FontWeight.w800, color: AppColors.accentText)),
-                      ),
-                    ],
-                  ],
-                ),
+
                 const SizedBox(height: 6),
                 Text(name,
                     style: AppFonts.ui(

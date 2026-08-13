@@ -17,7 +17,13 @@ class SlidePagesController extends ChangeNotifier {
   }
 
   void _onPageChanged() {
-    final p = _pageController!.page?.round() ?? _currentPage;
+    final page = _pageController!.page;
+    if (page == null) return;
+    // Only accept near-integer positions — mid-animation values like 1.5
+    // round ambiguously and would flicker the tab indicator (and the whole
+    // screen via listeners) back and forth while the page animates.
+    final p = page.round();
+    if ((page - p).abs() > 0.05) return;
     if (p != _currentPage) {
       _currentPage = p;
       notifyListeners();
