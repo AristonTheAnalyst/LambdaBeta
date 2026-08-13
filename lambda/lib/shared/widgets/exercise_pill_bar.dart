@@ -82,20 +82,13 @@ class _ExercisePillBarState extends State<ExercisePillBar> {
     );
   }
 
-  /// The non-reorderable path: centered when the pills fit the viewport,
-  /// left-aligned + scrollable when they don't.
+  /// The non-reorderable path with more pills than fit: left-aligned and
+  /// scrollable.
   Widget _scrollablePills() {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          controller: _scrollCtrl,
-          child: ConstrainedBox(
-            constraints: BoxConstraints(minWidth: constraints.maxWidth),
-            child: Center(child: Row(children: _pills())),
-          ),
-        );
-      },
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      controller: _scrollCtrl,
+      child: Row(children: _pills()),
     );
   }
 
@@ -161,7 +154,12 @@ class _ExercisePillBarState extends State<ExercisePillBar> {
                             ),
                             children: _pills(),
                           ))
-                        : _feathered(_scrollablePills()),
+                        // 1-2 pills always fit — a plain Row stays out of the
+                        // gesture arena so swiping over the bar still pages
+                        // the session screens. More pills scroll instead.
+                        : _feathered(widget.labels.length > 2
+                            ? _scrollablePills()
+                            : Row(children: _pills())),
                   ),
                 ),
               ),
