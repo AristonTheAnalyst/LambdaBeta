@@ -681,8 +681,11 @@ class _ReflectionPage extends StatelessWidget {
   static String _fmt(num n) =>
       n == n.roundToDouble() ? n.toInt().toString() : n.toString();
 
-  /// PR showcase — the axes beaten this session per exercise × variation,
-  /// each with its before/after, plus the exercise's lessons.
+  /// PR showcase — the axes beaten this session per exercise × variation.
+  /// When a single set improved both the rep-max and the weight-max axes,
+  /// only the RM record is shown (dedup); weight-max appears alone only for
+  /// volume PRs. Lessons are listed under each exercise in the same format
+  /// as the lessons modal, with an open-book marker.
   List<Widget> _summarySections() {
     final sections = <Widget>[];
     final prs = vm.prsThisSession;
@@ -702,32 +705,48 @@ class _ReflectionPage extends StatelessWidget {
                   fontWeight: FontWeight.w700,
                   color: AppColors.primary)),
         ));
+
+        // Group by source set; a set that fired both axes shows its RM only.
+        final bySet = <String?, List<PrRecord>>{};
         for (final p in exPrs) {
-          sections.add(_prCard(p));
+          bySet.putIfAbsent(p.setId, () => []).add(p);
         }
+        for (final group in bySet.values) {
+          final rm = group.where((p) => p.type == PrType.repMax).firstOrNull;
+          final wm = group.where((p) => p.type == PrType.weightMax).firstOrNull;
+          if (rm != null) {
+            sections.add(_prCard(rm));
+          } else if (wm != null) {
+            sections.add(_prCard(wm));
+          }
+        }
+
         if (lessons.isNotEmpty) {
           sections.add(const SizedBox(height: AppSpacing.xs));
-          sections.add(Padding(
-            padding: const EdgeInsets.only(bottom: 2),
-            child: Text('LESSONS',
-                style: AppFonts.mono(
-                    fontSize: 9, letterSpacing: 0.8, color: AppColors.muted)),
-          ));
           for (final lesson in lessons) {
             sections.add(Padding(
-              padding: const EdgeInsets.only(bottom: 4),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(Icons.circle, size: 5, color: AppColors.muted),
-                  const SizedBox(width: AppSpacing.sm),
-                  Expanded(
-                    child: Text(lesson.text,
-                        style: AppFonts.ui(
-                            fontSize: AppTextStyles.sm,
-                            color: AppColors.primary)),
-                  ),
-                ],
+              padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+              child: Container(
+                padding: const EdgeInsets.all(AppSpacing.sm),
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceHigh,
+                  borderRadius: BorderRadius.circular(AppRadius.md),
+                  border: Border.all(color: AppColors.border),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.menu_book_outlined,
+                        size: 16, color: AppColors.primary),
+                    const SizedBox(width: AppSpacing.sm),
+                    Expanded(
+                      child: Text(lesson.text,
+                          style: AppFonts.ui(
+                              fontSize: AppTextStyles.sm,
+                              color: AppColors.primary)),
+                    ),
+                  ],
+                ),
               ),
             ));
           }
@@ -738,19 +757,20 @@ class _ReflectionPage extends StatelessWidget {
   }
 
   /// One PR row: the axis beaten this session with its before/after.
-  /// rep-max: "5RM: 0kg → 5kg"; weight-max: "100kg: 3 → 5 reps".
+  /// rep-max: "5RM: 100kg → 105kg"; weight-max: "100kg: 3 → 5 reps".
+  /// Regular neutral styling like the feeling-picker buttons.
   Widget _prCard(PrRecord p) {
     final String before;
     final String after;
     final String axisLabel;
     if (p.type == PrType.repMax) {
       final prev = vm.previousRepMax(p.exerciseId, p.variationId, p.targetReps ?? p.reps.toInt());
-      before = prev != null ? '${_fmt(prev.weight)}kg' : '—';
+      before = prev != null ? '${_fmt(prev.weight)}kg' : 'No Previous PR';
       after = '${_fmt(p.weight)}kg';
       axisLabel = '${p.targetReps ?? ''}RM';
     } else {
       final prev = vm.previousWeightMax(p.exerciseId, p.variationId, p.targetWeight ?? p.weight);
-      before = prev != null ? '${_fmt(prev.reps)} reps' : '—';
+      before = prev != null ? '${_fmt(prev.reps)} reps' : 'No Previous PR';
       after = '${_fmt(p.reps)} reps';
       axisLabel = '${_fmt(p.targetWeight ?? p.weight)}kg';
     }
@@ -759,13 +779,13 @@ class _ReflectionPage extends StatelessWidget {
       padding: const EdgeInsets.symmetric(
           horizontal: AppSpacing.md, vertical: AppSpacing.sm),
       decoration: BoxDecoration(
-        color: AppColors.accentBg,
+        color: AppColors.surface,
         borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(color: AppColors.accent, width: 1.2),
+        border: Border.all(color: AppColors.border),
       ),
       child: Row(
         children: [
-          Icon(Icons.emoji_events_outlined, size: 16, color: AppColors.accent),
+          Icon(Icons.emoji_events_outlined, size: 16, color: AppColors.primary),
           const SizedBox(width: AppSpacing.sm),
           Expanded(
             child: Column(
@@ -776,12 +796,12 @@ class _ReflectionPage extends StatelessWidget {
                       style: AppFonts.mono(
                           fontSize: 9,
                           letterSpacing: 0.6,
-                          color: AppColors.accent)),
+                          color: AppColors.muted)),
                 Text('$axisLabel: $before  →  $after',
                     style: AppFonts.ui(
                         fontSize: AppTextStyles.sm,
                         fontWeight: FontWeight.w700,
-                        color: AppColors.accent)),
+                        color: AppColors.primary)),
               ],
             ),
           ),
