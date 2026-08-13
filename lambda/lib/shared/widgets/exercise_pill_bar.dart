@@ -135,11 +135,11 @@ class _ExercisePillBarState extends State<ExercisePillBar> {
       children: [
         Expanded(
           child: SizedBox(
-            // Pills (42) + 3px gap + scrollbar thumb (3px) + 3px gap below —
-            // even breathing room on both sides of the thumb.
-            height: 51,
+            // Pills (42) + 8px gap + scrollbar thumb (3px) + 4px gap below —
+            // clear breathing room on both sides of the thumb.
+            height: 57,
             child: Padding(
-              padding: const EdgeInsets.only(bottom: 3),
+              padding: const EdgeInsets.only(bottom: 4),
               child: Scrollbar(
                 controller: _scrollCtrl,
                 thickness: 3,
