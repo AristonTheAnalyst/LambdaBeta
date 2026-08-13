@@ -6,6 +6,7 @@ class Lesson {
     required this.text,
     required this.pinned,
     required this.createdDate,
+    this.sessionId,
   });
 
   final String lessonId;
@@ -15,6 +16,10 @@ class Lesson {
   final bool pinned;
   final DateTime createdDate;
 
+  /// The logged session this lesson was created in (null when created
+  /// while planning a session template).
+  final String? sessionId;
+
   factory Lesson.fromMap(Map<String, dynamic> map) => Lesson(
         lessonId: map['lesson_id'] as String,
         userId: map['user_id'] as String,
@@ -22,6 +27,7 @@ class Lesson {
         text: map['lesson_text'] as String,
         pinned: _toBool(map['pinned']),
         createdDate: DateTime.parse(map['lesson_created_date'] as String),
+        sessionId: map['session_id'] as String?,
       );
 
   Map<String, dynamic> toMap() => {
@@ -31,6 +37,7 @@ class Lesson {
         'lesson_text': text,
         'pinned': pinned,
         'lesson_created_date': createdDate.toIso8601String(),
+        'session_id': sessionId,
       };
 
   static bool _toBool(dynamic v) {

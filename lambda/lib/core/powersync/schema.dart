@@ -111,6 +111,7 @@ const schema = Schema([
     Column.integer('pinned'),
     Column.integer('is_archived'),
     Column.text('lesson_created_date'),
+    Column.text('session_id'),
   ]),
   Table('coaching_relationship', [
     Column.text('coach_user_id'),

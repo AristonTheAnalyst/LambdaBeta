@@ -26,16 +26,17 @@ class LessonRepository {
     return rows.map((r) => Lesson.fromMap(r)).toList();
   }
 
-  Future<Lesson> createLesson(String userId, String exerciseId, String text) async {
+  Future<Lesson> createLesson(String userId, String exerciseId, String text,
+      {String? sessionId}) async {
     final id = _uuid.v4();
     final createdDate = DateTime.now().toUtc();
     await _db.execute(
       '''
       INSERT INTO dim_lesson
-        (id, lesson_id, user_id, custom_exercise_id, lesson_text, pinned, is_archived, lesson_created_date)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        (id, lesson_id, user_id, custom_exercise_id, lesson_text, pinned, is_archived, lesson_created_date, session_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       ''',
-      [id, id, userId, exerciseId, text, 0, 0, createdDate.toIso8601String()],
+      [id, id, userId, exerciseId, text, 0, 0, createdDate.toIso8601String(), sessionId],
     );
     _log.info('createLesson → id=$id exercise=$exerciseId countAfter=${(await fetchLessons(userId, exerciseId)).length}');
     return Lesson(
@@ -45,6 +46,7 @@ class LessonRepository {
       text: text,
       pinned: false,
       createdDate: createdDate,
+      sessionId: sessionId,
     );
   }
 

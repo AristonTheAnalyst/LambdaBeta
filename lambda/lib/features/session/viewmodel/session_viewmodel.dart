@@ -942,7 +942,8 @@ class SessionViewModel extends ChangeNotifier {
   Future<void> addLesson(String exerciseId, String text) async {
     if (text.trim().isEmpty) return;
     try {
-      await _lessonRepo.createLesson(_userId, exerciseId, text.trim());
+      await _lessonRepo.createLesson(_userId, exerciseId, text.trim(),
+          sessionId: currentWorkoutId);
       await loadLessonsFor(exerciseId);
     } catch (e) {
       error = e.toString();

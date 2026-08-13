@@ -16,7 +16,7 @@ class FakeLessonRepo implements LessonRepository {
       List.of(lessons);
 
   @override
-  Future<Lesson> createLesson(String userId, String exerciseId, String text) async {
+  Future<Lesson> createLesson(String userId, String exerciseId, String text, {String? sessionId}) async {
     final lesson = Lesson(
       lessonId: 'l${++_calls}',
       userId: userId,
