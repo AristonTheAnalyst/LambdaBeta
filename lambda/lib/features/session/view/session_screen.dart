@@ -231,7 +231,7 @@ class _SessionScreenState extends State<SessionScreen> {
                                 padding: EdgeInsets.fromLTRB(
                                     AppSpacing.lg, 0, AppSpacing.lg,
                                     MediaQuery.of(context).padding.bottom +
-                                        AppSpacing.sm),
+                                        AppSpacing.lg),
                                 child: SessionStatsBar(vm: _vm),
                               )
                             : const SizedBox.shrink(),
