@@ -585,7 +585,13 @@ class _ActivePage extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(AppSpacing.lg, 0, AppSpacing.lg, AppSpacing.lg),
             child: vm.activeSlot == null
                 ? _EmptySlotsHint(vm: vm)
-                : ExerciseCard(vm: vm, slot: vm.activeSlot!),
+                // Key per exercise slot: switching tabs recreates the card
+                // state so an open history view doesn't carry over.
+                : ExerciseCard(
+                    key: ValueKey(vm.activeSlot!.id),
+                    vm: vm,
+                    slot: vm.activeSlot!,
+                  ),
           ),
         ),
       ],

@@ -77,7 +77,9 @@ class _ExercisePillBarState extends State<ExercisePillBar> {
             ? widget.prefixIcons![i]
             : null,
         onTap: () => widget.onTap(i),
-        onRemove: widget.onRemove != null ? () => widget.onRemove!(i) : null,
+        onRemove: i == widget.activeIndex && widget.onRemove != null
+            ? () => widget.onRemove!(i)
+            : null,
       ),
     );
   }

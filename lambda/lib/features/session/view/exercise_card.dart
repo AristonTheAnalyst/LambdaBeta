@@ -250,22 +250,23 @@ class _ExerciseCardState extends State<ExerciseCard> {
                     exerciseName: name,
                   ),
               ),
-              if (historyCount > 0) ...[
-                const SizedBox(width: 6),
-                _pillButton(
-                  icon: Icons.history,
-                  label: 'History',
-                  active: _historyOpen || viewingHistory,
-                  color: AppColors.primary,
-                  onTap: () {
-                    if (viewingHistory) {
-                      _exitHistory();
-                    } else {
-                      setState(() => _historyOpen = !_historyOpen);
-                    }
-                  },
-                ),
-              ],
+              const SizedBox(width: 6),
+              _pillButton(
+                icon: Icons.history,
+                label: 'History',
+                active: _historyOpen || viewingHistory,
+                color: AppColors.primary,
+                enabled: historyCount > 0,
+                onTap: historyCount == 0
+                    ? null
+                    : () {
+                        if (viewingHistory) {
+                          _exitHistory();
+                        } else {
+                          setState(() => _historyOpen = !_historyOpen);
+                        }
+                      },
+              ),
             ],
           ),
         ],
@@ -274,7 +275,12 @@ class _ExerciseCardState extends State<ExerciseCard> {
   }
 
   Widget _pillButton(
-      {required IconData icon, required String label, required bool active, required Color color, required VoidCallback onTap}) {
+      {required IconData icon,
+      required String label,
+      required bool active,
+      required Color color,
+      required VoidCallback? onTap,
+      bool enabled = true}) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -282,16 +288,25 @@ class _ExerciseCardState extends State<ExerciseCard> {
         decoration: BoxDecoration(
           color: active ? color.withValues(alpha: 0.1) : Colors.transparent,
           borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: active ? color.withValues(alpha: 0.3) : AppColors.border),
+          border: Border.all(
+              color: active ? color.withValues(alpha: 0.3) : AppColors.border),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 14, color: active ? color : AppColors.muted),
+            Icon(icon,
+                size: 14,
+                color: enabled
+                    ? (active ? color : AppColors.muted)
+                    : AppColors.muted.withValues(alpha: 0.4)),
             const SizedBox(width: 5),
             Text(label,
                 style: AppFonts.mono(
-                    fontSize: 11, letterSpacing: 0.4, color: active ? color : AppColors.muted)),
+                    fontSize: 11,
+                    letterSpacing: 0.4,
+                    color: enabled
+                        ? (active ? color : AppColors.muted)
+                        : AppColors.muted.withValues(alpha: 0.4))),
           ],
         ),
       ),
