@@ -21,8 +21,6 @@ class LambdaColors {
   final Color successBg;
   final Color planned;
   final Color plannedBg;
-  final Color history;
-  final Color historyBg;
 
   const LambdaColors({
     required this.bg,
@@ -41,8 +39,6 @@ class LambdaColors {
     required this.successBg,
     required this.planned,
     required this.plannedBg,
-    required this.history,
-    required this.historyBg,
   });
 
   static const dark = LambdaColors(
@@ -62,8 +58,6 @@ class LambdaColors {
     successBg:    Color(0xFF16321F),
     planned:      Color(0xFF60A5FA),
     plannedBg:    Color(0xFF16253A),
-    history:      Color(0xFF6B9BFF),
-    historyBg:    Color(0xFF16233F),
   );
 
   static const monoLight = LambdaColors(
@@ -83,8 +77,6 @@ class LambdaColors {
     successBg:    Color(0xFFEAF6EE),
     planned:      Color(0xFF2563EB),
     plannedBg:    Color(0xFFDBEAFE),
-    history:      Color(0xFF3B6FD6),
-    historyBg:    Color(0xFFE8F0FC),
   );
 
   ThemeData toThemeData() {

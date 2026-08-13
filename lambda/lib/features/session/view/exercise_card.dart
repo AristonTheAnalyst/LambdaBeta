@@ -64,11 +64,9 @@ class _ExerciseCardState extends State<ExerciseCard> {
             color: AppColors.surface,
             borderRadius: BorderRadius.circular(AppRadius.lg),
             border: Border.all(
-              color: viewingHistory
-                  ? AppColors.history
-                  : widget.slot.planned
-                      ? AppColors.planned.withValues(alpha: 0.3)
-                      : AppColors.border,
+              color: widget.slot.planned
+                  ? AppColors.planned.withValues(alpha: 0.3)
+                  : AppColors.border,
             ),
           ),
           clipBehavior: Clip.antiAlias,
@@ -105,17 +103,17 @@ class _ExerciseCardState extends State<ExerciseCard> {
 
   Widget _historyBanner(ExerciseHistorySession session) {
     return Container(
-      color: AppColors.historyBg,
+      color: AppColors.surfaceHigh,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       child: Row(
         children: [
-          Icon(Icons.history, size: 14, color: AppColors.history),
+          Icon(Icons.history, size: 14, color: AppColors.muted),
           const SizedBox(width: 8),
           Expanded(
             child: Text('Viewing — ${DateFormat('MMM d').format(session.date)}',
-                style: AppFonts.mono(fontSize: 9, letterSpacing: 0.8, color: AppColors.history)),
+                style: AppFonts.mono(fontSize: 9, letterSpacing: 0.8, color: AppColors.muted)),
           ),
-          GlassButton(label: 'Back', color: AppColors.history, compact: true, onPressed: _exitHistory),
+          GlassButton(label: 'Back', color: AppColors.primary, compact: true, onPressed: _exitHistory),
         ],
       ),
     );
@@ -227,7 +225,7 @@ class _ExerciseCardState extends State<ExerciseCard> {
                     style: AppFonts.ui(
                         fontSize: 18,
                         fontWeight: FontWeight.w800,
-                        color: viewingHistory ? AppColors.history : AppColors.primary)),
+                        color: AppColors.primary)),
               ],
             ),
           ),
@@ -258,7 +256,7 @@ class _ExerciseCardState extends State<ExerciseCard> {
                   icon: Icons.history,
                   label: 'History',
                   active: _historyOpen || viewingHistory,
-                  color: AppColors.history,
+                  color: AppColors.primary,
                   onTap: () {
                     if (viewingHistory) {
                       _exitHistory();
@@ -336,7 +334,7 @@ class _ExerciseCardState extends State<ExerciseCard> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(DateFormat('MMM d').format(session.date),
-                            style: AppFonts.mono(fontSize: 10, color: AppColors.history)),
+                            style: AppFonts.mono(fontSize: 10, color: AppColors.muted)),
                         const SizedBox(height: 6),
                         Text('${session.sets.length} sets',
                             style: AppFonts.mono(fontSize: 10, color: AppColors.muted)),
@@ -550,7 +548,7 @@ class _HistorySetRowState extends State<_HistorySetRow> {
               child: Text('Cancel', style: TextStyle(color: AppColors.muted))),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text('Continue', style: TextStyle(color: AppColors.history, fontWeight: FontWeight.w600)),
+            child: Text('Continue', style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.w600)),
           ),
         ],
       ),
@@ -568,9 +566,9 @@ class _HistorySetRowState extends State<_HistorySetRow> {
       margin: const EdgeInsets.only(bottom: 6),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: AppColors.historyBg,
+        color: AppColors.surfaceHigh,
         borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(color: AppColors.history.withValues(alpha: 0.2)),
+        border: Border.all(color: AppColors.border),
       ),
       child: Row(
         children: [
@@ -600,7 +598,7 @@ class _HistorySetRowState extends State<_HistorySetRow> {
       readOnly: !confirmed,
       textAlign: TextAlign.center,
       keyboardType: const TextInputType.numberWithOptions(decimal: true),
-      style: AppFonts.mono(fontSize: 13, color: AppColors.history),
+      style: AppFonts.mono(fontSize: 13, color: AppColors.muted),
       onTap: () => _requestEdit(focus),
       decoration: const InputDecoration(
         isDense: true,

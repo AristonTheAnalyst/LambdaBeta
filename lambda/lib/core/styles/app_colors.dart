@@ -18,6 +18,4 @@ abstract final class AppColors {
   static Color get successBg    => themeNotifier.colors.successBg;
   static Color get planned      => themeNotifier.colors.planned;
   static Color get plannedBg    => themeNotifier.colors.plannedBg;
-  static Color get history      => themeNotifier.colors.history;
-  static Color get historyBg    => themeNotifier.colors.historyBg;
 }

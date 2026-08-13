@@ -388,7 +388,7 @@ class _DetailExerciseCardState extends State<_DetailExerciseCard> {
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(AppRadius.lg),
-        border: Border.all(color: viewingHistory ? AppColors.history : AppColors.border),
+        border: Border.all(color: AppColors.border),
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
@@ -425,17 +425,17 @@ class _DetailExerciseCardState extends State<_DetailExerciseCard> {
 
   Widget _historyBanner(ExerciseHistorySession session) {
     return Container(
-      color: AppColors.historyBg,
+      color: AppColors.surfaceHigh,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       child: Row(
         children: [
-          Icon(Icons.history, size: 14, color: AppColors.history),
+          Icon(Icons.history, size: 14, color: AppColors.muted),
           const SizedBox(width: 8),
           Expanded(
             child: Text('Viewing — ${DateFormat('MMM d').format(session.date)}',
-                style: AppFonts.mono(fontSize: 9, letterSpacing: 0.8, color: AppColors.history)),
+                style: AppFonts.mono(fontSize: 9, letterSpacing: 0.8, color: AppColors.muted)),
           ),
-          GlassButton(label: 'Back', color: AppColors.history, compact: true, onPressed: _exitHistory),
+          GlassButton(label: 'Back', color: AppColors.primary, compact: true, onPressed: _exitHistory),
         ],
       ),
     );
@@ -526,7 +526,7 @@ class _DetailExerciseCardState extends State<_DetailExerciseCard> {
                     style: AppFonts.ui(
                         fontSize: 18,
                         fontWeight: FontWeight.w800,
-                        color: viewingHistory ? AppColors.history : AppColors.primary)),
+                        color: AppColors.primary)),
               ],
             ),
           ),
@@ -636,7 +636,7 @@ class _DetailExerciseCardState extends State<_DetailExerciseCard> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(DateFormat('MMM d').format(session.date),
-                            style: AppFonts.mono(fontSize: 10, color: AppColors.history)),
+                            style: AppFonts.mono(fontSize: 10, color: AppColors.muted)),
                         const SizedBox(height: 6),
                         Text('${session.sets.length} sets',
                             style: AppFonts.mono(fontSize: 10, color: AppColors.muted)),
@@ -759,9 +759,9 @@ class _DetailHistorySetRow extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 6),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: AppColors.historyBg,
+        color: AppColors.surfaceHigh,
         borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(color: AppColors.history.withValues(alpha: 0.2)),
+        border: Border.all(color: AppColors.border),
       ),
       child: Row(
         children: [
@@ -774,14 +774,14 @@ class _DetailHistorySetRow extends StatelessWidget {
             child: Text(
               set.weight != null ? _fmtNum(set.weight!) : '—',
               textAlign: TextAlign.center,
-              style: AppFonts.mono(fontSize: 13, color: AppColors.history),
+              style: AppFonts.mono(fontSize: 13, color: AppColors.muted),
             ),
           ),
           Expanded(
             child: Text(
               set.reps.isNotEmpty ? _fmtNum(set.reps.first) : '—',
               textAlign: TextAlign.center,
-              style: AppFonts.mono(fontSize: 13, color: AppColors.history),
+              style: AppFonts.mono(fontSize: 13, color: AppColors.muted),
             ),
           ),
           Expanded(
