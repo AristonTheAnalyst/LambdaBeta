@@ -67,9 +67,8 @@ class _ExerciseCardState extends State<ExerciseCard> {
               color: viewingHistory
                   ? AppColors.history
                   : widget.slot.planned
-                      ? AppColors.planned
+                      ? AppColors.planned.withValues(alpha: 0.3)
                       : AppColors.border,
-              width: widget.slot.planned && !viewingHistory ? 1.2 : 0.5,
             ),
           ),
           clipBehavior: Clip.antiAlias,
