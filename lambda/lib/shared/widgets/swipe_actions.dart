@@ -21,17 +21,16 @@ const _buttonWidth = 64.0;
 
 /// Wraps [child] with a left-swipe-to-reveal action drawer.
 ///
-/// A thin accent line sits on the right edge of [child] and fades as the card
-/// is dragged left, revealing one or two fixed-width action buttons behind it.
-/// Release past 50 % or a fast-enough flick snaps the drawer fully open;
-/// otherwise it closes.  Tapping an open drawer closes it immediately.
+/// Dragging the card left reveals one or two fixed-width action buttons
+/// behind it.  Release past 50 % or a fast-enough flick snaps the drawer
+/// fully open; otherwise it closes.  Tapping an open drawer closes it
+/// immediately.  No visual affordance is shown at rest — the swipe gesture
+/// itself is the discovery mechanism.
 ///
 /// The entire widget is clipped to [borderRadius] so action buttons never
-/// bleed through rounded card corners.  The indicator and action button area
-/// are inset by the same amount so they stay inside the flat part of the edge.
-/// Defaults to [AppRadius.lg] (12), which is the largest corner radius used by
-/// child cards; `AppCard` uses the same value, and set rows use
-/// [AppRadius.md] (8) — 12 is safe for both.
+/// bleed through rounded card corners.  Defaults to [AppRadius.lg] (12),
+/// which is the largest corner radius used by child cards; `AppCard` uses
+/// the same value, and set rows use [AppRadius.md] (8) — 12 is safe for both.
 class SwipeActions extends StatefulWidget {
   const SwipeActions({
     super.key,
