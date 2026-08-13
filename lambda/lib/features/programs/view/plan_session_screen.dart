@@ -8,7 +8,7 @@ import '../../../core/utils/session_format.dart';
 import '../../../data/models/planned_session_set.dart';
 import '../../../data/models/planned_session.dart';
 import '../../../shared/mixins/unsaved_changes_guard.dart';
-import '../../../shared/widgets/exercise_tab_chip.dart';
+import '../../../shared/widgets/exercise_pill_bar.dart';
 import '../../../shared/widgets/segmented_control.dart';
 import '../../../shared/widgets/slide_up_modal.dart';
 import '../../../shared/widgets/stats_row.dart';
@@ -256,13 +256,15 @@ class _PlanSessionScreenState extends State<PlanSessionScreen> with UnsavedChang
                             ),
                           ),
                         ] else ...[
-                          _PlanExerciseTabBar(
-                            slots: state.workoutExerciseSlots,
-                            activeIndex: state.activeSlotIndex,
-                            exerciseNames: state.workoutExerciseSlots.map((slot) {
+                          ExercisePillBar(
+                            labels: state.workoutExerciseSlots.map((slot) {
                               final detail = state.exerciseDetailMap[slot.exerciseId];
                               return toProperCase(detail?.name ?? '');
                             }).toList(),
+                            keys: state.workoutExerciseSlots
+                                .map((slot) => slot.exerciseId)
+                                .toList(),
+                            activeIndex: state.activeSlotIndex,
                             onTap: (i) => widget.viewModel.tapTab(i),
                             onAdd: _showAddExercise,
                             onReorder: (oldIndex, newIndex) =>
@@ -479,87 +481,6 @@ class _PlanStatsBar extends StatelessWidget {
   }
 }
 
-// ── Exercise Tab Bar ──────────────────────────────────────────────────────────
-
-class _PlanExerciseTabBar extends StatelessWidget {
-  const _PlanExerciseTabBar({
-    required this.slots,
-    required this.activeIndex,
-    required this.exerciseNames,
-    required this.onTap,
-    required this.onAdd,
-    this.onReorder,
-    this.onRemove,
-  });
-
-  final List<PlanExerciseSlot> slots;
-  final int activeIndex;
-  final List<String> exerciseNames;
-  final ValueChanged<int> onTap;
-  final VoidCallback onAdd;
-  final void Function(int oldIndex, int newIndex)? onReorder;
-  final void Function(int index)? onRemove;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: slots.length > 2 && onReorder != null
-              ? SizedBox(
-                  height: 42,
-                  child: ReorderableListView(
-                    scrollDirection: Axis.horizontal,
-                    onReorderItem: onReorder!,
-                    buildDefaultDragHandles: false,
-                    proxyDecorator: (child, index, _) => Material(
-                      color: Colors.transparent,
-                      child: Opacity(opacity: 0.85, child: child),
-                    ),
-                    children: [
-                      for (var i = 0; i < slots.length; i++)
-                        SizedBox(
-                          key: ValueKey('ex-${slots[i].exerciseId}'),
-                          child: ReorderableDragStartListener(
-                            index: i,
-                            child: Padding(
-                              padding: const EdgeInsets.only(right: 6),
-                              child: ExerciseTabChip(
-                                label: exerciseNames.length > i ? exerciseNames[i] : '',
-                                isActive: i == activeIndex,
-                                activeColor: AppColors.success,
-                                onTap: () => onTap(i),
-                                onRemove: onRemove != null ? () => onRemove!(i) : null,
-                              ),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                )
-              : SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: [
-                      for (var i = 0; i < slots.length; i++) ...[
-                        ExerciseTabChip(
-                          label: exerciseNames.length > i ? exerciseNames[i] : '',
-                          isActive: i == activeIndex,
-                          activeColor: AppColors.success,
-                          onTap: () => onTap(i),
-                          onRemove: onRemove != null ? () => onRemove!(i) : null,
-                        ),
-                        const SizedBox(width: 6),
-                      ],
-                    ],
-                  ),
-                ),
-        ),
-        AddExerciseButton(onTap: onAdd),
-      ],
-    );
-  }
-}
 
 // ── Exercise Card ─────────────────────────────────────────────────────────────
 

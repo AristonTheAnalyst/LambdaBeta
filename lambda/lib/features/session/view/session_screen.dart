@@ -6,15 +6,17 @@ import '../../../core/styles/app_spacing.dart';
 import '../../../core/styles/app_text_styles.dart';
 import '../../../core/utils/session_format.dart';
 import '../../../core/powersync/database.dart' as ps;
+import '../../../shared/widgets/exercise_pill_bar.dart';
 import '../../../shared/widgets/glass_button.dart';
 import '../../../shared/widgets/lambda_button.dart';
 import '../../../shared/widgets/lambda_input.dart';
 import '../../../shared/widgets/page_header.dart';
 import '../../../shared/widgets/slide_pages.dart';
 import '../../../shared/widgets/slide_up_modal.dart';
+import '../model/session_local_state.dart';
 import '../viewmodel/session_viewmodel.dart';
+import 'add_exercise_modal.dart';
 import 'exercise_card.dart';
-import 'exercise_tab_bar.dart';
 import 'session_stats_bar.dart';
 
 class SessionScreen extends StatefulWidget {
@@ -526,7 +528,37 @@ class _ActivePage extends StatelessWidget {
         const SizedBox(height: AppSpacing.sm),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-          child: ExerciseTabBar(vm: vm, onRemove: onRemoveExercise),
+          child: ListenableBuilder(
+            listenable: vm,
+            builder: (context, _) {
+              var supersetCount = 0;
+              final labels = <String>[];
+              final keys = <String>[];
+              final prefixIcons = <IconData?>[];
+              for (final slot in vm.exerciseSlots) {
+                if (slot.type == SessionSlotType.superset) {
+                  supersetCount++;
+                  labels.add('Superset $supersetCount');
+                  prefixIcons.add(Icons.hexagon_outlined);
+                } else {
+                  labels.add(toProperCase(vm.exerciseDisplayName(slot.exerciseIds.first)));
+                  prefixIcons.add(null);
+                }
+                keys.add('${slot.id}');
+              }
+              return ExercisePillBar(
+                labels: labels,
+                keys: keys,
+                activeIndex: vm.activeSlotIndex,
+                prefixIcons: prefixIcons,
+                onTap: (i) => vm.tapTab(i),
+                onReorder: (oldIndex, newIndex) =>
+                    vm.reorderExercises(oldIndex, newIndex),
+                onRemove: onRemoveExercise,
+                onAdd: () => showAddExerciseModal(context, vm: vm),
+              );
+            },
+          ),
         ),
         const SizedBox(height: AppSpacing.sm),
         Expanded(
