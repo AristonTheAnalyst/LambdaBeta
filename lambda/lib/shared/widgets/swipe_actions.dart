@@ -146,8 +146,10 @@ class _SwipeActionsState extends State<SwipeActions>
                     children: [
                       widget.child,
 
-                      // Indicator stripe at the right edge, inset from the
+                      // Indicator hairline at the right edge, inset from the
                       // top & bottom so it stays on the flat part of the card.
+                      // A plain 1px line in the border color — just enough to
+                      // say "swipable" without competing with the content.
                       Positioned(
                         top: r,
                         bottom: r,
@@ -155,16 +157,7 @@ class _SwipeActionsState extends State<SwipeActions>
                         child: IgnorePointer(
                           child: Opacity(
                             opacity: 1.0 - _ctrl.value,
-                            child: Container(
-                              width: 3,
-                              decoration: BoxDecoration(
-                                color: AppColors.accent,
-                                borderRadius: const BorderRadius.only(
-                                  topLeft: Radius.circular(2),
-                                  bottomLeft: Radius.circular(2),
-                                ),
-                              ),
-                            ),
+                            child: Container(width: 1, color: AppColors.border),
                           ),
                         ),
                       ),
