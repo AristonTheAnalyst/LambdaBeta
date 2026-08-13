@@ -24,8 +24,6 @@ import '../../../shared/widgets/slide_pages.dart';
 import '../model/pr_engine.dart' hide bestEverForExercise;
 import '../model/session_local_state.dart';
 
-const restDefaultSeconds = 90;
-const restPresets = [60, 90, 120, 180];
 
 class SessionViewModel extends ChangeNotifier {
   SessionViewModel({
@@ -137,12 +135,6 @@ class SessionViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ── Rest timer ─────────────────────────────────────────────────────────────
-  int? restRemaining;
-  int restTotal = restDefaultSeconds;
-  bool restRunning = false;
-  Timer? _restTimer;
-  List<int> restDurationsThisSession = [];
 
   // ── Derived ───────────────────────────────────────────────────────────────
   bool get hasActiveWorkout => currentWorkoutId != null;
@@ -151,10 +143,6 @@ class SessionViewModel extends ChangeNotifier {
 
   int get totalPRsThisSession => prSetIds.length;
 
-  double? get avgRestSeconds => restDurationsThisSession.isEmpty
-      ? null
-      : restDurationsThisSession.reduce((a, b) => a + b) /
-          restDurationsThisSession.length;
 
   /// PRs achieved this session using the full rep-max timeline engine.
   List<PrRecord> get prsThisSession {
@@ -1023,79 +1011,6 @@ class SessionViewModel extends ChangeNotifier {
   int prCountFor(String exerciseId) =>
       sets.where((s) => s.exerciseId == exerciseId && prSetIds.contains(s.sessionSetId)).length;
 
-  // ── Rest timer ─────────────────────────────────────────────────────────────
-  // Rest periods are tracked in-memory for the session stats bar only.
-  // (planned vs. actual seconds) once it ends — whether it completes
-  // naturally, is stopped early, or is discarded via Restart. Pausing alone
-  // never logs, since the rest is still in progress.
-
-  void startRest(int seconds) {
-    if (seconds <= 0) return;
-    _restTimer?.cancel();
-    restTotal = seconds;
-    restRemaining = seconds;
-    restRunning = true;
-    _tickRest();
-    notifyListeners();
-  }
-
-  void pauseRest() {
-    _restTimer?.cancel();
-    restRunning = false;
-    notifyListeners();
-  }
-
-  void resumeRest() {
-    if (restRemaining == null || restRemaining == 0) return;
-    restRunning = true;
-    _tickRest();
-    notifyListeners();
-  }
-
-  Future<void> restartRest() async {
-    await _logRestIfInProgress();
-    startRest(restTotal);
-  }
-
-  /// Explicit "End" — stops the timer and, if it was cut short, logs the
-  /// partial rest. A naturally-completed rest is already logged by
-  /// `_tickRest`, so `_logRestIfInProgress` is a no-op in that case.
-  Future<void> endRest() async {
-    await _logRestIfInProgress();
-    _stopRestTimer();
-    notifyListeners();
-  }
-
-  /// Cancels the ticking timer and clears rest state — used when the whole
-  /// session is being torn down (`cancelSession`).
-  void _stopRestTimer() {
-    _restTimer?.cancel();
-    restRemaining = null;
-    restRunning = false;
-  }
-
-  Future<void> _logRestIfInProgress() async {
-    final remaining = restRemaining;
-    final sessionId = currentWorkoutId;
-    if (sessionId == null || remaining == null || remaining <= 0) return;
-  }
-
-  void _tickRest() {
-    _restTimer?.cancel();
-    _restTimer = Timer.periodic(const Duration(seconds: 1), (t) async {
-      final r = restRemaining;
-      if (r == null || r <= 1) {
-        t.cancel();
-        restRunning = false;
-        restRemaining = 0;
-        restDurationsThisSession.add(restTotal);
-      } else {
-        restRemaining = r - 1;
-      }
-      notifyListeners();
-    });
-  }
-
   // ── Start / end / cancel workout ──────────────────────────────────────────
 
   Future<void> startWorkout() async {
@@ -1139,10 +1054,6 @@ class SessionViewModel extends ChangeNotifier {
     endLoading = true;
     notifyListeners();
     try {
-      // A rest still in progress when the workout ends is a real, meaningful
-      // partial rest (unlike cancelWorkout, this workout isn't being
-      // deleted) — log it before resetting state.
-      await _logRestIfInProgress();
       await _purgeEmptySets();
       await _sessionRepo.endSession(
           currentWorkoutId!,
@@ -1191,9 +1102,7 @@ class SessionViewModel extends ChangeNotifier {
     draftSlotsByExercise = {};
     // lessonsByExercise is intentionally NOT cleared — lessons are durable,
     // cross-session data now, not reset per workout.
-    restDurationsThisSession = [];
     historyEditConfirmed = false;
-    _stopRestTimer();
   }
 
   // ── New exercise / variation ──────────────────────────────────────────────
@@ -1293,7 +1202,6 @@ class SessionViewModel extends ChangeNotifier {
 
   @override
   void dispose() {
-    _restTimer?.cancel();
     slidePagesController.dispose();
     super.dispose();
   }

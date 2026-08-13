@@ -170,7 +170,6 @@ class _SessionBody extends StatelessWidget {
                         : null,
                   ),
                   StatsTile(label: 'EXERCISES', value: '${state.exerciseSlots.length}'),
-                  const StatsTile(label: 'AVG REST', value: '—'),
                 ]),
                 if (state.session?.preFeeling != null)
                   Padding(

@@ -15,7 +15,6 @@ import '../../../shared/widgets/slide_up_modal.dart';
 import '../viewmodel/session_viewmodel.dart';
 import 'exercise_card.dart';
 import 'exercise_tab_bar.dart';
-import 'rest_timer_bar.dart';
 import 'session_stats_bar.dart';
 
 class SessionScreen extends StatefulWidget {
@@ -30,8 +29,8 @@ class _SessionScreenState extends State<SessionScreen> {
 
   static void _clearCachedVm() => _cachedVm = null;
 
-  /// Releases the cached ViewModel (and cancels its rest timer) on sign-out —
-  /// the local DB is being cleared, so the next sign-in must build fresh.
+  /// Releases the cached ViewModel on sign-out — the local DB is being
+  /// cleared, so the next sign-in must build fresh.
   static void _resetCachedVmOnSignOut() {
     final vm = _cachedVm;
     _cachedVm = null;
@@ -85,10 +84,6 @@ class _SessionScreenState extends State<SessionScreen> {
       ps.onSignOutReset = null;
     }
     _vm.removeListener(_onVmChanged);
-    // The cached VM survives this State (tab switches keep workout state), so
-    // cancel the rest timer here — otherwise it keeps ticking while the user
-    // is on another tab. State is preserved; the timer is re-armed on resume.
-    _vm.pauseRest();
     _startNotesCtrl.dispose();
     _endNotesCtrl.dispose();
     super.dispose();
@@ -198,6 +193,9 @@ class _SessionScreenState extends State<SessionScreen> {
                   left: _vm.hasActiveWorkout
                       ? GlassButton(label: 'Cancel', color: AppColors.danger, compact: true, onPressed: _confirmCancelWorkout)
                       : null,
+                  right: _vm.hasActiveWorkout
+                      ? GlassButton(label: 'Finish', compact: true, onPressed: _openEndWorkoutModal)
+                      : null,
                 ),
                 if (_vm.error != null)
                   GestureDetector(
@@ -214,7 +212,7 @@ class _SessionScreenState extends State<SessionScreen> {
                     controller: _vm.slidePagesController,
                     children: [
                       _StartPage(vm: _vm, startNotesCtrl: _startNotesCtrl),
-                      _ActivePage(vm: _vm, onFinishWorkout: _openEndWorkoutModal, onRemoveExercise: _confirmRemoveExercise),
+                      _ActivePage(vm: _vm, onRemoveExercise: _confirmRemoveExercise),
                     ],
                   ),
                 ),
@@ -498,23 +496,10 @@ class _StartPage extends StatelessWidget {
 // ── Page 1: Active workout ─────────────────────────────────────────────────────
 
 class _ActivePage extends StatelessWidget {
-  const _ActivePage({required this.vm, required this.onFinishWorkout, required this.onRemoveExercise});
+  const _ActivePage({required this.vm, required this.onRemoveExercise});
 
   final SessionViewModel vm;
-  final VoidCallback onFinishWorkout;
   final void Function(int index) onRemoveExercise;
-
-  String _elapsedLabel() {
-    final started = vm.workoutStartedAt;
-    if (started == null) return '0:00';
-    final elapsed = DateTime.now().difference(started);
-    final h = elapsed.inHours;
-    final m = elapsed.inMinutes.remainder(60);
-    final s = elapsed.inSeconds.remainder(60);
-    final ss = s.toString().padLeft(2, '0');
-    if (h > 0) return '$h:${m.toString().padLeft(2, '0')}:$ss';
-    return '$m:$ss';
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -527,15 +512,10 @@ class _ActivePage extends StatelessWidget {
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.md, AppSpacing.lg, 0),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Text(subtitle,
-                    style: AppFonts.mono(fontSize: 10, letterSpacing: 0.6, color: AppColors.muted)),
-              ),
-              _ElapsedTimer(label: _elapsedLabel),
-            ],
+          child: Center(
+            child: Text(subtitle,
+                textAlign: TextAlign.center,
+                style: AppFonts.mono(fontSize: 10, letterSpacing: 0.6, color: AppColors.muted)),
           ),
         ),
         const SizedBox(height: AppSpacing.sm),
@@ -557,47 +537,11 @@ class _ActivePage extends StatelessWidget {
                 : ExerciseCard(vm: vm, slot: vm.activeSlot!),
           ),
         ),
-        Padding(
-          padding: EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.sm, AppSpacing.lg,
-              MediaQuery.of(context).padding.bottom + AppSpacing.sm),
-          child: RestTimerBar(vm: vm, onFinish: onFinishWorkout),
-        ),
       ],
     );
   }
 }
 
-class _ElapsedTimer extends StatefulWidget {
-  const _ElapsedTimer({required this.label});
-
-  final String Function() label;
-
-  @override
-  State<_ElapsedTimer> createState() => _ElapsedTimerState();
-}
-
-class _ElapsedTimerState extends State<_ElapsedTimer> {
-  @override
-  void initState() {
-    super.initState();
-    _tick();
-  }
-
-  void _tick() {
-    Future.delayed(const Duration(seconds: 1), () {
-      if (mounted) {
-        setState(() {});
-        _tick();
-      }
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(widget.label(),
-        style: AppFonts.mono(fontSize: 22, fontWeight: FontWeight.w500, color: AppColors.accent));
-  }
-}
 
 class _EmptySlotsHint extends StatelessWidget {
   const _EmptySlotsHint({required this.vm});
