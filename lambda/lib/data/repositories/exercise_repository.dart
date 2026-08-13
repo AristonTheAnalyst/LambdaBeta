@@ -237,11 +237,11 @@ class ExerciseRepository {
     );
   }
 
-  /// Soft-delete via deleted_locally rather than a hard DELETE — this table
+  /// Soft-delete via is_archived rather than a hard DELETE — this table
   /// has no single-column primary key (its real PK is the composite
   /// (custom_exercise_id, custom_variation_id)), which the generic
   /// id-based upload path in SupabaseConnector.uploadData() can't target
-  /// for a DELETE. PATCHing deleted_locally instead sidesteps that entirely.
+  /// for a DELETE. PATCHing is_archived instead sidesteps that entirely.
   Future<void> removeBridge(String exerciseId, String variationId) async {
     await ps.db.execute(
       'UPDATE dim_exercise_variation_bridge SET is_archived = 1 WHERE custom_exercise_id = ? AND custom_variation_id = ?',

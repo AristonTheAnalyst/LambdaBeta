@@ -19,7 +19,6 @@ class Session {
     this.parentSessionId,
     this.parentSessionName,
     this.exerciseOrder,
-    this.deletedLocally = false,
   });
 
   final String sessionId;
@@ -40,8 +39,6 @@ class Session {
   /// grouping), so the tab bar survives a hot restart.
   final String? exerciseOrder;
 
-  final bool deletedLocally;
-
   factory Session.fromMap(Map<String, dynamic> map) => Session(
         sessionId: map['session_id'] as String,
         userId: map['user_id'] as String,
@@ -57,7 +54,6 @@ class Session {
         parentSessionId: map['parent_session_id'] as String?,
         parentSessionName: map['parent_session_name'] as String?,
         exerciseOrder: map['exercise_order'] as String?,
-        deletedLocally: _toBool(map['deleted_locally']),
       );
 
   static bool _toBool(dynamic v) {
@@ -81,7 +77,6 @@ class Session {
         'parent_session_id': parentSessionId,
         'parent_session_name': parentSessionName,
         'exercise_order': exerciseOrder,
-        'deleted_locally': deletedLocally,
       };
 }
 

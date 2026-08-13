@@ -36,7 +36,7 @@ class _LessonDebugScreenState extends State<LessonDebugScreen> {
       final rows = await ps.db.getAll(
         '''
         SELECT l.lesson_id, l.custom_exercise_id, l.lesson_text, l.pinned,
-               l.is_active, l.lesson_created_date, e.exercise_name
+               l.is_archived, l.lesson_created_date, e.exercise_name
         FROM dim_lesson l
         LEFT JOIN dim_exercise e ON e.custom_exercise_id = l.custom_exercise_id
         WHERE l.user_id = ?
@@ -117,7 +117,7 @@ class _LessonDebugScreenState extends State<LessonDebugScreen> {
 
   Widget _row(Map<String, dynamic> r) {
     final pinned = r['pinned'] == 1 || r['pinned'] == true;
-    final active = r['is_active'] == 1 || r['is_active'] == true;
+    final active = r['is_archived'] == 0 || r['is_archived'] == false || r['is_archived'] == null;
     return Container(
       padding: const EdgeInsets.all(AppSpacing.sm),
       decoration: BoxDecoration(

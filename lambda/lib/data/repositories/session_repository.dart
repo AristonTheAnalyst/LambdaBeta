@@ -101,9 +101,9 @@ class SessionRepository {
       INSERT INTO fact_session_set
         (id, session_set_id, session_id, user_id, custom_exercise_id, custom_variation_id,
          set_number, weight, reps,
-         notes, program_id, parent_set_id, superset_group_number,
+         notes, parent_set_id, superset_group_number,
          exercise_name, variation_name)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ''',
       [
         setId,
