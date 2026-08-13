@@ -232,7 +232,7 @@ class _ExerciseCardState extends State<ExerciseCard> {
             ),
           ),
           const SizedBox(width: AppSpacing.sm),
-          Column(
+          Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               _pillButton(
@@ -253,7 +253,7 @@ class _ExerciseCardState extends State<ExerciseCard> {
                   ),
               ),
               if (historyCount > 0) ...[
-                const SizedBox(height: 6),
+                const SizedBox(width: 6),
                 _pillButton(
                   icon: Icons.history,
                   label: 'History',
@@ -280,7 +280,7 @@ class _ExerciseCardState extends State<ExerciseCard> {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
           color: active ? color.withValues(alpha: 0.1) : Colors.transparent,
           borderRadius: BorderRadius.circular(6),
@@ -289,11 +289,11 @@ class _ExerciseCardState extends State<ExerciseCard> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 11, color: active ? color : AppColors.muted),
-            const SizedBox(width: 4),
+            Icon(icon, size: 14, color: active ? color : AppColors.muted),
+            const SizedBox(width: 5),
             Text(label,
                 style: AppFonts.mono(
-                    fontSize: 9, letterSpacing: 0.4, color: active ? color : AppColors.muted)),
+                    fontSize: 11, letterSpacing: 0.4, color: active ? color : AppColors.muted)),
           ],
         ),
       ),
