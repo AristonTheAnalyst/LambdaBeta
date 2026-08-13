@@ -222,11 +222,18 @@ class _SessionScreenState extends State<SessionScreen> {
                   ),
                 ),
                 if (_vm.hasActiveWorkout)
-                  Padding(
-                    padding: EdgeInsets.fromLTRB(
-                        AppSpacing.lg, 0, AppSpacing.lg,
-                        MediaQuery.of(context).padding.bottom + AppSpacing.sm),
-                    child: SessionStatsBar(vm: _vm),
+                  ListenableBuilder(
+                    listenable: _vm.slidePagesController,
+                    builder: (context, _) =>
+                        _vm.slidePagesController.currentPage == 1
+                            ? Padding(
+                                padding: EdgeInsets.fromLTRB(
+                                    AppSpacing.lg, 0, AppSpacing.lg,
+                                    MediaQuery.of(context).padding.bottom +
+                                        AppSpacing.sm),
+                                child: SessionStatsBar(vm: _vm),
+                              )
+                            : const SizedBox.shrink(),
                   ),
               ],
             ),
@@ -670,6 +677,141 @@ class _ReflectionPage extends StatelessWidget {
   final TextEditingController notesCtrl;
   final Future<void> Function() onEnd;
 
+  static String _fmt(num n) =>
+      n == n.roundToDouble() ? n.toInt().toString() : n.toString();
+
+  /// PR showcase (old best → session best per exercise × variation) plus
+  /// the exercise's lessons — the session-at-a-glance summary.
+  List<Widget> _summarySections() {
+    final sections = <Widget>[];
+    for (final slot in vm.exerciseSlots) {
+      for (final exerciseId in slot.exerciseIds) {
+        final exerciseName =
+            toProperCase(vm.exerciseDisplayName(exerciseId));
+        final exSets =
+            vm.sets.where((s) => s.exerciseId == exerciseId).toList();
+
+        final prCards = <Widget>[];
+        final seenVariations = <String?>{};
+        for (final s in exSets) {
+          if (!seenVariations.add(s.variationId)) continue;
+          final varSets = exSets
+              .where((x) => x.variationId == s.variationId)
+              .toList();
+          ({double weight, num reps})? best;
+          for (final x in varSets) {
+            final w = x.weight ?? 0;
+            final reps = x.reps.isNotEmpty ? x.reps.first : null;
+            if (reps == null) continue;
+            if (best == null ||
+                w > best.weight ||
+                (w == best.weight && reps > best.reps)) {
+              best = (weight: w.toDouble(), reps: reps);
+            }
+          }
+          if (best == null) continue;
+          final prev =
+              vm.prevBestByExerciseVariation[(exerciseId, s.variationId)];
+          final beaten = prev == null ||
+              best.weight > prev.weight ||
+              (best.weight == prev.weight && best.reps > prev.reps);
+          if (!beaten) continue;
+          prCards.add(_prCard(
+            variationName: s.variationName,
+            prev: prev,
+            best: best,
+          ));
+        }
+
+        final lessons = vm.lessonsFor(exerciseId);
+        if (prCards.isEmpty && lessons.isEmpty) continue;
+
+        sections.add(Padding(
+          padding: const EdgeInsets.only(top: AppSpacing.lg, bottom: AppSpacing.sm),
+          child: Text(exerciseName,
+              style: AppFonts.ui(
+                  fontSize: AppTextStyles.md,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.primary)),
+        ));
+        sections.addAll(prCards);
+        if (lessons.isNotEmpty) {
+          sections.add(const SizedBox(height: AppSpacing.xs));
+          sections.add(Padding(
+            padding: const EdgeInsets.only(bottom: 2),
+            child: Text('LESSONS',
+                style: AppFonts.mono(
+                    fontSize: 9, letterSpacing: 0.8, color: AppColors.muted)),
+          ));
+          for (final lesson in lessons) {
+            sections.add(Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.circle, size: 5, color: AppColors.muted),
+                  const SizedBox(width: AppSpacing.sm),
+                  Expanded(
+                    child: Text(lesson.text,
+                        style: AppFonts.ui(
+                            fontSize: AppTextStyles.sm,
+                            color: AppColors.primary)),
+                  ),
+                ],
+              ),
+            ));
+          }
+        }
+      }
+    }
+    return sections;
+  }
+
+  Widget _prCard({
+    String? variationName,
+    ({num weight, num reps})? prev,
+    required ({double weight, num reps}) best,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: AppSpacing.sm),
+      padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+      decoration: BoxDecoration(
+        color: AppColors.accentBg,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(color: AppColors.accent, width: 1.2),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.emoji_events_outlined, size: 16, color: AppColors.accent),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (variationName != null)
+                  Text(toProperCase(variationName),
+                      style: AppFonts.mono(
+                          fontSize: 9,
+                          letterSpacing: 0.6,
+                          color: AppColors.accent)),
+                Text(
+                  prev != null
+                      ? '${_fmt(prev.weight)}kg × ${_fmt(prev.reps)}  →  ${_fmt(best.weight)}kg × ${_fmt(best.reps)}'
+                      : 'New PR — ${_fmt(best.weight)}kg × ${_fmt(best.reps)}',
+                  style: AppFonts.ui(
+                      fontSize: AppTextStyles.sm,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.accent),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.of(context).padding.bottom;
@@ -681,6 +823,17 @@ class _ReflectionPage extends StatelessWidget {
             child: ListView(
               padding: const EdgeInsets.all(AppSpacing.lg),
               children: [
+                if (vm.sets.isNotEmpty) ...[
+                  Text('This session',
+                      style: AppFonts.mono(
+                          fontSize: 9,
+                          letterSpacing: 0.8,
+                          color: AppColors.muted)),
+                  ..._summarySections(),
+                  const SizedBox(height: AppSpacing.lg),
+                  Divider(color: AppColors.border),
+                ],
+                const SizedBox(height: AppSpacing.lg),
                 Text('How did it feel?',
                     style: AppFonts.ui(
                         fontSize: AppTextStyles.sm,
@@ -699,10 +852,10 @@ class _ReflectionPage extends StatelessWidget {
                         height: 52,
                         margin: const EdgeInsets.only(right: AppSpacing.sm),
                         decoration: BoxDecoration(
-                          color: selected ? AppColors.accent : AppColors.surface,
+                          color: selected ? AppColors.primary : AppColors.surface,
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(
-                              color: selected ? AppColors.accent : AppColors.border),
+                              color: selected ? AppColors.primary : AppColors.border),
                         ),
                         child: Center(
                           child: Text('$n',
@@ -710,7 +863,7 @@ class _ReflectionPage extends StatelessWidget {
                                   fontSize: AppTextStyles.lg,
                                   fontWeight: FontWeight.w700,
                                   color: selected
-                                      ? AppColors.accentText
+                                      ? AppColors.bg
                                       : AppColors.primary)),
                         ),
                       ),
