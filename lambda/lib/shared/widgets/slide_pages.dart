@@ -36,15 +36,16 @@ class SlidePagesController extends ChangeNotifier {
   /// Slides back to page 0.
   void slideOut() => slideToPage(0);
 
-  /// Animates to [page] and notifies listeners.
+  /// Cuts instantly to [page] and notifies listeners — no slide animation,
+  /// per the session-flow design.
   void slideToPage(int page) {
     _currentPage = page;
     notifyListeners();
-    pageController.animateToPage(
-      page,
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeInOut,
-    );
+    if (pageController.hasClients) {
+      pageController.jumpToPage(page);
+    } else {
+      _initialPage = page;
+    }
   }
 
   /// Jumps to [page]. If the PageView hasn't been laid out yet, stores the
