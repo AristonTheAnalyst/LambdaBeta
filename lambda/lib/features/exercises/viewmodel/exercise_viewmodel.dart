@@ -282,6 +282,15 @@ class ExerciseViewModel {
     await fetchAll();
   }
 
+  /// Renames an exercise directly (used by the per-exercise detail page,
+  /// which doesn't drive the edit-modal state).
+  Future<void> renameExercise(String exerciseId, String name) async {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) return;
+    await _repo.updateExercise(exerciseId, trimmed);
+    await fetchAll();
+  }
+
   // ── Open edit variation ────────────────────────────────────────────────────
 
   Future<void> openEditVariation(CustomVariation v) async {

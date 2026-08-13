@@ -12,6 +12,7 @@ import '../../features/dev/view/experimental_screen.dart';
 import '../../features/dev/view/gallery_screen.dart';
 import '../../features/dev/view/lesson_debug_screen.dart';
 import '../../features/exercises/view/exercise_hub_screen.dart';
+import '../../features/exercises/view/exercise_detail_screen.dart';
 import '../../features/exercises/view/exercise_library_screen.dart';
 import '../../features/exercises/view/guide_screen.dart';
 import '../../features/logs/view/logs_screen.dart';
@@ -116,6 +117,13 @@ abstract final class AppRouter {
             routes: [
               GoRoute(path: 'library',  builder: (_, _) => ExerciseLibraryScreen()),
               GoRoute(path: 'guide',    builder: (_, _) => GuideScreen()),
+              GoRoute(
+                path: 'exercise/:id',
+                builder: (_, state) => ExerciseDetailScreen(
+                  exerciseId: state.pathParameters['id']!,
+                  exerciseName: state.extra as String?,
+                ),
+              ),
               GoRoute(
                 path: 'programs',
                 builder: (_, _) => ProgramLibraryScreen(),

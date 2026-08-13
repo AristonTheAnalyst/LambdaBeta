@@ -33,7 +33,6 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
   final _exSearchController  = TextEditingController();
   final _varSearchController = TextEditingController();
   final _createExController  = TextEditingController();
-  final _editExController    = TextEditingController();
   final _createVarController = TextEditingController();
   final _editVarController   = TextEditingController();
 
@@ -54,7 +53,6 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
     _exSearchController.dispose();
     _varSearchController.dispose();
     _createExController.dispose();
-    _editExController.dispose();
     _createVarController.dispose();
     _editVarController.dispose();
     super.dispose();
@@ -95,50 +93,14 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
   // ── Edit Exercise ────────────────────────────────────────────────────────────
 
   void _openEditExercise(CustomExercise ex) {
-    _editExController.text = ex.name;
-    _viewModel.openEditExercise(ex);
-    showLambdaModal(
-      context,
-      fitContent: true,
-      keyboardAware: true,
-      child: _EditExerciseModal(
-        controller: _editExController,
-        viewModel: _viewModel,
-        onDelete: _confirmDeleteExercise,
-      ),
-    );
+    // Exercise taps now go to the dedicated page (locked insights + rename /
+    // archive) instead of the name-only bottom sheet.
+    context.push('/exercises/exercise/${ex.exerciseId}', extra: ex.name);
   }
 
 
 
-  void _confirmDeleteExercise(String exerciseId, String name) {
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        title: Text('Delete Exercise',
-            style: AppFonts.ui(fontWeight: FontWeight.w800, color: AppColors.danger)),
-        content: Text('Remove "$name"? This will unassign it from all sets.',
-            style: AppFonts.ui(color: AppColors.muted)),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: Text('Cancel',
-                  style: AppFonts.ui(color: AppColors.muted))),
-          TextButton(
-              onPressed: () {
-                Navigator.of(ctx).pop();
-                Navigator.of(context, rootNavigator: true).pop();
-                _viewModel.deleteExercise(exerciseId);
-              },
-              child: Text('Delete',
-                  style: AppFonts.ui(
-                      color: AppColors.danger,
-                      fontWeight: FontWeight.w600))),
-        ],
-      ),
-    );
-  }
+
 
   // ── Edit Variation ───────────────────────────────────────────────────────────
 
@@ -797,128 +759,6 @@ class _CreateVariationModal extends StatelessWidget {
   }
 }
 
-// ── Edit Exercise Modal ─────────────────────────────────────────────────────────
-
-class _EditExerciseModal extends StatelessWidget {
-  const _EditExerciseModal({
-    required this.controller,
-    required this.viewModel,
-    required this.onDelete,
-  });
-
-  final TextEditingController controller;
-  final ExerciseViewModel viewModel;
-  final void Function(String id, String name) onDelete;
-
-  @override
-  Widget build(BuildContext context) {
-    return ValueListenableBuilder<ExerciseState>(
-      valueListenable: viewModel.state,
-      builder: (context, state, _) {
-        return SafeArea(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(AppSpacing.xl),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text('Edit Exercise',
-                          style: AppFonts.ui(
-                              fontSize: AppTextStyles.lg,
-                              fontWeight: FontWeight.w800,
-                              color: AppColors.primary)),
-                    ),
-                    GlassButton(
-                      label: '',
-                      icon: Icons.delete_outline,
-                      color: AppColors.danger,
-                      compact: true,
-                      onPressed: () => onDelete(
-                          state.editExercise!.exerciseId,
-                          state.editExName),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.md),
-                LambdaInput(
-                  controller: controller,
-                  placeholder: 'Exercise name',
-                  enabled: !state.isSaving,
-                  textCapitalization: TextCapitalization.words,
-                  onChanged: viewModel.setEditExName,
-                ),
-                const SizedBox(height: AppSpacing.lg),
-                Row(
-                  children: [
-                    Expanded(
-                      child: LambdaButton(
-                        label: 'Cancel',
-                        variant: ButtonVariant.ghost,
-                        onPressed: () {
-                          Navigator.of(context, rootNavigator: true).pop();
-                          viewModel.closeEditExercise();
-                        },
-                        disabled: state.isSaving,
-                      ),
-                    ),
-                    const SizedBox(width: AppSpacing.sm),
-                    Expanded(
-                      child: LambdaButton(
-                        label: 'Save',
-                        onPressed: () async {
-                          // Rename guardrail: renames only affect future sets —
-                          // past sets keep the name as logged (name snapshots).
-                          final original = state.editExercise!.name;
-                          final renamed = state.editExName.trim() != original;
-                          if (renamed) {
-                            final ok = await showDialog<bool>(
-                              context: context,
-                              builder: (ctx) => AlertDialog(
-                                backgroundColor: AppColors.surface,
-                                title: Text('Rename "$original"?',
-                                    style: AppFonts.ui(
-                                        fontWeight: FontWeight.w800, color: AppColors.primary)),
-                                content: Text(
-                                    'Past sets keep the name as logged; only future sets use the new name.',
-                                    style: AppFonts.ui(color: AppColors.muted)),
-                                actions: [
-                                  TextButton(
-                                      onPressed: () => Navigator.of(ctx).pop(false),
-                                      child: Text('Cancel',
-                                          style: AppFonts.ui(color: AppColors.muted))),
-                                  TextButton(
-                                      onPressed: () => Navigator.of(ctx).pop(true),
-                                      child: Text('Rename',
-                                          style: AppFonts.ui(
-                                              color: AppColors.accent,
-                                              fontWeight: FontWeight.w600))),
-                                ],
-                              ),
-                            );
-                            if (ok != true || !context.mounted) return;
-                          }
-                          await viewModel.saveEditExercise();
-                          if (context.mounted) {
-                            Navigator.of(context, rootNavigator: true).pop();
-                          }
-                        },
-                        loading: state.isSaving,
-                        disabled: state.isSaving,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.xxl),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
 
 // ── Edit Variation Modal ────────────────────────────────────────────────────────
 

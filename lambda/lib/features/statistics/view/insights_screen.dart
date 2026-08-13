@@ -24,7 +24,21 @@ import '../model/insights_engine.dart';
 /// Analytics over past workouts: PR frequency, set volume, and weight/rep
 /// distributions — filterable by exercise, variation, and time range.
 class InsightsScreen extends StatefulWidget {
-  const InsightsScreen({super.key});
+  const InsightsScreen({
+    super.key,
+    this.lockedExerciseId,
+    this.lockedExerciseName,
+    this.headerRight,
+  });
+
+  /// When set, the exercise filter is locked to this exercise and its chip
+  /// is not tappable — used by the per-exercise detail page.
+  final String? lockedExerciseId;
+  final String? lockedExerciseName;
+
+  /// Optional actions in the header (used by the locked exercise page for
+  /// rename / archive).
+  final Widget? headerRight;
 
   @override
   State<InsightsScreen> createState() => _InsightsScreenState();
@@ -49,6 +63,9 @@ class _InsightsScreenState extends State<InsightsScreen> {
   @override
   void initState() {
     super.initState();
+    if (widget.lockedExerciseId != null) {
+      _exercises = {widget.lockedExerciseId!};
+    }
     _load();
   }
 
@@ -141,11 +158,14 @@ class _InsightsScreenState extends State<InsightsScreen> {
       body: Column(
         children: [
           PageHeader(
-            title: 'Insights',
+            title: widget.lockedExerciseName != null
+                ? "Insights - ${toProperCase(widget.lockedExerciseName!)}"
+                : 'Insights',
             left: GestureDetector(
               onTap: () => Navigator.of(context).pop(),
               child: Icon(Icons.arrow_back_ios_new, size: 18, color: AppColors.accent),
             ),
+            right: widget.headerRight,
           ),
           _filterRow(),
           Padding(
@@ -214,8 +234,10 @@ class _InsightsScreenState extends State<InsightsScreen> {
         children: [
           Expanded(child: _filterChip(
             icon: Icons.fitness_center,
-            label: _exerciseLabel,
-            onTap: _pickExercises,
+            label: widget.lockedExerciseName != null
+                ? toProperCase(widget.lockedExerciseName!)
+                : _exerciseLabel,
+            onTap: widget.lockedExerciseId != null ? null : _pickExercises,
           )),
           const SizedBox(width: AppSpacing.sm),
           Expanded(child: _filterChip(
@@ -231,7 +253,7 @@ class _InsightsScreenState extends State<InsightsScreen> {
   Widget _filterChip({
     required IconData icon,
     required String label,
-    required VoidCallback onTap,
+    required VoidCallback? onTap,
   }) {
     return GestureDetector(
       onTap: onTap,
@@ -252,7 +274,8 @@ class _InsightsScreenState extends State<InsightsScreen> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis),
             ),
-            Icon(Icons.arrow_drop_down, size: 18, color: AppColors.muted),
+            if (onTap != null)
+              Icon(Icons.arrow_drop_down, size: 18, color: AppColors.muted),
           ],
         ),
       ),
@@ -266,6 +289,7 @@ class _InsightsScreenState extends State<InsightsScreen> {
       _selectedVariations.isEmpty ? 'All variations' : '${_selectedVariations.length} variation${_selectedVariations.length == 1 ? '' : 's'}';
 
   Future<void> _pickExercises() async {
+    if (widget.lockedExerciseId != null) return; // locked — not pickable
     final result = await showMultiSelectSheet<String>(
       context,
       options: [
