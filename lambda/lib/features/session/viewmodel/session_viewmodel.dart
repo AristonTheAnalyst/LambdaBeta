@@ -431,6 +431,10 @@ class SessionViewModel extends ChangeNotifier {
         plannedSetsByExercise = {};
         plannedExerciseOrder = [];
       }
+      // Standalone templates are independent of the program — re-fetch them
+      // too so a template created on another tab shows without a restart.
+      standaloneWorkouts =
+          await _plannedSessionRepo.fetchPlannedSessions(_userId);
       await _loadSelectedSessionSets();
       notifyListeners();
     } catch (_) {}
