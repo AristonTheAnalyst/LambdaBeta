@@ -103,13 +103,17 @@ class _LessonsModalContentState extends State<_LessonsModalContent> {
           return pin != 0 ? pin : b.createdDate.compareTo(a.createdDate);
         });
         return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(
-                AppSpacing.xl, AppSpacing.xl, AppSpacing.xl, AppSpacing.lg),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
+          child: SizedBox(
+            // Fixed half-screen sheet: small lesson counts don't inflate it
+            // and the empty state doesn't collapse it to full screen — the
+            // list scrolls within this height.
+            height: MediaQuery.of(context).size.height * 0.5,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.xl, AppSpacing.xl, AppSpacing.xl, AppSpacing.lg),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
                 Row(
                   children: [
                     Expanded(
@@ -169,16 +173,15 @@ class _LessonsModalContentState extends State<_LessonsModalContent> {
                 ],
                 Flexible(
                   child: ordered.isEmpty && !_adding
-                      ? Padding(
-                          padding: const EdgeInsets.symmetric(vertical: AppSpacing.xl),
-                          child: Center(
+                      ? Center(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: AppSpacing.xl),
                             child: Text('No lessons yet — tap Add to record a cue or breakthrough.',
                                 textAlign: TextAlign.center,
                                 style: AppFonts.ui(fontSize: 13, color: AppColors.muted)),
                           ),
                         )
                       : ListView.separated(
-                          shrinkWrap: true,
                           itemCount: ordered.length,
                           separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.sm),
                           itemBuilder: (context, i) {
@@ -194,6 +197,7 @@ class _LessonsModalContentState extends State<_LessonsModalContent> {
                         ),
                 ),
               ],
+              ),
             ),
           ),
         );
