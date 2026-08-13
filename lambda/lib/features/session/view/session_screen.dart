@@ -327,7 +327,7 @@ class _StartPage extends StatelessWidget {
                   style: TextStyle(fontSize: AppTextStyles.sm, fontWeight: FontWeight.w600, color: AppColors.primary)),
               const SizedBox(height: AppSpacing.sm),
               Row(
-                mainAxisAlignment: MainAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: List.generate(5, (i) {
                   final n = i + 1;
                   final selected = vm.sessionFeeling == n;
@@ -338,16 +338,16 @@ class _StartPage extends StatelessWidget {
                       height: 52,
                       margin: const EdgeInsets.only(right: AppSpacing.sm),
                       decoration: BoxDecoration(
-                        color: selected ? AppColors.accent : AppColors.surface,
+                        color: selected ? AppColors.primary : AppColors.surface,
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: selected ? AppColors.accent : AppColors.border),
+                        border: Border.all(color: selected ? AppColors.primary : AppColors.border),
                       ),
                       child: Center(
                         child: Text('$n',
                             style: TextStyle(
-                                fontSize: AppTextStyles.lg,
+                                fontSize: 14,
                                 fontWeight: FontWeight.w700,
-                                color: selected ? AppColors.accentText : AppColors.primary)),
+                                color: selected ? AppColors.bg : AppColors.primary)),
                       ),
                     ),
                   );
@@ -841,7 +841,7 @@ class _ReflectionPage extends StatelessWidget {
                         color: AppColors.primary)),
                 const SizedBox(height: AppSpacing.sm),
                 Row(
-                  mainAxisAlignment: MainAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: List.generate(5, (i) {
                     final n = i + 1;
                     final selected = vm.endFeeling == n;
@@ -860,7 +860,7 @@ class _ReflectionPage extends StatelessWidget {
                         child: Center(
                           child: Text('$n',
                               style: AppFonts.ui(
-                                  fontSize: AppTextStyles.lg,
+                                  fontSize: 14,
                                   fontWeight: FontWeight.w700,
                                   color: selected
                                       ? AppColors.bg
