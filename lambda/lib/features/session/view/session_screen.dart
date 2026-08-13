@@ -324,6 +324,15 @@ class _StartPage extends StatelessWidget {
                 ),
                 const SizedBox(height: AppSpacing.lg),
               ],
+            ],
+          ),
+        ),
+        Container(
+          padding: EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.lg, AppSpacing.lg, bottomInset + AppSpacing.lg),
+          decoration: BoxDecoration(border: Border(top: BorderSide(color: AppColors.border, width: 0.5))),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
               Text('How do you expect to perform?',
                   style: TextStyle(fontSize: AppTextStyles.sm, fontWeight: FontWeight.w600, color: AppColors.primary)),
               const SizedBox(height: AppSpacing.sm),
@@ -361,17 +370,14 @@ class _StartPage extends StatelessWidget {
                 placeholder: 'Sleep and eat well?\nHydrated?\nGoals today?',
                 onChanged: (v) => vm.startNotes = v,
               ),
+              const SizedBox(height: AppSpacing.lg),
+              LambdaButton(
+                label: 'Start Session',
+                onPressed: vm.startWorkout,
+                loading: vm.startLoading,
+                disabled: vm.startLoading,
+              ),
             ],
-          ),
-        ),
-        Container(
-          padding: EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.lg, AppSpacing.lg, bottomInset + AppSpacing.lg),
-          decoration: BoxDecoration(border: Border(top: BorderSide(color: AppColors.border, width: 0.5))),
-          child: LambdaButton(
-            label: 'Start Session',
-            onPressed: vm.startWorkout,
-            loading: vm.startLoading,
-            disabled: vm.startLoading,
           ),
         ),
       ],
@@ -722,7 +728,21 @@ class _ReflectionPage extends StatelessWidget {
         }
 
         if (lessons.isNotEmpty) {
-          sections.add(const SizedBox(height: AppSpacing.xs));
+          // Indented divider + label: lessons are a distinct block that
+          // still clearly belongs to the exercise header above.
+          sections.add(Padding(
+            padding: const EdgeInsets.only(top: AppSpacing.sm, bottom: AppSpacing.sm),
+            child: Row(
+              children: [
+                const SizedBox(width: AppSpacing.md),
+                Expanded(child: Divider(color: AppColors.border, height: 1)),
+                const SizedBox(width: AppSpacing.sm),
+                Text('LESSONS',
+                    style: AppFonts.mono(
+                        fontSize: 9, letterSpacing: 0.8, color: AppColors.muted)),
+              ],
+            ),
+          ));
           for (final lesson in lessons) {
             sections.add(Padding(
               padding: const EdgeInsets.only(bottom: AppSpacing.sm),
@@ -758,7 +778,7 @@ class _ReflectionPage extends StatelessWidget {
 
   /// One PR row: the axis beaten this session with its before/after.
   /// rep-max: "5RM: 100kg → 105kg"; weight-max: "100kg: 3 → 5 reps".
-  /// Regular neutral styling like the feeling-picker buttons.
+  /// PR-set style: accentBg fill with the accent outline.
   Widget _prCard(PrRecord p) {
     final String before;
     final String after;
@@ -779,13 +799,13 @@ class _ReflectionPage extends StatelessWidget {
       padding: const EdgeInsets.symmetric(
           horizontal: AppSpacing.md, vertical: AppSpacing.sm),
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: AppColors.accentBg,
         borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(color: AppColors.border),
+        border: Border.all(color: AppColors.accent, width: 1.2),
       ),
       child: Row(
         children: [
-          Icon(Icons.emoji_events_outlined, size: 16, color: AppColors.primary),
+          Icon(Icons.emoji_events_outlined, size: 16, color: AppColors.accent),
           const SizedBox(width: AppSpacing.sm),
           Expanded(
             child: Column(
@@ -796,12 +816,12 @@ class _ReflectionPage extends StatelessWidget {
                       style: AppFonts.mono(
                           fontSize: 9,
                           letterSpacing: 0.6,
-                          color: AppColors.muted)),
+                          color: AppColors.accent)),
                 Text('$axisLabel: $before  →  $after',
                     style: AppFonts.ui(
                         fontSize: AppTextStyles.sm,
                         fontWeight: FontWeight.w700,
-                        color: AppColors.primary)),
+                        color: AppColors.accent)),
               ],
             ),
           ),
@@ -828,10 +848,19 @@ class _ReflectionPage extends StatelessWidget {
                           letterSpacing: 0.8,
                           color: AppColors.muted)),
                   ..._summarySections(),
-                  const SizedBox(height: AppSpacing.lg),
-                  Divider(color: AppColors.border),
                 ],
-                const SizedBox(height: AppSpacing.lg),
+              ],
+            ),
+          ),
+          Container(
+            padding: EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.lg, AppSpacing.lg,
+                bottomInset + AppSpacing.lg),
+            decoration: BoxDecoration(
+                border: Border(
+                    top: BorderSide(color: AppColors.border, width: 0.5))),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
                 Text('How did it feel?',
                     style: AppFonts.ui(
                         fontSize: AppTextStyles.sm,
@@ -875,21 +904,15 @@ class _ReflectionPage extends StatelessWidget {
                   placeholder: 'Notes…',
                   onChanged: (v) => vm.endNotes = v,
                 ),
+                const SizedBox(height: AppSpacing.lg),
+                LambdaButton(
+                  variant: ButtonVariant.success,
+                  label: 'End Session',
+                  onPressed: onEnd,
+                  loading: vm.endLoading,
+                  disabled: vm.endLoading,
+                ),
               ],
-            ),
-          ),
-          Container(
-            padding: EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.lg, AppSpacing.lg,
-                bottomInset + AppSpacing.lg),
-            decoration: BoxDecoration(
-                border: Border(
-                    top: BorderSide(color: AppColors.border, width: 0.5))),
-            child: LambdaButton(
-              variant: ButtonVariant.success,
-              label: 'End Session',
-              onPressed: onEnd,
-              loading: vm.endLoading,
-              disabled: vm.endLoading,
             ),
           ),
         ],
