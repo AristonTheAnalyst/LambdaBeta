@@ -2,10 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/styles/app_colors.dart';
+import '../../../../core/styles/app_fonts.dart';
 import '../../../../core/styles/app_spacing.dart';
 import '../../../../core/styles/app_text_styles.dart';
 import '../../../../shared/widgets/app_card.dart';
+import '../../../../shared/widgets/glass_button.dart';
 import '../../../../shared/widgets/page_header.dart';
+import '../sample_data_service.dart';
 
 class DevScreen extends StatelessWidget {
   const DevScreen({super.key});
@@ -70,9 +73,119 @@ class DevScreen extends StatelessWidget {
                       ],
                     ),
                   ),
+                  const SizedBox(height: AppSpacing.sm),
+                  _SampleDataCard(userId: session?.user.id ?? ''),
                 ],
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SampleDataCard extends StatefulWidget {
+  const _SampleDataCard({required this.userId});
+
+  final String userId;
+
+  @override
+  State<_SampleDataCard> createState() => _SampleDataCardState();
+}
+
+class _SampleDataCardState extends State<_SampleDataCard> {
+  final _service = SampleDataService();
+  bool _busy = false;
+
+  Future<void> _insert() async {
+    if (_busy || widget.userId.isEmpty) return;
+    setState(() => _busy = true);
+    try {
+      final count = await _service.insertSampleData(widget.userId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        backgroundColor: AppColors.surface,
+        content: Text('Inserted $count sample sessions (test1/test2).',
+            style: AppFonts.ui(color: AppColors.success)),
+      ));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        backgroundColor: AppColors.surface,
+        content: Text('Insert failed: $e',
+            style: AppFonts.ui(color: AppColors.danger)),
+      ));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _delete() async {
+    if (_busy || widget.userId.isEmpty) return;
+    setState(() => _busy = true);
+    try {
+      final count = await _service.deleteSampleData(widget.userId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        backgroundColor: AppColors.surface,
+        content: Text('Deleted $count sample sessions.',
+            style: AppFonts.ui(color: AppColors.success)),
+      ));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        backgroundColor: AppColors.surface,
+        content: Text('Delete failed: $e',
+            style: AppFonts.ui(color: AppColors.danger)),
+      ));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Sample Data',
+              style: TextStyle(
+                  fontSize: AppTextStyles.md,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.primary)),
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+              '12 weeks of backdated sessions: test1 (no variation) + '
+              'test2 (variation1), 3 sets each, weight up 2.5kg per session '
+              'so every session PRs.',
+              style: TextStyle(
+                  fontSize: AppTextStyles.sm, color: AppColors.muted)),
+          const SizedBox(height: AppSpacing.sm),
+          Row(
+            children: [
+              Expanded(
+                child: GlassButton(
+                  label: 'Insert',
+                  icon: Icons.add,
+                  loading: _busy,
+                  disabled: _busy,
+                  onPressed: _insert,
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: GlassButton(
+                  label: 'Delete',
+                  icon: Icons.delete_outline,
+                  color: AppColors.danger,
+                  loading: _busy,
+                  disabled: _busy,
+                  onPressed: _delete,
+                ),
+              ),
+            ],
           ),
         ],
       ),
