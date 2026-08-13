@@ -186,7 +186,7 @@ class SessionStatsBar extends StatelessWidget {
         children: [
           Text(label,
               style: AppFonts.mono(
-                  fontSize: 8,
+                  fontSize: 15,
                   letterSpacing: 0.8,
                   color: highlighted ? AppColors.accent : AppColors.muted)),
           const SizedBox(width: 6),
