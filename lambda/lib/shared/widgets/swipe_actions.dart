@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_fonts.dart';
 import '../../core/styles/app_radius.dart';
 
@@ -134,7 +133,7 @@ class _SwipeActionsState extends State<SwipeActions>
                 ),
               ),
 
-              // ── Card + indicator (slides as a unit) ────────────────────
+              // ── Card (slides as a unit) ────────────────────────────────
               Transform.translate(
                 offset: Offset(-_ctrl.value * _drawerWidth, 0),
                 child: GestureDetector(
@@ -142,27 +141,7 @@ class _SwipeActionsState extends State<SwipeActions>
                   onHorizontalDragUpdate: _handleDragUpdate,
                   onHorizontalDragEnd: _handleDragEnd,
                   onTap: _ctrl.value > 0 ? _close : null,
-                  child: Stack(
-                    children: [
-                      widget.child,
-
-                      // Indicator hairline at the right edge, inset from the
-                      // top & bottom so it stays on the flat part of the card.
-                      // A plain 1px line in the border color — just enough to
-                      // say "swipable" without competing with the content.
-                      Positioned(
-                        top: r,
-                        bottom: r,
-                        right: 0,
-                        child: IgnorePointer(
-                          child: Opacity(
-                            opacity: 1.0 - _ctrl.value,
-                            child: Container(width: 1, color: AppColors.border),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+                  child: widget.child,
                 ),
               ),
             ],
