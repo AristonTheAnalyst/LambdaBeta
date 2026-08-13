@@ -54,7 +54,6 @@ class PrRepository {
           pr.targetReps,
           pr.targetWeight,
           pr.isPropagated ? 1 : 0,
-          1,
         ],
       );
     }
