@@ -164,6 +164,7 @@ class SessionStatsBar extends StatelessWidget {
 
   /// One PRS/LESSONS tile, styled like a PR-highlighted set row: accentBg
   /// fill with an accent 1.2 outline when there's something to show.
+  /// Label and value sit side by side so the tile stays short.
   Widget _summaryTile({
     required String label,
     required String value,
@@ -171,7 +172,7 @@ class SessionStatsBar extends StatelessWidget {
     VoidCallback? onTap,
   }) {
     final tile = Container(
-      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+      padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 4),
       decoration: BoxDecoration(
         color: highlighted ? AppColors.accentBg : AppColors.surface,
         borderRadius: BorderRadius.circular(AppRadius.md),
@@ -180,19 +181,18 @@ class SessionStatsBar extends StatelessWidget {
           width: highlighted ? 1.2 : 0.5,
         ),
       ),
-      child: Column(
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Text(label,
-              textAlign: TextAlign.center,
-              style: AppFonts.ui(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.6,
+              style: AppFonts.mono(
+                  fontSize: 8,
+                  letterSpacing: 0.8,
                   color: highlighted ? AppColors.accent : AppColors.muted)),
-          const SizedBox(height: 2),
+          const SizedBox(width: 6),
           Text(value,
               style: AppFonts.mono(
-                  fontSize: 17,
+                  fontSize: 15,
                   fontWeight: FontWeight.w500,
                   color: highlighted ? AppColors.accent : AppColors.primary)),
         ],
