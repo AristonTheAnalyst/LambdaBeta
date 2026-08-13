@@ -789,17 +789,17 @@ class _ReflectionPage extends StatelessWidget {
   /// rep-max: "5RM: 100kg → 105kg"; weight-max: "100kg: 3 → 5 reps".
   /// PR-set style: accentBg fill with the accent outline.
   Widget _prCard(PrRecord p) {
-    final String before;
+    final String? before;
     final String after;
     final String axisLabel;
     if (p.type == PrType.repMax) {
       final prev = vm.previousRepMax(p.exerciseId, p.variationId, p.targetReps ?? p.reps.toInt());
-      before = prev != null ? '${_fmt(prev.weight)}kg' : 'No Previous PR';
+      before = prev != null ? '${_fmt(prev.weight)}kg' : null;
       after = '${_fmt(p.weight)}kg';
       axisLabel = '${p.targetReps ?? ''}RM';
     } else {
       final prev = vm.previousWeightMax(p.exerciseId, p.variationId, p.targetWeight ?? p.weight);
-      before = prev != null ? '${_fmt(prev.reps)} reps' : 'No Previous PR';
+      before = prev != null ? '${_fmt(prev.reps)} reps' : null;
       after = '${_fmt(p.reps)} reps';
       axisLabel = '${_fmt(p.targetWeight ?? p.weight)}kg';
     }
@@ -826,7 +826,9 @@ class _ReflectionPage extends StatelessWidget {
                           fontSize: 9,
                           letterSpacing: 0.6,
                           color: AppColors.accent)),
-                Text('$axisLabel: $before  →  $after',
+                Text(before != null
+                    ? '$axisLabel: $before  →  $after'
+                    : '$axisLabel: $after (First PR)',
                     style: AppFonts.mono(
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
