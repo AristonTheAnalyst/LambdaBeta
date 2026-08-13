@@ -16,7 +16,6 @@ import '../../../data/models/session_set.dart';
 import '../../../core/powersync/database.dart' as ps;
 import '../../../data/repositories/exercise_repository.dart';
 import '../../../data/repositories/lesson_repository.dart';
-import '../../../data/repositories/pr_repository.dart';
 import '../../../data/repositories/program_repository.dart';
 import '../../../data/repositories/program_run_repository.dart';
 import '../../../data/repositories/planned_session_repository.dart';
@@ -35,15 +34,13 @@ class SessionViewModel extends ChangeNotifier {
     ProgramRepository? programRepo,
     ProgramRunRepository? programRunRepo,
     LessonRepository? lessonRepo,
-    PrRepository? prRepo,
     PlannedSessionRepository? plannedSessionRepo,
   })  : _sessionRepo = sessionRepo ?? SessionRepository(),
         _exerciseRepo = exerciseRepo ?? ExerciseRepository(),
         _programRepo = programRepo ?? ProgramRepository(),
         _programRunRepo = programRunRepo ?? ProgramRunRepository(),
         _lessonRepo = lessonRepo ?? LessonRepository(),
-        _plannedSessionRepo = plannedSessionRepo ?? PlannedSessionRepository(),
-        _prRepo = prRepo ?? PrRepository() {
+        _plannedSessionRepo = plannedSessionRepo ?? PlannedSessionRepository() {
     slidePagesController = SlidePagesController();
     _init();
   }
@@ -54,7 +51,6 @@ class SessionViewModel extends ChangeNotifier {
   final ProgramRepository _programRepo;
   final ProgramRunRepository _programRunRepo;
   final LessonRepository _lessonRepo;
-  final PrRepository _prRepo;
   late final SlidePagesController slidePagesController;
   static final _lessonLog = Logger('lessons');
 
@@ -1141,7 +1137,6 @@ class SessionViewModel extends ChangeNotifier {
       // deleted) — log it before resetting state.
       await _logRestIfInProgress();
       await _purgeEmptySets();
-      await _persistPRs();
       await _sessionRepo.endSession(
           currentWorkoutId!,
           postNotes: endNotes.trim().isEmpty ? null : endNotes.trim(),
@@ -1176,38 +1171,6 @@ class SessionViewModel extends ChangeNotifier {
     }
   }
 
-  /// Snapshots this session's PRs into fact_pr. Runs at endWorkout.
-  Future<void> _persistPRs() async {
-    if (currentWorkoutId == null) return;
-    try {
-      final sessionId = currentWorkoutId!;
-      // History (excluding this workout) + this session's committed sets
-      final history = _pastSets.where((s) => s.sessionId != sessionId).toList();
-      final combined = [...history];
-      for (final s in sets) {
-        combined.add(PastSetRow(
-          sessionSetId: s.sessionSetId,
-          sessionId: s.sessionId,
-          userId: s.userId,
-          exerciseId: s.exerciseId,
-          setNumber: s.setNumber,
-          reps: s.reps,
-          duration: s.duration,
-          sessionCreatedDate: DateTime.now(),
-          variationId: s.variationId,
-          weight: s.weight,
-          notes: s.notes,
-          exerciseName: s.exerciseName,
-          variationName: s.variationName,
-          supersetGroupNumber: s.supersetGroupNumber,
-        ));
-      }
-      final records = prsForWorkout(combined, sessionId);
-      if (records.isNotEmpty) {
-        await _prRepo.insertPrs(_userId, records);
-      }
-    } catch (_) {}
-  }
 
   void _resetActiveWorkoutState() {
     currentWorkoutId = null;

@@ -61,16 +61,7 @@ class SessionRepository {
   }
 
   Future<void> cancelSession(String sessionId) async {
-    // Delete any PRs that reference sets in this session before the sets
-    // themselves are removed (fact_pr.session_set_id has no FK so the
-    // cascade doesn't reach it).  In normal use PRs are only persisted at
-    // endSession so a cancelled session has none, but this is a safeguard
-    // if mid-session PR persistence is ever added.
-    await ps.db.execute(
-      'DELETE FROM fact_pr WHERE session_set_id IN '
-      '(SELECT session_set_id FROM fact_session_set WHERE session_id = ?)',
-      [sessionId],
-    );
+    // PRs are derived from sets on read — nothing extra to clean up.
     await ps.db.execute(
       'DELETE FROM fact_session_set WHERE session_id = ?',
       [sessionId],

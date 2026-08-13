@@ -10,12 +10,11 @@ import '../../../core/styles/app_text_styles.dart';
 import '../../../core/utils/session_format.dart';
 import '../../../data/models/custom_variation.dart';
 import '../../../data/repositories/exercise_repository.dart';
-import '../../../data/repositories/pr_repository.dart';
-import '../../../data/repositories/session_repository.dart';
 import '../../../shared/widgets/multi_select_sheet.dart';
 import '../../../shared/widgets/page_header.dart';
 import '../../../shared/widgets/slide_up_modal.dart';
 import '../../session/model/pr_engine.dart';
+import '../../session/model/pr_service.dart';
 
 /// All PR types for one exercise: rep-max curve (grouped by rep range),
 /// weight-max (filterable by weight), and the chronological timeline.
@@ -44,8 +43,7 @@ class _PrExerciseDetailScreenState extends State<PrExerciseDetailScreen> {
   static const _displayRepCounts = kTrackedRepCounts;
 
   final _exerciseRepo = ExerciseRepository();
-  final _prRepo = PrRepository();
-  final _sessionRepo = SessionRepository();
+  final _prService = PrService();
   String? _exerciseName;
   List<CustomVariation> _variations = const [];
   List<PrRecord> _prs = const [];
@@ -71,13 +69,11 @@ class _PrExerciseDetailScreenState extends State<PrExerciseDetailScreen> {
   }
 
   Future<void> _load() async {
-    // Backfill (if fact_pr is empty) then filter to this exercise in memory —
-    // mirrors the catalog's backfill so the detail is never blank even when
-    // reached directly. The exercise catalog is secondary; a failure there
-    // must not blank the PRs.
+    // PRs derive from full set history on read — filter to this exercise in
+    // memory. The exercise catalog is secondary; a failure there must not
+    // blank the PRs.
     try {
-      final all = await _prRepo.loadAllWithBackfill(
-          _userId, () => _sessionRepo.loadPastSetsTimeline(_userId));
+      final all = await _prService.timeline(_userId);
       if (mounted) {
         setState(() => _prs =
             all.where((p) => p.exerciseId == widget.exerciseId).toList());

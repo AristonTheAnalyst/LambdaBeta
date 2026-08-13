@@ -9,13 +9,13 @@ import '../../../core/utils/session_format.dart';
 import '../../../data/models/exercise_detail.dart';
 import '../../../data/models/exercise_usage.dart';
 import '../../../data/repositories/exercise_repository.dart';
-import '../../../data/repositories/pr_repository.dart';
 import '../../../data/repositories/session_repository.dart';
 import '../../../shared/widgets/app_card.dart';
 import '../../../shared/widgets/glass_button.dart';
 import '../../../shared/widgets/page_header.dart';
 import '../../../shared/widgets/press_squash.dart';
 import '../../session/model/pr_engine.dart';
+import '../../session/model/pr_service.dart';
 
 /// Catalog of every exercise with its PR record count, linking to a
 /// per-exercise PR breakdown page.
@@ -28,7 +28,7 @@ class PrCatalogScreen extends StatefulWidget {
 
 class _PrCatalogScreenState extends State<PrCatalogScreen> {
   final _exerciseRepo = ExerciseRepository();
-  final _prRepo = PrRepository();
+  final _prService = PrService();
   final _sessionRepo = SessionRepository();
   Map<String, ExerciseDetail>? _exerciseMap;
   List<PrRecord> _prs = const [];
@@ -46,9 +46,9 @@ class _PrCatalogScreenState extends State<PrCatalogScreen> {
 
   Future<void> _load() async {
     try {
-      final timeline = await _sessionRepo.loadPastSetsTimeline(_userId);
-      final prs = await _prRepo.loadAllWithBackfill(_userId, () async => timeline);
+      final prs = await _prService.timeline(_userId);
       final map = await _exerciseRepo.fetchExerciseDetailMap(_userId);
+      final timeline = await _sessionRepo.loadPastSetsTimeline(_userId);
       if (!mounted) return;
       setState(() {
         _exerciseMap = map;

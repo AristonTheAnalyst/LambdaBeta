@@ -7,7 +7,6 @@ import '../../../data/models/session.dart';
 import '../../../data/models/session_set.dart';
 import '../../../data/repositories/exercise_repository.dart';
 import '../../../data/repositories/lesson_repository.dart';
-import '../../../data/repositories/pr_repository.dart';
 import '../../../data/repositories/session_repository.dart';
 import '../../session/model/pr_engine.dart';
 import '../../session/model/session_local_state.dart'
@@ -138,19 +137,16 @@ class SessionDetailState {
 
 class SessionDetailViewModel {
   SessionDetailViewModel({
-    SessionRepository? workoutRepo,
+    SessionRepository? sessionRepo,
     ExerciseRepository? exerciseRepo,
     LessonRepository? lessonRepo,
-    PrRepository? prRepo,
-  })  : _sessionRepo = workoutRepo ?? SessionRepository(),
+  })  : _sessionRepo = sessionRepo ?? SessionRepository(),
         _exerciseRepo = exerciseRepo ?? ExerciseRepository(),
-        _lessonRepo = lessonRepo ?? LessonRepository(),
-        _prRepo = prRepo ?? PrRepository();
+        _lessonRepo = lessonRepo ?? LessonRepository();
 
   final SessionRepository _sessionRepo;
   final ExerciseRepository _exerciseRepo;
   final LessonRepository _lessonRepo;
-  final PrRepository _prRepo;
   final state = ValueNotifier(const SessionDetailState());
 
   int _nextDraftId = 1;
@@ -304,7 +300,7 @@ class SessionDetailViewModel {
     _computePRs();
   }
 
-  /// Re-derives fact_pr for the edited exercise from current, accurate data —
+  /// Re-derives PR highlighting for the edited exercise from current data —
   /// this workout's in-state sets (which reflect the edit/delete just made)
   /// plus other workouts' loaded history. Deletes then re-inserts that
   /// exercise's records (promoting the next-best from the remaining sets).
@@ -350,15 +346,9 @@ class SessionDetailViewModel {
       }
     }
 
-    final exerciseSets = combined.where((x) => x.exerciseId == exerciseId).toList();
-    // Nothing to derive from — skip entirely so we never wipe existing PRs
-    // with an empty baseline.
-    if (exerciseSets.isEmpty) return;
-    final timeline = fullPrTimeline(exerciseSets);
-    try {
-      await _prRepo.deleteForExercise(_userId, exerciseId);
-      if (timeline.isNotEmpty) await _prRepo.insertPrs(_userId, timeline);
-    } catch (_) {}
+    // PRs are derived from the sets on read — after an edit the state's
+    // in-memory derivation is simply refreshed. Nothing is persisted.
+    _computePRs();
   }
 
   // ── Edit mode ──────────────────────────────────────────────────────────────
@@ -599,8 +589,7 @@ class SessionDetailViewModel {
     _computePRs();
   }
 
-  /// Deletes the set AND its fact_pr records (the set was the reason the PRs
-  /// existed), then recomputes the exercise from remaining valid history so
+  /// Deletes the set, then re-derives PRs from the remaining history so
   /// the next-best record is promoted (e.g. delete a 170 1RM → the 160 that
   /// once beat 150 becomes the 1RM again).
   Future<void> deleteSetCascade(String setId, String exerciseId) async {
@@ -609,7 +598,6 @@ class SessionDetailViewModel {
     await _deleteSetFromState(setId);
     try {
       await _sessionRepo.deleteSet(setId);
-      await _prRepo.deleteForSets(_userId, [setId]);
       await recomputeExercisePRs(exerciseId);
       await _reloadSets(w.sessionId);
     } catch (e) {

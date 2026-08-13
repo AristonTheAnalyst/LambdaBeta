@@ -31,7 +31,6 @@ streams:
       - SELECT *, program_id as id FROM dim_program WHERE user_id = auth.user_id()
       - SELECT *, program_run_id as id FROM fact_program_run WHERE user_id = auth.user_id()
       - SELECT *, lesson_id as id FROM dim_lesson WHERE user_id = auth.user_id()
-      - SELECT *, pr_id as id FROM fact_pr WHERE user_id = auth.user_id()
       - SELECT *, session_id as id FROM dim_planned_session WHERE user_id = auth.user_id()
       - SELECT *, set_id as id FROM dim_planned_session_set WHERE user_id = auth.user_id()
       - SELECT *, goal_id as id FROM fact_goal WHERE user_id = auth.user_id()
