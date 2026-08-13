@@ -695,13 +695,31 @@ class _ReflectionPage extends StatelessWidget {
   List<Widget> _summarySections() {
     final sections = <Widget>[];
     final prs = vm.prsThisSession;
+
+    // Collect the exercises that have content first so a bottom divider can
+    // be added to every section except the last (the sticky bottom bar's
+    // top border already divides the last one).
+    final contentExercises = <String>[];
     for (final slot in vm.exerciseSlots) {
       for (final exerciseId in slot.exerciseIds) {
+        final exPrs = prs.where((p) => p.exerciseId == exerciseId).toList();
+        final lessons = vm.lessonsFor(exerciseId);
+        if (exPrs.isNotEmpty || lessons.isNotEmpty) {
+          contentExercises.add(exerciseId);
+        }
+      }
+    }
+
+    var sectionIndex = 0;
+    for (final slot in vm.exerciseSlots) {
+      for (final exerciseId in slot.exerciseIds) {
+        if (!contentExercises.contains(exerciseId)) continue;
+        final isLast = sectionIndex == contentExercises.length - 1;
+        sectionIndex++;
         final exerciseName =
             toProperCase(vm.exerciseDisplayName(exerciseId));
         final exPrs = prs.where((p) => p.exerciseId == exerciseId).toList();
         final lessons = vm.lessonsFor(exerciseId);
-        if (exPrs.isEmpty && lessons.isEmpty) continue;
 
         sections.add(Padding(
           padding: const EdgeInsets.only(top: AppSpacing.lg, bottom: AppSpacing.sm),
@@ -728,21 +746,6 @@ class _ReflectionPage extends StatelessWidget {
         }
 
         if (lessons.isNotEmpty) {
-          // Indented divider + label: lessons are a distinct block that
-          // still clearly belongs to the exercise header above.
-          sections.add(Padding(
-            padding: const EdgeInsets.only(top: AppSpacing.sm, bottom: AppSpacing.sm),
-            child: Row(
-              children: [
-                const SizedBox(width: AppSpacing.md),
-                Expanded(child: Divider(color: AppColors.border, height: 1)),
-                const SizedBox(width: AppSpacing.sm),
-                Text('LESSONS',
-                    style: AppFonts.mono(
-                        fontSize: 9, letterSpacing: 0.8, color: AppColors.muted)),
-              ],
-            ),
-          ));
           for (final lesson in lessons) {
             sections.add(Padding(
               padding: const EdgeInsets.only(bottom: AppSpacing.sm),
@@ -770,6 +773,12 @@ class _ReflectionPage extends StatelessWidget {
               ),
             ));
           }
+        }
+        if (!isLast) {
+          sections.add(Padding(
+            padding: const EdgeInsets.only(top: AppSpacing.md),
+            child: Divider(color: AppColors.border, height: 1),
+          ));
         }
       }
     }
@@ -818,8 +827,8 @@ class _ReflectionPage extends StatelessWidget {
                           letterSpacing: 0.6,
                           color: AppColors.accent)),
                 Text('$axisLabel: $before  →  $after',
-                    style: AppFonts.ui(
-                        fontSize: AppTextStyles.sm,
+                    style: AppFonts.mono(
+                        fontSize: 12,
                         fontWeight: FontWeight.w700,
                         color: AppColors.accent)),
               ],
@@ -841,14 +850,7 @@ class _ReflectionPage extends StatelessWidget {
             child: ListView(
               padding: const EdgeInsets.all(AppSpacing.lg),
               children: [
-                if (vm.sets.isNotEmpty) ...[
-                  Text('This session',
-                      style: AppFonts.mono(
-                          fontSize: 9,
-                          letterSpacing: 0.8,
-                          color: AppColors.muted)),
-                  ..._summarySections(),
-                ],
+                if (vm.sets.isNotEmpty) ..._summarySections(),
               ],
             ),
           ),
