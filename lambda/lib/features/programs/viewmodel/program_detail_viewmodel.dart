@@ -520,8 +520,7 @@ class ProgramDetailViewModel {
             setNumber: s.setNumber,
             targetWeight: s.targetWeight?.toDouble(),
             targetReps: s.targetReps,
-            targetDuration: s.targetDuration,
-            targetNotes: s.targetNotes,
+                        targetNotes: s.targetNotes,
             exerciseName: s.exerciseName,
             variationName: s.variationName,
             isArchived: true,
@@ -741,8 +740,7 @@ class ProgramDetailViewModel {
           setNumber: s.setNumber,
           targetWeight: s.targetWeight?.toDouble(),
           targetReps: s.targetReps,
-          targetDuration: s.targetDuration,
-          targetNotes: s.targetNotes,
+                    targetNotes: s.targetNotes,
         );
       }
       final wps = await _plannedSessionRepo.fetchPlannedSessions(_userId, programId: programId);
@@ -1045,7 +1043,6 @@ class ProgramDetailViewModel {
     String? variationId,
     double? weight,
     required List<num> reps,
-    required List<num> duration,
     String? notes,
   }) async {
     final workout = state.value.editingWorkout;
@@ -1069,7 +1066,6 @@ class ProgramDetailViewModel {
         setNumber: setNumber,
         targetWeight: weight,
         targetReps: reps,
-        targetDuration: duration,
         targetNotes: notes,
       );
       removeDraftPlannedSessionSet(exerciseSequenceOrder, draftId);
@@ -1127,8 +1123,7 @@ class ProgramDetailViewModel {
         setNumber: setNumber,
         targetWeight: ps.targetWeight,
         targetReps: ps.targetReps,
-        targetDuration: ps.targetDuration,
-        targetNotes: ps.targetNotes,
+                targetNotes: ps.targetNotes,
       );
       final sets = await _plannedSessionRepo.fetchPlannedSets(workout.sessionId);
       state.value = state.value.copyWith(workoutPlannedSessionSets: _setsFromSessionSets(sets), workoutUnsavedChanges: true);

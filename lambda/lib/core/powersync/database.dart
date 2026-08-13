@@ -49,9 +49,7 @@ const _compositeKeyTables = {
 // array.
 const _arrayColumns = {
   'reps',
-  'duration_seconds',
   'target_reps',
-  'target_duration_seconds',
 };
 
 Map<String, dynamic> _decodeArrayColumns(Map<String, dynamic> data) {

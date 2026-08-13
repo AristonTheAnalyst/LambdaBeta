@@ -98,7 +98,6 @@ class _PlanSetRowState extends State<PlanSetRow> {
         variationId: _draftVariationId,
         weight: weight,
         reps: reps != null ? [reps] : const [],
-        duration: const [],
         notes: _draftNotes?.trim().isEmpty == true ? null : _draftNotes?.trim(),
       );
       return;

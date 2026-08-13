@@ -815,10 +815,9 @@ class _SetsPanel extends StatelessWidget {
           final isNewDate = prev == null ||
               !_sameDay(prev.sessionCreatedDate, row.sessionCreatedDate);
 
-          final isReps    = row.duration.isEmpty;
-          final vals      = isReps ? row.reps : row.duration;
+          final vals = row.reps;
           final valStr    = vals.isEmpty ? '—' : vals.join(', ');
-          final unit      = isReps ? 'reps' : 's';
+          const unit = 'reps';
           final weightStr = row.weight != null ? '${row.weight} kg × ' : '';
           final exerciseLabel = row.exerciseName ?? '—';
           final metaLabel = [

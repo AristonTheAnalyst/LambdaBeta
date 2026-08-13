@@ -92,7 +92,6 @@ class _SessionSetRowState extends State<SessionSetRow> {
         variationId: _draftVariationId,
         weight: weight,
         reps: [reps],
-        duration: const [],
         notes: _draftNotes?.trim().isEmpty == true ? null : _draftNotes?.trim(),
       );
       return;
@@ -139,7 +138,7 @@ class _SessionSetRowState extends State<SessionSetRow> {
   void _duplicate() {
     if (_isDraft) return; // nothing persisted yet to copy
     final set = widget.set!;
-    if (set.reps.isEmpty && set.duration.isEmpty) return; // empty placeholder
+    if (set.reps.isEmpty) return; // empty placeholder
     widget.vm.duplicateSet(set);
   }
 

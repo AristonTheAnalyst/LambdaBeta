@@ -12,7 +12,6 @@ class PlannedSessionSet {
     this.variationId,
     this.targetWeight,
     this.targetReps = const [],
-    this.targetDuration = const [],
     this.targetNotes,
     this.exerciseName,
     this.variationName,
@@ -28,7 +27,6 @@ class PlannedSessionSet {
   final String? variationId;
   final num? targetWeight;
   final List<num> targetReps;
-  final List<num> targetDuration;
   final String? targetNotes;
   final String? exerciseName;
   final String? variationName;
@@ -45,7 +43,6 @@ class PlannedSessionSet {
         variationId: map['custom_variation_id'] as String?,
         targetWeight: _toNum(map['target_weight']),
         targetReps: _toNumList(map['target_reps']),
-        targetDuration: _toNumList(map['target_duration_seconds']),
         targetNotes: map['target_notes'] as String?,
         exerciseName: map['exercise_name'] as String?,
         variationName: map['variation_name'] as String?,
@@ -93,7 +90,6 @@ class PlannedSessionSet {
         'set_number': setNumber,
         'target_weight': targetWeight,
         'target_reps': targetReps,
-        'target_duration_seconds': targetDuration,
         'target_notes': targetNotes,
         'exercise_name': exerciseName,
         'variation_name': variationName,

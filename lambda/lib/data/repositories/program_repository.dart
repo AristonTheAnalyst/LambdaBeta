@@ -298,7 +298,7 @@ class ProgramRepository {
           INSERT INTO dim_planned_session_set
             (id, set_id, session_id, user_id, custom_exercise_id,
              custom_variation_id, exercise_sequence_order, set_number,
-             target_weight, target_reps, target_duration_seconds, target_notes,
+             target_weight, target_reps, target_notes,
              is_archived, exercise_name, variation_name)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ''',
@@ -307,7 +307,7 @@ class ProgramRepository {
             set.exerciseId, set.variationId,
             set.exerciseSequenceOrder, set.setNumber,
             set.targetWeight, jsonEncode(set.targetReps),
-            jsonEncode(set.targetDuration), set.targetNotes,
+            set.targetNotes,
             0, set.exerciseName, set.variationName,
           ],
         );
@@ -402,8 +402,8 @@ class ProgramRepository {
             INSERT INTO dim_planned_session_set
               (id, set_id, session_id, user_id, custom_exercise_id, custom_variation_id,
                exercise_sequence_order, set_number, target_weight, target_reps,
-               target_duration_seconds, target_notes, is_archived, exercise_name, variation_name)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               target_notes, is_archived, exercise_name, variation_name)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''',
             [
               newSetId,
@@ -416,7 +416,6 @@ class ProgramRepository {
               set.setNumber,
               set.targetWeight,
               jsonEncode(set.targetReps),
-              jsonEncode(set.targetDuration),
               set.targetNotes,
               0,
               set.exerciseName,

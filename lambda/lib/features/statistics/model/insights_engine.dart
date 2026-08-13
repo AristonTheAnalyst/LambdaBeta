@@ -110,7 +110,7 @@ List<PrRecord> filterPrs(
 /// The effective rep value for a set — first reps entry, else duration as a
 /// proxy for timed exercises (mirrors the PR engine's semantics).
 num? effectiveReps(SessionSet s) =>
-    s.reps.isNotEmpty ? s.reps.first : (s.duration.isNotEmpty ? s.duration.first : null);
+    s.reps.isNotEmpty ? s.reps.first : null;
 
 /// Weight distribution. Bodyweight (null weight) counts as 0kg; keys are
 /// weights rounded to the nearest [kWeightBucket] kg.

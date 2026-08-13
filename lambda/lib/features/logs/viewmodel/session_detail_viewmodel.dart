@@ -263,8 +263,7 @@ class SessionDetailViewModel {
           exerciseId: set.exerciseId,
           setNumber: set.setNumber,
           reps: set.reps,
-          duration: set.duration,
-          sessionCreatedDate: s.session?.createdDate ?? DateTime.now(),
+            sessionCreatedDate: s.session?.createdDate ?? DateTime.now(),
           variationId: set.variationId,
           weight: set.weight,
           notes: set.notes,
@@ -334,8 +333,7 @@ class SessionDetailViewModel {
           exerciseId: set.exerciseId,
           setNumber: set.setNumber,
           reps: set.reps,
-          duration: set.duration,
-          sessionCreatedDate: s.session?.createdDate ?? DateTime.now(),
+            sessionCreatedDate: s.session?.createdDate ?? DateTime.now(),
           variationId: set.variationId,
           weight: set.weight,
           notes: set.notes,
@@ -451,7 +449,6 @@ class SessionDetailViewModel {
       setNumber: nextNum,
       weight: null,
       reps: [],
-      duration: [],
     ).then((_) => _reloadSets(w.sessionId));
   }
 
@@ -471,7 +468,6 @@ class SessionDetailViewModel {
     String? variationId,
     double? weight,
     required List<num> reps,
-    required List<num> duration,
     String? notes,
   }) async {
     final w = state.value.session;
@@ -479,7 +475,7 @@ class SessionDetailViewModel {
     final existing = state.value.setsFor(groupOrder);
     final nextNum = existing.isEmpty ? 1 : existing.map((s) => s.setNumber).reduce((a, b) => a > b ? a : b) + 1;
     // Find an empty pre-created set for this exercise
-    final emptyIdx = existing.lastIndexWhere((s) => s.reps.isEmpty && s.duration.isEmpty);
+    final emptyIdx = existing.lastIndexWhere((s) => s.reps.isEmpty);
     try {
       if (emptyIdx >= 0) {
         await _sessionRepo.updateSet(
@@ -489,7 +485,6 @@ class SessionDetailViewModel {
           weight: weight,
           clearWeight: weight == null,
           reps: reps,
-          duration: duration,
           notes: notes,
           clearNotes: notes == null || notes.isEmpty,
         );
@@ -504,7 +499,6 @@ class SessionDetailViewModel {
           setNumber: nextNum,
           weight: weight,
           reps: reps,
-          duration: duration,
           notes: notes?.trim().isEmpty == true ? null : notes?.trim(),
         );
       }
@@ -566,7 +560,6 @@ class SessionDetailViewModel {
         setNumber: nextNum,
         weight: set.weight,
         reps: set.reps,
-        duration: set.duration,
         notes: set.notes,
       );
       await _reloadSets(w.sessionId);

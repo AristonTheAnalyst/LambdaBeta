@@ -958,7 +958,6 @@ class _DetailSetRowState extends State<_DetailSetRow> {
         variationId: _draftVariationId,
         weight: weight,
         reps: [reps],
-        duration: const [],
         notes: _draftNotes?.trim().isEmpty == true ? null : _draftNotes?.trim(),
       );
       return;

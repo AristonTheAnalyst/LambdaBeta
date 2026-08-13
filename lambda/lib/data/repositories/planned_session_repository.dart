@@ -171,7 +171,6 @@ class PlannedSessionRepository {
     required int setNumber,
     num? targetWeight,
     List<num> targetReps = const [],
-    List<num> targetDuration = const [],
     String? targetNotes,
   }) async {
     final id = _uuid.v4();
@@ -180,13 +179,13 @@ class PlannedSessionRepository {
       INSERT INTO dim_planned_session_set
         (id, set_id, session_id, user_id, custom_exercise_id, custom_variation_id,
          exercise_sequence_order, set_number, target_weight, target_reps,
-         target_duration_seconds, target_notes, exercise_name, variation_name, is_archived)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         target_notes, exercise_name, variation_name, is_archived)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ''',
       [
         id, id, sessionId, userId, exerciseId, variationId,
         exerciseSequenceOrder, setNumber, targetWeight,
-        jsonEncode(targetReps), jsonEncode(targetDuration),
+        jsonEncode(targetReps),
         targetNotes, exerciseName, variationName, 0,
       ],
     );
@@ -200,7 +199,6 @@ class PlannedSessionRepository {
       variationId: variationId,
       targetWeight: targetWeight,
       targetReps: targetReps,
-      targetDuration: targetDuration,
       targetNotes: targetNotes,
       exerciseName: exerciseName,
       variationName: variationName,
@@ -212,7 +210,6 @@ class PlannedSessionRepository {
     num? targetWeight,
     bool clearWeight = false,
     List<num>? targetReps,
-    List<num>? targetDuration,
     String? targetNotes,
     bool clearNotes = false,
   }) async {
@@ -223,9 +220,6 @@ class PlannedSessionRepository {
       updates['target_weight'] = targetWeight;
     }
     if (targetReps != null) updates['target_reps'] = jsonEncode(targetReps);
-    if (targetDuration != null) {
-      updates['target_duration_seconds'] = jsonEncode(targetDuration);
-    }
     if (clearNotes) {
       updates['target_notes'] = null;
     } else if (targetNotes != null) {
@@ -277,7 +271,7 @@ class PlannedSessionRepository {
           INSERT INTO dim_planned_session_set
             (id, set_id, session_id, user_id, custom_exercise_id,
              custom_variation_id, exercise_sequence_order, set_number,
-             target_weight, target_reps, target_duration_seconds, target_notes,
+             target_weight, target_reps, target_notes,
              exercise_name, variation_name, is_archived)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ''',
@@ -286,7 +280,7 @@ class PlannedSessionRepository {
             set.exerciseId, set.variationId,
             set.exerciseSequenceOrder, set.setNumber,
             set.targetWeight, jsonEncode(set.targetReps),
-            jsonEncode(set.targetDuration), set.targetNotes,
+            set.targetNotes,
             set.exerciseName, set.variationName, 0,
           ],
         );

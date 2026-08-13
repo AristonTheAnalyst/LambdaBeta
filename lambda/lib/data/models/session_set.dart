@@ -9,7 +9,6 @@ class SessionSet {
     required this.exerciseId,
     required this.setNumber,
     required this.reps,
-    required this.duration,
     this.variationId,
     this.weight,
     this.notes,
@@ -27,7 +26,6 @@ class SessionSet {
   final int setNumber;
   final double? weight;
   final List<num> reps;
-  final List<num> duration;
   final String? notes;
   final String? exerciseName;
   final String? variationName;
@@ -43,7 +41,6 @@ class SessionSet {
         setNumber: map['set_number'] as int,
         weight: _toDouble(map['weight']),
         reps: _toNumList(map['reps']),
-        duration: _toNumList(map['duration_seconds']),
         notes: map['notes'] as String?,
         exerciseName: map['exercise_name'] as String?,
         variationName: map['variation_name'] as String?,
@@ -60,7 +57,6 @@ class SessionSet {
         'set_number': setNumber,
         'weight': weight,
         'reps': reps,
-        'duration_seconds': duration,
         'notes': notes,
         'superset_group_number': supersetGroupNumber,
         'exercise_name': exerciseName,
@@ -99,7 +95,6 @@ class PastSetRow extends SessionSet {
     required super.exerciseId,
     required super.setNumber,
     required super.reps,
-    required super.duration,
     required this.sessionCreatedDate,
     super.variationId,
     super.weight,
@@ -121,7 +116,6 @@ class PastSetRow extends SessionSet {
         setNumber: map['set_number'] as int,
         weight: SessionSet._toDouble(map['weight']),
         reps: SessionSet._toNumList(map['reps']),
-        duration: SessionSet._toNumList(map['duration_seconds']),
         notes: map['notes'] as String?,
         sessionCreatedDate: DateTime.parse(map['created_date'] as String),
         exerciseName: map['exercise_name'] as String?,

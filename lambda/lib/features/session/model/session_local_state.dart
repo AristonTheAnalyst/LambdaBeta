@@ -36,11 +36,13 @@ Map<String, List<ExerciseHistorySession>> groupHistoryByExercise(
 /// The best-ever weight/reps pair for an exercise, used as the PR baseline —
 /// mirrors the Figma prototype's `prevBest`. Picks the set with the highest
 /// weight (ties broken by higher reps) across the user's full history.
-({num weight, num reps})? bestEverForExercise(List<PastSetRow> pastSets) {
+({num weight, num reps})? bestEverForExercise(List<PastSetRow> pastSets,
+    {String? variationId}) {
   ({num weight, num reps})? best;
   for (final s in pastSets) {
+    if (variationId != null && s.variationId != variationId) continue;
     final weight = s.weight ?? 0; // bodyweight sets count as 0kg
-    final reps = s.reps.isNotEmpty ? s.reps.first : (s.duration.isNotEmpty ? s.duration.first : null);
+    final reps = s.reps.isNotEmpty ? s.reps.first : null;
     if (reps == null) continue;
     if (best == null || weight > best.weight || (weight == best.weight && reps > best.reps)) {
       best = (weight: weight, reps: reps);
@@ -54,7 +56,7 @@ Map<String, List<ExerciseHistorySession>> groupHistoryByExercise(
 /// history yet," and the first-ever lift is by definition a PR.
 bool isPr(SessionSet set, ({num weight, num reps})? bestEver) {
   final weight = set.weight ?? 0; // bodyweight sets count as 0kg
-  final reps = set.reps.isNotEmpty ? set.reps.first : (set.duration.isNotEmpty ? set.duration.first : null);
+  final reps = set.reps.isNotEmpty ? set.reps.first : null;
   if (reps == null) return false;
   if (bestEver == null || (bestEver.weight == 0 && bestEver.reps == 0)) return true;
   return weight > bestEver.weight || (weight >= bestEver.weight && reps > bestEver.reps);

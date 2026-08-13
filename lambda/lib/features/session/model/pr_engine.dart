@@ -123,17 +123,21 @@ class PrRecord {
 /// The effective rep/volume value for a set — first reps entry, or duration
 /// as a proxy for timed exercises. Null if the set has neither.
 num? _effectiveReps(SessionSet s) =>
-    s.reps.isNotEmpty ? s.reps.first : (s.duration.isNotEmpty ? s.duration.first : null);
+    s.reps.isNotEmpty ? s.reps.first : null;
 
 /// The best weight ever lifted for "at least [repCount] reps" across
-/// [sets] for [exerciseId] — the rep-max curve.
+/// [sets] for the (exerciseId, variationId) pair — the rep-max curve.
+/// PR curves are scoped per exercise × variation: a Pause Bench PR never
+/// affects regular Bench. NULL variation is its own distinct key.
 ///
 /// curve[N] = highest weight where the user has achieved ≥ N reps.
 /// Monotone non-increasing in N.
-Map<int, num> repMaxCurve(List<PastSetRow> sets, String exerciseId) {
+Map<int, num> repMaxCurve(List<PastSetRow> sets, String exerciseId,
+    {String? variationId}) {
   final curve = <int, num>{};
   for (final s in sets) {
     if (s.exerciseId != exerciseId) continue;
+    if (s.variationId != variationId) continue;
     final weight = s.weight;
     final reps = _effectiveReps(s);
     if (weight == null || reps == null) continue;
@@ -154,8 +158,8 @@ Map<int, num> repMaxCurve(List<PastSetRow> sets, String exerciseId) {
 List<PrRecord> fullPrTimeline(List<PastSetRow> sets) {
   final ordered = [...sets]..sort((a, b) => a.sessionCreatedDate.compareTo(b.sessionCreatedDate));
 
-  final curve = <String, Map<int, num>>{}; // exerciseId → repCount → bestWeight
-  final maxRepsAtWeight = <String, Map<num, int>>{}; // exerciseId → weight → maxReps
+  final curve = <(String, String?), Map<int, num>>{}; // (exercise, variation) → repCount → bestWeight
+  final maxRepsAtWeight = <(String, String?), Map<num, int>>{}; // (exercise, variation) → weight → maxReps
 
   final prs = <PrRecord>[];
 
@@ -165,8 +169,8 @@ List<PrRecord> fullPrTimeline(List<PastSetRow> sets) {
     final reps = _effectiveReps(s);
     if (reps == null) continue;
 
-    final exCurve = curve.putIfAbsent(s.exerciseId, () => {});
-    final exMaxReps = maxRepsAtWeight.putIfAbsent(s.exerciseId, () => {});
+    final exCurve = curve.putIfAbsent((s.exerciseId, s.variationId), () => {});
+    final exMaxReps = maxRepsAtWeight.putIfAbsent((s.exerciseId, s.variationId), () => {});
 
     final actualReps = reps.toInt();
 
@@ -262,9 +266,11 @@ List<PrRecord> variationPrs(List<PastSetRow> sets, String variationId) {
 
 /// The best-ever weight×reps for an exercise — returned as a simple record
 /// for the live-session PR baseline.
-({num weight, num reps})? bestEverForExercise(List<PastSetRow> pastSets) {
+({num weight, num reps})? bestEverForExercise(List<PastSetRow> pastSets,
+    {String? variationId}) {
   ({num weight, num reps})? best;
   for (final s in pastSets) {
+    if (variationId != null && s.variationId != variationId) continue;
     final weight = s.weight ?? 0; // bodyweight sets count as 0kg
     final reps = _effectiveReps(s);
     if (reps == null) continue;

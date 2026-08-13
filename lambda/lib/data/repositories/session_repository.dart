@@ -89,7 +89,6 @@ class SessionRepository {
     required int setNumber,
     double? weight,
     required List<num> reps,
-    required List<num> duration,
     String? notes,
     String? parentSetId,
     int? supersetGroupNumber,
@@ -101,7 +100,7 @@ class SessionRepository {
       '''
       INSERT INTO fact_session_set
         (id, session_set_id, session_id, user_id, custom_exercise_id, custom_variation_id,
-         set_number, weight, reps, duration_seconds,
+         set_number, weight, reps,
          notes, program_id, parent_set_id, superset_group_number,
          exercise_name, variation_name)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -116,7 +115,6 @@ class SessionRepository {
         setNumber,
         weight,
         jsonEncode(reps),
-        jsonEncode(duration),
         notes?.isNotEmpty == true ? notes : null,
         parentSetId,
         supersetGroupNumber,
@@ -133,7 +131,6 @@ class SessionRepository {
       setNumber: setNumber,
       weight: weight,
       reps: reps,
-      duration: duration,
       notes: notes?.isNotEmpty == true ? notes : null,
       supersetGroupNumber: supersetGroupNumber,
       parentSetId: parentSetId,
@@ -146,7 +143,6 @@ class SessionRepository {
     String? variationId,
     double? weight,
     List<num>? reps,
-    List<num>? duration,
     String? notes,
     bool clearVariation = false,
     bool clearWeight = false,
@@ -186,10 +182,6 @@ class SessionRepository {
     if (reps != null) {
       setClauses.add('reps = ?');
       params.add(jsonEncode(reps));
-    }
-    if (duration != null) {
-      setClauses.add('duration_seconds = ?');
-      params.add(jsonEncode(duration));
     }
     if (clearNotes) {
       setClauses.add('notes = ?');

@@ -125,7 +125,9 @@ class SessionViewModel extends ChangeNotifier {
   /// exerciseId → most recent workout date, for "most recently used" ordering.
   Map<String, DateTime> lastUsedByExercise = {};
   Map<String, List<ExerciseHistorySession>> historyByExercise = {};
-  Map<String, ({num weight, num reps})?> prevBestByExercise = {};
+  /// PR baseline keyed by (exerciseId, variationId) — curves are scoped
+  /// per exercise × variation, so the live-session baseline must be too.
+  Map<(String, String?), ({num weight, num reps})?> prevBestByExerciseVariation = {};
 
   // ── Historical set editing ─────────────────────────────────────────────────
   bool historyEditConfirmed = false;
@@ -168,7 +170,6 @@ class SessionViewModel extends ChangeNotifier {
         exerciseId: s.exerciseId,
         setNumber: s.setNumber,
         reps: s.reps,
-        duration: s.duration,
         sessionCreatedDate: now,
         variationId: s.variationId,
         weight: s.weight,
@@ -354,8 +355,7 @@ class SessionViewModel extends ChangeNotifier {
             setNumber: s.setNumber,
             targetWeight: s.targetWeight?.toDouble(),
             targetReps: s.targetReps,
-            targetDuration: s.targetDuration,
-            targetNotes: s.targetNotes,
+                        targetNotes: s.targetNotes,
             exerciseName: s.exerciseName,
             variationName: s.variationName,
             isArchived: false,
@@ -431,12 +431,12 @@ class SessionViewModel extends ChangeNotifier {
       _pastSets = await _sessionRepo.loadPastSetsTimeline(_userId);
       historyByExercise = groupHistoryByExercise(_pastSets);
       lastUsedByExercise = lastUsedByEntity(_pastSets);
-      final byExercise = <String, List<PastSetRow>>{};
+      final byKey = <(String, String?), List<PastSetRow>>{};
       for (final s in _pastSets) {
-        byExercise.putIfAbsent(s.exerciseId, () => []).add(s);
+        byKey.putIfAbsent((s.exerciseId, s.variationId), () => []).add(s);
       }
-      prevBestByExercise = byExercise.map(
-          (exerciseId, sets) => MapEntry(exerciseId, bestEverForExercise(sets)));
+      prevBestByExerciseVariation = byKey.map(
+          (key, sets) => MapEntry(key, bestEverForExercise(sets, variationId: key.$2)));
     } catch (_) {}
     pastSetsLoaded = true;
     notifyListeners();
@@ -488,7 +488,6 @@ class SessionViewModel extends ChangeNotifier {
         exerciseId: s.exerciseId,
         setNumber: s.setNumber,
         reps: s.reps,
-        duration: s.duration,
         sessionCreatedDate: sessionDate,
         variationId: s.variationId,
         weight: s.weight,
@@ -558,7 +557,7 @@ class SessionViewModel extends ChangeNotifier {
       // filled yet) already serves as the next-set slot — don't add a ghost.
       final exerciseSets = sets.where((x) => x.exerciseId == s.exerciseId).toList();
       final last = exerciseSets.isEmpty ? null : exerciseSets.last;
-      final lastEmpty = last != null && last.reps.isEmpty && last.duration.isEmpty;
+      final lastEmpty = last != null && last.reps.isEmpty;
       if (!lastEmpty) draftSlotsByExercise.putIfAbsent(s.exerciseId, () => [_nextDraftId++]);
       loadLessonsFor(s.exerciseId);
       addSlot([s.exerciseId]);
@@ -760,7 +759,6 @@ class SessionViewModel extends ChangeNotifier {
       setNumber: nextNum,
       weight: null,
       reps: [],
-      duration: [],
       supersetGroupNumber: _supersetGroupFor(exerciseId),
     ).then((newSet) {
       sets.add(newSet);
@@ -782,17 +780,16 @@ class SessionViewModel extends ChangeNotifier {
     String? variationId,
     double? weight,
     required List<num> reps,
-    required List<num> duration,
     String? notes,
   }) async {
     if (currentWorkoutId == null) return false;
-    if (reps.isEmpty && duration.isEmpty) return false;
+    if (reps.isEmpty) return false;
     final nextNum = sets.isEmpty
         ? 1
         : sets.map((s) => s.setNumber).reduce((a, b) => a > b ? a : b) + 1;
     // Find an empty pre-created set for this exercise to fill in
     final emptyIdx = sets.lastIndexWhere(
-      (s) => s.exerciseId == exerciseId && s.reps.isEmpty && s.duration.isEmpty);
+      (s) => s.exerciseId == exerciseId && s.reps.isEmpty);
     try {
       if (emptyIdx >= 0) {
         await _sessionRepo.updateSet(
@@ -802,7 +799,6 @@ class SessionViewModel extends ChangeNotifier {
           weight: weight,
           clearWeight: weight == null,
           reps: reps,
-          duration: duration,
           notes: notes,
           clearNotes: notes == null || notes.isEmpty,
         );
@@ -817,7 +813,6 @@ class SessionViewModel extends ChangeNotifier {
           setNumber: nextNum,
           weight: weight,
           reps: reps,
-          duration: duration,
           notes: notes,
           supersetGroupNumber: _supersetGroupFor(exerciseId),
         );
@@ -837,7 +832,7 @@ class SessionViewModel extends ChangeNotifier {
     double? weight,
     bool clearWeight = false,
     List<num>? reps,
-    List<num>? duration,
+
     String? variationId,
     bool clearVariation = false,
     String? notes,
@@ -849,7 +844,6 @@ class SessionViewModel extends ChangeNotifier {
         weight: weight,
         clearWeight: clearWeight,
         reps: reps,
-        duration: duration,
         variationId: variationId,
         clearVariation: clearVariation,
         notes: notes,
@@ -909,7 +903,6 @@ class SessionViewModel extends ChangeNotifier {
         setNumber: nextNum,
         weight: set.weight,
         reps: set.reps,
-        duration: set.duration,
         notes: set.notes,
         supersetGroupNumber: _supersetGroupFor(set.exerciseId),
       );
@@ -979,22 +972,24 @@ class SessionViewModel extends ChangeNotifier {
   List<ExerciseHistorySession> historyFor(String exerciseId) =>
       historyByExercise[exerciseId] ?? const [];
 
-  ({num weight, num reps})? prevBestFor(String exerciseId) =>
-      prevBestByExercise[exerciseId];
+  ({num weight, num reps})? prevBestFor(String exerciseId, String? variationId) =>
+      prevBestByExerciseVariation[(exerciseId, variationId)];
 
   /// The PR baseline for [exerciseId]: the better of the past-best and the
   /// best set logged earlier in the current session (excluding [excludingSetId],
   /// so a set isn't compared against itself). Lets a set that beats something
   /// done earlier in the same workout highlight as a PR, matching what the
   /// engine persists at endWorkout (the day's best).
-  ({num weight, num reps})? baselineFor(String exerciseId, {String? excludingSetId}) {
-    final pastBest = prevBestByExercise[exerciseId];
+  ({num weight, num reps})? baselineFor(String exerciseId, String? variationId,
+      {String? excludingSetId}) {
+    final pastBest = prevBestByExerciseVariation[(exerciseId, variationId)];
     ({num weight, num reps})? sessionBest;
     for (final s in sets) {
       if (s.exerciseId != exerciseId) continue;
+      if (s.variationId != variationId) continue;
       if (excludingSetId != null && s.sessionSetId == excludingSetId) continue;
       final weight = s.weight ?? 0;
-      final reps = s.reps.isNotEmpty ? s.reps.first : (s.duration.isNotEmpty ? s.duration.first : null);
+      final reps = s.reps.isNotEmpty ? s.reps.first : null;
       if (reps == null) continue;
       if (sessionBest == null ||
           weight > sessionBest.weight ||
@@ -1164,7 +1159,7 @@ class SessionViewModel extends ChangeNotifier {
 
   Future<void> _purgeEmptySets() async {
     if (currentWorkoutId == null) return;
-    final empty = sets.where((s) => s.reps.isEmpty && s.duration.isEmpty).toList();
+    final empty = sets.where((s) => s.reps.isEmpty).toList();
     for (final s in empty) {
       try {
         await _sessionRepo.deleteSet(s.sessionSetId);
