@@ -156,7 +156,13 @@ Map<int, num> repMaxCurve(List<PastSetRow> sets, String exerciseId,
 ///
 /// [sets] may be in any order; this sorts by [PastSetRow.sessionCreatedDate].
 List<PrRecord> fullPrTimeline(List<PastSetRow> sets) {
-  final ordered = [...sets]..sort((a, b) => a.sessionCreatedDate.compareTo(b.sessionCreatedDate));
+  // Sort by date, then by set number — sets logged in the SAME session
+  // share a timestamp, and Dart's sort is not stable, so the tie-break
+  // keeps intra-session order deterministic (5x7 before 5x9).
+  final ordered = [...sets]..sort((a, b) {
+    final d = a.sessionCreatedDate.compareTo(b.sessionCreatedDate);
+    return d != 0 ? d : a.setNumber.compareTo(b.setNumber);
+  });
 
   final curve = <(String, String?), Map<int, num>>{}; // (exercise, variation) → repCount → bestWeight
   final maxRepsAtWeight = <(String, String?), Map<num, int>>{}; // (exercise, variation) → weight → maxReps

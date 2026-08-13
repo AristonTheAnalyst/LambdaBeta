@@ -129,8 +129,8 @@ class SessionViewModel extends ChangeNotifier {
 
   /// Previous-best records per axis (rep-max N, weight-max W) derived from
   /// completed history only — used by the reflection page's before/after.
-  final _prevRepMax = <(String, String?, int), PrRecord>{};
-  final _prevWeightMax = <(String, String?, num), PrRecord>{};
+  final _prevRepMax = <(String, String?, int), PrRecord?>{};
+  final _prevWeightMax = <(String, String?, num), PrRecord?>{};
 
   PrRecord? previousRepMax(String exerciseId, String? variationId, int reps) =>
       _prevRepMax[(exerciseId, variationId, reps)];
@@ -444,17 +444,6 @@ class SessionViewModel extends ChangeNotifier {
       _pastSets = await _sessionRepo.loadPastSetsTimeline(_userId);
       historyByExercise = groupHistoryByExercise(_pastSets);
       lastUsedByExercise = lastUsedByEntity(_pastSets);
-      // Index the last record per axis from completed history — the
-      // "before" values for the reflection page's PR showcase.
-      _prevRepMax.clear();
-      _prevWeightMax.clear();
-      for (final r in fullPrTimeline(_pastSets)) {
-        if (r.type == PrType.repMax && r.targetReps != null) {
-          _prevRepMax[(r.exerciseId, r.variationId, r.targetReps!)] = r;
-        } else if (r.type == PrType.weightMax && r.targetWeight != null) {
-          _prevWeightMax[(r.exerciseId, r.variationId, r.targetWeight!)] = r;
-        }
-      }
       final byKey = <(String, String?), List<PastSetRow>>{};
       for (final s in _pastSets) {
         byKey.putIfAbsent((s.exerciseId, s.variationId), () => []).add(s);
@@ -530,6 +519,25 @@ class SessionViewModel extends ChangeNotifier {
         if (r.sessionId == id && r.setId != null && r.setId!.isNotEmpty)
           r.setId!,
     };
+
+    // Session-aware "before" per axis: the previous record for each of this
+    // session's records, considering history AND earlier sets in the same
+    // session (5x7 logged before 5x9 makes the 9-rep record's before = 7).
+    _prevRepMax.clear();
+    _prevWeightMax.clear();
+    final lastRepMax = <(String, String?, int), PrRecord?>{};
+    final lastWeightMax = <(String, String?, num), PrRecord?>{};
+    for (final r in records) {
+      if (r.type == PrType.repMax && r.targetReps != null) {
+        final key = (r.exerciseId, r.variationId, r.targetReps!);
+        if (r.sessionId == id) _prevRepMax[key] = lastRepMax[key];
+        lastRepMax[key] = r;
+      } else if (r.type == PrType.weightMax && r.targetWeight != null) {
+        final key = (r.exerciseId, r.variationId, r.targetWeight!);
+        if (r.sessionId == id) _prevWeightMax[key] = lastWeightMax[key];
+        lastWeightMax[key] = r;
+      }
+    }
   }
 
   bool isPrSet(String setId) => prSetIds.contains(setId);

@@ -738,7 +738,14 @@ class _ReflectionPage extends StatelessWidget {
         for (final group in bySet.values) {
           final rm = group.where((p) => p.type == PrType.repMax).firstOrNull;
           final wm = group.where((p) => p.type == PrType.weightMax).firstOrNull;
-          if (rm != null) {
+          if (rm != null && wm != null) {
+            // Both axes fired: prefer the one with a meaningful "before"
+            // (5kg x 9 after 5kg x 7 reads as a weight-max progression,
+            // not another first RM). Both or neither -> RM.
+            final rmHasPrev = _previousFor(rm) != null;
+            final wmHasPrev = _previousFor(wm) != null;
+            sections.add(rmHasPrev || !wmHasPrev ? _prCard(rm) : _prCard(wm));
+          } else if (rm != null) {
             sections.add(_prCard(rm));
           } else if (wm != null) {
             sections.add(_prCard(wm));
@@ -785,6 +792,17 @@ class _ReflectionPage extends StatelessWidget {
     return sections;
   }
 
+  /// The record this PR beat on its axis — history OR an earlier set in
+  /// the same session.
+  PrRecord? _previousFor(PrRecord p) {
+    if (p.type == PrType.repMax) {
+      return vm.previousRepMax(
+          p.exerciseId, p.variationId, p.targetReps ?? p.reps.toInt());
+    }
+    return vm.previousWeightMax(
+        p.exerciseId, p.variationId, p.targetWeight ?? p.weight);
+  }
+
   /// One PR row: the axis beaten this session with its before/after.
   /// rep-max: "5RM: 100kg → 105kg"; weight-max: "100kg: 3 → 5 reps".
   /// PR-set style: accentBg fill with the accent outline.
@@ -793,12 +811,12 @@ class _ReflectionPage extends StatelessWidget {
     final String after;
     final String axisLabel;
     if (p.type == PrType.repMax) {
-      final prev = vm.previousRepMax(p.exerciseId, p.variationId, p.targetReps ?? p.reps.toInt());
+      final prev = _previousFor(p);
       before = prev != null ? '${_fmt(prev.weight)}kg' : null;
       after = '${_fmt(p.weight)}kg';
       axisLabel = '${p.targetReps ?? ''}RM';
     } else {
-      final prev = vm.previousWeightMax(p.exerciseId, p.variationId, p.targetWeight ?? p.weight);
+      final prev = _previousFor(p);
       before = prev != null ? '${_fmt(prev.reps)} reps' : null;
       after = '${_fmt(p.reps)} reps';
       axisLabel = '${_fmt(p.targetWeight ?? p.weight)}kg';
