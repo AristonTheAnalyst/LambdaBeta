@@ -6,7 +6,6 @@ import '../../../core/styles/app_spacing.dart';
 import '../../../core/styles/app_text_styles.dart';
 import '../../../core/utils/session_format.dart';
 import '../../../shared/widgets/slide_up_modal.dart';
-import '../../../shared/widgets/stats_row.dart';
 import '../viewmodel/session_viewmodel.dart';
 import 'lessons_modal.dart';
 
@@ -138,22 +137,69 @@ class SessionStatsBar extends StatelessWidget {
               }
               return s;
             });
-        return StatsRow(tiles: [
-          StatsTile(
-            label: 'PRS',
-            value: '$prs',
-            accent: prs > 0,
-            onTap: prs > 0 ? () => _openPrBreakdown(context) : null,
-          ),
-          StatsTile(
-            label: 'LESSONS',
-            value: '$lessons',
-            accent: lessons > 0,
-            onTap: lessons > 0 ? () => _openLessonsBreakdown(context) : null,
-          ),
-        ]);
+        return Row(
+          children: [
+            Expanded(
+              child: _summaryTile(
+                label: 'PRS',
+                value: '$prs',
+                highlighted: prs > 0,
+                onTap: prs > 0 ? () => _openPrBreakdown(context) : null,
+              ),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(
+              child: _summaryTile(
+                label: 'LESSONS',
+                value: '$lessons',
+                highlighted: lessons > 0,
+                onTap: lessons > 0 ? () => _openLessonsBreakdown(context) : null,
+              ),
+            ),
+          ],
+        );
       },
     );
+  }
+
+  /// One PRS/LESSONS tile, styled like a PR-highlighted set row: accentBg
+  /// fill with an accent 1.2 outline when there's something to show.
+  Widget _summaryTile({
+    required String label,
+    required String value,
+    required bool highlighted,
+    VoidCallback? onTap,
+  }) {
+    final tile = Container(
+      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+      decoration: BoxDecoration(
+        color: highlighted ? AppColors.accentBg : AppColors.surface,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(
+          color: highlighted ? AppColors.accent : AppColors.border,
+          width: highlighted ? 1.2 : 0.5,
+        ),
+      ),
+      child: Column(
+        children: [
+          Text(label,
+              textAlign: TextAlign.center,
+              style: AppFonts.ui(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.6,
+                  color: highlighted ? AppColors.accent : AppColors.muted)),
+          const SizedBox(height: 2),
+          Text(value,
+              style: AppFonts.mono(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w500,
+                  color: highlighted ? AppColors.accent : AppColors.primary)),
+        ],
+      ),
+    );
+    if (onTap == null) return tile;
+    return GestureDetector(onTap: onTap, child: tile);
   }
 }
 
