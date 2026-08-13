@@ -24,7 +24,7 @@ class SessionRepository {
       INSERT INTO fact_session
         (id, session_id, user_id, pre_notes, created_date,
          is_active, program_id, program_name, program_run_id, parent_session_id,
-         parent_session_name, pre_workout_feeling)
+         parent_session_name, pre_feeling)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ''',
       [
@@ -48,7 +48,7 @@ class SessionRepository {
   Future<void> endSession(String sessionId,
       {String? postNotes, int? feeling}) async {
     await ps.db.execute(
-      'UPDATE fact_session SET is_active = 0, post_notes = ?, user_workout_feeling = ? WHERE session_id = ?',
+      'UPDATE fact_session SET is_active = 0, post_notes = ?, post_feeling = ? WHERE session_id = ?',
       [postNotes?.isNotEmpty == true ? postNotes : null, feeling, sessionId],
     );
   }
@@ -76,10 +76,6 @@ class SessionRepository {
       [sessionId],
     );
     await ps.db.execute(
-      'DELETE FROM fact_rest WHERE session_id = ?',
-      [sessionId],
-    );
-    await ps.db.execute(
       'DELETE FROM fact_session WHERE session_id = ?',
       [sessionId],
     );
@@ -104,7 +100,6 @@ class SessionRepository {
     required List<num> reps,
     required List<num> duration,
     String? notes,
-    String? programId,
     String? parentSetId,
     int? supersetGroupNumber,
     String? exerciseName,
@@ -132,7 +127,6 @@ class SessionRepository {
         jsonEncode(reps),
         jsonEncode(duration),
         notes?.isNotEmpty == true ? notes : null,
-        programId,
         parentSetId,
         supersetGroupNumber,
         exerciseName,
@@ -151,7 +145,6 @@ class SessionRepository {
       duration: duration,
       notes: notes?.isNotEmpty == true ? notes : null,
       supersetGroupNumber: supersetGroupNumber,
-      programId: programId,
       parentSetId: parentSetId,
     );
   }

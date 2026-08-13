@@ -90,7 +90,7 @@ class ExerciseRepository {
 
   Future<List<Map<String, dynamic>>> fetchBridges(String userId) async {
     final rows = await ps.db.getAll(
-      'SELECT custom_exercise_id, custom_variation_id FROM dim_exercise_variation_bridge WHERE user_id = ? AND (deleted_locally IS NULL OR deleted_locally = 0)',
+      'SELECT custom_exercise_id, custom_variation_id FROM dim_exercise_variation_bridge WHERE user_id = ? AND (is_archived IS NULL OR is_archived = 0)',
       [userId],
     );
     return rows.cast<Map<String, dynamic>>();
@@ -198,13 +198,13 @@ class ExerciseRepository {
     );
     if (existing.isNotEmpty) {
       await ps.db.execute(
-        'UPDATE dim_exercise_variation_bridge SET deleted_locally = 0 WHERE id = ?',
+        'UPDATE dim_exercise_variation_bridge SET is_archived = 0 WHERE id = ?',
         [existing.first['id']],
       );
       return;
     }
     await ps.db.execute(
-      'INSERT INTO dim_exercise_variation_bridge (id, custom_exercise_id, custom_variation_id, user_id, deleted_locally) VALUES (?, ?, ?, ?, ?)',
+      'INSERT INTO dim_exercise_variation_bridge (id, custom_exercise_id, custom_variation_id, user_id, is_archived) VALUES (?, ?, ?, ?, ?)',
       [id, exerciseId, variationId, userId, 0],
     );
   }
@@ -244,7 +244,7 @@ class ExerciseRepository {
   /// for a DELETE. PATCHing deleted_locally instead sidesteps that entirely.
   Future<void> removeBridge(String exerciseId, String variationId) async {
     await ps.db.execute(
-      'UPDATE dim_exercise_variation_bridge SET deleted_locally = 1 WHERE custom_exercise_id = ? AND custom_variation_id = ?',
+      'UPDATE dim_exercise_variation_bridge SET is_archived = 1 WHERE custom_exercise_id = ? AND custom_variation_id = ?',
       [exerciseId, variationId],
     );
   }

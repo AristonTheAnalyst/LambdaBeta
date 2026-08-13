@@ -37,7 +37,7 @@ class PrRepository {
         INSERT INTO fact_pr
           (id, pr_id, user_id, session_set_id, custom_exercise_id,
            custom_variation_id, weight, reps, achieved_date, pr_type,
-           target_reps, target_weight, is_propagated, is_active)
+           target_reps, target_weight, is_propagated)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''',
         [
@@ -68,7 +68,7 @@ class PrRepository {
       LEFT JOIN dim_exercise e ON e.custom_exercise_id = p.custom_exercise_id
       LEFT JOIN dim_variation v ON v.custom_variation_id = p.custom_variation_id
       LEFT JOIN fact_session_set fws ON fws.session_set_id = p.session_set_id
-      WHERE p.user_id = ? AND p.is_active = 1
+      WHERE p.user_id = ?
       ORDER BY p.achieved_date
       ''',
       [userId],
@@ -87,7 +87,7 @@ class PrRepository {
       LEFT JOIN dim_exercise e ON e.custom_exercise_id = p.custom_exercise_id
       LEFT JOIN dim_variation v ON v.custom_variation_id = p.custom_variation_id
       LEFT JOIN fact_session_set fws ON fws.session_set_id = p.session_set_id
-      WHERE p.user_id = ? AND p.is_active = 1 AND p.custom_exercise_id = ?
+      WHERE p.user_id = ? AND p.custom_exercise_id = ?
       ORDER BY p.achieved_date
       ''',
       [userId, exerciseId],
@@ -102,7 +102,7 @@ class PrRepository {
       FROM fact_pr p
       LEFT JOIN dim_exercise e ON e.custom_exercise_id = p.custom_exercise_id
       LEFT JOIN dim_variation v ON v.custom_variation_id = p.custom_variation_id
-      WHERE p.user_id = ? AND p.is_active = 1 AND p.session_set_id IN (
+      WHERE p.user_id = ? AND p.session_set_id IN (
         SELECT session_set_id FROM fact_session_set WHERE session_id = ?
       )
       ORDER BY p.achieved_date
@@ -121,7 +121,7 @@ class PrRepository {
       FROM fact_pr p
       LEFT JOIN dim_exercise e ON e.custom_exercise_id = p.custom_exercise_id
       LEFT JOIN dim_variation v ON v.custom_variation_id = p.custom_variation_id
-      WHERE p.user_id = ? AND p.is_active = 1 AND p.session_set_id IN ($placeholders)
+      WHERE p.user_id = ? AND p.session_set_id IN ($placeholders)
       ''',
       [userId, ...setIds],
     );
@@ -132,21 +132,21 @@ class PrRepository {
     if (setIds.isEmpty) return;
     final placeholders = List.filled(setIds.length, '?').join(',');
     await ps.db.execute(
-      'UPDATE fact_pr SET is_active = 0 WHERE user_id = ? AND session_set_id IN ($placeholders)',
+      'DELETE FROM fact_pr WHERE user_id = ? AND session_set_id IN ($placeholders)',
       [userId, ...setIds],
     );
   }
 
   Future<void> deleteForExercise(String userId, String exerciseId) async {
     await ps.db.execute(
-      'UPDATE fact_pr SET is_active = 0 WHERE user_id = ? AND custom_exercise_id = ?',
+      'DELETE FROM fact_pr WHERE user_id = ? AND custom_exercise_id = ?',
       [userId, exerciseId],
     );
   }
 
   Future<int> count(String userId) async {
     final rows = await ps.db.getAll(
-      'SELECT COUNT(*) AS c FROM fact_pr WHERE user_id = ? AND is_active = 1',
+      'SELECT COUNT(*) AS c FROM fact_pr WHERE user_id = ?',
       [userId],
     );
     if (rows.isEmpty) return 0;

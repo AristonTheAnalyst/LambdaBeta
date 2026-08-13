@@ -27,7 +27,6 @@ const _pkColumns = {
   'fact_program_run': 'program_run_id',
   'fact_pr': 'pr_id',
   'dim_lesson': 'lesson_id',
-  'fact_rest': 'rest_id',
   'dim_planned_session': 'session_id',
   'dim_planned_session_set': 'set_id',
   'fact_goal': 'goal_id',
@@ -294,6 +293,7 @@ Future<void> openDatabase() async {
         'dim_planned_workout',
         'dim_planned_set',
         'dim_program_goal',
+        'fact_rest',
       ]) {
         await tx.execute(
           'DELETE FROM ps_crud WHERE table_name = ?',

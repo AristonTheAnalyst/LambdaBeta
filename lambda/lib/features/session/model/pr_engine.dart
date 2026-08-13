@@ -101,7 +101,6 @@ class PrRecord {
         'target_reps': targetReps,
         'target_weight': targetWeight,
         'is_propagated': isPropagated ? 1 : 0,
-        'is_active': 1,
       };
 
   static String _sessionIdFromSet(String? setId) => setId ?? '';

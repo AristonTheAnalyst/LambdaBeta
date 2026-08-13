@@ -86,9 +86,8 @@ class _SessionScreenState extends State<SessionScreen> {
     }
     _vm.removeListener(_onVmChanged);
     // The cached VM survives this State (tab switches keep workout state), so
-    // cancel the rest timer here — otherwise it keeps firing and writing
-    // fact_rest rows while the user is on another tab. State is preserved;
-    // the timer is re-armed on resume.
+    // cancel the rest timer here — otherwise it keeps ticking while the user
+    // is on another tab. State is preserved; the timer is re-armed on resume.
     _vm.pauseRest();
     _startNotesCtrl.dispose();
     _endNotesCtrl.dispose();

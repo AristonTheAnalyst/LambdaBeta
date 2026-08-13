@@ -104,49 +104,12 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
       child: _EditExerciseModal(
         controller: _editExController,
         viewModel: _viewModel,
-        onAddVariations: _openAddVariationsToExercise,
-        onCreateNewVariation: _openCreateVariationFromEditEx,
         onDelete: _confirmDeleteExercise,
       ),
     );
   }
 
-  Future<void> _openAddVariationsToExercise() async {
-    final s = _viewModel.state.value;
-    final options = s.editExAvailableVars
-        .map((v) => MultiSelectOption(
-            label: toProperCase(v.name), value: v.variationId))
-        .toList();
 
-    final selected = await showMultiSelectSheet<String>(
-      context,
-      options: options,
-      selected: [],
-      title: 'Add Variations',
-      searchable: true,
-      confirmLabel: 'Add',
-      onCreateNew: _openCreateVariationFromEditEx,
-      createNewLabel: 'New variation',
-    );
-    if (selected != null && selected.isNotEmpty) {
-      _viewModel.addEditExVarIds(selected);
-    }
-  }
-
-  void _openCreateVariationFromEditEx() {
-    _createVarController.clear();
-    _viewModel.openCreateVariation();
-    showLambdaModal(
-      context,
-      fitContent: true,
-      keyboardAware: true,
-      child: _CreateVariationModal(
-        controller: _createVarController,
-        viewModel: _viewModel,
-        onCreated: (id) => _viewModel.addEditExVarIds([id]),
-      ),
-    );
-  }
 
   void _confirmDeleteExercise(String exerciseId, String name) {
     showDialog<void>(
@@ -741,7 +704,6 @@ class _CreateExerciseModal extends StatelessWidget {
                           final id = await viewModel.submitCreateExercise();
                           if (id != null && context.mounted) {
                             Navigator.of(context, rootNavigator: true).pop();
-                            onCreated?.call(id);
                           }
                         },
                         loading: state.isCreatingEx,
@@ -765,12 +727,10 @@ class _CreateVariationModal extends StatelessWidget {
   const _CreateVariationModal({
     required this.controller,
     required this.viewModel,
-    this.onCreated,
   });
 
   final TextEditingController controller;
   final ExerciseViewModel viewModel;
-  final ValueChanged<String>? onCreated;
 
   @override
   Widget build(BuildContext context) {
@@ -820,7 +780,6 @@ class _CreateVariationModal extends StatelessWidget {
                           final id = await viewModel.submitCreateVariation();
                           if (id != null && context.mounted) {
                             Navigator.of(context, rootNavigator: true).pop();
-                            onCreated?.call(id);
                           }
                         },
                         loading: state.isCreatingVar,
@@ -844,15 +803,11 @@ class _EditExerciseModal extends StatelessWidget {
   const _EditExerciseModal({
     required this.controller,
     required this.viewModel,
-    required this.onAddVariations,
-    required this.onCreateNewVariation,
     required this.onDelete,
   });
 
   final TextEditingController controller;
   final ExerciseViewModel viewModel;
-  final VoidCallback onAddVariations;
-  final VoidCallback onCreateNewVariation;
   final void Function(String id, String name) onDelete;
 
   @override
@@ -893,67 +848,6 @@ class _EditExerciseModal extends StatelessWidget {
                   enabled: !state.isSaving,
                   textCapitalization: TextCapitalization.words,
                   onChanged: viewModel.setEditExName,
-                ),
-                const SizedBox(height: AppSpacing.lg),
-                Divider(color: AppColors.border),
-                const SizedBox(height: AppSpacing.sm),
-                Text('Assigned Variations',
-                    style: AppFonts.ui(
-                        fontSize: AppTextStyles.md,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.primary)),
-                const SizedBox(height: AppSpacing.sm),
-                if (state.editExLoadingVars)
-                  Center(
-                      child: CircularProgressIndicator(
-                          color: AppColors.accent))
-                else if (state.editExAssignedVars.isEmpty)
-                  Text('No variations assigned yet.',
-                      style: AppFonts.ui(
-                          color: AppColors.muted,
-                          fontSize: AppTextStyles.sm))
-                else
-                  ...state.editExAssignedVars.asMap().entries.map((e) {
-                    final v = e.value;
-                    return Container(
-                      padding: const EdgeInsets.symmetric(
-                          vertical: AppSpacing.sm),
-                      decoration: BoxDecoration(
-                        border: Border(
-                          bottom: BorderSide(
-                            color: e.key <
-                                    state.editExAssignedVars.length - 1
-                                ? AppColors.border
-                                : Colors.transparent,
-                            width: 0.5,
-                          ),
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text(toProperCase(v.name),
-                                style: AppFonts.ui(
-                                    fontSize: AppTextStyles.md,
-                                    color: AppColors.primary)),
-                          ),
-                          GlassButton(
-                            label: '',
-                            icon: Icons.delete_outline,
-                            color: AppColors.danger,
-                            compact: true,
-                            onPressed: () =>
-                                viewModel.removeEditExVarId(v.variationId),
-                          ),
-                        ],
-                      ),
-                    );
-                  }),
-                const SizedBox(height: AppSpacing.sm),
-                GlassButton(
-                  label: 'Add Variations',
-                  icon: Icons.add,
-                  onPressed: onAddVariations,
                 ),
                 const SizedBox(height: AppSpacing.lg),
                 Row(

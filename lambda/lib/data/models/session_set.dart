@@ -16,9 +16,7 @@ class SessionSet {
     this.exerciseName,
     this.variationName,
     this.supersetGroupNumber,
-    this.programId,
     this.parentSetId,
-    this.deletedLocally = false,
   });
 
   final String sessionSetId;
@@ -34,9 +32,7 @@ class SessionSet {
   final String? exerciseName;
   final String? variationName;
   final int? supersetGroupNumber;
-  final String? programId;
   final String? parentSetId;
-  final bool deletedLocally;
 
   factory SessionSet.fromMap(Map<String, dynamic> map) => SessionSet(
         sessionSetId: map['session_set_id'] as String,
@@ -52,16 +48,8 @@ class SessionSet {
         exerciseName: map['exercise_name'] as String?,
         variationName: map['variation_name'] as String?,
         supersetGroupNumber: map['superset_group_number'] as int?,
-        programId: map['program_id'] as String?,
         parentSetId: map['parent_set_id'] as String?,
-        deletedLocally: _toBool(map['deleted_locally']),
       );
-
-  static bool _toBool(dynamic v) {
-    if (v is bool) return v;
-    if (v is int) return v != 0;
-    return false;
-  }
 
   Map<String, dynamic> toMap() => {
         'session_set_id': sessionSetId,
@@ -77,9 +65,7 @@ class SessionSet {
         'superset_group_number': supersetGroupNumber,
         'exercise_name': exerciseName,
         'variation_name': variationName,
-        'program_id': programId,
         'parent_set_id': parentSetId,
-        'deleted_locally': deletedLocally,
       };
 
   static double? _toDouble(dynamic v) {
@@ -121,9 +107,7 @@ class PastSetRow extends SessionSet {
     super.exerciseName,
     super.variationName,
     super.supersetGroupNumber,
-    super.programId,
     super.parentSetId,
-    super.deletedLocally,
   });
 
   final DateTime sessionCreatedDate;
@@ -143,8 +127,6 @@ class PastSetRow extends SessionSet {
         exerciseName: map['exercise_name'] as String?,
         variationName: map['variation_name'] as String?,
         supersetGroupNumber: map['superset_group_number'] as int?,
-        programId: map['program_id'] as String?,
         parentSetId: map['parent_set_id'] as String?,
-        deletedLocally: SessionSet._toBool(map['deleted_locally']),
       );
 }

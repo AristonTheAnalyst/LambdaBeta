@@ -19,7 +19,6 @@ import '../../../data/repositories/lesson_repository.dart';
 import '../../../data/repositories/pr_repository.dart';
 import '../../../data/repositories/program_repository.dart';
 import '../../../data/repositories/program_run_repository.dart';
-import '../../../data/repositories/rest_period_repository.dart';
 import '../../../data/repositories/planned_session_repository.dart';
 import '../../../data/repositories/session_repository.dart';
 import '../../../shared/widgets/slide_pages.dart';
@@ -31,21 +30,19 @@ const restPresets = [60, 90, 120, 180];
 
 class SessionViewModel extends ChangeNotifier {
   SessionViewModel({
-    SessionRepository? workoutRepo,
+    SessionRepository? sessionRepo,
     ExerciseRepository? exerciseRepo,
     ProgramRepository? programRepo,
     ProgramRunRepository? programRunRepo,
     LessonRepository? lessonRepo,
-    RestPeriodRepository? restPeriodRepo,
     PrRepository? prRepo,
-    PlannedSessionRepository? workoutPlanRepo,
-  })  : _sessionRepo = workoutRepo ?? SessionRepository(),
+    PlannedSessionRepository? plannedSessionRepo,
+  })  : _sessionRepo = sessionRepo ?? SessionRepository(),
         _exerciseRepo = exerciseRepo ?? ExerciseRepository(),
         _programRepo = programRepo ?? ProgramRepository(),
         _programRunRepo = programRunRepo ?? ProgramRunRepository(),
         _lessonRepo = lessonRepo ?? LessonRepository(),
-        _restPeriodRepo = restPeriodRepo ?? RestPeriodRepository(),
-        _plannedSessionRepo = workoutPlanRepo ?? PlannedSessionRepository(),
+        _plannedSessionRepo = plannedSessionRepo ?? PlannedSessionRepository(),
         _prRepo = prRepo ?? PrRepository() {
     slidePagesController = SlidePagesController();
     _init();
@@ -57,7 +54,6 @@ class SessionViewModel extends ChangeNotifier {
   final ProgramRepository _programRepo;
   final ProgramRunRepository _programRunRepo;
   final LessonRepository _lessonRepo;
-  final RestPeriodRepository _restPeriodRepo;
   final PrRepository _prRepo;
   late final SlidePagesController slidePagesController;
   static final _lessonLog = Logger('lessons');
@@ -149,7 +145,6 @@ class SessionViewModel extends ChangeNotifier {
   bool restRunning = false;
   Timer? _restTimer;
   List<int> restDurationsThisSession = [];
-  String? _restExerciseId;
 
   // ── Derived ───────────────────────────────────────────────────────────────
   bool get hasActiveWorkout => currentWorkoutId != null;
@@ -1023,7 +1018,7 @@ class SessionViewModel extends ChangeNotifier {
       sets.where((s) => s.exerciseId == exerciseId && prSetIds.contains(s.sessionSetId)).length;
 
   // ── Rest timer ─────────────────────────────────────────────────────────────
-  // Every rest period is logged to fact_rest as its own event
+  // Rest periods are tracked in-memory for the session stats bar only.
   // (planned vs. actual seconds) once it ends — whether it completes
   // naturally, is stopped early, or is discarded via Restart. Pausing alone
   // never logs, since the rest is still in progress.
@@ -1034,7 +1029,6 @@ class SessionViewModel extends ChangeNotifier {
     restTotal = seconds;
     restRemaining = seconds;
     restRunning = true;
-    _restExerciseId = activeSlot?.activeExerciseId;
     _tickRest();
     notifyListeners();
   }
@@ -1066,30 +1060,18 @@ class SessionViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Cancels the ticking timer and clears rest state without logging —
-  /// used when the whole workout is being torn down (`cancelWorkout`), where
-  /// the workout row (and any of its rest_period rows) is about to be
-  /// deleted, so logging here would just create instantly-orphaned data.
+  /// Cancels the ticking timer and clears rest state — used when the whole
+  /// session is being torn down (`cancelSession`).
   void _stopRestTimer() {
     _restTimer?.cancel();
     restRemaining = null;
     restRunning = false;
-    _restExerciseId = null;
   }
 
   Future<void> _logRestIfInProgress() async {
     final remaining = restRemaining;
     final sessionId = currentWorkoutId;
     if (sessionId == null || remaining == null || remaining <= 0) return;
-    try {
-      await _restPeriodRepo.logRestPeriod(
-        _userId,
-        sessionId,
-        exerciseId: _restExerciseId,
-        plannedSeconds: restTotal,
-        actualSeconds: restTotal - remaining,
-      );
-    } catch (_) {}
   }
 
   void _tickRest() {
@@ -1101,18 +1083,6 @@ class SessionViewModel extends ChangeNotifier {
         restRunning = false;
         restRemaining = 0;
         restDurationsThisSession.add(restTotal);
-        final sessionId = currentWorkoutId;
-        if (sessionId != null) {
-          try {
-            await _restPeriodRepo.logRestPeriod(
-              _userId,
-              sessionId,
-              exerciseId: _restExerciseId,
-              plannedSeconds: restTotal,
-              actualSeconds: restTotal,
-            );
-          } catch (_) {}
-        }
       } else {
         restRemaining = r - 1;
       }

@@ -23,9 +23,6 @@ class ExerciseState {
     // Edit exercise modal
     this.editExercise,
     this.editExName = '',
-    this.editExOriginalVarIds = const {},
-    this.editExDraftVarIds = const {},
-    this.editExLoadingVars = false,
     // Edit variation modal
     this.editVariation,
     this.editVarName = '',
@@ -56,9 +53,6 @@ class ExerciseState {
 
   final CustomExercise? editExercise;
   final String editExName;
-  final Set<String> editExOriginalVarIds;
-  final Set<String> editExDraftVarIds;
-  final bool editExLoadingVars;
 
   final CustomVariation? editVariation;
   final String editVarName;
@@ -141,14 +135,6 @@ class ExerciseState {
   int get exTotal => sortedExercises.length;
   int get varTotal => sortedVariations.length;
 
-  List<CustomVariation> get editExAssignedVars =>
-      variations.where((v) => editExDraftVarIds.contains(v.variationId)).toList();
-
-  List<CustomVariation> get editExAvailableVars {
-    final list = variations.where((v) => !editExDraftVarIds.contains(v.variationId)).toList()
-      ..sort((a, b) => _byRecency(a.lastUsed, b.lastUsed, a.name, b.name));
-    return list;
-  }
 
   List<CustomExercise> get editVarAssignedExs =>
       exercises.where((e) => editVarDraftExIds.contains(e.exerciseId)).toList();
@@ -181,9 +167,6 @@ class ExerciseState {
     CustomExercise? editExercise,
     bool clearEditEx = false,
     String? editExName,
-    Set<String>? editExOriginalVarIds,
-    Set<String>? editExDraftVarIds,
-    bool? editExLoadingVars,
     CustomVariation? editVariation,
     bool clearEditVar = false,
     String? editVarName,
@@ -212,9 +195,6 @@ class ExerciseState {
         varPage: varPage ?? this.varPage,
         editExercise: clearEditEx ? null : (editExercise ?? this.editExercise),
         editExName: clearEditEx ? '' : (editExName ?? this.editExName),
-        editExOriginalVarIds: clearEditEx ? {} : (editExOriginalVarIds ?? this.editExOriginalVarIds),
-        editExDraftVarIds: clearEditEx ? {} : (editExDraftVarIds ?? this.editExDraftVarIds),
-        editExLoadingVars: clearEditEx ? false : (editExLoadingVars ?? this.editExLoadingVars),
         editVariation: clearEditVar ? null : (editVariation ?? this.editVariation),
         editVarName: clearEditVar ? '' : (editVarName ?? this.editVarName),
         editVarOriginalExIds: clearEditVar ? {} : (editVarOriginalExIds ?? this.editVarOriginalExIds),
@@ -272,38 +252,15 @@ class ExerciseViewModel {
     state.value = state.value.copyWith(
       editExercise: ex,
       editExName: ex.name,
-      editExLoadingVars: true,
       clearError: true,
     );
-    try {
-      final bridges = await _repo.fetchBridges(_userId);
-      final varIds = bridges
-          .where((b) => b['custom_exercise_id'] == ex.exerciseId)
-          .map((b) => b['custom_variation_id'] as String)
-          .toSet();
-      state.value = state.value.copyWith(
-        editExOriginalVarIds: varIds,
-        editExDraftVarIds: Set.from(varIds),
-        editExLoadingVars: false,
-      );
-    } catch (_) {
-      state.value = state.value.copyWith(editExLoadingVars: false);
-    }
   }
 
   void closeEditExercise() => state.value = state.value.copyWith(clearEditEx: true);
 
   void setEditExName(String v) => state.value = state.value.copyWith(editExName: v);
 
-  void addEditExVarIds(List<String> ids) {
-    final next = Set<String>.from(state.value.editExDraftVarIds)..addAll(ids);
-    state.value = state.value.copyWith(editExDraftVarIds: next);
-  }
 
-  void removeEditExVarId(String id) {
-    final next = Set<String>.from(state.value.editExDraftVarIds)..remove(id);
-    state.value = state.value.copyWith(editExDraftVarIds: next);
-  }
 
   Future<void> saveEditExercise() async {
     final s = state.value;
@@ -311,16 +268,6 @@ class ExerciseViewModel {
     state.value = s.copyWith(isSaving: true, clearError: true);
     try {
       await _repo.updateExercise(s.editExercise!.exerciseId, s.editExName.trim());
-
-      // Diff bridge assignments
-      final toAdd    = s.editExDraftVarIds.difference(s.editExOriginalVarIds);
-      final toRemove = s.editExOriginalVarIds.difference(s.editExDraftVarIds);
-      for (final varId in toAdd) {
-        await _repo.addBridge(_userId, s.editExercise!.exerciseId, varId);
-      }
-      for (final varId in toRemove) {
-        await _repo.removeBridge(s.editExercise!.exerciseId, varId);
-      }
 
       state.value = state.value.copyWith(isSaving: false, clearEditEx: true);
       await fetchAll();
