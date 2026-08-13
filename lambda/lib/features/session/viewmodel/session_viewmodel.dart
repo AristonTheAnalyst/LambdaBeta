@@ -500,9 +500,13 @@ class SessionViewModel extends ChangeNotifier {
       ));
     }
     final records = fullPrTimeline(combined);
+    // Only THIS session's records — the timeline includes all of history, and
+    // the stats bar must count this session's PRs, not every set that ever
+    // caused a PR.
     prSetIds = {
       for (final r in records)
-        if (r.setId != null && r.setId!.isNotEmpty) r.setId!,
+        if (r.sessionId == id && r.setId != null && r.setId!.isNotEmpty)
+          r.setId!,
     };
   }
 
