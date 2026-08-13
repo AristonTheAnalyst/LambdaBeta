@@ -61,15 +61,18 @@ class _ExerciseCardState extends State<ExerciseCard> {
 
         return Container(
           decoration: BoxDecoration(
-            color: AppColors.surface,
+            // Planned containers match the prep page's planned-session picker:
+            // plannedBg fill with a planned border at 0.3 alpha.
+            color: widget.slot.planned && !viewingHistory
+                ? AppColors.plannedBg
+                : AppColors.surface,
             borderRadius: BorderRadius.circular(AppRadius.lg),
             border: Border.all(
               color: viewingHistory
                   ? AppColors.history
                   : widget.slot.planned
-                      ? AppColors.planned
+                      ? AppColors.planned.withValues(alpha: 0.3)
                       : AppColors.border,
-              width: widget.slot.planned && !viewingHistory ? 1.2 : 0.5,
             ),
           ),
           clipBehavior: Clip.antiAlias,
