@@ -380,6 +380,16 @@ class SessionViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Clears the template selection — the session becomes free-form
+  /// (no planned sets, no program attribution).
+  void clearTemplateSelection() {
+    selectedPlannedSession = null;
+    selectedStandaloneWorkout = null;
+    plannedSetsByExercise = {};
+    plannedExerciseOrder = [];
+    notifyListeners();
+  }
+
   /// Refreshes the current program / planned-workout state — called when the
   /// session tab becomes active again so a newly created (or begun) program
   /// shows without a full restart.
@@ -1089,6 +1099,7 @@ class SessionViewModel extends ChangeNotifier {
     error = null;
     notifyListeners();
     try {
+      final template = selectedStandaloneWorkout ?? selectedPlannedSession;
       final id = await _sessionRepo.createSession(
         _userId,
         preNotes: startNotes.trim().isEmpty ? null : startNotes.trim(),
@@ -1101,12 +1112,8 @@ class SessionViewModel extends ChangeNotifier {
         programRunId: selectedStandaloneWorkout != null
             ? null
             : programProgress?.run.programRunId,
-        parentSessionId: selectedStandaloneWorkout != null
-            ? null
-            : selectedPlannedSession?.sessionId,
-        parentSessionName: selectedStandaloneWorkout != null
-            ? null
-            : selectedPlannedSession?.name,
+        parentSessionId: template?.sessionId,
+        parentSessionName: template?.name,
         preFeeling: sessionFeeling,
       );
       currentWorkoutId = id;

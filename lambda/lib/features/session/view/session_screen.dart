@@ -241,18 +241,27 @@ class _StartPage extends StatelessWidget {
           child: ListView(
             padding: const EdgeInsets.all(AppSpacing.lg),
             children: [
-              if (vm.selectedPlannedSession != null) ...[
+              if (vm.availableWorkouts.isNotEmpty ||
+                  vm.standaloneWorkouts.isNotEmpty ||
+                  vm.selectedPlannedSession != null ||
+                  vm.selectedStandaloneWorkout != null) ...[
                 GestureDetector(
-                  onTap: vm.availableWorkouts.length > 1
-                      ? () => _showWorkoutPicker(context, vm)
-                      : null,
+                  onTap: () => _showWorkoutPicker(context, vm),
                   child: Container(
                     padding: const EdgeInsets.all(AppSpacing.md),
                     decoration: BoxDecoration(
-                      color: AppColors.successBg,
+                      color: vm.selectedPlannedSession != null
+                          ? AppColors.successBg
+                          : vm.selectedStandaloneWorkout != null
+                              ? AppColors.accentBg
+                              : AppColors.surface,
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(
-                          color: AppColors.success.withValues(alpha: 0.3)),
+                          color: vm.selectedPlannedSession != null
+                              ? AppColors.success.withValues(alpha: 0.3)
+                              : vm.selectedStandaloneWorkout != null
+                                  ? AppColors.accent.withValues(alpha: 0.3)
+                                  : AppColors.border),
                     ),
                     child: Row(
                       children: [
@@ -260,17 +269,37 @@ class _StartPage extends StatelessWidget {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text('Week ${vm.programProgress!.weekNumber} · ${vm.programProgress!.program.name}',
-                                  style: AppFonts.mono(fontSize: 9, letterSpacing: 0.6, color: AppColors.success)),
-                              const SizedBox(height: 2),
-                              Text(vm.selectedPlannedSession!.name,
-                                  style: AppFonts.ui(
-                                      fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.primary)),
+                              if (vm.selectedPlannedSession != null) ...[
+                                Text('Week ${vm.programProgress!.weekNumber} · ${vm.programProgress!.program.name}',
+                                    style: AppFonts.mono(fontSize: 9, letterSpacing: 0.6, color: AppColors.success)),
+                                const SizedBox(height: 2),
+                                Text(vm.selectedPlannedSession!.name,
+                                    style: AppFonts.ui(
+                                        fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.primary)),
+                              ] else if (vm.selectedStandaloneWorkout != null) ...[
+                                Text('Standalone session',
+                                    style: AppFonts.mono(fontSize: 9, letterSpacing: 0.6, color: AppColors.accent)),
+                                const SizedBox(height: 2),
+                                Text(vm.selectedStandaloneWorkout!.name,
+                                    style: AppFonts.ui(
+                                        fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.primary)),
+                              ] else ...[
+                                Text('Session template',
+                                    style: AppFonts.mono(fontSize: 9, letterSpacing: 0.6, color: AppColors.muted)),
+                                const SizedBox(height: 2),
+                                Text('No planned session',
+                                    style: AppFonts.ui(
+                                        fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.muted)),
+                              ],
                             ],
                           ),
                         ),
-                        if (vm.availableWorkouts.length > 1)
-                          Icon(Icons.swap_vert, size: 18, color: AppColors.success),
+                        Icon(Icons.swap_vert, size: 18,
+                            color: vm.selectedPlannedSession != null
+                                ? AppColors.success
+                                : vm.selectedStandaloneWorkout != null
+                                    ? AppColors.accent
+                                    : AppColors.muted),
                       ],
                     ),
                   ),
@@ -331,7 +360,8 @@ class _StartPage extends StatelessWidget {
     );
   }
 
-  /// Lets the user pick which planned workout to log instead of the auto-next.
+  /// Lets the user pick which session template to log — a standalone
+  /// template, a program planned session, or none (free-form).
   Future<void> _showWorkoutPicker(BuildContext context, SessionViewModel vm) async {
     await showModalBottomSheet<String>(
       context: context,
@@ -347,11 +377,42 @@ class _StartPage extends StatelessWidget {
           children: [
             Padding(
               padding: const EdgeInsets.all(AppSpacing.lg),
-              child: Text('Select workout',
+              child: Text('Select session',
                   style: AppFonts.ui(
                       fontSize: AppTextStyles.lg,
                       fontWeight: FontWeight.w800,
                       color: AppColors.primary)),
+            ),
+            InkWell(
+              onTap: () {
+                vm.clearTemplateSelection();
+                Navigator.of(ctx).pop();
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.lg, vertical: AppSpacing.md),
+                color: vm.selectedPlannedSession == null &&
+                        vm.selectedStandaloneWorkout == null
+                    ? AppColors.accentBg
+                    : Colors.transparent,
+                child: Row(
+                  children: [
+                    Icon(Icons.edit_off_outlined,
+                        size: 18, color: AppColors.muted),
+                    const SizedBox(width: AppSpacing.sm),
+                    Expanded(
+                      child: Text('No planned session',
+                          style: AppFonts.ui(
+                              fontSize: AppTextStyles.md,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.primary)),
+                    ),
+                    if (vm.selectedPlannedSession == null &&
+                        vm.selectedStandaloneWorkout == null)
+                      Icon(Icons.check, size: 18, color: AppColors.accent),
+                  ],
+                ),
+              ),
             ),
             if (vm.standaloneWorkouts.isNotEmpty) ...[
               Padding(
