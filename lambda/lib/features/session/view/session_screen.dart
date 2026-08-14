@@ -11,6 +11,7 @@ import '../../../shared/widgets/glass_button.dart';
 import '../../../shared/widgets/lambda_button.dart';
 import '../../../shared/widgets/lambda_input.dart';
 import '../../../shared/widgets/page_header.dart';
+import '../../../shared/widgets/reflection_summary.dart';
 import '../../../shared/widgets/slide_pages.dart';
 import '../model/pr_engine.dart';
 import '../model/session_local_state.dart';
@@ -307,22 +308,24 @@ class _StartPage extends StatelessWidget {
                   vm.selectedPlannedSession != null ||
                   vm.selectedStandaloneWorkout != null) ...[
                 GestureDetector(
-                  onTap: () => _showWorkoutPicker(context, vm),
+                  // Locked once the workout starts — the session template is
+                  // already bound to the active workout and can't be changed.
+                  onTap: vm.hasActiveWorkout ? null : () => _showWorkoutPicker(context, vm),
                   child: Container(
                     padding: const EdgeInsets.all(AppSpacing.md),
                     decoration: BoxDecoration(
-                      color: vm.selectedPlannedSession != null
+                      // Any selected template — program planned or standalone —
+                      // gets the planned styling (plannedBg fill + planned outline).
+                      color: vm.selectedPlannedSession != null ||
+                              vm.selectedStandaloneWorkout != null
                           ? AppColors.plannedBg
-                          : vm.selectedStandaloneWorkout != null
-                              ? AppColors.accentBg
-                              : AppColors.surface,
+                          : AppColors.surface,
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(
-                          color: vm.selectedPlannedSession != null
+                          color: vm.selectedPlannedSession != null ||
+                                  vm.selectedStandaloneWorkout != null
                               ? AppColors.planned.withValues(alpha: 0.3)
-                              : vm.selectedStandaloneWorkout != null
-                                  ? AppColors.planned.withValues(alpha: 0.3)
-                                  : AppColors.border),
+                              : AppColors.border),
                     ),
                     child: Row(
                       children: [
@@ -355,15 +358,33 @@ class _StartPage extends StatelessWidget {
                             ],
                           ),
                         ),
-                        Icon(Icons.swap_vert, size: 18,
-                            color: vm.selectedPlannedSession != null
-                                ? AppColors.planned
-                                : vm.selectedStandaloneWorkout != null
+                        Icon(vm.hasActiveWorkout ? Icons.lock_outline : Icons.swap_vert,
+                            size: 18,
+                            color: vm.hasActiveWorkout
+                                ? AppColors.muted
+                                : vm.selectedPlannedSession != null ||
+                                        vm.selectedStandaloneWorkout != null
                                     ? AppColors.planned
                                     : AppColors.muted),
                       ],
                     ),
                   ),
+                ),
+                const SizedBox(height: AppSpacing.lg),
+              ],
+              // Latest completed session's reflection (PRs + lessons), so the
+              // user sees last session's outcome before starting the next.
+              if (vm.latestReflectionExercises.isNotEmpty) ...[
+                Text('LAST SESSION',
+                    style: AppFonts.mono(
+                        fontSize: 9, letterSpacing: 0.8, color: AppColors.muted)),
+                const SizedBox(height: AppSpacing.sm),
+                ReflectionSummary(
+                  exerciseIds: vm.latestReflectionExercises,
+                  prsByExercise: vm.latestReflectionPrsByExercise,
+                  lessonsByExercise: vm.latestReflectionLessonsByExercise,
+                  exerciseNameFor: (id) => vm.latestReflectionExerciseNames[id] ?? '',
+                  previousFor: vm.previousForLatestReflection,
                 ),
                 const SizedBox(height: AppSpacing.lg),
               ],
@@ -733,178 +754,28 @@ class _ReflectionPage extends StatelessWidget {
   final TextEditingController notesCtrl;
   final Future<void> Function() onEnd;
 
-  static String _fmt(num n) =>
-      n == n.roundToDouble() ? n.toInt().toString() : n.toString();
-
-  /// PR showcase — the axes beaten this session per exercise × variation.
-  /// When a single set improved both the rep-max and the weight-max axes,
-  /// only the RM record is shown (dedup); weight-max appears alone only for
-  /// volume PRs. Lessons are listed under each exercise in the same format
-  /// as the lessons modal, with an open-book marker.
-  List<Widget> _summarySections() {
-    final sections = <Widget>[];
+  /// PR showcase + lessons for this session, via the shared
+  /// [ReflectionSummary] (same styling as the prep page's latest-session
+  /// preview — one implementation).
+  Widget _buildSummary() {
+    final ids = [for (final slot in vm.exerciseSlots) ...slot.exerciseIds];
     final prs = vm.prsThisSession;
-
-    // Collect the exercises that have content first so a bottom divider can
-    // be added to every section except the last (the sticky bottom bar's
-    // top border already divides the last one).
-    final contentExercises = <String>[];
-    for (final slot in vm.exerciseSlots) {
-      for (final exerciseId in slot.exerciseIds) {
-        final exPrs = prs.where((p) => p.exerciseId == exerciseId).toList();
-        final lessons = vm.lessonsFor(exerciseId);
-        if (exPrs.isNotEmpty || lessons.isNotEmpty) {
-          contentExercises.add(exerciseId);
-        }
-      }
-    }
-
-    var sectionIndex = 0;
-    for (final slot in vm.exerciseSlots) {
-      for (final exerciseId in slot.exerciseIds) {
-        if (!contentExercises.contains(exerciseId)) continue;
-        final isLast = sectionIndex == contentExercises.length - 1;
-        sectionIndex++;
-        final exerciseName =
-            toProperCase(vm.exerciseDisplayName(exerciseId));
-        final exPrs = prs.where((p) => p.exerciseId == exerciseId).toList();
-        final lessons = vm.lessonsFor(exerciseId);
-
-        sections.add(Padding(
-          padding: const EdgeInsets.only(top: AppSpacing.lg, bottom: AppSpacing.sm),
-          child: Text(exerciseName,
-              style: AppFonts.ui(
-                  fontSize: AppTextStyles.md,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.primary)),
-        ));
-
-        // Group by source set; a set that fired both axes shows its RM only.
-        final bySet = <String?, List<PrRecord>>{};
-        for (final p in exPrs) {
-          bySet.putIfAbsent(p.setId, () => []).add(p);
-        }
-        for (final group in bySet.values) {
-          final rm = group.where((p) => p.type == PrType.repMax).firstOrNull;
-          final wm = group.where((p) => p.type == PrType.weightMax).firstOrNull;
-          if (rm != null && wm != null) {
-            // Both axes fired: prefer the one with a meaningful "before"
-            // (5kg x 9 after 5kg x 7 reads as a weight-max progression,
-            // not another first RM). Both or neither -> RM.
-            final rmHasPrev = _previousFor(rm) != null;
-            final wmHasPrev = _previousFor(wm) != null;
-            sections.add(rmHasPrev || !wmHasPrev ? _prCard(rm) : _prCard(wm));
-          } else if (rm != null) {
-            sections.add(_prCard(rm));
-          } else if (wm != null) {
-            sections.add(_prCard(wm));
-          }
-        }
-
-        if (lessons.isNotEmpty) {
-          for (final lesson in lessons) {
-            sections.add(Padding(
-              padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-              child: Container(
-                padding: const EdgeInsets.all(AppSpacing.sm),
-                decoration: BoxDecoration(
-                  color: AppColors.surfaceHigh,
-                  borderRadius: BorderRadius.circular(AppRadius.md),
-                  border: Border.all(color: AppColors.border),
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(Icons.menu_book_outlined,
-                        size: 16, color: AppColors.primary),
-                    const SizedBox(width: AppSpacing.sm),
-                    Expanded(
-                      child: Text(lesson.text,
-                          style: AppFonts.ui(
-                              fontSize: AppTextStyles.sm,
-                              color: AppColors.primary)),
-                    ),
-                  ],
-                ),
-              ),
-            ));
-          }
-        }
-        if (!isLast) {
-          sections.add(Padding(
-            padding: const EdgeInsets.only(top: AppSpacing.md),
-            child: Divider(color: AppColors.border, height: 1),
-          ));
-        }
-      }
-    }
-    return sections;
-  }
-
-  /// The record this PR beat on its axis — history OR an earlier set in
-  /// the same session.
-  PrRecord? _previousFor(PrRecord p) {
-    if (p.type == PrType.repMax) {
-      return vm.previousRepMax(
-          p.exerciseId, p.variationId, p.targetReps ?? p.reps.toInt());
-    }
-    return vm.previousWeightMax(
-        p.exerciseId, p.variationId, p.targetWeight ?? p.weight);
-  }
-
-  /// One PR row: the axis beaten this session with its before/after.
-  /// rep-max: "5RM: 100kg → 105kg"; weight-max: "100kg: 3 → 5 reps".
-  /// PR-set style: accentBg fill with the accent outline.
-  Widget _prCard(PrRecord p) {
-    final String? before;
-    final String after;
-    final String axisLabel;
-    if (p.type == PrType.repMax) {
-      final prev = _previousFor(p);
-      before = prev != null ? '${_fmt(prev.weight)}kg' : null;
-      after = '${_fmt(p.weight)}kg';
-      axisLabel = '${p.targetReps ?? ''}RM';
-    } else {
-      final prev = _previousFor(p);
-      before = prev != null ? '${_fmt(prev.reps)} reps' : null;
-      after = '${_fmt(p.reps)} reps';
-      axisLabel = '${_fmt(p.targetWeight ?? p.weight)}kg';
-    }
-    return Container(
-      margin: const EdgeInsets.only(bottom: AppSpacing.sm),
-      padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.md, vertical: AppSpacing.sm),
-      decoration: BoxDecoration(
-        color: AppColors.accentBg,
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(color: AppColors.accent, width: 1.2),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.emoji_events_outlined, size: 16, color: AppColors.accent),
-          const SizedBox(width: AppSpacing.sm),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (p.variationName != null)
-                  Text(toProperCase(p.variationName!),
-                      style: AppFonts.mono(
-                          fontSize: 9,
-                          letterSpacing: 0.6,
-                          color: AppColors.accent)),
-                Text(before != null
-                    ? '$axisLabel: $before  →  $after'
-                    : '$axisLabel: $after (First PR)',
-                    style: AppFonts.mono(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.accent)),
-              ],
-            ),
-          ),
-        ],
-      ),
+    return ReflectionSummary(
+      exerciseIds: ids,
+      prsByExercise: {
+        for (final id in ids)
+          id: prs.where((p) => p.exerciseId == id).toList(),
+      },
+      lessonsByExercise: {
+        for (final id in ids)
+          id: [for (final l in vm.lessonsFor(id)) l.text],
+      },
+      exerciseNameFor: (id) => vm.exerciseDisplayName(id),
+      previousFor: (p) => p.type == PrType.repMax
+          ? vm.previousRepMax(p.exerciseId, p.variationId,
+              p.targetReps ?? p.reps.toInt())
+          : vm.previousWeightMax(p.exerciseId, p.variationId,
+              p.targetWeight ?? p.weight),
     );
   }
 
@@ -919,7 +790,7 @@ class _ReflectionPage extends StatelessWidget {
             child: ListView(
               padding: const EdgeInsets.all(AppSpacing.lg),
               children: [
-                if (vm.sets.isNotEmpty) ..._summarySections(),
+                if (vm.sets.isNotEmpty) _buildSummary(),
               ],
             ),
           ),

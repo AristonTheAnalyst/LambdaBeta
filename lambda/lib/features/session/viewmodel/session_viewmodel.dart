@@ -138,6 +138,25 @@ class SessionViewModel extends ChangeNotifier {
   PrRecord? previousWeightMax(String exerciseId, String? variationId, num weight) =>
       _prevWeightMax[(exerciseId, variationId, weight)];
 
+  // ── Latest-session reflection (prep page preview) ──────────────────────────
+  /// Reflection data of the most recent completed session — PRs and lessons
+  /// only — rendered on the prep page so last session's outcome is visible
+  /// before starting the next one. Exercises are in first-appearance order.
+  List<String> latestReflectionExercises = [];
+  Map<String, List<PrRecord>> latestReflectionPrsByExercise = {};
+  Map<String, List<String>> latestReflectionLessonsByExercise = {};
+  Map<String, String> latestReflectionExerciseNames = {};
+  final _latestPrevRepMax = <(String, String?, int), PrRecord?>{};
+  final _latestPrevWeightMax = <(String, String?, num), PrRecord?>{};
+
+  /// The record a latest-session PR beat on its axis — the before-value for
+  /// the prep preview's before/after rows.
+  PrRecord? previousForLatestReflection(PrRecord p) => p.type == PrType.repMax
+      ? _latestPrevRepMax[
+          (p.exerciseId, p.variationId, p.targetReps ?? p.reps.toInt())]
+      : _latestPrevWeightMax[
+          (p.exerciseId, p.variationId, p.targetWeight ?? p.weight)];
+
   // ── Historical set editing ─────────────────────────────────────────────────
   bool historyEditConfirmed = false;
 
@@ -397,6 +416,10 @@ class SessionViewModel extends ChangeNotifier {
   /// still alive (clears the header if the program was deleted).  Full reload
   /// of available workouts and planned sets is deferred until the workout ends.
   Future<void> refreshProgram() async {
+    // Refresh the past-sets timeline (and the latest-session reflection built
+    // from it) on tab return — edits made on other tabs (logs, lessons) must
+    // show up here without a restart.
+    await _loadPastSets();
     try {
       // Validate the program reference regardless of active-workout state:
       // if the user deleted the program from the library mid-session, clear
@@ -452,6 +475,84 @@ class SessionViewModel extends ChangeNotifier {
           (key, sets) => MapEntry(key, bestEverForExercise(sets, variationId: key.$2)));
     } catch (_) {}
     pastSetsLoaded = true;
+    notifyListeners();
+    await _computeLatestReflection();
+  }
+
+  /// Computes the latest completed session's reflection summary — same
+  /// `fullPrTimeline` walk and session-scoped before-tracking as
+  /// `_recomputePRs`, but for the most recent non-active session.
+  Future<void> _computeLatestReflection() async {
+    latestReflectionExercises = [];
+    latestReflectionPrsByExercise = {};
+    latestReflectionLessonsByExercise = {};
+    latestReflectionExerciseNames = {};
+    _latestPrevRepMax.clear();
+    _latestPrevWeightMax.clear();
+    if (_pastSets.isEmpty) return;
+
+    // Timeline rows are created_date DESC, set_number ASC — the first row's
+    // session is the most recently completed workout.
+    final latestId = _pastSets.first.sessionId;
+    final records = fullPrTimeline(_pastSets);
+
+    // Before-tracking per axis (history AND earlier sets in the same
+    // session), exactly like _recomputePRs.
+    final lastRepMax = <(String, String?, int), PrRecord?>{};
+    final lastWeightMax = <(String, String?, num), PrRecord?>{};
+    for (final r in records) {
+      if (r.type == PrType.repMax && r.targetReps != null) {
+        final key = (r.exerciseId, r.variationId, r.targetReps!);
+        if (r.sessionId == latestId) _latestPrevRepMax[key] = lastRepMax[key];
+        lastRepMax[key] = r;
+      } else if (r.type == PrType.weightMax && r.targetWeight != null) {
+        final key = (r.exerciseId, r.variationId, r.targetWeight!);
+        if (r.sessionId == latestId) _latestPrevWeightMax[key] = lastWeightMax[key];
+        lastWeightMax[key] = r;
+      }
+    }
+    final sessionPrs = records
+        .where((r) => r.sessionId == latestId && !r.isPropagated)
+        .toList();
+
+    // Exercise order = first appearance in the session (set-number order);
+    // names prefer the current catalog, falling back to the logged snapshot
+    // (mirrors exerciseDisplayName for deactivated exercises).
+    final orderedIds = <String>[];
+    final nameById = <String, String>{};
+    for (final s in _pastSets) {
+      if (s.sessionId != latestId) continue;
+      nameById.putIfAbsent(s.exerciseId,
+          () => exerciseDetailMap[s.exerciseId]?.name ?? s.exerciseName ?? '');
+      if (!orderedIds.contains(s.exerciseId)) orderedIds.add(s.exerciseId);
+    }
+
+    // Lessons are per-exercise and cross-session — fetch them so the preview
+    // is populated without opening the lessons modal first (same pattern as
+    // loadLessonsFor), and cache them for the upcoming session's cards.
+    for (final id in orderedIds) {
+      try {
+        lessonsByExercise[id] = await _lessonRepo.fetchLessons(_userId, id);
+      } catch (_) {}
+    }
+
+    final contentIds = orderedIds
+        .where((id) =>
+            sessionPrs.any((p) => p.exerciseId == id) ||
+            (lessonsByExercise[id] ?? const []).isNotEmpty)
+        .toList();
+    latestReflectionExercises = contentIds;
+    latestReflectionExerciseNames = {
+      for (final id in contentIds) id: nameById[id] ?? ''
+    };
+    latestReflectionPrsByExercise = {
+      for (final id in contentIds)
+        id: sessionPrs.where((p) => p.exerciseId == id).toList()
+    };
+    latestReflectionLessonsByExercise = {
+      for (final id in contentIds)
+        id: [for (final l in lessonsByExercise[id] ?? const <Lesson>[]) l.text]
+    };
     notifyListeners();
   }
 
