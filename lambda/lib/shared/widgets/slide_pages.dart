@@ -74,16 +74,21 @@ class SlidePages extends StatelessWidget {
     super.key,
     required this.controller,
     required this.children,
+    this.physics = const PageScrollPhysics(),
   });
 
   final SlidePagesController controller;
   final List<Widget> children;
 
+  /// Pass [NeverScrollableScrollPhysics] to make page changes
+  /// button-driven only (e.g. the session screen's strict wizard).
+  final ScrollPhysics physics;
+
   @override
   Widget build(BuildContext context) {
     return PageView(
       controller: controller.pageController,
-      physics: const PageScrollPhysics(),
+      physics: physics,
       children: children,
     );
   }

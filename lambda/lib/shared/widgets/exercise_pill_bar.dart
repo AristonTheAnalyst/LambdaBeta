@@ -130,9 +130,10 @@ class _ExercisePillBarState extends State<ExercisePillBar> {
       children: [
         Expanded(
           child: SizedBox(
-            // Pills (42) + 8px gap + scrollbar thumb (3px) + 4px gap below —
-            // clear breathing room on both sides of the thumb.
-            height: 57,
+            // Pills (30) centered + scrollbar thumb (3) below + 4px breathing
+            // room under the thumb. Centering splits the slack above/below
+            // the pills so the page gaps on either side read evenly.
+            height: 52,
             child: Padding(
               padding: const EdgeInsets.only(bottom: 4),
               child: Scrollbar(
@@ -140,9 +141,9 @@ class _ExercisePillBarState extends State<ExercisePillBar> {
                 thickness: 3,
                 radius: const Radius.circular(2),
                 child: Align(
-                  alignment: Alignment.topCenter,
+                  alignment: Alignment.center,
                   child: SizedBox(
-                    height: 42,
+                    height: 30,
                     child: _reorderable
                         ? _feathered(ReorderableListView(
                             scrollDirection: Axis.horizontal,

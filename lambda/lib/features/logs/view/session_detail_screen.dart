@@ -13,6 +13,7 @@ import '../../../data/models/session_set.dart';
 import '../../../shared/mixins/unsaved_changes_guard.dart';
 import '../../../shared/widgets/page_header.dart';
 import '../../../shared/widgets/exercise_pill_bar.dart';
+import '../../../shared/widgets/feeling_rating.dart';
 import '../../../shared/widgets/glass_button.dart';
 import '../../../shared/widgets/slide_up_modal.dart';
 import '../../../shared/widgets/stats_row.dart';
@@ -174,33 +175,13 @@ class _SessionBody extends StatelessWidget {
                 if (state.session?.preFeeling != null)
                   Padding(
                     padding: const EdgeInsets.only(top: AppSpacing.sm, bottom: AppSpacing.xs),
-                    child: Row(
-                      children: [
-                        Text('Pre-workout feeling: ',
-                            style: AppFonts.ui(fontSize: 11, color: AppColors.muted)),
-                        ...List.generate(5, (i) {
-                          final n = i + 1;
-                          final selected = state.session!.preFeeling! >= n;
-                          return Container(
-                            width: 20,
-                            height: 20,
-                            margin: const EdgeInsets.only(right: 4),
-                            decoration: BoxDecoration(
-                              color: selected ? AppColors.accent : AppColors.surfaceHigh,
-                              borderRadius: BorderRadius.circular(4),
-                              border: Border.all(
-                                  color: selected ? AppColors.accent : AppColors.border),
-                            ),
-                            child: Center(
-                              child: Text('$n',
-                                  style: AppFonts.ui(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w600,
-                                      color: selected ? AppColors.accentText : AppColors.muted)),
-                            ),
-                          );
-                        }),
-                      ],
+                    child: FeelingRating(
+                      value: state.session!.preFeeling,
+                      label: 'Pre-workout feeling: ',
+                      size: 20,
+                      radius: 4,
+                      spacing: 4,
+                      textSize: 10,
                     ),
                   ),
                 const SizedBox(height: AppSpacing.md),

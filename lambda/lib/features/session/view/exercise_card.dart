@@ -41,7 +41,6 @@ class _ExerciseCardState extends State<ExerciseCard> {
         final exerciseId = widget.slot.activeExerciseId;
         final detail = vm.exerciseDetailMap[exerciseId];
         final name = toProperCase(vm.exerciseDisplayName(exerciseId));
-        final isSuperset = widget.slot.type == SessionSlotType.superset;
         final lessons = vm.lessonsFor(exerciseId);
         final history = vm.historyFor(exerciseId);
         final realSets = vm.sets.where((s) => s.exerciseId == exerciseId).toList()
@@ -75,8 +74,6 @@ class _ExerciseCardState extends State<ExerciseCard> {
             children: [
               if (viewingHistory)
                 _historyBanner(_viewingSession!)
-              else if (isSuperset)
-                _supersetBar(widget.slot, vm)
               else if (featuredLesson != null)
                 _lessonBar(featuredLesson, exerciseId, name),
               _header(
@@ -119,42 +116,9 @@ class _ExerciseCardState extends State<ExerciseCard> {
     );
   }
 
-  /// The superset's exercise switcher — tappable pills, one per exercise in
-  /// the superset, so jumping to a specific one is an explicit tap rather
-  /// than the old "tap the tab bar chip again to cycle" gesture.
-  Widget _supersetBar(SessionExerciseSlot slot, SessionViewModel vm) {
-    return Container(
-      color: AppColors.accentBg,
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      child: Row(
-        children: [
-          Icon(Icons.hexagon_outlined, size: 12, color: AppColors.primary),
-          const SizedBox(width: 8),
-          Expanded(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  for (var i = 0; i < slot.exerciseIds.length; i++) ...[
-                    if (i > 0)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 4),
-                        child: Icon(Icons.chevron_right, size: 13, color: AppColors.muted),
-                      ),
-                    _SupersetPill(
-                      label: toProperCase(vm.exerciseDetailMap[slot.exerciseIds[i]]?.name ?? ''),
-                      isActive: i == slot.activeIndex,
-                      onTap: () => vm.setSupersetIndex(slot, i),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  // Supersets were retired from the frontend UX (2026-08-14, see CLAUDE.md):
+  // the exercise switcher bar for superset slots was removed — a restored
+  // superset slot renders its active exercise like a single slot.
 
   Widget _lessonBar(Lesson lesson, String exerciseId, String exerciseName) {
     return GestureDetector(
@@ -447,34 +411,6 @@ class _ExerciseCardState extends State<ExerciseCard> {
 
   Widget _colLabel(String text) =>
       Text(text, textAlign: TextAlign.center, style: AppFonts.mono(fontSize: 8, letterSpacing: 0.6, color: AppColors.muted));
-}
-
-class _SupersetPill extends StatelessWidget {
-  const _SupersetPill({required this.label, required this.isActive, required this.onTap});
-
-  final String label;
-  final bool isActive;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        decoration: BoxDecoration(
-          color: isActive ? AppColors.surfaceHigh : Colors.transparent,
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: isActive ? AppColors.primary : AppColors.border),
-        ),
-        child: Text(label,
-            style: AppFonts.mono(
-                fontSize: 10,
-                fontWeight: isActive ? FontWeight.w700 : FontWeight.w400,
-                color: isActive ? AppColors.accent : AppColors.muted)),
-      ),
-    );
-  }
 }
 
 /// One row in the history viewer's set list. Weight/reps are editable, but

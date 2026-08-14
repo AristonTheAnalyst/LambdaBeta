@@ -40,7 +40,7 @@ The app has three distinct workout screens that share a common UX. **The session
 - Renders: `ExerciseTabBar` → `ExerciseCard` → `SessionSetRow` grid + `RestTimerBar` + `SessionStatsBar`
 
 **Key features (in priority order):**
-- Exercise tab bar (chips, long-press reorderable, superset hexagon icons, set count badges)
+- Exercise tab bar (chips, long-press reorderable, set count badges)
 - Exercise card: PLANNED/UNPLANNED badge, PR count badge, lesson bar, history picker
 - Inline editable set grid: KG/REPS/VARIATION/NOTE columns, `SessionSetRow` with:
   - `FilteringTextInputFormatter` for numeric-only weight/reps
@@ -237,3 +237,4 @@ Each repository wraps PowerSync SQLite CRUD. Key methods:
 6. **Reorderable exercise tabs:** Long-press drag to reorder (when 3+ tabs). Uses `ReorderableDragStartListener` (instant touch-activation).
 7. **History:** Uses `groupHistoryByExercise` from `session_local_state.dart`. Read-only in planner and past-session viewer; editable with confirmation gate only in session history view.
 8. **initState defer:** Viewmodel methods that mutate `ValueNotifier` state synchronously must be called after the first frame via `WidgetsBinding.instance.addPostFrameCallback` to avoid `setState() during build`.
+9. **Supersets retired from the frontend (2026-08-14):** no UI creates or emphasizes supersets anymore — the add-exercise modal adds single exercises only, no superset chooser, no hexagon icons, no in-card exercise switcher. The DB columns (`fact_workout_set.superset_group_number`, `exercise_order` superset slots) and the ViewModel's dormant data-model support (`addSupersetSlot`, `setSupersetIndex`, superset slot seeding) remain for compatibility with existing data. A restored superset slot renders as its first exercise. Re-adding supersets to the UX means re-wiring the modal chooser + `addSupersetSlot` + the in-card switcher, not schema work.

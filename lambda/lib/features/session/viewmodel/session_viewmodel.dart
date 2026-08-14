@@ -92,6 +92,10 @@ class SessionViewModel extends ChangeNotifier {
   int? endFeeling;
   bool endLoading = false;
 
+  /// True after a session ends until the next one starts — the wizard lands
+  /// back on Prep, which greets with the completion message.
+  bool sessionJustCompleted = false;
+
   // ── Error ──────────────────────────────────────────────────────────────────
   String? error;
 
@@ -148,6 +152,11 @@ class SessionViewModel extends ChangeNotifier {
   Map<String, String> latestReflectionExerciseNames = {};
   final _latestPrevRepMax = <(String, String?, int), PrRecord?>{};
   final _latestPrevWeightMax = <(String, String?, num), PrRecord?>{};
+
+  /// The most recent completed session (fact row) — powers the prep page's
+  /// LAST SESSION block: planned-session name + post-feeling. Null until
+  /// [_computeLatestReflection] finds a completed session.
+  Session? latestSession;
 
   /// The record a latest-session PR beat on its axis — the before-value for
   /// the prep preview's before/after rows.
@@ -487,6 +496,7 @@ class SessionViewModel extends ChangeNotifier {
     latestReflectionPrsByExercise = {};
     latestReflectionLessonsByExercise = {};
     latestReflectionExerciseNames = {};
+    latestSession = null;
     _latestPrevRepMax.clear();
     _latestPrevWeightMax.clear();
     if (_pastSets.isEmpty) return;
@@ -494,6 +504,11 @@ class SessionViewModel extends ChangeNotifier {
     // Timeline rows are created_date DESC, set_number ASC — the first row's
     // session is the most recently completed workout.
     final latestId = _pastSets.first.sessionId;
+    try {
+      latestSession = await _sessionRepo.fetchSession(latestId);
+    } catch (_) {
+      latestSession = null;
+    }
     final records = fullPrTimeline(_pastSets);
 
     // Before-tracking per axis (history AND earlier sets in the same
@@ -1173,8 +1188,9 @@ class SessionViewModel extends ChangeNotifier {
       currentWorkoutId = id;
       workoutStartedAt = DateTime.now();
       sets = [];
-      startNotes = '';
-      sessionFeeling = null;
+      sessionJustCompleted = false;
+      // Prep state (feeling + notes) intentionally survives the start — the
+      // user may return to Prep mid-session and it must read as they left it.
       _seedExerciseSlots();
       slidePagesController.slideIn();
     } catch (e) {
@@ -1195,6 +1211,10 @@ class SessionViewModel extends ChangeNotifier {
           postNotes: endNotes.trim().isEmpty ? null : endNotes.trim(),
           feeling: endFeeling);
       _resetActiveWorkoutState();
+      // Wizard lands back on Prep with the completion message; reload the
+      // past-sets timeline so LAST SESSION now shows the just-finished one.
+      sessionJustCompleted = true;
+      await _loadPastSets();
       slidePagesController.slideOut();
       onWorkoutEnded?.call();
     } catch (e) {
@@ -1208,9 +1228,10 @@ class SessionViewModel extends ChangeNotifier {
     if (currentWorkoutId == null) return;
     final id = currentWorkoutId!;
     _resetActiveWorkoutState();
-    slidePagesController.slideOut();
+    // Deliberately NO slideOut and NO onWorkoutEnded: canceling returns the
+    // user to the Training page's idle state (picker unlocked, Start back)
+    // with the cached VM — and all prep state — intact.
     notifyListeners();
-    onWorkoutEnded?.call();
     await _sessionRepo.cancelSession(id);
   }
 

@@ -4,7 +4,6 @@ import '../../../core/styles/app_fonts.dart';
 import '../../../core/styles/app_radius.dart';
 import '../../../core/styles/app_spacing.dart';
 import '../../../core/utils/session_format.dart';
-import '../../../shared/widgets/glass_button.dart';
 import '../../../shared/widgets/slide_up_modal.dart';
 import '../viewmodel/session_viewmodel.dart';
 
@@ -17,8 +16,12 @@ void showAddExerciseModal(BuildContext context, {required SessionViewModel vm}) 
   );
 }
 
-enum _Step { choose, single, superset }
-
+/// Single-exercise add modal — search the library (most recently used
+/// first) or create a new exercise inline.
+///
+/// Supersets were retired from the frontend UX (2026-08-14, see CLAUDE.md):
+/// the schema and the VM's superset data-model support remain dormant for
+/// compatibility with existing data, but no UI creates supersets anymore.
 class _AddExerciseModalContent extends StatefulWidget {
   const _AddExerciseModalContent({required this.vm});
 
@@ -29,16 +32,10 @@ class _AddExerciseModalContent extends StatefulWidget {
 }
 
 class _AddExerciseModalContentState extends State<_AddExerciseModalContent> {
-  _Step _step = _Step.choose;
   String _query = '';
-  final List<String> _selectedIds = [];
-
-  bool get _isSuperset => _step == _Step.superset;
 
   List<MapEntry<String, String>> get _filtered {
-    final already = _selectedIds.toSet();
     final results = widget.vm.exercises
-        .where((e) => !already.contains(e.exerciseId))
         .where((e) => toProperCase(e.name).toLowerCase().contains(_query.toLowerCase()))
         .map((e) => MapEntry(e.exerciseId, toProperCase(e.name)))
         .toList();
@@ -63,27 +60,10 @@ class _AddExerciseModalContentState extends State<_AddExerciseModalContent> {
     Navigator.of(context, rootNavigator: true).pop();
   }
 
-  void _addToSuperset(String exerciseId) {
-    setState(() {
-      _selectedIds.add(exerciseId);
-      _query = '';
-    });
-  }
-
   Future<void> _createNew() async {
     final id = await widget.vm.submitNewExercise(_query);
     if (id == null || !mounted) return;
-    if (_step == _Step.single) {
-      _pickSingle(id);
-    } else {
-      _addToSuperset(id);
-    }
-  }
-
-  void _confirmSuperset() {
-    if (_selectedIds.length < 2) return;
-    widget.vm.addSupersetSlot(_selectedIds);
-    Navigator.of(context, rootNavigator: true).pop();
+    _pickSingle(id);
   }
 
   @override
@@ -98,14 +78,8 @@ class _AddExerciseModalContentState extends State<_AddExerciseModalContent> {
             Row(
               children: [
                 Expanded(
-                  child: Text(
-                    _step == _Step.choose
-                        ? 'Add to workout'
-                        : _step == _Step.single
-                            ? 'Choose exercise'
-                            : 'Build superset',
-                    style: AppFonts.ui(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.primary),
-                  ),
+                  child: Text('Choose exercise',
+                      style: AppFonts.ui(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.primary)),
                 ),
                 GestureDetector(
                   onTap: () => Navigator.of(context, rootNavigator: true).pop(),
@@ -114,57 +88,7 @@ class _AddExerciseModalContentState extends State<_AddExerciseModalContent> {
               ],
             ),
             const SizedBox(height: AppSpacing.lg),
-            if (_step == _Step.choose) _chooseStep(),
-            if (_step != _Step.choose) _searchStep(),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _chooseStep() {
-    return Row(
-      children: [
-        Expanded(
-          child: _choiceCard(
-            icon: Icons.fitness_center,
-            label: 'Set',
-            sub: 'Single exercise',
-            onTap: () => setState(() => _step = _Step.single),
-          ),
-        ),
-        const SizedBox(width: AppSpacing.sm),
-        Expanded(
-          child: _choiceCard(
-            icon: Icons.hexagon_outlined,
-            label: 'Superset',
-            sub: 'Multiple exercises',
-            onTap: () => setState(() => _step = _Step.superset),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _choiceCard(
-      {required IconData icon, required String label, required String sub, required VoidCallback onTap}) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        decoration: BoxDecoration(
-          color: AppColors.surfaceHigh,
-          borderRadius: BorderRadius.circular(AppRadius.lg),
-          border: Border.all(color: AppColors.border),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon, color: AppColors.primary, size: 22),
-            const SizedBox(height: AppSpacing.sm),
-            Text(label, style: AppFonts.ui(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.primary)),
-            const SizedBox(height: 2),
-            Text(sub, style: AppFonts.ui(fontSize: 12, color: AppColors.muted)),
+            _searchStep(),
           ],
         ),
       ),
@@ -175,43 +99,11 @@ class _AddExerciseModalContentState extends State<_AddExerciseModalContent> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (_isSuperset && _selectedIds.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-            child: Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: _selectedIds.map((id) {
-                final name = toProperCase(widget.vm.exerciseDetailMap[id]?.name ?? '');
-                return Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: AppColors.accentBg,
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(color: AppColors.primary.withValues(alpha: 0.35)),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(name,
-                          style:
-                              AppFonts.ui(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.primary)),
-                      const SizedBox(width: 6),
-                      GestureDetector(
-                        onTap: () => setState(() => _selectedIds.remove(id)),
-                        child: Icon(Icons.close, size: 12, color: AppColors.primary),
-                      ),
-                    ],
-                  ),
-                );
-              }).toList(),
-            ),
-          ),
         TextField(
           autofocus: true,
           style: AppFonts.ui(fontSize: 14, color: AppColors.primary),
           decoration: InputDecoration(
-            hintText: _isSuperset && _selectedIds.isNotEmpty ? 'Add another exercise…' : 'Search exercises…',
+            hintText: 'Search exercises…',
             hintStyle: AppFonts.ui(color: AppColors.muted),
             prefixIcon: Icon(Icons.search, size: 18, color: AppColors.muted),
             filled: true,
@@ -231,13 +123,7 @@ class _AddExerciseModalContentState extends State<_AddExerciseModalContent> {
             builder: (context, _) => ListView(
               shrinkWrap: true,
               children: [
-                ..._filtered.map((e) => _resultRow(e.value, () {
-                      if (_isSuperset) {
-                        _addToSuperset(e.key);
-                      } else {
-                        _pickSingle(e.key);
-                      }
-                    })),
+                ..._filtered.map((e) => _resultRow(e.value, () => _pickSingle(e.key))),
                 if (_canCreate)
                   _resultRow('+ Create "${_query.trim()}"', widget.vm.newExCreating ? null : _createNew,
                       accent: true),
@@ -252,13 +138,6 @@ class _AddExerciseModalContentState extends State<_AddExerciseModalContent> {
             ),
           ),
         ),
-        if (_isSuperset && _selectedIds.length >= 2) ...[
-          const SizedBox(height: AppSpacing.md),
-          GlassButton(
-              label: 'Create Superset (${_selectedIds.length} exercises)',
-              solid: true,
-              onPressed: _confirmSuperset),
-        ],
       ],
     );
   }

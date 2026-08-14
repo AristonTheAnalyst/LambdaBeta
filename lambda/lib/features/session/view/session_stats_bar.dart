@@ -9,7 +9,10 @@ import '../../../shared/widgets/slide_up_modal.dart';
 import '../viewmodel/session_viewmodel.dart';
 import 'lessons_modal.dart';
 
-/// PRS / LESSONS — always visible at the bottom of the active workout.
+/// PRS / LESSONS — the active workout's summary stats, rendered at the top
+/// of the Training page where the planned-session picker sits while idle;
+/// the tiles mirror the picker card's layout (label over value) so the two
+/// containers match in height.
 /// Both tiles are tappable: PRS opens the session PR breakdown, LESSONS
 /// opens the session lessons breakdown. Rows navigate to the exercise
 /// within the session (lessons also opens that exercise's lessons modal).
@@ -167,7 +170,8 @@ class SessionStatsBar extends StatelessWidget {
 
   /// One PRS/LESSONS tile, styled like a PR-highlighted set row: accentBg
   /// fill with an accent 1.2 outline when there's something to show.
-  /// Label and value sit side by side so the tile stays short.
+  /// Label over value (mono label + heavy value) — the same internal layout
+  /// as the planned-session picker card, so the stats bar matches its height.
   Widget _summaryTile({
     required String label,
     required String value,
@@ -179,7 +183,7 @@ class SessionStatsBar extends StatelessWidget {
     final color = highlightColor ?? AppColors.accent;
     final bg = highlightBg ?? AppColors.accentBg;
     final tile = Container(
-      padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 4),
+      padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
         color: highlighted ? bg : AppColors.surface,
         borderRadius: BorderRadius.circular(AppRadius.md),
@@ -188,19 +192,20 @@ class SessionStatsBar extends StatelessWidget {
           width: highlighted ? 1.2 : 0.5,
         ),
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(label,
               style: AppFonts.mono(
-                  fontSize: 15,
-                  letterSpacing: 0.8,
+                  fontSize: 9,
+                  letterSpacing: 0.6,
                   color: highlighted ? color : AppColors.muted)),
-          const SizedBox(width: 6),
+          const SizedBox(height: 2),
           Text(value,
-              style: AppFonts.mono(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w500,
+              style: AppFonts.ui(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
                   color: highlighted ? color : AppColors.primary)),
         ],
       ),

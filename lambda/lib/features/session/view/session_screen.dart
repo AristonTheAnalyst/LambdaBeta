@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
 import '../../../core/styles/app_radius.dart';
@@ -6,7 +7,9 @@ import '../../../core/styles/app_spacing.dart';
 import '../../../core/styles/app_text_styles.dart';
 import '../../../core/utils/session_format.dart';
 import '../../../core/powersync/database.dart' as ps;
+import '../../../data/models/planned_session_set.dart';
 import '../../../shared/widgets/exercise_pill_bar.dart';
+import '../../../shared/widgets/feeling_rating.dart';
 import '../../../shared/widgets/glass_button.dart';
 import '../../../shared/widgets/lambda_button.dart';
 import '../../../shared/widgets/lambda_input.dart';
@@ -14,7 +17,6 @@ import '../../../shared/widgets/page_header.dart';
 import '../../../shared/widgets/reflection_summary.dart';
 import '../../../shared/widgets/slide_pages.dart';
 import '../model/pr_engine.dart';
-import '../model/session_local_state.dart';
 import '../viewmodel/session_viewmodel.dart';
 import 'add_exercise_modal.dart';
 import 'exercise_card.dart';
@@ -44,7 +46,6 @@ class _SessionScreenState extends State<SessionScreen> {
 
   final _startNotesCtrl = TextEditingController();
   final _endNotesCtrl = TextEditingController();
-  bool _showCompleteBanner = false;
 
   @override
   void initState() {
@@ -59,12 +60,6 @@ class _SessionScreenState extends State<SessionScreen> {
         if (mounted) {
           _vm.refreshCatalog(); // always refresh exercise/variation catalog
           _vm.refreshProgram();
-          // If the workout ended while we were on another tab, the cached VM
-          // still points at page 1 with no active sessionId — reset to the
-          // start page so the user isn't stuck staring at an empty card.
-          if (!_vm.hasActiveWorkout && _vm.slidePagesController.currentPage > 0) {
-            _vm.slidePagesController.resetToPage(0);
-          }
         }
       });
     } else {
@@ -95,6 +90,7 @@ class _SessionScreenState extends State<SessionScreen> {
 
   // ── Modals ─────────────────────────────────────────────────────────────────
 
+  /// Wizard step: training → reflection recap.
   void _goToReflection() {
     if (_vm.sets.isEmpty) {
       _showNoSetsDialog();
@@ -108,13 +104,9 @@ class _SessionScreenState extends State<SessionScreen> {
       _showNoSetsDialog();
       return;
     }
+    // Wizard step: end → Prep greets with "Session complete, rest well and
+    // see you soon" (rendered from vm.sessionJustCompleted).
     await _vm.endSession();
-    if (!mounted) return;
-    // Transient "Workout Complete" toast that fades back out.
-    setState(() => _showCompleteBanner = true);
-    Future.delayed(const Duration(milliseconds: 2200), () {
-      if (mounted) setState(() => _showCompleteBanner = false);
-    });
   }
 
   void _showNoSetsDialog() {
@@ -201,17 +193,77 @@ class _SessionScreenState extends State<SessionScreen> {
           ? const Center(child: CircularProgressIndicator())
           : Column(
               children: [
-                PageHeader(
-                  title: _vm.hasActiveWorkout ? 'Training Session' : 'Mental Prep and Planning',
-                  left: _vm.hasActiveWorkout
-                      ? GlassButton(label: 'Cancel', color: AppColors.danger, compact: true, onPressed: _confirmCancelWorkout)
-                      : null,
-                  right: _vm.hasActiveWorkout
-                      ? GlassButton(label: 'Finish', color: AppColors.success, compact: true, onPressed: _goToReflection)
-                      : null,
+                ListenableBuilder(
+                  listenable: _vm.slidePagesController,
+                  builder: (context, _) {
+                    final page = _vm.slidePagesController.currentPage;
+                    // The header IS the wizard nav: title names the step, the
+                    // left button steps back (or cancels), the right advances.
+                    // Once started, Training's title is the bound template's
+                    // name (freestyle keeps the generic title).
+                    final title = switch (page) {
+                      0 => 'Session Prep',
+                      1 => _vm.hasActiveWorkout
+                          ? (_vm.selectedPlannedSession?.name ??
+                              _vm.selectedStandaloneWorkout?.name ??
+                              'Freestyle Session')
+                          : 'Training Session',
+                      _ => 'Session Reflection',
+                    };
+                    return PageHeader(
+                      title: title,
+                      // Active: Cancel on Training; on Reflection 'Back'
+                      // resumes training (the reflection back-door).
+                      // Idle: 'Back' returns to Prep from Training.
+                      left: _vm.hasActiveWorkout
+                          ? (page == 2
+                              ? GlassButton(
+                                  label: 'Back',
+                                  color: AppColors.primary,
+                                  compact: true,
+                                  onPressed: () => _vm
+                                      .slidePagesController
+                                      .slideToPage(1))
+                              : GlassButton(
+                                  label: 'Cancel',
+                                  color: AppColors.danger,
+                                  compact: true,
+                                  onPressed: _confirmCancelWorkout))
+                          : page != 0
+                              ? GlassButton(
+                                  label: 'Back',
+                                  color: AppColors.primary,
+                                  compact: true,
+                                  onPressed: () => _vm
+                                      .slidePagesController
+                                      .slideToPage(0))
+                              : null,
+                      // Wizard path: START (Prep) → choose workout →
+                      // START (Training) → FINISH → reflection → end.
+                      right: _vm.hasActiveWorkout
+                          ? GlassButton(
+                              label: 'Finish',
+                              color: AppColors.success,
+                              compact: true,
+                              onPressed: _goToReflection)
+                          : page == 0
+                              ? GlassButton(
+                                  label: 'Start',
+                                  color: AppColors.success,
+                                  compact: true,
+                                  onPressed: () => _vm
+                                      .slidePagesController
+                                      .slideToPage(1))
+                              : page == 1
+                                  ? GlassButton(
+                                      label: 'Start',
+                                      color: AppColors.success,
+                                      compact: true,
+                                      onPressed: _vm.startWorkout)
+                                  : null,
+                    );
+                  },
                 ),
-                if (_vm.hasActiveWorkout)
-                  _SessionTabs(controller: _vm.slidePagesController),
                 if (_vm.error != null)
                   GestureDetector(
                     onTap: _vm.clearError,
@@ -223,62 +275,24 @@ class _SessionScreenState extends State<SessionScreen> {
                     ),
                   ),
                 Expanded(
-                  // Key keeps this element stable when _SessionTabs is
-                  // inserted above on workout start — otherwise the PageView
-                  // is recreated and its page position resets to Prep.
+                  // Key keeps the SlidePages element stable across rebuilds —
+                  // otherwise the PageView is recreated and its page position
+                  // resets to Prep.
                   key: const ValueKey('sessionPages'),
                   child: SlidePages(
                     controller: _vm.slidePagesController,
+                    // Strict wizard: steps advance via the header buttons and
+                    // (unlocked) tabs only — no swipe navigation.
+                    physics: const NeverScrollableScrollPhysics(),
                     children: [
-                      _StartPage(vm: _vm, startNotesCtrl: _startNotesCtrl),
-                      _ActivePage(vm: _vm, onRemoveExercise: _confirmRemoveExercise),
+                      _PrepPage(vm: _vm, startNotesCtrl: _startNotesCtrl),
+                      _TrainingPage(
+                          vm: _vm, onRemoveExercise: _confirmRemoveExercise),
                       _ReflectionPage(vm: _vm, notesCtrl: _endNotesCtrl, onEnd: _endFromReflection),
                     ],
                   ),
                 ),
-                if (_vm.hasActiveWorkout)
-                  ListenableBuilder(
-                    listenable: _vm.slidePagesController,
-                    builder: (context, _) =>
-                        _vm.slidePagesController.currentPage == 1
-                            ? Padding(
-                                padding: EdgeInsets.fromLTRB(
-                                    AppSpacing.lg, 0, AppSpacing.lg,
-                                    MediaQuery.of(context).padding.bottom +
-                                        AppSpacing.lg),
-                                child: SessionStatsBar(vm: _vm),
-                              )
-                            : const SizedBox.shrink(),
-                  ),
               ],
-            ),
-          if (_showCompleteBanner)
-            Positioned(
-              top: MediaQuery.of(context).padding.top + 64,
-              left: 0,
-              right: 0,
-              child: IgnorePointer(
-                child: AnimatedOpacity(
-                  opacity: _showCompleteBanner ? 1 : 0,
-                  duration: const Duration(milliseconds: 400),
-                  child: Center(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: AppSpacing.lg, vertical: AppSpacing.md),
-                      decoration: BoxDecoration(
-                        color: AppColors.successBg,
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(color: AppColors.success),
-                      ),
-                      child: Text('Workout Complete',
-                          style: AppFonts.ui(
-                              fontSize: AppTextStyles.sm,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.success)),
-                    ),
-                  ),
-                ),
-              ),
             ),
         ],
       ),
@@ -286,162 +300,270 @@ class _SessionScreenState extends State<SessionScreen> {
   }
 }
 
-// ── Page 0: Start ──────────────────────────────────────────────────────────────
+// ── Page 0: Prep ──────────────────────────────────────────────────────────────
 
-class _StartPage extends StatelessWidget {
-  const _StartPage({required this.vm, required this.startNotesCtrl});
+class _PrepPage extends StatelessWidget {
+  const _PrepPage({required this.vm, required this.startNotesCtrl});
 
   final SessionViewModel vm;
   final TextEditingController startNotesCtrl;
 
   @override
   Widget build(BuildContext context) {
-    final bottomInset = MediaQuery.of(context).padding.bottom;
-    return Column(
+    final hasLastSession = vm.latestSession?.parentSessionName != null ||
+        vm.latestSession?.feeling != null ||
+        vm.latestReflectionExercises.isNotEmpty;
+    return ListView(
+      padding: const EdgeInsets.all(AppSpacing.lg),
       children: [
-        Expanded(
-          child: ListView(
-            padding: const EdgeInsets.all(AppSpacing.lg),
-            children: [
-              if (vm.availableWorkouts.isNotEmpty ||
-                  vm.standaloneWorkouts.isNotEmpty ||
-                  vm.selectedPlannedSession != null ||
-                  vm.selectedStandaloneWorkout != null) ...[
-                GestureDetector(
-                  // Locked once the workout starts — the session template is
-                  // already bound to the active workout and can't be changed.
-                  onTap: vm.hasActiveWorkout ? null : () => _showWorkoutPicker(context, vm),
-                  child: Container(
-                    padding: const EdgeInsets.all(AppSpacing.md),
-                    decoration: BoxDecoration(
-                      // Any selected template — program planned or standalone —
-                      // gets the planned styling (plannedBg fill + planned outline).
-                      color: vm.selectedPlannedSession != null ||
-                              vm.selectedStandaloneWorkout != null
-                          ? AppColors.plannedBg
-                          : AppColors.surface,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                          color: vm.selectedPlannedSession != null ||
-                                  vm.selectedStandaloneWorkout != null
-                              ? AppColors.planned.withValues(alpha: 0.3)
-                              : AppColors.border),
-                    ),
-                    child: Row(
+        // The wizard's closing step — shown until the next session starts.
+        if (vm.sessionJustCompleted)
+          Container(
+            margin: const EdgeInsets.only(bottom: AppSpacing.lg),
+            padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.lg, vertical: AppSpacing.md),
+            decoration: BoxDecoration(
+              color: AppColors.successBg,
+              borderRadius: BorderRadius.circular(AppRadius.md),
+              border: Border.all(color: AppColors.success),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.check_circle_outline,
+                    size: 18, color: AppColors.success),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: Text('Session complete, rest well and see you soon',
+                      style: AppFonts.ui(
+                          fontSize: AppTextStyles.sm,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.success)),
+                ),
+              ],
+            ),
+          ),
+        if (hasLastSession) ...[
+          Text('LAST SESSION',
+              style: AppFonts.mono(
+                  fontSize: 9, letterSpacing: 0.8, color: AppColors.muted)),
+          const SizedBox(height: AppSpacing.sm),
+          // The planned session (if any) last session was started from,
+          // with the session's date.
+          if (vm.latestSession?.parentSessionName != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+              child: Text(
+                  '${vm.latestSession!.parentSessionName} · ${DateFormat('MMM d').format(vm.latestSession!.createdDate)}',
+                  style: AppFonts.mono(
+                      fontSize: 10, letterSpacing: 0.6, color: AppColors.planned)),
+            ),
+          // How it felt last time (read-only rating of the post-feeling).
+          if (vm.latestSession?.feeling != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+              child: FeelingRating(
+                  value: vm.latestSession!.feeling,
+                  label: 'How it felt last time: ',
+                  size: 20, radius: 4, spacing: 4, textSize: 10),
+            ),
+          if (vm.latestReflectionExercises.isNotEmpty) ...[
+            ReflectionSummary(
+              exerciseIds: vm.latestReflectionExercises,
+              prsByExercise: vm.latestReflectionPrsByExercise,
+              lessonsByExercise: vm.latestReflectionLessonsByExercise,
+              exerciseNameFor: (id) => vm.latestReflectionExerciseNames[id] ?? '',
+              previousFor: vm.previousForLatestReflection,
+            ),
+          ],
+          const SizedBox(height: AppSpacing.lg),
+        ],
+        Text('THIS SESSION',
+            style: AppFonts.mono(
+                fontSize: 9, letterSpacing: 0.8, color: AppColors.muted)),
+        const SizedBox(height: AppSpacing.sm),
+        Text('How do you feel about this session?',
+            style: TextStyle(
+                fontSize: AppTextStyles.sm,
+                fontWeight: FontWeight.w600,
+                color: AppColors.primary)),
+        const SizedBox(height: AppSpacing.sm),
+        FeelingRating(value: vm.sessionFeeling, onChanged: vm.setSessionFeeling),
+        const SizedBox(height: AppSpacing.lg),
+        LambdaInput(
+          controller: startNotesCtrl,
+          label: 'Expound on how you feel (optional)',
+          placeholder: 'Sleep and eat well?\nHydrated?\nGoals today?',
+          onChanged: (v) => vm.startNotes = v,
+        ),
+      ],
+    );
+  }
+}
+
+/// The session-template selector card on the Training page — planned styling
+/// when a template is selected. Only rendered while idle: once the workout
+/// starts the card is hidden (the header title carries the session's name).
+class _SessionTemplateCard extends StatelessWidget {
+  const _SessionTemplateCard({required this.vm, this.onTap});
+
+  final SessionViewModel vm;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        decoration: BoxDecoration(
+          // Any selected template — program planned or standalone —
+          // gets the planned styling (plannedBg fill + planned outline).
+          color: vm.selectedPlannedSession != null ||
+                  vm.selectedStandaloneWorkout != null
+              ? AppColors.plannedBg
+              : AppColors.surface,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+              color: vm.selectedPlannedSession != null ||
+                      vm.selectedStandaloneWorkout != null
+                  ? AppColors.planned.withValues(alpha: 0.3)
+                  : AppColors.border),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (vm.selectedPlannedSession != null) ...[
+                    Text('Week ${vm.programProgress!.weekNumber} · ${vm.programProgress!.program.name}',
+                        style: AppFonts.mono(fontSize: 9, letterSpacing: 0.6, color: AppColors.planned)),
+                    const SizedBox(height: 2),
+                    Text(vm.selectedPlannedSession!.name,
+                        style: AppFonts.ui(
+                            fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.primary)),
+                  ] else if (vm.selectedStandaloneWorkout != null) ...[
+                    Text('Standalone session',
+                        style: AppFonts.mono(fontSize: 9, letterSpacing: 0.6, color: AppColors.planned)),
+                    const SizedBox(height: 2),
+                    Text(vm.selectedStandaloneWorkout!.name,
+                        style: AppFonts.ui(
+                            fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.primary)),
+                  ] else ...[
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              if (vm.selectedPlannedSession != null) ...[
-                                Text('Week ${vm.programProgress!.weekNumber} · ${vm.programProgress!.program.name}',
-                                    style: AppFonts.mono(fontSize: 9, letterSpacing: 0.6, color: AppColors.planned)),
-                                const SizedBox(height: 2),
-                                Text(vm.selectedPlannedSession!.name,
-                                    style: AppFonts.ui(
-                                        fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.primary)),
-                              ] else if (vm.selectedStandaloneWorkout != null) ...[
-                                Text('Standalone session',
-                                    style: AppFonts.mono(fontSize: 9, letterSpacing: 0.6, color: AppColors.planned)),
-                                const SizedBox(height: 2),
-                                Text(vm.selectedStandaloneWorkout!.name,
-                                    style: AppFonts.ui(
-                                        fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.primary)),
-                              ] else ...[
-                                Text('Session template',
-                                    style: AppFonts.mono(fontSize: 9, letterSpacing: 0.6, color: AppColors.muted)),
-                                const SizedBox(height: 2),
-                                Text('No planned session',
-                                    style: AppFonts.ui(
-                                        fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.muted)),
-                              ],
-                            ],
-                          ),
-                        ),
-                        Icon(vm.hasActiveWorkout ? Icons.lock_outline : Icons.swap_vert,
-                            size: 18,
-                            color: vm.hasActiveWorkout
-                                ? AppColors.muted
-                                : vm.selectedPlannedSession != null ||
-                                        vm.selectedStandaloneWorkout != null
-                                    ? AppColors.planned
-                                    : AppColors.muted),
+                        Text('Freestyle Session',
+                            style: AppFonts.ui(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w800,
+                                color: AppColors.muted)),
+                        const SizedBox(height: 2),
+                        Text('No planned session — add exercises as you train',
+                            style: AppFonts.mono(
+                                fontSize: 9,
+                                letterSpacing: 0.6,
+                                color: AppColors.muted)),
                       ],
                     ),
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.lg),
-              ],
-              // Latest completed session's reflection (PRs + lessons), so the
-              // user sees last session's outcome before starting the next.
-              if (vm.latestReflectionExercises.isNotEmpty) ...[
-                Text('LAST SESSION',
-                    style: AppFonts.mono(
-                        fontSize: 9, letterSpacing: 0.8, color: AppColors.muted)),
-                const SizedBox(height: AppSpacing.sm),
-                ReflectionSummary(
-                  exerciseIds: vm.latestReflectionExercises,
-                  prsByExercise: vm.latestReflectionPrsByExercise,
-                  lessonsByExercise: vm.latestReflectionLessonsByExercise,
-                  exerciseNameFor: (id) => vm.latestReflectionExerciseNames[id] ?? '',
-                  previousFor: vm.previousForLatestReflection,
-                ),
-                const SizedBox(height: AppSpacing.lg),
-              ],
-            ],
+                  ],
+                ],
+              ),
+            ),
+            Icon(Icons.swap_vert,
+                size: 18,
+                color: vm.selectedPlannedSession != null ||
+                        vm.selectedStandaloneWorkout != null
+                    ? AppColors.planned
+                    : AppColors.muted),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Page 1: Training ───────────────────────────────────────────────────────────
+
+class _TrainingPage extends StatelessWidget {
+  const _TrainingPage({
+    required this.vm,
+    required this.onRemoveExercise,
+  });
+
+  final SessionViewModel vm;
+  final void Function(int index) onRemoveExercise;
+
+  @override
+  Widget build(BuildContext context) {
+    // The Start Session button lives in the header (top right) while idle;
+    // there is no bottom bar on this page.
+    return vm.hasActiveWorkout ? _buildActive() : _buildIdle(context);
+  }
+
+  /// Idle: template picker + read-only planned-set preview of the selection.
+  Widget _buildIdle(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.all(AppSpacing.lg),
+      children: [
+        // Always shown while idle — with nothing selected it is the freestyle
+        // identity card (icon + sub-line), not an empty shell.
+        _SessionTemplateCard(vm: vm, onTap: () => _showWorkoutPicker(context, vm)),
+        const SizedBox(height: AppSpacing.lg),
+        _SessionPreview(vm: vm),
+      ],
+    );
+  }
+
+  /// Active: the PRS/LESSONS stats take the slot the picker held while idle
+  /// (same container height), then the exercise pills and card.
+  Widget _buildActive() {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.md, AppSpacing.lg, 0),
+          child: SessionStatsBar(vm: vm),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+          child: ListenableBuilder(
+            listenable: vm,
+            builder: (context, _) {
+              final labels = <String>[];
+              final keys = <String>[];
+              for (final slot in vm.exerciseSlots) {
+                // Supersets are retired from the frontend (see CLAUDE.md) —
+                // any restored superset slot renders as its first exercise.
+                labels.add(toProperCase(vm.exerciseDisplayName(slot.exerciseIds.first)));
+                keys.add('${slot.id}');
+              }
+              return ExercisePillBar(
+                labels: labels,
+                keys: keys,
+                activeIndex: vm.activeSlotIndex,
+                onTap: (i) => vm.tapTab(i),
+                onReorder: (oldIndex, newIndex) =>
+                    vm.reorderExercises(oldIndex, newIndex),
+                onRemove: onRemoveExercise,
+                onAdd: () => showAddExerciseModal(context, vm: vm),
+              );
+            },
           ),
         ),
-        Container(
-          padding: EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.lg, AppSpacing.lg, bottomInset + AppSpacing.lg),
-          decoration: BoxDecoration(border: Border(top: BorderSide(color: AppColors.border, width: 0.5))),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text('How do you expect to perform?',
-                  style: TextStyle(fontSize: AppTextStyles.sm, fontWeight: FontWeight.w600, color: AppColors.primary)),
-              const SizedBox(height: AppSpacing.sm),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: List.generate(5, (i) {
-                  final n = i + 1;
-                  final selected = vm.sessionFeeling == n;
-                  return GestureDetector(
-                    onTap: () => vm.setSessionFeeling(n),
-                    child: Container(
-                      width: 52,
-                      height: 52,
-                      margin: const EdgeInsets.only(right: AppSpacing.sm),
-                      decoration: BoxDecoration(
-                        color: selected ? AppColors.primary : AppColors.surface,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: selected ? AppColors.primary : AppColors.border),
-                      ),
-                      child: Center(
-                        child: Text('$n',
-                            style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w700,
-                                color: selected ? AppColors.bg : AppColors.primary)),
-                      ),
-                    ),
-                  );
-                }),
-              ),
-              const SizedBox(height: AppSpacing.lg),
-              LambdaInput(
-                controller: startNotesCtrl,
-                label: 'Pre-workout notes (optional)',
-                placeholder: 'Sleep and eat well?\nHydrated?\nGoals today?',
-                onChanged: (v) => vm.startNotes = v,
-              ),
-              const SizedBox(height: AppSpacing.lg),
-              LambdaButton(
-                label: 'Start Session',
-                onPressed: vm.startWorkout,
-                loading: vm.startLoading,
-                disabled: vm.startLoading,
-              ),
-            ],
+        const SizedBox(height: AppSpacing.sm),
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(AppSpacing.lg, 0, AppSpacing.lg, AppSpacing.lg),
+            child: vm.activeSlot == null
+                ? _PlaceholderExerciseCard(vm: vm)
+                // Key per exercise slot: switching tabs recreates the card
+                // state so an open history view doesn't carry over.
+                : ExerciseCard(
+                    key: ValueKey(vm.activeSlot!.id),
+                    vm: vm,
+                    slot: vm.activeSlot!,
+                  ),
           ),
         ),
       ],
@@ -583,163 +705,515 @@ class _StartPage extends StatelessWidget {
   }
 }
 
-// ── Page 1: Active workout ─────────────────────────────────────────────────────
-
-class _ActivePage extends StatelessWidget {
-  const _ActivePage({required this.vm, required this.onRemoveExercise});
+/// The Training page's pre-start preview, rendered like the live session:
+/// exercise pill bar + the exercise card's grid.
+///
+/// Planned template: read-only planned rows (plannedBg fill + planned
+/// outline) with static values — no editing, no reorder/remove/add.
+/// Freestyle (no template): a ghosted, non-interactive version — sample
+/// pills from recently-used exercises and an empty 3-row set container —
+/// so the page still reads like a session without pretending anything is
+/// planned.
+/// One-screen-only by design (the planner has its own editable set rows), so
+/// it lives here rather than in shared/widgets.
+class _SessionPreview extends StatefulWidget {
+  const _SessionPreview({required this.vm});
 
   final SessionViewModel vm;
-  final void Function(int index) onRemoveExercise;
+
+  @override
+  State<_SessionPreview> createState() => _SessionPreviewState();
+}
+
+class _SessionPreviewState extends State<_SessionPreview> {
+  int _selectedIndex = 0;
+
+  static String _fmt(num n) =>
+      n == n.roundToDouble() ? n.toInt().toString() : n.toString();
 
   @override
   Widget build(BuildContext context) {
-    final plannedWorkout = vm.programProgress?.nextPlannedSession;
-    final subtitle = plannedWorkout != null
-        ? 'Week ${vm.programProgress!.weekNumber} · ${plannedWorkout.name}'
-        : 'Freestyle Session';
-
+    final vm = widget.vm;
+    final order = vm.plannedExerciseOrder;
+    if (order.isEmpty) return _freestylePreview(vm);
+    final activeIndex = _selectedIndex.clamp(0, order.length - 1);
+    final exerciseId = order[activeIndex];
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.md, AppSpacing.lg, 0),
-          child: Center(
-            child: Text(subtitle,
-                textAlign: TextAlign.center,
-                style: AppFonts.mono(fontSize: 10, letterSpacing: 0.6, color: AppColors.muted)),
-          ),
+        ExercisePillBar(
+          labels: [
+            for (final id in order) toProperCase(vm.exerciseDisplayName(id))
+          ],
+          keys: order,
+          activeIndex: activeIndex,
+          onTap: (i) => setState(() => _selectedIndex = i),
+          // No onReorder/onRemove/onAdd — the preview is read-only.
         ),
         const SizedBox(height: AppSpacing.sm),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-          child: ListenableBuilder(
-            listenable: vm,
-            builder: (context, _) {
-              var supersetCount = 0;
-              final labels = <String>[];
-              final keys = <String>[];
-              final prefixIcons = <IconData?>[];
-              for (final slot in vm.exerciseSlots) {
-                if (slot.type == SessionSlotType.superset) {
-                  supersetCount++;
-                  labels.add('Superset $supersetCount');
-                  prefixIcons.add(Icons.hexagon_outlined);
-                } else {
-                  labels.add(toProperCase(vm.exerciseDisplayName(slot.exerciseIds.first)));
-                  prefixIcons.add(null);
-                }
-                keys.add('${slot.id}');
-              }
-              return ExercisePillBar(
-                labels: labels,
-                keys: keys,
-                activeIndex: vm.activeSlotIndex,
-                prefixIcons: prefixIcons,
-                onTap: (i) => vm.tapTab(i),
-                onReorder: (oldIndex, newIndex) =>
-                    vm.reorderExercises(oldIndex, newIndex),
-                onRemove: onRemoveExercise,
-                onAdd: () => showAddExerciseModal(context, vm: vm),
-              );
-            },
-          ),
-        ),
-        const SizedBox(height: AppSpacing.sm),
-        Expanded(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(AppSpacing.lg, 0, AppSpacing.lg, AppSpacing.lg),
-            child: vm.activeSlot == null
-                ? _EmptySlotsHint(vm: vm)
-                // Key per exercise slot: switching tabs recreates the card
-                // state so an open history view doesn't carry over.
-                : ExerciseCard(
-                    key: ValueKey(vm.activeSlot!.id),
-                    vm: vm,
-                    slot: vm.activeSlot!,
-                  ),
-          ),
-        ),
+        _previewCard(vm, exerciseId),
       ],
     );
   }
-}
 
-
-class _EmptySlotsHint extends StatelessWidget {
-  const _EmptySlotsHint({required this.vm});
-
-  final SessionViewModel vm;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxl),
-      child: Center(
-        child: Text('Tap + above to add your first exercise.',
-            style: TextStyle(color: AppColors.muted, fontSize: AppTextStyles.sm)),
-      ),
-    );
+  /// Most-recently-used exercises, newest first — the freestyle "sample" set.
+  List<String> _recentExerciseIds(SessionViewModel vm) {
+    final entries = vm.lastUsedByExercise.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    return [for (final e in entries) e.key].take(6).toList();
   }
-}
 
-
-
-// ── Session flow tabs (Prep / Training / Reflection) ─────────────────────────
-
-class _SessionTabs extends StatelessWidget {
-  const _SessionTabs({required this.controller});
-
-  final SlidePagesController controller;
-
-  static const _tabs = ['Prep', 'Training', 'Reflection'];
-
-  @override
-  Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: controller,
-      builder: (context, _) => Padding(
-        padding: const EdgeInsets.fromLTRB(AppSpacing.lg, 0, AppSpacing.lg, AppSpacing.sm),
-        child: Row(
+  /// Freestyle ghosts: pills + exercise container are inert placeholders —
+  /// dimmed, non-clickable, showing what a session will look like.
+  Widget _freestylePreview(SessionViewModel vm) {
+    final recentIds = _recentExerciseIds(vm);
+    return IgnorePointer(
+      child: Opacity(
+        opacity: 0.45,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            for (var i = 0; i < _tabs.length; i++) ...[
-              Expanded(
-                child: GestureDetector(
-                  onTap: () => controller.slideToPage(i),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    decoration: BoxDecoration(
-                      border: Border(
-                        bottom: BorderSide(
-                          color: controller.currentPage == i
-                              ? AppColors.primary
-                              : AppColors.border,
-                          width: controller.currentPage == i ? 2 : 1,
-                        ),
-                      ),
-                    ),
-                    alignment: Alignment.center,
-                    child: Text(
-                      _tabs[i],
-                      style: AppFonts.ui(
-                        fontSize: AppTextStyles.sm,
-                        fontWeight: controller.currentPage == i
-                            ? FontWeight.w700
-                            : FontWeight.w500,
-                        color: controller.currentPage == i
-                            ? AppColors.primary
-                            : AppColors.muted,
-                      ),
-                    ),
-                  ),
-                ),
+            if (recentIds.isNotEmpty) ...[
+              ExercisePillBar(
+                labels: [
+                  for (final id in recentIds)
+                    toProperCase(vm.exerciseDisplayName(id))
+                ],
+                keys: recentIds,
+                activeIndex: -1, // ghost: no active pill
+                onTap: (_) {},
               ),
-              if (i < _tabs.length - 1) const SizedBox(width: AppSpacing.sm),
+              const SizedBox(height: AppSpacing.sm),
             ],
+            _freestyleCard(vm, recentIds.isEmpty ? null : recentIds.first),
           ],
         ),
       ),
     );
   }
+
+  /// The ghost exercise container — neutral chrome with 3 empty set rows so
+  /// the grid keeps its shape even though nothing is planned.
+  Widget _freestyleCard(SessionViewModel vm, String? exerciseId) {
+    final name = exerciseId == null
+        ? 'Exercise'
+        : toProperCase(vm.exerciseDisplayName(exerciseId));
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        border: Border.all(color: AppColors.border),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Text(name,
+                      style: AppFonts.ui(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                          color: exerciseId == null
+                              ? AppColors.muted
+                              : AppColors.primary)),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    _disabledPill(
+                        icon: Icons.menu_book_outlined, label: 'Lessons'),
+                    const SizedBox(width: 6),
+                    _disabledPill(icon: Icons.history, label: 'History'),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 0, 10, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Same column header row as the live set grid.
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Row(
+                    children: [
+                      const SizedBox(width: 26),
+                      const SizedBox(width: 6),
+                      Expanded(child: _colLabel('KG')),
+                      const SizedBox(width: 6),
+                      Expanded(child: _colLabel('REPS')),
+                      const SizedBox(width: 6),
+                      Expanded(child: _colLabel('VARIATION')),
+                      const SizedBox(width: 6),
+                      SizedBox(width: 32, child: _colLabel('NOTE')),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 6),
+                // Three empty rows — the container holds its shape.
+                for (var i = 0; i < 3; i++) _emptyRow(i + 1),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// One empty (nothing-planned) row in the freestyle ghost grid.
+  Widget _emptyRow(int index) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        decoration: BoxDecoration(
+          color: AppColors.surfaceHigh,
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          border: Border.all(color: AppColors.border, width: 0.5),
+        ),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 26,
+              child: Text('$index',
+                  style: AppFonts.mono(fontSize: 11, color: AppColors.muted)),
+            ),
+            const SizedBox(width: 6),
+            Expanded(child: _valueCell('—', color: AppColors.muted)),
+            const SizedBox(width: 6),
+            Expanded(child: _valueCell('—', color: AppColors.muted)),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Container(
+                height: 34,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: AppColors.bg,
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: AppColors.border, width: 0.5),
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
+            const SizedBox(width: 32),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// The exercise card mirror: surface card with the planned outline, the
+  /// header (name + PLANNED tag), and the live grid's column layout filled
+  /// with static planned values.
+  Widget _previewCard(SessionViewModel vm, String exerciseId) {
+    final sets = (vm.plannedSetsByExercise[exerciseId] ?? const [])
+        .where((s) => !s.isArchived)
+        .toList();
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        border: Border.all(color: AppColors.planned.withValues(alpha: 0.3)),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Text(toProperCase(vm.exerciseDisplayName(exerciseId)),
+                      style: AppFonts.ui(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.primary)),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: AppColors.planned.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                        color: AppColors.planned.withValues(alpha: 0.3)),
+                  ),
+                  child: Text('PLANNED',
+                      style: AppFonts.mono(
+                          fontSize: 11, letterSpacing: 0.4, color: AppColors.planned)),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 0, 10, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Same column header row as the live set grid.
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Row(
+                    children: [
+                      const SizedBox(width: 26),
+                      const SizedBox(width: 6),
+                      Expanded(child: _colLabel('KG')),
+                      const SizedBox(width: 6),
+                      Expanded(child: _colLabel('REPS')),
+                      const SizedBox(width: 6),
+                      Expanded(child: _colLabel('VARIATION')),
+                      const SizedBox(width: 6),
+                      SizedBox(width: 32, child: _colLabel('NOTE')),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 6),
+                if (sets.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+                    child: Text('No planned sets',
+                        style: TextStyle(
+                            color: AppColors.muted, fontSize: AppTextStyles.sm)),
+                  ),
+                for (var i = 0; i < sets.length; i++)
+                  _previewRow(i + 1, sets[i]),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _colLabel(String text) => Text(text,
+      textAlign: TextAlign.center,
+      style: AppFonts.mono(fontSize: 8, letterSpacing: 0.6, color: AppColors.muted));
+
+  /// One planned set as a static row — the live session's planned-row look
+  /// (plannedBg fill + planned outline) without any edit affordances.
+  Widget _previewRow(int index, PlannedSessionSet set) {
+    final weight = set.targetWeight;
+    final reps = set.targetReps;
+    final variation = set.variationName;
+    final hasNotes = set.targetNotes != null && set.targetNotes!.isNotEmpty;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        decoration: BoxDecoration(
+          color: AppColors.plannedBg,
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          border: Border.all(
+              color: AppColors.planned.withValues(alpha: 0.35), width: 0.5),
+        ),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 26,
+              child: Text('$index',
+                  style: AppFonts.mono(fontSize: 11, color: AppColors.muted)),
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+                child: _valueCell(
+                    weight != null ? '${_fmt(weight)}kg' : '—')),
+            const SizedBox(width: 6),
+            Expanded(
+                child: _valueCell(
+                    reps.isEmpty ? '—' : reps.map(_fmt).join(' / '))),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Container(
+                height: 34,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: AppColors.bg,
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: AppColors.border, width: 0.5),
+                ),
+                child: variation != null
+                    ? Text(toProperCase(variation),
+                        textAlign: TextAlign.center,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppFonts.mono(
+                            fontSize: 10, color: AppColors.planned))
+                    : null,
+              ),
+            ),
+            const SizedBox(width: 6),
+            SizedBox(
+              width: 32,
+              child: hasNotes
+                  ? Icon(Icons.sticky_note_2_outlined,
+                      size: 16, color: AppColors.planned)
+                  : null,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _valueCell(String text, {Color? color}) {
+    return SizedBox(
+      height: 34,
+      child: Container(
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: AppColors.bg,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: AppColors.border, width: 0.5),
+        ),
+        child: Text(text,
+            style: AppFonts.mono(
+                fontSize: 15,
+                fontWeight: FontWeight.w500,
+                color: color ?? AppColors.planned)),
+      ),
+    );
+  }
 }
+
+
+/// The training page's exercise-card placeholder shown before the first
+/// exercise is added — the same card chrome (name, Lessons/History pills,
+/// set-grid column labels) so the page never reads as completely empty.
+/// The "+ ADD EXERCISE" row opens the add-exercise modal.
+class _PlaceholderExerciseCard extends StatelessWidget {
+  const _PlaceholderExerciseCard({required this.vm});
+
+  final SessionViewModel vm;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        border: Border.all(color: AppColors.border),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Text('Exercise',
+                      style: AppFonts.ui(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.muted)),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    _disabledPill(
+                        icon: Icons.menu_book_outlined, label: 'Lessons'),
+                    const SizedBox(width: 6),
+                    _disabledPill(icon: Icons.history, label: 'History'),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 0, 10, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Same column header row as the live set grid.
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Row(
+                    children: [
+                      const SizedBox(width: 26),
+                      const SizedBox(width: 6),
+                      Expanded(child: _colLabel('KG')),
+                      const SizedBox(width: 6),
+                      Expanded(child: _colLabel('REPS')),
+                      const SizedBox(width: 6),
+                      Expanded(child: _colLabel('VARIATION')),
+                      const SizedBox(width: 6),
+                      SizedBox(width: 32, child: _colLabel('NOTE')),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 6),
+                GestureDetector(
+                  onTap: () => showAddExerciseModal(context, vm: vm),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(AppRadius.md),
+                      border: Border.all(
+                          color: AppColors.border, style: BorderStyle.solid),
+                    ),
+                    child: Center(
+                      child: Text('+ ADD EXERCISE',
+                          style: AppFonts.ui(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.5,
+                              color: AppColors.muted)),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _colLabel(String text) => Text(text,
+      textAlign: TextAlign.center,
+      style: AppFonts.mono(fontSize: 8, letterSpacing: 0.6, color: AppColors.muted));
+}
+
+/// The lessons/history pill chrome in its disabled state — used by the
+/// active-session placeholder card and the freestyle ghost preview, where
+/// the pills can't act on an exercise that isn't part of a session yet.
+Widget _disabledPill({required IconData icon, required String label}) {
+  return Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+    decoration: BoxDecoration(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(6),
+      border: Border.all(color: AppColors.border),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 14, color: AppColors.muted.withValues(alpha: 0.4)),
+        const SizedBox(width: 5),
+        Text(label,
+            style: AppFonts.mono(
+                fontSize: 11,
+                letterSpacing: 0.4,
+                color: AppColors.muted.withValues(alpha: 0.4))),
+      ],
+    ),
+  );
+}
+
+
 
 // ── Page 2: Reflection ───────────────────────────────────────────────────────
 
@@ -790,73 +1264,55 @@ class _ReflectionPage extends StatelessWidget {
             child: ListView(
               padding: const EdgeInsets.all(AppSpacing.lg),
               children: [
-                if (vm.sets.isNotEmpty) _buildSummary(),
+                if (!vm.hasActiveWorkout)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxl),
+                    child: Center(
+                      child: Text('Nothing to reflect on yet — finish a session here.',
+                          style: TextStyle(
+                              color: AppColors.muted, fontSize: AppTextStyles.sm)),
+                    ),
+                  )
+                else if (vm.sets.isNotEmpty)
+                  _buildSummary(),
               ],
             ),
           ),
-          Container(
-            padding: EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.lg, AppSpacing.lg,
-                bottomInset + AppSpacing.lg),
-            decoration: BoxDecoration(
-                border: Border(
-                    top: BorderSide(color: AppColors.border, width: 0.5))),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text('How did it feel?',
-                    style: AppFonts.ui(
-                        fontSize: AppTextStyles.sm,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.primary)),
-                const SizedBox(height: AppSpacing.sm),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: List.generate(5, (i) {
-                    final n = i + 1;
-                    final selected = vm.endFeeling == n;
-                    return GestureDetector(
-                      onTap: () => vm.setEndFeeling(n),
-                      child: Container(
-                        width: 52,
-                        height: 52,
-                        margin: const EdgeInsets.only(right: AppSpacing.sm),
-                        decoration: BoxDecoration(
-                          color: selected ? AppColors.primary : AppColors.surface,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                              color: selected ? AppColors.primary : AppColors.border),
-                        ),
-                        child: Center(
-                          child: Text('$n',
-                              style: AppFonts.ui(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w700,
-                                  color: selected
-                                      ? AppColors.bg
-                                      : AppColors.primary)),
-                        ),
-                      ),
-                    );
-                  }),
-                ),
-                const SizedBox(height: AppSpacing.lg),
-                LambdaInput(
-                  controller: notesCtrl,
-                  label: 'Post-workout notes (optional)',
-                  placeholder: 'Notes…',
-                  onChanged: (v) => vm.endNotes = v,
-                ),
-                const SizedBox(height: AppSpacing.lg),
-                LambdaButton(
-                  variant: ButtonVariant.success,
-                  label: 'End Session',
-                  onPressed: onEnd,
-                  loading: vm.endLoading,
-                  disabled: vm.endLoading,
-                ),
-              ],
+          if (vm.hasActiveWorkout)
+            Container(
+              padding: EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.lg, AppSpacing.lg,
+                  bottomInset + AppSpacing.lg),
+              decoration: BoxDecoration(
+                  border: Border(
+                      top: BorderSide(color: AppColors.border, width: 0.5))),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text('How did it feel?',
+                      style: AppFonts.ui(
+                          fontSize: AppTextStyles.sm,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.primary)),
+                  const SizedBox(height: AppSpacing.sm),
+                  FeelingRating(value: vm.endFeeling, onChanged: vm.setEndFeeling),
+                  const SizedBox(height: AppSpacing.lg),
+                  LambdaInput(
+                    controller: notesCtrl,
+                    label: 'Post-workout notes (optional)',
+                    placeholder: 'Notes…',
+                    onChanged: (v) => vm.endNotes = v,
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+                  LambdaButton(
+                    variant: ButtonVariant.success,
+                    label: 'End Session',
+                    onPressed: onEnd,
+                    loading: vm.endLoading,
+                    disabled: vm.endLoading,
+                  ),
+                ],
+              ),
             ),
-          ),
         ],
       ),
     );
