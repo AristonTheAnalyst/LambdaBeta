@@ -233,7 +233,15 @@ class _SessionSetRowState extends State<SessionSetRow> {
           // Reps required.
           if (repsText.isEmpty) return;
         case SetRowMode.planned:
-          // Always commits — even a fully empty draft is a valid target row.
+          // Commits only when the user entered something — a fully empty
+          // draft stays a draft (blurring an untouched row used to persist
+          // junk target rows with no values).
+          if (weightText.isEmpty &&
+              repsText.isEmpty &&
+              _draftVariationId == null &&
+              (_draftNotes?.trim().isNotEmpty ?? false) == false) {
+            return;
+          }
           break;
       }
       await widget.onCommit(
@@ -490,6 +498,12 @@ class _SessionSetRowState extends State<SessionSetRow> {
           const SizedBox(width: 6),
           Expanded(
             child: _cell(
+              // Stable per-row cell keys so driver/tooling can target an
+              // exact row's field (mode prefix keeps them unique across the
+              // live/planned/history surfaces).
+              key: ValueKey(
+                '${widget.mode.name}-${widget.isDraft ? 'draft' : 'set'}-${widget.displayIndex}-reps',
+              ),
               controller: _repsCtrl,
               focusNode: _repsFocus,
               ghost: widget.mode == SetRowMode.live && plannedReps != null,
@@ -499,6 +513,9 @@ class _SessionSetRowState extends State<SessionSetRow> {
           const SizedBox(width: 6),
           Expanded(
             child: _cell(
+              key: ValueKey(
+                '${widget.mode.name}-${widget.isDraft ? 'draft' : 'set'}-${widget.displayIndex}-kg',
+              ),
               controller: _weightCtrl,
               focusNode: _weightFocus,
               ghost:
@@ -636,6 +653,7 @@ class _SessionSetRowState extends State<SessionSetRow> {
   /// planned rows highlight when filled; history view mode is a transparent
   /// read-only TextField.
   Widget _cell({
+    Key? key,
     required TextEditingController controller,
     required FocusNode focusNode,
     required bool ghost,
@@ -647,6 +665,7 @@ class _SessionSetRowState extends State<SessionSetRow> {
     return SizedBox(
       height: 34,
       child: TextField(
+        key: key,
         controller: controller,
         focusNode: focusNode,
         readOnly: widget.readOnly,

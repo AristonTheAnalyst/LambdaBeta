@@ -1565,12 +1565,22 @@ class _SessionPreviewState extends State<_SessionPreview> {
   List<Widget> _previewRows(SessionViewModel vm, String exerciseId) {
     final sets = (vm.plannedSetsByExercise[exerciseId] ?? const [])
         .where((s) => !s.isArchived)
+        .where(_hasTargetData)
         .toList();
     return [
       for (var i = 0; i < sets.length; i++)
         _readOnlyPlannedRow(i + 1, sets[i], 'preview-${sets[i].setId}'),
     ];
   }
+
+  /// A planned row with no target data at all (weight, reps, notes,
+  /// variation) is a keep-alive stub from group creation, not a plan —
+  /// never preview it.
+  static bool _hasTargetData(PlannedSessionSet s) =>
+      s.targetWeight != null ||
+      s.targetReps != null ||
+      (s.targetNotes?.isNotEmpty ?? false) ||
+      s.variationId != null;
 
   Widget _readOnlyPlannedRow(
     int index,
@@ -1659,9 +1669,9 @@ class _SessionPreviewState extends State<_SessionPreview> {
 }
 
 /// The training page's exercise-card placeholder shown before the first
-/// exercise is added — the same card chrome (name, Lessons/History pills,
+/// exercise is added — the shared card chrome (selector, greyed pills,
 /// set-grid column labels) so the page never reads as completely empty.
-/// The "+ ADD EXERCISE" row opens the add-exercise modal.
+/// The selector's popover carries the pinned Add Exercise row.
 class _PlaceholderExerciseCard extends StatelessWidget {
   const _PlaceholderExerciseCard({required this.vm});
 
@@ -1669,96 +1679,30 @@ class _PlaceholderExerciseCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(AppRadius.lg),
-        border: Border.all(color: AppColors.border),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Text(
-                    'Add your first exercise',
-                    style: AppFonts.ui(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.muted,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.sm),
-                GlassButton(
-                  label: 'Add Exercise',
-                  compact: true,
-                  onPressed: () => showAddExerciseModal(context, vm: vm),
-                ),
-                const SizedBox(width: AppSpacing.sm),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    _disabledPill(
-                      icon: Icons.menu_book_outlined,
-                      label: 'Lessons',
-                    ),
-                    const SizedBox(width: 6),
-                    _disabledPill(icon: Icons.history, label: 'History'),
-                  ],
-                ),
-              ],
+    return SessionExerciseCard(
+      // The selector's pill doubles as the call to action — tapping it opens
+      // the popover whose Add Exercise row creates the first exercise.
+      exerciseNames: const ['Add your first exercise'],
+      activeIndex: 0,
+      onSelect: (_) {},
+      onAdd: () => showAddExerciseModal(context, vm: vm),
+      rows: [
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+          child: Text(
+            'No exercises yet — add one to start logging',
+            textAlign: TextAlign.center,
+            style: AppFonts.ui(
+              fontSize: AppTextStyles.sm,
+              color: AppColors.muted,
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(10, 0, 10, 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Same column header row as the live set grid.
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: Row(
-                    children: [
-                      const SizedBox(width: 26),
-                      const SizedBox(width: 6),
-                      Expanded(child: _colLabel('KG')),
-                      const SizedBox(width: 6),
-                      Expanded(child: _colLabel('REPS')),
-                      const SizedBox(width: 6),
-                      Expanded(child: _colLabel('VARIATION')),
-                      const SizedBox(width: 6),
-                      SizedBox(width: 32, child: _colLabel('NOTE')),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
-
-  Widget _colLabel(String text) => Text(
-    text,
-    textAlign: TextAlign.center,
-    style: AppFonts.mono(
-      fontSize: 8,
-      letterSpacing: 0.6,
-      color: AppColors.muted,
-    ),
-  );
 }
 
-/// The lessons/history pill chrome in its disabled state — used by the
-/// active-session placeholder card and the freestyle ghost preview, where
-/// the pills can't act on an exercise that isn't part of a session yet.
 /// Inert set-row plumbing for the read-only preview rows — the shared row
 /// requires these callbacks even when nothing can ever fire them.
 const _noVariationOptions = [
@@ -1770,32 +1714,6 @@ Future<String?> _inertSubmitVariation(
   required String exerciseId,
   String? useExistingId,
 }) async => null;
-
-Widget _disabledPill({required IconData icon, required String label}) {
-  return Container(
-    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-    decoration: BoxDecoration(
-      color: Colors.transparent,
-      borderRadius: BorderRadius.circular(6),
-      border: Border.all(color: AppColors.border),
-    ),
-    child: Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 14, color: AppColors.muted.withValues(alpha: 0.4)),
-        const SizedBox(width: 5),
-        Text(
-          label,
-          style: AppFonts.mono(
-            fontSize: 11,
-            letterSpacing: 0.4,
-            color: AppColors.muted.withValues(alpha: 0.4),
-          ),
-        ),
-      ],
-    ),
-  );
-}
 
 // ── Page 2: Reflection ───────────────────────────────────────────────────────
 

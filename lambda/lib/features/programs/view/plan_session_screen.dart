@@ -81,20 +81,24 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
     widget.viewModel.loadHistoryIfNeeded();
     // Defer viewmodel state mutations past the first frame so the
     // ValueListenableBuilder doesn't try to rebuild during initState.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
       final sid = widget.standaloneWorkoutId;
       if (sid != null) {
-        widget.viewModel.openStandaloneWorkout(sid);
+        // Awaited: the standalone open loads its name asynchronously and the
+        // sync below must see the loaded draft — otherwise the header keeps
+        // the 'New Session' seed forever.
+        await widget.viewModel.openStandaloneWorkout(sid);
       } else if (widget.workout != null) {
-        widget.viewModel.openEditWorkout(widget.workout!);
+        await widget.viewModel.openEditWorkout(widget.workout!);
       } else if (widget.standalone) {
-        widget.viewModel.createStandaloneWorkoutAndOpen();
+        await widget.viewModel.createStandaloneWorkoutAndOpen();
       } else {
-        widget.viewModel.createWorkoutAndOpen();
+        await widget.viewModel.createWorkoutAndOpen();
       }
       // The VM may generate a bumped name ("New Session 2") after open —
       // sync the header controller so the editor shows the real name.
+      if (!mounted) return;
       final draft = widget.viewModel.state.value.workoutNameDraft;
       if (draft.isNotEmpty && _nameCtrl.text != draft) {
         _nameCtrl.text = draft;

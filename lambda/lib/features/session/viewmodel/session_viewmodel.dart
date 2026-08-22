@@ -1640,6 +1640,15 @@ class SessionViewModel extends ChangeNotifier {
       final plannedSets = [...?plannedSetsByExercise[exerciseId]]
         ..sort((a, b) => a.setNumber.compareTo(b.setNumber));
       for (final p in plannedSets) {
+        // Skip keep-alive stubs — a planned row with no target data
+        // anywhere (weight, reps, notes, variation) contributes nothing to
+        // the session.
+        if (p.targetWeight == null &&
+            p.targetReps == null &&
+            (p.targetNotes?.isEmpty ?? true) &&
+            p.variationId == null) {
+          continue;
+        }
         materialized.add(
           await _sessionRepo.insertSet(
             sessionId: id,
