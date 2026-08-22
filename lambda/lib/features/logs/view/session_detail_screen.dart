@@ -817,7 +817,16 @@ class _DetailAddExerciseContentState extends State<_DetailAddExerciseContent> {
                   shrinkWrap: true,
                   children: [
                     ..._filtered.map(
-                      (e) => _resultRow(e.value, () => _pick(e.key)),
+                      // Exercises are unique per session — already-added
+                      // ones are marked, and picking one just switches to
+                      // its existing tab.
+                      (e) => _resultRow(
+                        e.value,
+                        () => _pick(e.key),
+                        added: state.exerciseSlots.any(
+                          (sl) => sl.exerciseId == e.key,
+                        ),
+                      ),
                     ),
                     if (_canCreate)
                       _resultRow(
@@ -852,7 +861,7 @@ class _DetailAddExerciseContentState extends State<_DetailAddExerciseContent> {
     );
   }
 
-  Widget _resultRow(String label, VoidCallback? onTap, {bool accent = false}) {
+  Widget _resultRow(String label, VoidCallback? onTap, {bool accent = false, bool added = false}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: GestureDetector(
@@ -868,13 +877,32 @@ class _DetailAddExerciseContentState extends State<_DetailAddExerciseContent> {
                   : AppColors.border,
             ),
           ),
-          child: Text(
-            label,
-            style: AppFonts.ui(
-              fontSize: 14,
-              fontWeight: accent ? FontWeight.w700 : FontWeight.w600,
-              color: accent ? AppColors.accent : AppColors.primary,
-            ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  label,
+                  style: AppFonts.ui(
+                    fontSize: 14,
+                    fontWeight: accent ? FontWeight.w700 : FontWeight.w600,
+                    color: accent ? AppColors.accent : AppColors.primary,
+                  ),
+                ),
+              ),
+              if (added) ...[
+                const SizedBox(width: 8),
+                Icon(Icons.check_circle, size: 14, color: AppColors.success),
+                const SizedBox(width: 4),
+                Text(
+                  'Added',
+                  style: AppFonts.mono(
+                    fontSize: 9,
+                    letterSpacing: 0.4,
+                    color: AppColors.success,
+                  ),
+                ),
+              ],
+            ],
           ),
         ),
       ),

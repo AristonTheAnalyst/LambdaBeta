@@ -55,6 +55,12 @@ class _AddExerciseModalContentState extends State<_AddExerciseModalContent> {
       _query.trim().length > 1 &&
       !widget.vm.exercises.any((e) => e.name.toLowerCase() == _query.trim().toLowerCase());
 
+  /// Exercises already in the session — exercises are unique per session:
+  /// picking one of these just navigates to its existing tab, and the picker
+  /// marks them so the no-op reads as intentional.
+  bool _isAdded(String exerciseId) => widget.vm.exerciseSlots
+      .any((s) => s.exerciseIds.contains(exerciseId));
+
   void _pickSingle(String exerciseId) {
     widget.vm.addExerciseSlot(exerciseId);
     Navigator.of(context, rootNavigator: true).pop();
@@ -123,7 +129,7 @@ class _AddExerciseModalContentState extends State<_AddExerciseModalContent> {
             builder: (context, _) => ListView(
               shrinkWrap: true,
               children: [
-                ..._filtered.map((e) => _resultRow(e.value, () => _pickSingle(e.key))),
+                ..._filtered.map((e) => _resultRow(e.value, () => _pickSingle(e.key), added: _isAdded(e.key))),
                 if (_canCreate)
                   _resultRow('+ Create "${_query.trim()}"', widget.vm.newExCreating ? null : _createNew,
                       accent: true),
@@ -142,7 +148,7 @@ class _AddExerciseModalContentState extends State<_AddExerciseModalContent> {
     );
   }
 
-  Widget _resultRow(String label, VoidCallback? onTap, {bool accent = false}) {
+  Widget _resultRow(String label, VoidCallback? onTap, {bool accent = false, bool added = false}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: GestureDetector(
@@ -156,11 +162,27 @@ class _AddExerciseModalContentState extends State<_AddExerciseModalContent> {
                 color: accent ? AppColors.primary.withValues(alpha: 0.35) : AppColors.border,
                 style: accent ? BorderStyle.solid : BorderStyle.solid),
           ),
-          child: Text(label,
-              style: AppFonts.ui(
-                  fontSize: 14,
-                  fontWeight: accent ? FontWeight.w700 : FontWeight.w600,
-                  color: accent ? AppColors.primary : AppColors.primary)),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(label,
+                    style: AppFonts.ui(
+                        fontSize: 14,
+                        fontWeight: accent ? FontWeight.w700 : FontWeight.w600,
+                        color: accent ? AppColors.primary : AppColors.primary)),
+              ),
+              if (added) ...[
+                const SizedBox(width: 8),
+                Icon(Icons.check_circle, size: 14, color: AppColors.success),
+                const SizedBox(width: 4),
+                Text('Added',
+                    style: AppFonts.mono(
+                        fontSize: 9,
+                        letterSpacing: 0.4,
+                        color: AppColors.success)),
+              ],
+            ],
+          ),
         ),
       ),
     );
