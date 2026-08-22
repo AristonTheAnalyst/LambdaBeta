@@ -126,6 +126,7 @@ class PlannedSessionRepository {
     String sessionId, {
     String? name,
     String? notes,
+    bool clearNotes = false,
     int? dayOfWeek,
     bool clearDayOfWeek = false,
     String userId = '',
@@ -135,7 +136,11 @@ class PlannedSessionRepository {
     }
     final updates = <String, dynamic>{};
     if (name != null) updates['name'] = name;
-    if (notes != null) updates['notes'] = notes;
+    if (clearNotes) {
+      updates['notes'] = null;
+    } else if (notes != null) {
+      updates['notes'] = notes;
+    }
     if (clearDayOfWeek) {
       updates['day_of_week'] = null;
     } else if (dayOfWeek != null) {

@@ -136,13 +136,11 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
 
   @override
   void onDiscard() {
-    // If the workout has no exercises, treat it as abandoned — delete it from
-    // the DB rather than leaving an empty orphan row.
-    if (widget.viewModel.state.value.workoutExerciseSlots.isEmpty) {
-      widget.viewModel.deletePlannedSession();
-    } else {
-      widget.viewModel.closeWorkoutEditor();
-    }
+    // Roll back to the open-time snapshot (or last Save): header fields and
+    // sets. A workout created this editing session rolls back to
+    // nonexistence; one with no exercises left after a full rollback is
+    // removed rather than kept as an empty orphan.
+    widget.viewModel.discardWorkoutChanges();
   }
 
   /// A nav-bar tab tap: run the unsaved-changes guard, then leave the

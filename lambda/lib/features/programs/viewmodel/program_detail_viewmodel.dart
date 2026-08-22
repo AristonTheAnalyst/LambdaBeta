@@ -276,6 +276,16 @@ class ProgramDetailViewModel {
   /// Virtual draft row ids for the workout editor — "+ ADD SET" and new
   /// exercise groups add drafts that materialize on input or explicit Save.
   int _nextDraftId = 1;
+
+  // ── Discard rollback snapshot ─────────────────────────────────────────────
+  /// The workout's state at open (or last Save) — sets + header fields.
+  /// Discard restores exactly this: sets auto-commit as they're edited,
+  /// so without a snapshot "Discard" could never undo them.
+  List<PlannedSessionSet> _openedSetsSnapshot = const [];
+  String? _openedName;
+  String? _openedNotes;
+  int? _openedDayOfWeek;
+  bool _openedExisting = false;
   final state = ValueNotifier(const ProgramDetailState());
 
   String get _userId => Supabase.instance.client.auth.currentUser!.id;
@@ -627,6 +637,9 @@ class ProgramDetailViewModel {
         sequenceOrder: seqOrder,
         isArchived: true,
       );
+      // Created this editing session — Discard rolls back its existence.
+      _openedExisting = false;
+      _openedSetsSnapshot = const [];
       // Fetch from the standalone table (dim_workout) which is the source of
       // truth for all workouts now.
       final workouts = await _plannedSessionRepo.fetchPlannedSessions(
@@ -666,6 +679,11 @@ class ProgramDetailViewModel {
       final sets = await _plannedSessionRepo.consolidateDuplicateExerciseGroups(
         w.sessionId,
       );
+      _openedSetsSnapshot = sets;
+      _openedName = w.name;
+      _openedNotes = w.notes;
+      _openedDayOfWeek = w.dayOfWeek;
+      _openedExisting = true;
       final plannedSets = _setsFromSessionSets(sets);
       state.value = state.value.copyWith(
         workoutPlannedSessionSets: plannedSets,
@@ -721,6 +739,11 @@ class ProgramDetailViewModel {
       final sets = await _plannedSessionRepo.consolidateDuplicateExerciseGroups(
         sessionId,
       );
+      _openedSetsSnapshot = sets;
+      _openedName = w.name;
+      _openedNotes = w.notes;
+      _openedDayOfWeek = w.dayOfWeek;
+      _openedExisting = true;
       state.value = state.value.copyWith(
         workoutPlannedSessionSets: _setsFromSessionSets(sets),
         workoutExerciseSlots: _slotsFromSessionSets(sets),
@@ -874,6 +897,17 @@ class ProgramDetailViewModel {
       if (anyDrafts) {
         state.value = state.value.copyWith(workoutSetDrafts: const {});
       }
+      // Refresh the rollback snapshot — a later Discard rolls back to this
+      // Save, not to open.
+      _openedSetsSnapshot = await _plannedSessionRepo.fetchPlannedSets(
+        workout.sessionId,
+      );
+      final savedName = state.value.workoutNameDraft.trim();
+      final savedNotes = state.value.workoutNotesDraft.trim();
+      _openedName = savedName.isEmpty ? null : savedName;
+      _openedNotes = savedNotes.isEmpty ? null : savedNotes;
+      _openedDayOfWeek = state.value.workoutDayOfWeekDraft;
+      _openedExisting = true;
     }
     if (isStandaloneMode) {
       state.value = state.value.copyWith(workoutUnsavedChanges: false);
@@ -890,6 +924,61 @@ class ProgramDetailViewModel {
       plannedWorkouts: wps,
       workoutUnsavedChanges: false,
     );
+  }
+
+  /// Rolls the workout back to its open-time state (or last Save) — header
+  /// fields and sets. Sets auto-commit as they're edited, so without this
+  /// pass "Discard" could never undo them. A workout created in this
+  /// editing session rolls back to nonexistence.
+  Future<void> discardWorkoutChanges() async {
+    final w = state.value.editingWorkout;
+    if (w == null) return;
+    if (!_openedExisting) {
+      await deletePlannedSession();
+      return;
+    }
+    try {
+      await _plannedSessionRepo.updatePlannedSession(
+        w.sessionId,
+        name: _openedName,
+        notes: _openedNotes,
+        clearNotes: _openedNotes == null,
+        dayOfWeek: _openedDayOfWeek,
+        clearDayOfWeek: _openedDayOfWeek == null,
+        userId: _userId,
+      );
+      final current = await _plannedSessionRepo.fetchPlannedSets(w.sessionId);
+      final snapshotIds = {for (final s in _openedSetsSnapshot) s.setId};
+      // Rows added since open are discarded.
+      for (final s in current) {
+        if (!snapshotIds.contains(s.setId)) {
+          await _plannedSessionRepo.deletePlannedSet(s.setId);
+        }
+      }
+      // Snapshot rows return to their open-time values (any archived during
+      // editing come back).
+      for (final s in _openedSetsSnapshot) {
+        await _plannedSessionRepo.updatePlannedSet(
+          s.setId,
+          targetWeight: s.targetWeight,
+          clearWeight: s.targetWeight == null,
+          targetReps: s.targetReps,
+          clearReps: s.targetReps == null,
+          variationId: s.variationId,
+          clearVariation: s.variationId == null,
+          variationName: s.variationName,
+          targetNotes: s.targetNotes,
+          clearNotes: s.targetNotes == null,
+        );
+        await ps.db.execute(
+          'UPDATE dim_planned_session_set SET is_archived = 0, exercise_sequence_order = ?, set_number = ? WHERE set_id = ?',
+          [s.exerciseSequenceOrder, s.setNumber, s.setId],
+        );
+      }
+    } catch (e) {
+      state.value = state.value.copyWith(error: e.toString());
+    }
+    closeWorkoutEditor();
   }
 
   void closeWorkoutEditor() {
