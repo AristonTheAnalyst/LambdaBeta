@@ -227,7 +227,7 @@ Full spec: `docs/pr_methodology.md` (note: its "snapshot rows in fact_pr" sectio
 
 ## Key Conventions
 
-1. **Auto-commit on blur** — weight/reps save on focus loss. Commits are ALSO flushed on app lifecycle pause/inactive/detached, exercise-tab switch, and session end (rows register commit handles with the VM) — typed values must survive a hard kill.
+1. **Auto-commit while typing** — real set rows commit on every keystroke (onChanged), so navigating away can never lose a value; blur commit remains as a safety net. Draft rows commit on blur only (a keystroke must not materialize a draft mid-typing), and are flushed on app lifecycle pause/inactive/detached, exercise-tab switch, wizard page change, and session end (rows register commit handles with the VM).
 2. **Numeric-only input** — live/history weight+reps cells use `FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*$'))`; planned cells allow ranges (`[0-9.\-\s]`).
 3. **Draft rows (freestyle only)** — virtual rows that insert a fresh set on commit; a draft materializes on any user-entered value (weight, reps, variation, or notes). Planned rows are real rows from materialization — there is NO empty-row filling (that heuristic landed data on the wrong row).
 4. **Swipe-to-reveal** — SwipeActions for Duplicate/Delete; delete is immediate.

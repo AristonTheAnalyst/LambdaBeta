@@ -155,6 +155,13 @@ class _SessionSetRowState extends State<SessionSetRow> {
 
   bool get _isDraft => widget.isDraft;
 
+  /// Real (non-draft) rows commit on every keystroke — the value is
+  /// recognized as it's being typed, so navigating away (back, switching
+  /// exercises, ending) can never lose it. Drafts stay blur/ flush
+  /// committed: a keystroke must not materialize a draft mid-typing
+  /// (that would replace the row and drop the field's focus).
+  bool get _commitOnChange => !widget.readOnly && !_isDraft;
+
   /// Planned styling applies to planner rows always, and to live rows when
   /// they carry a ghost target.
   bool get _isPlannedRow =>
@@ -508,6 +515,7 @@ class _SessionSetRowState extends State<SessionSetRow> {
               focusNode: _repsFocus,
               ghost: widget.mode == SetRowMode.live && plannedReps != null,
               hint: plannedReps ?? '—',
+              onChanged: _commitOnChange ? (_) => _commit() : null,
             ),
           ),
           const SizedBox(width: 6),
@@ -523,6 +531,7 @@ class _SessionSetRowState extends State<SessionSetRow> {
                   plannedWeight != null &&
                   _weightCtrl.text.trim().isEmpty,
               hint: plannedWeight ?? '—',
+              onChanged: _commitOnChange ? (_) => _commit() : null,
             ),
           ),
           const SizedBox(width: 6),
@@ -658,6 +667,7 @@ class _SessionSetRowState extends State<SessionSetRow> {
     required FocusNode focusNode,
     required bool ghost,
     required String hint,
+    ValueChanged<String>? onChanged,
   }) {
     final highlighted =
         widget.mode == SetRowMode.planned && controller.text.trim().isNotEmpty;
@@ -667,6 +677,7 @@ class _SessionSetRowState extends State<SessionSetRow> {
       child: TextField(
         key: key,
         controller: controller,
+        onChanged: onChanged,
         focusNode: focusNode,
         readOnly: widget.readOnly,
         textAlign: TextAlign.center,

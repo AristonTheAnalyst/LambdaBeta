@@ -123,6 +123,10 @@ class _SessionScreenState extends State<SessionScreen>
     // Blur any focused set cell first — its typed value commits on focus
     // loss, and navigating away must not swallow it.
     FocusManager.instance.primaryFocus?.unfocus();
+    // Real rows commit per keystroke, but draft rows commit on blur only —
+    // flush them explicitly so a draft being typed isn't lost if the
+    // Training page unmounts during the slide.
+    _vm.flushPendingCommits();
     if (_vm.sets.isEmpty) {
       _showNoSetsDialog();
       return;
@@ -133,6 +137,9 @@ class _SessionScreenState extends State<SessionScreen>
 
   Future<void> _endFromReflection() async {
     FocusManager.instance.primaryFocus?.unfocus();
+    // Same as _goToReflection — commit any draft rows being typed before
+    // the end flow prunes and finalizes.
+    _vm.flushPendingCommits();
     if (_vm.sets.isEmpty) {
       _showNoSetsDialog();
       return;
