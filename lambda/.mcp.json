@@ -9,8 +9,9 @@
       "url": "https://mcp.supabase.com/mcp?project_ref=dybluaeowmpdwsweawcq&features=docs%2Caccount%2Cdatabase%2Cdebugging%2Cdevelopment%2Cfunctions%2Cbranching"
     },
     "dart": {
-      "type": "http",
-      "url": "https://mcp.dartai.com/mcp"
+      "type": "stdio",
+      "command": "dart",
+      "args": ["mcp-server"]
     }
   }
 }

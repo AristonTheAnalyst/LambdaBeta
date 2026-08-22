@@ -59,6 +59,24 @@ class SlidePagesController extends ChangeNotifier {
     }
   }
 
+  /// Re-anchors the pager for a fresh [PageView] after the previous one was
+  /// disposed (tab re-entry recreates the screen, and a newly attached
+  /// PageView always starts at [initialPage] — 0 — not the last page shown).
+  /// Drops the stale [PageController] so the next attach starts at
+  /// [_currentPage] instead of silently resetting the wizard to its first
+  /// page. Call this BEFORE the new PageView attaches — once it has attached
+  /// at page 0, the attach overwrites [_currentPage] and the last page is
+  /// lost.
+  void restorePageView() {
+    final c = _pageController;
+    if (c != null) {
+      c.removeListener(_onPageChanged);
+      c.dispose();
+      _pageController = null;
+    }
+    _initialPage = _currentPage;
+  }
+
   /// The page currently showing (0-based).
   int get currentPage => _currentPage;
 

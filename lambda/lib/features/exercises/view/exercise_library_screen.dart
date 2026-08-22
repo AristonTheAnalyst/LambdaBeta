@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/styles/app_colors.dart';
 import '../../../../core/styles/app_fonts.dart';
@@ -28,22 +28,24 @@ class ExerciseLibraryScreen extends StatefulWidget {
 }
 
 class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
-  final _viewModel    = ExerciseViewModel();
+  final _viewModel = ExerciseViewModel();
   final _tabController = SlideTabController();
-  final _exSearchController  = TextEditingController();
+  final _exSearchController = TextEditingController();
   final _varSearchController = TextEditingController();
-  final _createExController  = TextEditingController();
+  final _createExController = TextEditingController();
   final _createVarController = TextEditingController();
-  final _editVarController   = TextEditingController();
+  final _editVarController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     _viewModel.fetchAll();
     _exSearchController.addListener(
-        () => _viewModel.setExSearch(_exSearchController.text));
+      () => _viewModel.setExSearch(_exSearchController.text),
+    );
     _varSearchController.addListener(
-        () => _viewModel.setVarSearch(_varSearchController.text));
+      () => _viewModel.setVarSearch(_varSearchController.text),
+    );
   }
 
   @override
@@ -92,15 +94,14 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
 
   // ── Edit Exercise ────────────────────────────────────────────────────────────
 
-  void _openEditExercise(CustomExercise ex) {
+  void _openEditExercise(CustomExercise ex) async {
     // Exercise taps now go to the dedicated page (locked insights + rename /
     // archive) instead of the name-only bottom sheet.
-    context.push('/exercises/exercise/${ex.exerciseId}', extra: ex.name);
+    await context.push('/exercises/exercise/${ex.exerciseId}', extra: ex.name);
+    // Rename/archive edits on the detail page must show immediately when the
+    // library list is restored (its state lives on beneath the pushed route).
+    _viewModel.fetchAll();
   }
-
-
-
-
 
   // ── Edit Variation ───────────────────────────────────────────────────────────
 
@@ -124,8 +125,12 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
   Future<void> _openAddExercisesToVariation() async {
     final s = _viewModel.state.value;
     final options = s.editVarAvailableExs
-        .map((e) => MultiSelectOption(
-            label: toProperCase(e.name), value: e.exerciseId))
+        .map(
+          (e) => MultiSelectOption(
+            label: toProperCase(e.name),
+            value: e.exerciseId,
+          ),
+        )
         .toList();
 
     final selected = await showMultiSelectSheet<String>(
@@ -163,25 +168,36 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
-        title: Text('Delete Variation',
-            style: AppFonts.ui(fontWeight: FontWeight.w800, color: AppColors.danger)),
-        content: Text('Remove "$name"?',
-            style: AppFonts.ui(color: AppColors.muted)),
+        title: Text(
+          'Delete Variation',
+          style: AppFonts.ui(
+            fontWeight: FontWeight.w800,
+            color: AppColors.danger,
+          ),
+        ),
+        content: Text(
+          'Remove "$name"?',
+          style: AppFonts.ui(color: AppColors.muted),
+        ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: Text('Cancel',
-                  style: AppFonts.ui(color: AppColors.muted))),
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text('Cancel', style: AppFonts.ui(color: AppColors.muted)),
+          ),
           TextButton(
-              onPressed: () {
-                Navigator.of(ctx).pop();
-                Navigator.of(context, rootNavigator: true).pop();
-                _viewModel.deleteVariation(variationId);
-              },
-              child: Text('Delete',
-                  style: AppFonts.ui(
-                      color: AppColors.danger,
-                      fontWeight: FontWeight.w600))),
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              Navigator.of(context, rootNavigator: true).pop();
+              _viewModel.deleteVariation(variationId);
+            },
+            child: Text(
+              'Delete',
+              style: AppFonts.ui(
+                color: AppColors.danger,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -200,8 +216,11 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
                 title: 'Exercises & Variations',
                 left: GestureDetector(
                   onTap: () => context.pop(),
-                  child: Icon(Icons.arrow_back_ios_new,
-                      size: 18, color: AppColors.accent),
+                  child: Icon(
+                    Icons.arrow_back_ios_new,
+                    size: 18,
+                    color: AppColors.accent,
+                  ),
                 ),
               ),
               SlideTabBar(
@@ -217,11 +236,16 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
                   width: double.infinity,
                   color: AppColors.dangerBg,
                   padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
-                  child: Text(state.error!,
-                      style: AppFonts.ui(
-                          color: AppColors.danger,
-                          fontSize: AppTextStyles.sm)),
+                    horizontal: AppSpacing.lg,
+                    vertical: AppSpacing.sm,
+                  ),
+                  child: Text(
+                    state.error!,
+                    style: AppFonts.ui(
+                      color: AppColors.danger,
+                      fontSize: AppTextStyles.sm,
+                    ),
+                  ),
                 ),
               SlideTabView(
                 tabs: [
@@ -275,109 +299,134 @@ class _ExercisesPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return state.isLoading
-        ? Center(
-            child: CircularProgressIndicator(color: AppColors.accent))
+        ? Center(child: CircularProgressIndicator(color: AppColors.accent))
         : ListView(
             padding: const EdgeInsets.all(AppSpacing.lg),
             children: [
               Row(
                 children: [
                   Expanded(
-                    child: Text('All Exercises',
-                        style: AppFonts.ui(
-                            fontSize: AppTextStyles.lg,
-                            fontWeight: FontWeight.w800,
-                            color: AppColors.primary)),
+                    child: Text(
+                      'All Exercises',
+                      style: AppFonts.ui(
+                        fontSize: AppTextStyles.lg,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.primary,
+                      ),
+                    ),
                   ),
                   if (state.exercises.isNotEmpty)
                     Expanded(
                       child: TextField(
                         controller: searchController,
                         style: AppFonts.ui(
-                            fontSize: AppTextStyles.sm,
-                            color: AppColors.primary),
+                          fontSize: AppTextStyles.sm,
+                          color: AppColors.primary,
+                        ),
                         decoration: InputDecoration(
                           hintText: 'Search…',
-                          hintStyle:
-                              AppFonts.ui(color: AppColors.muted),
+                          hintStyle: AppFonts.ui(color: AppColors.muted),
                           filled: true,
                           fillColor: AppColors.surface,
                           border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(
-                                AppRadius.md),
+                            borderRadius: BorderRadius.circular(AppRadius.md),
                             borderSide: BorderSide.none,
                           ),
                           contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 8),
+                            horizontal: 10,
+                            vertical: 8,
+                          ),
                           isDense: true,
                         ),
                       ),
                     ),
                   const SizedBox(width: AppSpacing.sm),
                   GlassButton(
-                      label: '',
-                      icon: Icons.add,
-                      onPressed: onAdd,
-                      compact: true),
+                    label: '',
+                    icon: Icons.add,
+                    onPressed: onAdd,
+                    compact: true,
+                  ),
                 ],
               ),
               const SizedBox(height: AppSpacing.md),
               if (state.exercises.isEmpty)
                 Center(
                   child: Padding(
-                    padding:
-                        const EdgeInsets.only(top: AppSpacing.xxl),
+                    padding: const EdgeInsets.only(top: AppSpacing.xxl),
                     child: Column(
                       children: [
-                        Text('No exercises yet',
-                            style: AppFonts.ui(
-                                fontSize: AppTextStyles.md,
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.primary)),
+                        Text(
+                          'No exercises yet',
+                          style: AppFonts.ui(
+                            fontSize: AppTextStyles.md,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.primary,
+                          ),
+                        ),
                         SizedBox(height: AppSpacing.sm),
-                        Text('Tap + to create your first exercise.',
-                            style: AppFonts.ui(
-                                fontSize: AppTextStyles.sm,
-                                color: AppColors.muted)),
+                        Text(
+                          'Tap + to create your first exercise.',
+                          style: AppFonts.ui(
+                            fontSize: AppTextStyles.sm,
+                            color: AppColors.muted,
+                          ),
+                        ),
                       ],
                     ),
                   ),
                 )
               else if (state.pagedExercises.isEmpty)
-                Text('No results.',
-                    style: AppFonts.ui(
-                        color: AppColors.muted,
-                        fontSize: AppTextStyles.sm))
+                Text(
+                  'No results.',
+                  style: AppFonts.ui(
+                    color: AppColors.muted,
+                    fontSize: AppTextStyles.sm,
+                  ),
+                )
               else ...[
-                ...state.pagedExercises.map((ex) => Padding(
-                      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                      child: AppCard(
-                        onTap: () => onEdit(ex),
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: AppSpacing.md, vertical: AppSpacing.sm),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(toProperCase(ex.name),
-                                      style: AppFonts.ui(
-                                          fontSize: AppTextStyles.md,
-                                          fontWeight: FontWeight.w600,
-                                          color: AppColors.primary)),
-                                  if (state.usage[ex.exerciseId] != null)
-                                    Text(_usageLine(state.usage[ex.exerciseId]!, isExercise: true),
-                                        style: AppFonts.ui(
-                                            fontSize: AppTextStyles.xs,
-                                            color: AppColors.muted)),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
+                ...state.pagedExercises.map(
+                  (ex) => Padding(
+                    padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                    child: AppCard(
+                      onTap: () => onEdit(ex),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.md,
+                        vertical: AppSpacing.sm,
                       ),
-                    )),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  toProperCase(ex.name),
+                                  style: AppFonts.ui(
+                                    fontSize: AppTextStyles.md,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.primary,
+                                  ),
+                                ),
+                                if (state.usage[ex.exerciseId] != null)
+                                  Text(
+                                    _usageLine(
+                                      state.usage[ex.exerciseId]!,
+                                      isExercise: true,
+                                    ),
+                                    style: AppFonts.ui(
+                                      fontSize: AppTextStyles.xs,
+                                      color: AppColors.muted,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
                 if (state.exTotal > _pageSize)
                   _PaginationBar(
                     shown: state.pagedExercises.length,
@@ -414,109 +463,134 @@ class _VariationsPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return state.isLoading
-        ? Center(
-            child: CircularProgressIndicator(color: AppColors.accent))
+        ? Center(child: CircularProgressIndicator(color: AppColors.accent))
         : ListView(
             padding: const EdgeInsets.all(AppSpacing.lg),
             children: [
               Row(
                 children: [
                   Expanded(
-                    child: Text('All Variations',
-                        style: AppFonts.ui(
-                            fontSize: AppTextStyles.lg,
-                            fontWeight: FontWeight.w800,
-                            color: AppColors.primary)),
+                    child: Text(
+                      'All Variations',
+                      style: AppFonts.ui(
+                        fontSize: AppTextStyles.lg,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.primary,
+                      ),
+                    ),
                   ),
                   if (state.variations.isNotEmpty)
                     Expanded(
                       child: TextField(
                         controller: searchController,
                         style: AppFonts.ui(
-                            fontSize: AppTextStyles.sm,
-                            color: AppColors.primary),
+                          fontSize: AppTextStyles.sm,
+                          color: AppColors.primary,
+                        ),
                         decoration: InputDecoration(
                           hintText: 'Search…',
-                          hintStyle:
-                              AppFonts.ui(color: AppColors.muted),
+                          hintStyle: AppFonts.ui(color: AppColors.muted),
                           filled: true,
                           fillColor: AppColors.surface,
                           border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(
-                                AppRadius.md),
+                            borderRadius: BorderRadius.circular(AppRadius.md),
                             borderSide: BorderSide.none,
                           ),
                           contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 8),
+                            horizontal: 10,
+                            vertical: 8,
+                          ),
                           isDense: true,
                         ),
                       ),
                     ),
                   const SizedBox(width: AppSpacing.sm),
                   GlassButton(
-                      label: '',
-                      icon: Icons.add,
-                      onPressed: onAdd,
-                      compact: true),
+                    label: '',
+                    icon: Icons.add,
+                    onPressed: onAdd,
+                    compact: true,
+                  ),
                 ],
               ),
               const SizedBox(height: AppSpacing.md),
               if (state.variations.isEmpty)
                 Center(
                   child: Padding(
-                    padding:
-                        const EdgeInsets.only(top: AppSpacing.xxl),
+                    padding: const EdgeInsets.only(top: AppSpacing.xxl),
                     child: Column(
                       children: [
-                        Text('No variations yet',
-                            style: AppFonts.ui(
-                                fontSize: AppTextStyles.md,
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.primary)),
+                        Text(
+                          'No variations yet',
+                          style: AppFonts.ui(
+                            fontSize: AppTextStyles.md,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.primary,
+                          ),
+                        ),
                         SizedBox(height: AppSpacing.sm),
-                        Text('Tap + to create your first variation.',
-                            style: AppFonts.ui(
-                                fontSize: AppTextStyles.sm,
-                                color: AppColors.muted)),
+                        Text(
+                          'Tap + to create your first variation.',
+                          style: AppFonts.ui(
+                            fontSize: AppTextStyles.sm,
+                            color: AppColors.muted,
+                          ),
+                        ),
                       ],
                     ),
                   ),
                 )
               else if (state.pagedVariations.isEmpty)
-                Text('No results.',
-                    style: AppFonts.ui(
-                        color: AppColors.muted,
-                        fontSize: AppTextStyles.sm))
+                Text(
+                  'No results.',
+                  style: AppFonts.ui(
+                    color: AppColors.muted,
+                    fontSize: AppTextStyles.sm,
+                  ),
+                )
               else ...[
-                ...state.pagedVariations.map((v) => Padding(
-                      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                      child: AppCard(
-                        onTap: () => onEdit(v),
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: AppSpacing.md, vertical: AppSpacing.sm),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(toProperCase(v.name),
-                                      style: AppFonts.ui(
-                                          fontSize: AppTextStyles.md,
-                                          fontWeight: FontWeight.w600,
-                                          color: AppColors.primary)),
-                                  if (state.usage[v.variationId] != null)
-                                    Text(_usageLine(state.usage[v.variationId]!, isExercise: false),
-                                        style: AppFonts.ui(
-                                            fontSize: AppTextStyles.xs,
-                                            color: AppColors.muted)),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
+                ...state.pagedVariations.map(
+                  (v) => Padding(
+                    padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                    child: AppCard(
+                      onTap: () => onEdit(v),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.md,
+                        vertical: AppSpacing.sm,
                       ),
-                    )),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  toProperCase(v.name),
+                                  style: AppFonts.ui(
+                                    fontSize: AppTextStyles.md,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.primary,
+                                  ),
+                                ),
+                                if (state.usage[v.variationId] != null)
+                                  Text(
+                                    _usageLine(
+                                      state.usage[v.variationId]!,
+                                      isExercise: false,
+                                    ),
+                                    style: AppFonts.ui(
+                                      fontSize: AppTextStyles.xs,
+                                      color: AppColors.muted,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
                 if (state.varTotal > _pageSize)
                   _PaginationBar(
                     shown: state.pagedVariations.length,
@@ -539,7 +613,8 @@ const _pageSize = 10;
 
 /// Builds the muted usage line under an exercise/variation name — just the
 /// last-used label (workout/set counts intentionally not shown).
-String _usageLine(ExerciseUsage u, {required bool isExercise}) => u.lastUsedLabel;
+String _usageLine(ExerciseUsage u, {required bool isExercise}) =>
+    u.lastUsedLabel;
 
 class _PaginationBar extends StatelessWidget {
   const _PaginationBar({
@@ -575,15 +650,23 @@ class _PaginationBar extends StatelessWidget {
                 color: canPrev ? AppColors.accentBg : AppColors.surfaceHigh,
                 borderRadius: BorderRadius.circular(AppRadius.md),
                 border: Border.all(
-                    color: canPrev ? AppColors.accent.withValues(alpha: 0.35) : AppColors.border),
+                  color: canPrev
+                      ? AppColors.accent.withValues(alpha: 0.35)
+                      : AppColors.border,
+                ),
               ),
-              child: Icon(Icons.chevron_left,
-                  size: 16, color: canPrev ? AppColors.accent : AppColors.muted),
+              child: Icon(
+                Icons.chevron_left,
+                size: 16,
+                color: canPrev ? AppColors.accent : AppColors.muted,
+              ),
             ),
           ),
           const SizedBox(width: AppSpacing.md),
-          Text('$shown of $total',
-              style: AppFonts.mono(fontSize: 11, color: AppColors.muted)),
+          Text(
+            '$shown of $total',
+            style: AppFonts.mono(fontSize: 11, color: AppColors.muted),
+          ),
           const SizedBox(width: AppSpacing.md),
           GestureDetector(
             onTap: canNext ? onNext : null,
@@ -593,10 +676,16 @@ class _PaginationBar extends StatelessWidget {
                 color: canNext ? AppColors.accentBg : AppColors.surfaceHigh,
                 borderRadius: BorderRadius.circular(AppRadius.md),
                 border: Border.all(
-                    color: canNext ? AppColors.accent.withValues(alpha: 0.35) : AppColors.border),
+                  color: canNext
+                      ? AppColors.accent.withValues(alpha: 0.35)
+                      : AppColors.border,
+                ),
               ),
-              child: Icon(Icons.chevron_right,
-                  size: 16, color: canNext ? AppColors.accent : AppColors.muted),
+              child: Icon(
+                Icons.chevron_right,
+                size: 16,
+                color: canNext ? AppColors.accent : AppColors.muted,
+              ),
             ),
           ),
         ],
@@ -630,11 +719,14 @@ class _CreateExerciseModal extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text('New Exercise',
-                    style: AppFonts.ui(
-                        fontSize: AppTextStyles.lg,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.primary)),
+                Text(
+                  'New Exercise',
+                  style: AppFonts.ui(
+                    fontSize: AppTextStyles.lg,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.primary,
+                  ),
+                ),
                 const SizedBox(height: AppSpacing.md),
                 LambdaInput(
                   controller: controller,
@@ -706,11 +798,14 @@ class _CreateVariationModal extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text('New Variation',
-                    style: AppFonts.ui(
-                        fontSize: AppTextStyles.lg,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.primary)),
+                Text(
+                  'New Variation',
+                  style: AppFonts.ui(
+                    fontSize: AppTextStyles.lg,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.primary,
+                  ),
+                ),
                 const SizedBox(height: AppSpacing.md),
                 LambdaInput(
                   controller: controller,
@@ -759,7 +854,6 @@ class _CreateVariationModal extends StatelessWidget {
   }
 }
 
-
 // ── Edit Variation Modal ────────────────────────────────────────────────────────
 
 class _EditVariationModal extends StatelessWidget {
@@ -791,11 +885,14 @@ class _EditVariationModal extends StatelessWidget {
                 Row(
                   children: [
                     Expanded(
-                      child: Text('Edit Variation',
-                          style: AppFonts.ui(
-                              fontSize: AppTextStyles.lg,
-                              fontWeight: FontWeight.w800,
-                              color: AppColors.primary)),
+                      child: Text(
+                        'Edit Variation',
+                        style: AppFonts.ui(
+                          fontSize: AppTextStyles.lg,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.primary,
+                        ),
+                      ),
                     ),
                     GlassButton(
                       label: '',
@@ -803,8 +900,9 @@ class _EditVariationModal extends StatelessWidget {
                       color: AppColors.danger,
                       compact: true,
                       onPressed: () => onDelete(
-                          state.editVariation!.variationId,
-                          state.editVarName),
+                        state.editVariation!.variationId,
+                        state.editVarName,
+                      ),
                     ),
                   ],
                 ),
@@ -819,32 +917,38 @@ class _EditVariationModal extends StatelessWidget {
                 const SizedBox(height: AppSpacing.lg),
                 Divider(color: AppColors.border),
                 const SizedBox(height: AppSpacing.sm),
-                Text('Assigned Exercises',
-                    style: AppFonts.ui(
-                        fontSize: AppTextStyles.md,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.primary)),
+                Text(
+                  'Assigned Exercises',
+                  style: AppFonts.ui(
+                    fontSize: AppTextStyles.md,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.primary,
+                  ),
+                ),
                 const SizedBox(height: AppSpacing.sm),
                 if (state.editVarLoadingExs)
                   Center(
-                      child: CircularProgressIndicator(
-                          color: AppColors.accent))
+                    child: CircularProgressIndicator(color: AppColors.accent),
+                  )
                 else if (state.editVarAssignedExs.isEmpty)
-                  Text('No exercises assigned yet.',
-                      style: AppFonts.ui(
-                          color: AppColors.muted,
-                          fontSize: AppTextStyles.sm))
+                  Text(
+                    'No exercises assigned yet.',
+                    style: AppFonts.ui(
+                      color: AppColors.muted,
+                      fontSize: AppTextStyles.sm,
+                    ),
+                  )
                 else
                   ...state.editVarAssignedExs.asMap().entries.map((e) {
                     final ex = e.value;
                     return Container(
                       padding: const EdgeInsets.symmetric(
-                          vertical: AppSpacing.sm),
+                        vertical: AppSpacing.sm,
+                      ),
                       decoration: BoxDecoration(
                         border: Border(
                           bottom: BorderSide(
-                            color: e.key <
-                                    state.editVarAssignedExs.length - 1
+                            color: e.key < state.editVarAssignedExs.length - 1
                                 ? AppColors.border
                                 : Colors.transparent,
                             width: 0.5,
@@ -854,10 +958,13 @@ class _EditVariationModal extends StatelessWidget {
                       child: Row(
                         children: [
                           Expanded(
-                            child: Text(toProperCase(ex.name),
-                                style: AppFonts.ui(
-                                    fontSize: AppTextStyles.md,
-                                    color: AppColors.primary)),
+                            child: Text(
+                              toProperCase(ex.name),
+                              style: AppFonts.ui(
+                                fontSize: AppTextStyles.md,
+                                color: AppColors.primary,
+                              ),
+                            ),
                           ),
                           GlassButton(
                             label: '',
@@ -903,23 +1010,39 @@ class _EditVariationModal extends StatelessWidget {
                               context: context,
                               builder: (ctx) => AlertDialog(
                                 backgroundColor: AppColors.surface,
-                                title: Text('Rename "$original"?',
-                                    style: AppFonts.ui(
-                                        fontWeight: FontWeight.w800, color: AppColors.primary)),
+                                title: Text(
+                                  'Rename "$original"?',
+                                  style: AppFonts.ui(
+                                    fontWeight: FontWeight.w800,
+                                    color: AppColors.primary,
+                                  ),
+                                ),
                                 content: Text(
-                                    'Past sets keep the name as logged; only future sets use the new name.',
-                                    style: AppFonts.ui(color: AppColors.muted)),
+                                  'Past sets keep the name as logged; only future sets use the new name.',
+                                  style: AppFonts.ui(color: AppColors.muted),
+                                ),
                                 actions: [
                                   TextButton(
-                                      onPressed: () => Navigator.of(ctx).pop(false),
-                                      child: Text('Cancel',
-                                          style: AppFonts.ui(color: AppColors.muted))),
+                                    onPressed: () =>
+                                        Navigator.of(ctx).pop(false),
+                                    child: Text(
+                                      'Cancel',
+                                      style: AppFonts.ui(
+                                        color: AppColors.muted,
+                                      ),
+                                    ),
+                                  ),
                                   TextButton(
-                                      onPressed: () => Navigator.of(ctx).pop(true),
-                                      child: Text('Rename',
-                                          style: AppFonts.ui(
-                                              color: AppColors.accent,
-                                              fontWeight: FontWeight.w600))),
+                                    onPressed: () =>
+                                        Navigator.of(ctx).pop(true),
+                                    child: Text(
+                                      'Rename',
+                                      style: AppFonts.ui(
+                                        color: AppColors.accent,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
                                 ],
                               ),
                             );

@@ -48,7 +48,9 @@ class _NotesModalContent extends StatefulWidget {
 }
 
 class _NotesModalContentState extends State<_NotesModalContent> {
-  late final TextEditingController _ctrl = TextEditingController(text: widget.initialValue);
+  late final TextEditingController _ctrl = TextEditingController(
+    text: widget.initialValue,
+  );
 
   @override
   void initState() {
@@ -79,11 +81,22 @@ class _NotesModalContentState extends State<_NotesModalContent> {
             Row(
               children: [
                 Expanded(
-                  child: Text('Set ${widget.setIndex} Notes',
-                      style: AppFonts.ui(
-                          fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.primary)),
+                  child: Text(
+                    'Set ${widget.setIndex} Notes',
+                    style: AppFonts.ui(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.primary,
+                    ),
+                  ),
                 ),
-                GlassButton(label: widget.readOnly ? 'Done' : 'Save', compact: true, onPressed: widget.readOnly ? () => Navigator.of(context, rootNavigator: true).pop() : _save),
+                GlassButton(
+                  label: widget.readOnly ? 'Done' : 'Save',
+                  compact: true,
+                  onPressed: widget.readOnly
+                      ? () => Navigator.of(context, rootNavigator: true).pop()
+                      : _save,
+                ),
               ],
             ),
             const SizedBox(height: AppSpacing.md),
@@ -93,17 +106,29 @@ class _NotesModalContentState extends State<_NotesModalContent> {
                 decoration: BoxDecoration(
                   color: AppColors.plannedBg,
                   borderRadius: BorderRadius.circular(AppRadius.md),
-                  border: Border.all(color: AppColors.planned.withValues(alpha: 0.3)),
+                  border: Border.all(
+                    color: AppColors.planned.withValues(alpha: 0.35),
+                  ),
                 ),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('PLANNED  ',
-                        style: AppFonts.mono(
-                            fontSize: 9, fontWeight: FontWeight.w700, color: AppColors.planned)),
+                    Text(
+                      'PLANNED  ',
+                      style: AppFonts.mono(
+                        fontSize: 9,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.planned,
+                      ),
+                    ),
                     Expanded(
-                      child: Text(widget.plannedNote!,
-                          style: AppFonts.ui(fontSize: 13, color: AppColors.muted)),
+                      child: Text(
+                        widget.plannedNote!,
+                        style: AppFonts.ui(
+                          fontSize: 13,
+                          color: AppColors.muted,
+                        ),
+                      ),
                     ),
                   ],
                 ),
@@ -117,7 +142,9 @@ class _NotesModalContentState extends State<_NotesModalContent> {
               maxLines: 5,
               style: AppFonts.ui(fontSize: 14, color: AppColors.primary),
               decoration: InputDecoration(
-                hintText: widget.plannedNote ?? 'Form cues, how it felt, adjustments…',
+                hintText:
+                    widget.plannedNote ??
+                    'Form cues, how it felt, adjustments…',
                 hintStyle: AppFonts.ui(color: AppColors.muted),
                 filled: true,
                 fillColor: AppColors.surfaceHigh,

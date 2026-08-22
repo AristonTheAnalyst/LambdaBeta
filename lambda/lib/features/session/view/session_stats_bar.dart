@@ -9,10 +9,8 @@ import '../../../shared/widgets/slide_up_modal.dart';
 import '../viewmodel/session_viewmodel.dart';
 import 'lessons_modal.dart';
 
-/// PRS / LESSONS — the active workout's summary stats, rendered at the top
-/// of the Training page where the planned-session picker sits while idle;
-/// the tiles mirror the picker card's layout (label over value) so the two
-/// containers match in height.
+/// PRS / LESSONS — the active workout's summary stats, in the Training
+/// page's sticky bottom bar.
 /// Both tiles are tappable: PRS opens the session PR breakdown, LESSONS
 /// opens the session lessons breakdown. Rows navigate to the exercise
 /// within the session (lessons also opens that exercise's lessons modal).
@@ -60,7 +58,7 @@ class SessionStatsBar extends StatelessWidget {
     for (final slot in vm.exerciseSlots) {
       for (final exerciseId in slot.exerciseIds) {
         if (!seen.add(exerciseId)) continue;
-        final count = vm.lessonsFor(exerciseId).length;
+        final count = vm.lessonsThisSession(exerciseId).length;
         out.add((
           exerciseId: exerciseId,
           label: toProperCase(vm.exerciseDisplayName(exerciseId)),
@@ -119,8 +117,10 @@ class SessionStatsBar extends StatelessWidget {
             addLesson: vm.addLesson,
             toggleLessonPin: vm.toggleLessonPin,
             deleteLesson: vm.deleteLesson,
+            updateLesson: vm.updateLessonText,
             exerciseId: exerciseId,
             exerciseName: toProperCase(vm.exerciseDisplayName(exerciseId)),
+            sessionId: vm.currentWorkoutId,
           );
         },
       ),
@@ -137,7 +137,7 @@ class SessionStatsBar extends StatelessWidget {
             vm.exerciseSlots.fold<int>(0, (sum, slot) {
               var s = sum;
               for (final exerciseId in slot.exerciseIds) {
-                s += vm.lessonsFor(exerciseId).length;
+                s += vm.lessonsThisSession(exerciseId).length;
               }
               return s;
             });
@@ -170,8 +170,7 @@ class SessionStatsBar extends StatelessWidget {
 
   /// One PRS/LESSONS tile, styled like a PR-highlighted set row: accentBg
   /// fill with an accent 1.2 outline when there's something to show.
-  /// Label over value (mono label + heavy value) — the same internal layout
-  /// as the planned-session picker card, so the stats bar matches its height.
+  /// Label and value sit side by side so the tile reads as one line.
   Widget _summaryTile({
     required String label,
     required String value,
@@ -192,19 +191,18 @@ class SessionStatsBar extends StatelessWidget {
           width: highlighted ? 1.2 : 0.5,
         ),
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Text(label,
+          Text('$label:',
               style: AppFonts.mono(
-                  fontSize: 9,
-                  letterSpacing: 0.6,
+                  fontSize: 11,
+                  letterSpacing: 0.8,
                   color: highlighted ? color : AppColors.muted)),
-          const SizedBox(height: 2),
+          const SizedBox(width: 6),
           Text(value,
-              style: AppFonts.ui(
-                  fontSize: 16,
+              style: AppFonts.mono(
+                  fontSize: 11,
                   fontWeight: FontWeight.w800,
                   color: highlighted ? color : AppColors.primary)),
         ],

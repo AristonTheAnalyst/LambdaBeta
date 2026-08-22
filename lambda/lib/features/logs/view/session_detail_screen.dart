@@ -1,28 +1,21 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:intl/intl.dart';
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
 import '../../../core/styles/app_radius.dart';
 import '../../../core/styles/app_spacing.dart';
 import '../../../core/utils/session_format.dart';
-import '../../../data/models/custom_variation.dart';
-import '../../../data/models/exercise_detail.dart';
 import '../../../data/models/lesson.dart';
 import '../../../data/models/session_set.dart';
 import '../../../shared/mixins/unsaved_changes_guard.dart';
-import '../../../shared/widgets/page_header.dart';
-import '../../../shared/widgets/exercise_pill_bar.dart';
+import '../../../shared/widgets/dropdown_select.dart';
 import '../../../shared/widgets/feeling_rating.dart';
 import '../../../shared/widgets/glass_button.dart';
+import '../../../shared/widgets/page_header.dart';
+import '../../../shared/widgets/session_exercise_card.dart';
+import '../../../shared/widgets/session_set_row.dart';
 import '../../../shared/widgets/slide_up_modal.dart';
 import '../../../shared/widgets/stats_row.dart';
-import '../../../shared/widgets/swipe_actions.dart';
-import '../../../shared/widgets/dropdown_select.dart';
-import '../../../shared/widgets/variation_name_dialog.dart';
-import '../../session/model/session_local_state.dart' show ExerciseHistorySession;
 import '../../session/view/lessons_modal.dart';
-import '../../session/view/notes_modal.dart';
 import '../../session/view/pr_modal.dart';
 import '../viewmodel/session_detail_viewmodel.dart';
 
@@ -34,7 +27,8 @@ class SessionDetailScreen extends StatefulWidget {
   State<SessionDetailScreen> createState() => _SessionDetailScreenState();
 }
 
-class _SessionDetailScreenState extends State<SessionDetailScreen> with UnsavedChangesGuard<SessionDetailScreen> {
+class _SessionDetailScreenState extends State<SessionDetailScreen>
+    with UnsavedChangesGuard<SessionDetailScreen> {
   late final SessionDetailViewModel _vm;
 
   @override
@@ -55,7 +49,9 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> with UnsavedC
   // ── UnsavedChangesGuard ─────────────────────────────────────────────────
 
   @override
-  bool get hasUnsavedChanges => (_vm.state.value.isEditing || _vm.state.value.workoutSetDrafts.values.any((l) => l.isNotEmpty));
+  bool get hasUnsavedChanges =>
+      (_vm.state.value.isEditing ||
+      _vm.state.value.workoutSetDrafts.values.any((l) => l.isNotEmpty));
 
   @override
   Future<void> onSave() async {
@@ -77,7 +73,9 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> with UnsavedC
           if (state.isLoading) {
             return Scaffold(
               backgroundColor: AppColors.bg,
-              body: Center(child: CircularProgressIndicator(color: AppColors.accent)),
+              body: Center(
+                child: CircularProgressIndicator(color: AppColors.accent),
+              ),
             );
           }
           return buildGuardedScaffold(
@@ -91,12 +89,18 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> with UnsavedC
                       onTap: () async {
                         if (state.isEditing) {
                           final didProceed = await confirmBack();
-                          if (didProceed && mounted) Navigator.of(this.context).pop();
+                          if (didProceed && mounted) {
+                            Navigator.of(this.context).pop();
+                          }
                         } else {
                           Navigator.of(context).pop();
                         }
                       },
-                      child: Icon(Icons.arrow_back_ios_new, size: 18, color: AppColors.primary),
+                      child: Icon(
+                        Icons.arrow_back_ios_new,
+                        size: 18,
+                        color: AppColors.primary,
+                      ),
                     ),
                     right: state.isEditing
                         ? GlassButton(
@@ -113,10 +117,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> with UnsavedC
                           ),
                   ),
                   Expanded(
-                    child: _SessionBody(
-                      viewModel: _vm,
-                      state: state,
-                    ),
+                    child: _SessionBody(viewModel: _vm, state: state),
                   ),
                 ],
               ),
@@ -126,7 +127,6 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> with UnsavedC
       ),
     );
   }
-
 }
 
 // ── Body ─────────────────────────────────────────────────────────────────────
@@ -141,8 +141,10 @@ class _SessionBody extends StatelessWidget {
   Widget build(BuildContext context) {
     if (state.exerciseSlots.isEmpty) {
       return Center(
-        child: Text('No sets recorded.',
-            style: AppFonts.ui(fontSize: 15, color: AppColors.muted)),
+        child: Text(
+          'No sets recorded.',
+          style: AppFonts.ui(fontSize: 15, color: AppColors.muted),
+        ),
       );
     }
 
@@ -150,80 +152,129 @@ class _SessionBody extends StatelessWidget {
       children: [
         Expanded(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.xxl),
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.lg,
+              AppSpacing.md,
+              AppSpacing.lg,
+              AppSpacing.xxl,
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 if (state.session?.parentSessionName != null)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 6),
-                    child: Text(state.session!.parentSessionName!,
-                        style: AppFonts.mono(fontSize: 10, letterSpacing: 0.6, color: AppColors.planned)),
+                    child: Text(
+                      state.session!.parentSessionName!,
+                      style: AppFonts.mono(
+                        fontSize: 10,
+                        letterSpacing: 0.6,
+                        color: AppColors.planned,
+                      ),
+                    ),
                   ),
-                StatsRow(tiles: [
-                  StatsTile(label: 'SETS', value: '${state.setsByOrder.values.expand((l) => l).length}'),
-                  StatsTile(
-                    label: 'PRS',
-                    value: '${state.totalPRCount}',
-                    accent: state.totalPRCount > 0,
-                    onTap: state.totalPRCount > 0
-                        ? () => showPrModal(context, prs: state.prRecords)
-                        : null,
-                  ),
-                  StatsTile(label: 'EXERCISES', value: '${state.exerciseSlots.length}'),
-                ]),
                 if (state.session?.preFeeling != null)
                   Padding(
-                    padding: const EdgeInsets.only(top: AppSpacing.sm, bottom: AppSpacing.xs),
+                    padding: const EdgeInsets.only(
+                      top: AppSpacing.sm,
+                      bottom: AppSpacing.xs,
+                    ),
                     child: FeelingRating(
                       value: state.session!.preFeeling,
                       label: 'Pre-workout feeling: ',
                       size: 20,
-                      radius: 4,
                       spacing: 4,
-                      textSize: 10,
                     ),
                   ),
-                const SizedBox(height: AppSpacing.md),
-                ExercisePillBar(
-                  labels: state.exerciseSlots.map((sl) {
-                    return toProperCase(viewModel.exerciseDisplayName(sl.exerciseId));
-                  }).toList(),
-                  keys: state.exerciseSlots.map((sl) => sl.exerciseId).toList(),
-                  activeIndex: state.activeSlotIndex,
-                  onTap: (i) => viewModel.tapTab(i),
-                  onAdd: state.isEditing ? () => _showAddExercise(context) : null,
-                  onReorder: state.isEditing ? viewModel.reorderExercises : null,
-                ),
-                const SizedBox(height: AppSpacing.md),
                 if (state.activeSlot != null)
-                  _DetailExerciseCard(
+                  _DetailCardBuilder(
                     viewModel: viewModel,
+                    state: state,
                     slot: state.activeSlot!,
+                    onAddExercise: () => _showAddExercise(context),
                   ),
               ],
             ),
           ),
         ),
+        // Sticky bottom: SETS/PRS/EXERCISES — the live session's bottom-bar
+        // position; the PRS tile stays accent + tappable.
         Container(
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              border: Border(top: BorderSide(color: AppColors.border)),
-            ),
-            child: Row(
-              children: [
-                Expanded(child: _notesButton(context, 'Pre-Notes', state.session?.preNotes ?? '', 'pre', state.isEditing)),
-                const SizedBox(width: AppSpacing.sm),
-                Expanded(child: _notesButton(context, 'Post-Notes', state.session?.postNotes ?? '', 'post', state.isEditing)),
-              ],
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.lg,
+            vertical: AppSpacing.sm,
+          ),
+          decoration: BoxDecoration(
+            color: AppColors.bg,
+            border: Border(
+              top: BorderSide(color: AppColors.border, width: 0.5),
             ),
           ),
+          child: StatsRow(
+            tiles: [
+              StatsTile(
+                label: 'SETS',
+                value: '${state.setsByOrder.values.expand((l) => l).length}',
+              ),
+              StatsTile(
+                label: 'PRS',
+                value: '${state.totalPRCount}',
+                accent: state.totalPRCount > 0,
+                onTap: state.totalPRCount > 0
+                    ? () => showPrModal(context, prs: state.prRecords)
+                    : null,
+              ),
+              StatsTile(
+                label: 'EXERCISES',
+                value: '${state.exerciseSlots.length}',
+              ),
+            ],
+          ),
+        ),
+        Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.lg,
+            vertical: AppSpacing.sm,
+          ),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            border: Border(top: BorderSide(color: AppColors.border)),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: _notesButton(
+                  context,
+                  'Pre-Notes',
+                  state.session?.preNotes ?? '',
+                  'pre',
+                  state.isEditing,
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: _notesButton(
+                  context,
+                  'Post-Notes',
+                  state.session?.postNotes ?? '',
+                  'post',
+                  state.isEditing,
+                ),
+              ),
+            ],
+          ),
+        ),
       ],
     );
   }
 
-  Widget _notesButton(BuildContext context, String label, String content, String target, bool editing) {
+  Widget _notesButton(
+    BuildContext context,
+    String label,
+    String content,
+    String target,
+    bool editing,
+  ) {
     final filled = content.isNotEmpty;
     final tappable = editing || filled;
     return GestureDetector(
@@ -234,22 +285,34 @@ class _SessionBody extends StatelessWidget {
           color: filled
               ? AppColors.accentBg
               : editing
-                  ? AppColors.surfaceHigh
-                  : Colors.transparent,
+              ? AppColors.surfaceHigh
+              : Colors.transparent,
           borderRadius: BorderRadius.circular(AppRadius.md),
           border: Border.all(
-              color: editing ? AppColors.border : filled ? AppColors.accent.withValues(alpha: 0.4) : AppColors.border),
+            color: editing
+                ? AppColors.border
+                : filled
+                ? AppColors.accent.withValues(alpha: 0.4)
+                : AppColors.border,
+          ),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.notes_outlined, size: 15, color: filled ? AppColors.accent : AppColors.muted),
+            Icon(
+              Icons.notes_outlined,
+              size: 15,
+              color: filled ? AppColors.accent : AppColors.muted,
+            ),
             const SizedBox(width: 6),
-            Text(label,
-                style: AppFonts.ui(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: filled ? AppColors.accent : AppColors.muted)),
+            Text(
+              label,
+              style: AppFonts.ui(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: filled ? AppColors.accent : AppColors.muted,
+              ),
+            ),
           ],
         ),
       ),
@@ -272,7 +335,11 @@ class _SessionBody extends StatelessWidget {
             children: [
               Text(
                 target == 'pre' ? 'Pre-Workout Notes' : 'Post-Workout Notes',
-                style: AppFonts.ui(fontSize: 17, fontWeight: FontWeight.w800, color: AppColors.primary),
+                style: AppFonts.ui(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.primary,
+                ),
               ),
               const SizedBox(height: AppSpacing.md),
               TextField(
@@ -290,12 +357,17 @@ class _SessionBody extends StatelessWidget {
                     borderSide: BorderSide(color: AppColors.border),
                   ),
                 ),
-                onChanged: state.isEditing ? (target == 'pre' ? viewModel.setPreNotesDraft : viewModel.setPostNotesDraft) : null,
+                onChanged: state.isEditing
+                    ? (target == 'pre'
+                          ? viewModel.setPreNotesDraft
+                          : viewModel.setPostNotesDraft)
+                    : null,
               ),
               const SizedBox(height: AppSpacing.md),
               GlassButton(
                 label: 'Done',
-                onPressed: () => Navigator.of(context, rootNavigator: true).pop(),
+                onPressed: () =>
+                    Navigator.of(context, rootNavigator: true).pop(),
               ),
             ],
           ),
@@ -316,596 +388,85 @@ class _SessionBody extends StatelessWidget {
   }
 }
 
-// ── Tab bar ──────────────────────────────────────────────────────────────────
-
-
 // ── Exercise card ────────────────────────────────────────────────────────────
 
-class _DetailExerciseCard extends StatefulWidget {
-  const _DetailExerciseCard({required this.viewModel, required this.slot});
-
-  final SessionDetailViewModel viewModel;
-  final SessionDetailExerciseSlot slot;
-
-  @override
-  State<_DetailExerciseCard> createState() => _DetailExerciseCardState();
-}
-
-class _DetailExerciseCardState extends State<_DetailExerciseCard> {
-  bool _historyOpen = false;
-  ExerciseHistorySession? _viewingSession;
-
-  void _exitHistory() => setState(() {
-        _historyOpen = false;
-        _viewingSession = null;
-      });
-
-  @override
-  Widget build(BuildContext context) {
-    final vm = widget.viewModel;
-    final s = vm.state.value;
-    final exerciseId = widget.slot.exerciseId;
-    final order = widget.slot.groupOrder;
-    final name = toProperCase(vm.exerciseDisplayName(exerciseId));
-    final detail = s.exerciseDetailMap[exerciseId];
-    final lessons = vm.lessonsFor(exerciseId);
-    final history = vm.historyFor(exerciseId);
-    final planned = s.session?.parentSessionId != null;
-    final prCount = vm.prCountFor(exerciseId);
-    final sets = s.setsFor(order);
-    final draftIds = s.workoutSetDrafts[order] ?? const <int>[];
-    final viewingHistory = _viewingSession != null;
-    // The banner shows the pinned lesson only — pinning is what decides
-    // whether a note appears at the top of the exercise card.
-    Lesson? featuredLesson;
-    for (final l in lessons) {
-      if (l.pinned) {
-        featuredLesson = l;
-        break;
-      }
-    }
-
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(AppRadius.lg),
-        border: Border.all(color: AppColors.border),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (viewingHistory)
-            _historyBanner(_viewingSession!)
-          else if (featuredLesson != null)
-            _lessonBar(featuredLesson, exerciseId, name),
-          _header(
-            name: name,
-            planned: planned,
-            prCount: prCount,
-            lessonsCount: lessons.length,
-            historyCount: history.length,
-            exerciseId: exerciseId,
-            viewingHistory: viewingHistory,
-          ),
-          if (_historyOpen && !viewingHistory) _historyPicker(history),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(10, 0, 10, 12),
-            child: viewingHistory
-                ? _historyDetail(_viewingSession!)
-                : _setsGrid(sets, draftIds, exerciseId, order, detail,
-                      prSetIds: widget.viewModel.state.value.prRecords
-                          .where((r) => r.setId != null)
-                          .map((r) => r.setId!)
-                          .toSet()),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _historyBanner(ExerciseHistorySession session) {
-    return Container(
-      color: AppColors.surfaceHigh,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-      child: Row(
-        children: [
-          Icon(Icons.history, size: 14, color: AppColors.muted),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text('Viewing — ${DateFormat('MMM d').format(session.date)}',
-                style: AppFonts.mono(fontSize: 9, letterSpacing: 0.8, color: AppColors.muted)),
-          ),
-          GlassButton(label: 'Back', color: AppColors.primary, compact: true, onPressed: _exitHistory),
-        ],
-      ),
-    );
-  }
-
-  Widget _lessonBar(Lesson lesson, String exerciseId, String exerciseName) {
-    return GestureDetector(
-      onTap: () => showLessonsModal(
-        context,
-        listenable: widget.viewModel.state,
-        lessonsFor: widget.viewModel.lessonsFor,
-        loadLessonsFor: widget.viewModel.loadLessonsFor,
-        addLesson: widget.viewModel.addLesson,
-        toggleLessonPin: widget.viewModel.toggleLessonPin,
-        deleteLesson: widget.viewModel.deleteLesson,
-        exerciseId: exerciseId,
-        exerciseName: exerciseName,
-      ),
-      child: Container(
-        width: double.infinity,
-        color: AppColors.accentBg,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-        child: Row(
-          children: [
-            Text('LESSON',
-                style: AppFonts.mono(fontSize: 9, letterSpacing: 0.8, color: AppColors.accent)),
-            const SizedBox(width: 8),
-            Expanded(child: Text(lesson.text,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: AppFonts.ui(fontSize: 11, color: AppColors.muted))),
-            Text(DateFormat('MMM d').format(lesson.createdDate),
-                style: AppFonts.mono(fontSize: 9, color: AppColors.muted)),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _header({
-    required String name,
-    required bool planned,
-    required int prCount,
-    required int lessonsCount,
-    required int historyCount,
-    required String exerciseId,
-    required bool viewingHistory,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: planned ? AppColors.plannedBg : AppColors.accentBg,
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(color: planned ? AppColors.planned.withValues(alpha: 0.35) : AppColors.accent.withValues(alpha: 0.35)),
-                      ),
-                      child: Text(planned ? 'PLANNED' : 'UNPLANNED',
-                          style: AppFonts.ui(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 0.5,
-                              color: planned ? AppColors.planned : AppColors.accent)),
-                    ),
-                    if (prCount > 0) ...[
-                      const SizedBox(width: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1),
-                        decoration: BoxDecoration(color: AppColors.accent, borderRadius: BorderRadius.circular(999)),
-                        child: Text('$prCount PR${prCount > 1 ? 's' : ''}',
-                            style: AppFonts.ui(
-                                fontSize: 10, fontWeight: FontWeight.w800, color: AppColors.accentText)),
-                      ),
-                    ],
-                  ],
-                ),
-                const SizedBox(height: 6),
-                Text(name,
-                    style: AppFonts.ui(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.primary)),
-              ],
-            ),
-          ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              _pillButton(
-                icon: Icons.menu_book_outlined,
-                label: lessonsCount > 0 ? '$lessonsCount Lessons' : 'Lessons',
-                active: lessonsCount > 0,
-                onTap: () => showLessonsModal(
-                  context,
-                  listenable: widget.viewModel.state,
-                  lessonsFor: widget.viewModel.lessonsFor,
-                  loadLessonsFor: widget.viewModel.loadLessonsFor,
-                  addLesson: widget.viewModel.addLesson,
-                  toggleLessonPin: widget.viewModel.toggleLessonPin,
-                  deleteLesson: widget.viewModel.deleteLesson,
-                  exerciseId: exerciseId,
-                  exerciseName: name,
-                ),
-              ),
-              if (historyCount > 0) ...[
-                const SizedBox(height: 6),
-                _pillButton(
-                  icon: Icons.history,
-                  label: 'History',
-                  active: _historyOpen || viewingHistory,
-                  onTap: () {
-                    if (viewingHistory) {
-                      _exitHistory();
-                    } else {
-                      setState(() => _historyOpen = !_historyOpen);
-                    }
-                  },
-                ),
-              ],
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _pillButton({
-    required IconData icon,
-    required String label,
-    required bool active,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(
-          color: active ? AppColors.accent.withValues(alpha: 0.1) : Colors.transparent,
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: active ? AppColors.accent.withValues(alpha: 0.3) : AppColors.border),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 11, color: active ? AppColors.accent : AppColors.muted),
-            const SizedBox(width: 4),
-            Text(label,
-                style: AppFonts.mono(
-                    fontSize: 9, letterSpacing: 0.4, color: active ? AppColors.accent : AppColors.muted)),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _historyPicker(List<ExerciseHistorySession> history) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Divider(color: AppColors.border, height: 1),
-          const SizedBox(height: 10),
-          Text('PAST SESSIONS',
-              style: AppFonts.mono(fontSize: 8, letterSpacing: 0.8, color: AppColors.muted)),
-          const SizedBox(height: 8),
-          SizedBox(
-            height: 68,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: history.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 8),
-              itemBuilder: (context, i) {
-                final session = history[i];
-                return GestureDetector(
-                  onTap: () => setState(() {
-                    _viewingSession = session;
-                    _historyOpen = false;
-                  }),
-                  child: Container(
-                    width: 84,
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: AppColors.surfaceHigh,
-                      borderRadius: BorderRadius.circular(AppRadius.md),
-                      border: Border.all(color: AppColors.border),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(DateFormat('MMM d').format(session.date),
-                            style: AppFonts.mono(fontSize: 10, color: AppColors.muted)),
-                        const SizedBox(height: 6),
-                        Text('${session.sets.length} sets',
-                            style: AppFonts.mono(fontSize: 10, color: AppColors.muted)),
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _historyDetail(ExerciseHistorySession session) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('Past performance for reference.',
-            style: AppFonts.ui(fontSize: 11, color: AppColors.muted)),
-        const SizedBox(height: 8),
-        ...session.sets.map((s) => _DetailHistorySetRow(set: s)),
-      ],
-    );
-  }
-
-  Widget _setsGrid(
-    List<SessionSet> sets,
-    List<int> draftIds,
-    String exerciseId,
-    int order,
-    ExerciseDetail? detail, {
-    Set<String> prSetIds = const {},
-  }) {
-    final isEditing = widget.viewModel.state.value.isEditing;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (sets.isNotEmpty || draftIds.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: Row(
-              children: [
-                const SizedBox(width: 26),
-                const SizedBox(width: 6),
-                Expanded(child: _colLabel('KG')),
-                const SizedBox(width: 6),
-                Expanded(child: _colLabel('REPS')),
-                const SizedBox(width: 6),
-                Expanded(child: _colLabel('VARIATION')),
-                const SizedBox(width: 6),
-                SizedBox(width: 32, child: _colLabel('NOTE')),
-              ],
-            ),
-          ),
-        const SizedBox(height: 6),
-        for (var i = 0; i < sets.length; i++)
-          _DetailSetRow(
-            key: ValueKey(sets[i].sessionSetId),
-            viewModel: widget.viewModel,
-            exerciseId: exerciseId,
-            groupOrder: order,
-            displayIndex: i + 1,
-            detail: detail,
-            set: sets[i],
-            readOnly: !isEditing,
-            isPr: prSetIds.contains(sets[i].sessionSetId),
-          ),
-        for (var i = 0; i < draftIds.length; i++)
-          _DetailSetRow(
-            key: ValueKey('draft-${draftIds[i]}'),
-            viewModel: widget.viewModel,
-            exerciseId: exerciseId,
-            groupOrder: order,
-            displayIndex: sets.length + i + 1,
-            detail: detail,
-            draftId: draftIds[i],
-            readOnly: false,
-          ),
-        if (isEditing) ...[
-          const SizedBox(height: 2),
-          GestureDetector(
-            onTap: () => widget.viewModel.addDraftSet(order),
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 10),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(AppRadius.md),
-                border: Border.all(color: AppColors.border, style: BorderStyle.solid),
-              ),
-              child: Center(
-                child: Text('+ ADD SET',
-                    style: AppFonts.ui(
-                        fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.5, color: AppColors.muted)),
-              ),
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-
-  Widget _colLabel(String text) =>
-      Text(text,
-          textAlign: TextAlign.center,
-          style: AppFonts.mono(fontSize: 8, letterSpacing: 0.6, color: AppColors.muted));
-}
-
-// ── Read-only history set row ────────────────────────────────────────────────
-
-class _DetailHistorySetRow extends StatelessWidget {
-  const _DetailHistorySetRow({required this.set});
-
-  final PastSetRow set;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 6),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceHigh,
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Row(
-        children: [
-          SizedBox(
-              width: 26,
-              child: Text('${set.setNumber}',
-                  textAlign: TextAlign.center,
-                  style: AppFonts.mono(fontSize: 11, color: AppColors.muted))),
-          Expanded(
-            child: Text(
-              set.weight != null ? _fmtNum(set.weight!) : '—',
-              textAlign: TextAlign.center,
-              style: AppFonts.mono(fontSize: 13, color: AppColors.muted),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              set.reps.isNotEmpty ? _fmtNum(set.reps.first) : '—',
-              textAlign: TextAlign.center,
-              style: AppFonts.mono(fontSize: 13, color: AppColors.muted),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              set.variationName != null ? toProperCase(set.variationName!) : '—',
-              textAlign: TextAlign.center,
-              style: AppFonts.ui(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.muted),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  static String _fmtNum(num n) => n == n.roundToDouble() ? n.toInt().toString() : n.toString();
-}
-
-// ── Set row (edit-mode is inline; view-mode is read-only) ────────────────────
-
-class _DetailSetRow extends StatefulWidget {
-  const _DetailSetRow({
-    super.key,
+/// The past-session viewer's exercise card — an adapter over the shared
+/// [SessionExerciseCard]. View mode greys edit-only affordances (reorder,
+/// add, hold-to-delete X, ADD SET, swipe, editable cells); edit mode enables
+/// them. The selector switch works in both modes (browsing).
+class _DetailCardBuilder extends StatelessWidget {
+  const _DetailCardBuilder({
     required this.viewModel,
-    required this.exerciseId,
-    required this.groupOrder,
-    required this.displayIndex,
-    required this.detail,
-    this.set,
-    this.draftId,
-    this.readOnly = false,
-    this.isPr = false,
-  }) : assert(set != null || draftId != null);
+    required this.state,
+    required this.slot,
+    required this.onAddExercise,
+  });
 
   final SessionDetailViewModel viewModel;
-  final String exerciseId;
-  final int groupOrder;
-  final int displayIndex;
-  final ExerciseDetail? detail;
-  final SessionSet? set;
-  final int? draftId;
-  final bool readOnly;
-  final bool isPr;
+  final SessionDetailState state;
+  final SessionDetailExerciseSlot slot;
+  final VoidCallback onAddExercise;
 
-  @override
-  State<_DetailSetRow> createState() => _DetailSetRowState();
-}
+  static String _fmtNum(num n) =>
+      n == n.roundToDouble() ? n.toInt().toString() : n.toString();
 
-class _DetailSetRowState extends State<_DetailSetRow> {
-  late final TextEditingController _weightCtrl;
-  late final TextEditingController _repsCtrl;
-  final _weightFocus = FocusNode();
-  final _repsFocus = FocusNode();
-  String? _draftVariationId;
-  String? _draftNotes;
+  static double? _parseWeight(String? t) =>
+      t == null || t.isEmpty ? null : double.tryParse(t);
 
-  bool get _isDraft => widget.set == null;
-
-  @override
-  void initState() {
-    super.initState();
-    final set = widget.set;
-    _weightCtrl = TextEditingController(text: set?.weight != null ? _fmtNum(set!.weight!) : '');
-    _repsCtrl = TextEditingController(
-        text: set != null && set.reps.isNotEmpty ? _fmtNum(set.reps.first) : '');
-    if (!widget.readOnly) {
-      _weightFocus.addListener(() {
-        if (!_weightFocus.hasFocus) _commit();
-      });
-      _repsFocus.addListener(() {
-        if (!_repsFocus.hasFocus) _commit();
-      });
-    }
+  static List<num>? _parseReps(String? t) {
+    final r = t == null || t.isEmpty ? null : num.tryParse(t);
+    return r == null ? null : [r];
   }
 
-  @override
-  void dispose() {
-    _weightCtrl.dispose();
-    _repsCtrl.dispose();
-    _weightFocus.dispose();
-    _repsFocus.dispose();
-    super.dispose();
-  }
+  void _confirmRemoveExercise(BuildContext context) {
+    final name = toProperCase(viewModel.exerciseDisplayName(slot.exerciseId));
+    final setCount = state.setsFor(slot.groupOrder).length;
 
-  static String _fmtNum(num n) => n == n.roundToDouble() ? n.toInt().toString() : n.toString();
-
-  Future<void> _commit() async {
-    final weightText = _weightCtrl.text.trim();
-    final repsText = _repsCtrl.text.trim();
-    final weight = weightText.isEmpty ? null : double.tryParse(weightText);
-    final reps = repsText.isEmpty ? null : num.tryParse(repsText);
-
-    if (_isDraft) {
-      if (reps == null) return;
-      await widget.viewModel.commitDraftSet(
-        widget.exerciseId,
-        widget.groupOrder,
-        widget.draftId!,
-        variationId: _draftVariationId,
-        weight: weight,
-        reps: [reps],
-        notes: _draftNotes?.trim().isEmpty == true ? null : _draftNotes?.trim(),
-      );
-      return;
-    }
-
-    final set = widget.set!;
-    final currentWeight = set.weight;
-    final currentReps = set.reps.isNotEmpty ? set.reps.first : null;
-    if (weight == currentWeight && reps == currentReps) return;
-    await widget.viewModel.quickUpdateSet(
-      set,
-      weight: weight,
-      clearWeight: weight == null,
-      reps: reps != null ? [reps] : null,
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: Text(
+          'Remove Exercise',
+          style: AppFonts.ui(
+            fontWeight: FontWeight.w800,
+            color: AppColors.danger,
+          ),
+        ),
+        content: Text(
+          'Remove $name from this workout?\n$setCount set${setCount == 1 ? '' : 's'} will be removed.',
+          style: AppFonts.ui(color: AppColors.muted),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text('Keep', style: AppFonts.ui(color: AppColors.muted)),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              final index = state.exerciseSlots.indexWhere(
+                (sl) => sl.groupOrder == slot.groupOrder,
+              );
+              viewModel.removeExerciseGroup(index);
+            },
+            child: Text(
+              'Remove',
+              style: AppFonts.ui(
+                color: AppColors.danger,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
-  void _openNotes() {
-    showNotesModal(
-      context,
-      setIndex: widget.displayIndex,
-      initialValue: _isDraft ? (_draftNotes ?? '') : (widget.set!.notes ?? ''),
-      readOnly: widget.readOnly,
-      onSave: (value) {
-        if (_isDraft) {
-          setState(() => _draftNotes = value);
-        } else {
-          widget.viewModel.quickUpdateSet(widget.set!,
-              notes: value.trim().isEmpty ? null : value.trim(),
-              clearNotes: value.trim().isEmpty);
-        }
-      },
-    );
-  }
-
-  Future<void> _delete() async {
-    if (_isDraft) {
-      widget.viewModel.removeDraftSet(widget.groupOrder, widget.draftId!);
-      return;
-    }
-    final set = widget.set!;
+  /// Delete with the PR-count warning — cascade so PRs recompute.
+  Future<void> _confirmDeleteSet(SessionSet set, BuildContext context) async {
     // In-memory PR count from the already-computed workout PR records.
-    final prCount = widget.viewModel.state.value.prRecords
+    final prCount = state.prRecords
         .where((r) => r.setId == set.sessionSetId)
         .length;
 
@@ -913,300 +474,222 @@ class _DetailSetRowState extends State<_DetailSetRow> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
-        title: Text('Delete Set',
-            style: AppFonts.ui(fontWeight: FontWeight.w800, color: AppColors.danger)),
+        title: Text(
+          'Delete Set',
+          style: AppFonts.ui(
+            fontWeight: FontWeight.w800,
+            color: AppColors.danger,
+          ),
+        ),
         content: Text(
-            prCount > 0
-                ? 'This set holds $prCount PR record${prCount == 1 ? '' : 's'}, which will be deleted too. Remove this set?'
-                : 'Remove this set from the workout?',
-            style: AppFonts.ui(color: AppColors.muted)),
+          prCount > 0
+              ? 'This set holds $prCount PR record${prCount == 1 ? '' : 's'}, which will be deleted too. Remove this set?'
+              : 'Remove this set from the workout?',
+          style: AppFonts.ui(color: AppColors.muted),
+        ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: Text('Cancel', style: AppFonts.ui(color: AppColors.muted))),
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text('Cancel', style: AppFonts.ui(color: AppColors.muted)),
+          ),
           TextButton(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: Text('Delete',
-                  style: AppFonts.ui(color: AppColors.danger, fontWeight: FontWeight.w600))),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(
+              'Delete',
+              style: AppFonts.ui(
+                color: AppColors.danger,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
         ],
       ),
     );
-    if (ok == true && mounted) {
-      await widget.viewModel.deleteSetCascade(set.sessionSetId, set.exerciseId);
-      _showDeleteErrorIfAny();
+    if (ok == true) {
+      await viewModel.deleteSetCascade(set.sessionSetId, set.exerciseId);
+      if (context.mounted) _showDeleteErrorIfAny(context);
     }
   }
 
-  void _showDeleteErrorIfAny() {
-    final err = widget.viewModel.state.value.error;
-    if (err == null || !mounted) return;
+  void _showDeleteErrorIfAny(BuildContext context) {
+    final err = viewModel.state.value.error;
+    if (err == null || !context.mounted) return;
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(err)));
   }
 
-  void _duplicate() {
-    if (_isDraft) return;
-    widget.viewModel.duplicateSet(widget.set!);
-  }
+  @override
+  Widget build(BuildContext context) {
+    final exerciseId = slot.exerciseId;
+    final order = slot.groupOrder;
+    final name = toProperCase(viewModel.exerciseDisplayName(exerciseId));
+    final history = viewModel.historyFor(exerciseId);
+    final sets = state.setsFor(order);
+    final draftIds = state.workoutSetDrafts[order] ?? const <int>[];
+    final prSetIds = state.prRecords
+        .where((r) => r.setId != null)
+        .map((r) => r.setId!)
+        .toSet();
 
-  Future<void> _handleCreateVariation(String query) async {
-    final typed = query.trim();
-    final name = typed.isNotEmpty ? typed : await _promptForVariationName();
-    if (name == null || name.trim().isEmpty || !mounted) return;
-    final trimmed = name.trim();
-
-    final exact = widget.viewModel.state.value.allVariations
-        .where((v) => v.name.trim().toLowerCase() == trimmed.toLowerCase())
-        .firstOrNull;
-
-    String? useExistingId = exact?.variationId;
-    if (exact == null) {
-      final similar = widget.viewModel.findSimilarVariations(trimmed);
-      if (similar.isNotEmpty) {
-        final choice = await _showDidYouMeanDialog(trimmed, similar);
-        if (choice == null || !mounted) return;
-        if (!choice.createNew) useExistingId = choice.existingId;
+    // The pinned lesson shows right under the exercise — pinning is what
+    // decides whether a note appears there.
+    Lesson? pinnedLesson;
+    for (final l in viewModel.lessonsFor(exerciseId)) {
+      if (l.pinned) {
+        pinnedLesson = l;
+        break;
       }
     }
 
-    final id = await widget.viewModel
-        .submitNewVariation(trimmed, exerciseId: widget.exerciseId, useExistingId: useExistingId);
-    if (id == null || !mounted) return;
-    if (_isDraft) {
-      setState(() => _draftVariationId = id);
-    } else {
-      widget.viewModel.quickUpdateSet(widget.set!, variationId: id);
-    }
-  }
-
-  Future<({bool createNew, String? existingId})?> _showDidYouMeanDialog(
-    String typedName,
-    List<({String id, String name, int exerciseCount})> similar,
-  ) {
-    return showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        title: Text('Did you mean?', style: TextStyle(color: AppColors.primary)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            for (final s in similar)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: GestureDetector(
-                  onTap: () => Navigator.of(ctx).pop((createNew: false, existingId: s.id)),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: AppColors.surfaceHigh,
-                      borderRadius: BorderRadius.circular(AppRadius.md),
-                      border: Border.all(color: AppColors.border),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(child: Text(s.name,
-                            style: TextStyle(color: AppColors.accent, fontWeight: FontWeight.w600))),
-                        Text('${s.exerciseCount} exercise${s.exerciseCount == 1 ? '' : 's'}',
-                            style: TextStyle(color: AppColors.muted, fontSize: 12)),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: Text('Cancel', style: TextStyle(color: AppColors.muted))),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop((createNew: true, existingId: null)),
-            child: Text('Create "$typedName" anyway',
-                style: TextStyle(color: AppColors.accent, fontWeight: FontWeight.w600)),
-          ),
-        ],
-      ),
+    void openLessonsModal() => showLessonsModal(
+      context,
+      listenable: viewModel.state,
+      lessonsFor: viewModel.lessonsFor,
+      loadLessonsFor: viewModel.loadLessonsFor,
+      addLesson: viewModel.addLesson,
+      toggleLessonPin: viewModel.toggleLessonPin,
+      deleteLesson: viewModel.deleteLesson,
+      updateLesson: viewModel.updateLessonText,
+      exerciseId: exerciseId,
+      exerciseName: name,
     );
-  }
 
-  Future<String?> _promptForVariationName() {
-    return showDialog<String>(
-      context: context,
-      builder: (_) => const VariationNameDialog(),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final set = widget.set;
-    final hasNotes = _isDraft ? (_draftNotes?.trim().isNotEmpty ?? false) : (set!.notes?.isNotEmpty ?? false);
-    final variationId = _isDraft ? _draftVariationId : set!.variationId;
-    final List<CustomVariation> assigned = [...(widget.detail?.assignedVariations ?? const <CustomVariation>[])]
-      ..sort(CustomVariation.byRecency);
     final variationOptions = [
-      const DropdownOption<String?>(label: '—', value: null),
-      ...assigned
-          .map((v) => DropdownOption<String?>(label: toProperCase(v.name), value: v.variationId)),
+      const DropdownOption<String?>(label: 'No Variation', value: null),
+      ...viewModel.variationsByRecency.map(
+        (v) => DropdownOption<String?>(label: v.name, value: v.variationId),
+      ),
+    ];
+    final allVariations = [
+      for (final v in state.allVariations)
+        (id: v.variationId, name: v.name),
     ];
 
-    Widget row = Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      decoration: BoxDecoration(
-        color: widget.isPr ? AppColors.accentBg : AppColors.surfaceHigh,
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(
-            color: widget.isPr ? AppColors.accent : AppColors.border,
-            width: widget.isPr ? 1.2 : 0.5),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          SizedBox(
-            width: 26,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (widget.isPr)
-                  Text('PR',
-                      style: AppFonts.mono(
-                          fontSize: 8, fontWeight: FontWeight.w800, color: AppColors.accent))
-                else
-                  Text('${widget.displayIndex}',
-                      style: AppFonts.mono(fontSize: 11, color: AppColors.muted)),
-                if (hasNotes)
-                  Container(
-                    margin: const EdgeInsets.only(top: 2),
-                    width: 5,
-                    height: 5,
-                    decoration: BoxDecoration(color: AppColors.accent, shape: BoxShape.circle),
-                  ),
-              ],
-            ),
+    List<Widget> rows = [];
+    for (var i = 0; i < sets.length; i++) {
+      final set = sets[i];
+      rows.add(
+        SessionSetRow(
+          key: ValueKey(set.sessionSetId),
+          mode: SetRowMode.history,
+          exerciseId: exerciseId,
+          displayIndex: i + 1,
+          isDraft: false,
+          initialWeightText: set.weight != null ? _fmtNum(set.weight!) : '',
+          initialRepsText: set.reps.isNotEmpty ? _fmtNum(set.reps.first) : '',
+          initialVariationId: set.variationId,
+          initialVariationName: set.variationName,
+          initialNotes: set.notes,
+          hasNotes: set.notes?.isNotEmpty ?? false,
+          isPr: prSetIds.contains(set.sessionSetId),
+          readOnly: !state.isEditing,
+          onCommit: (isDraft, v) async {
+            if (!isDraft) {
+              await viewModel.quickUpdateSet(
+                set,
+                weight: _parseWeight(v.weight),
+                clearWeight: v.weight == null,
+                reps: _parseReps(v.reps),
+              );
+            }
+          },
+          onVariationChanged: (id) => viewModel.quickUpdateSet(
+            set,
+            variationId: id,
+            clearVariation: id == null,
           ),
-          const SizedBox(width: 6),
-          Expanded(child: _cell(controller: _weightCtrl, focusNode: _weightFocus)),
-          const SizedBox(width: 6),
-          Expanded(child: _cell(controller: _repsCtrl, focusNode: _repsFocus)),
-          const SizedBox(width: 6),
-          Expanded(
-            child: widget.readOnly
-                ? Text(
-                    variationId != null
-                        ? toProperCase(set?.variationName ?? '')
-                        : '—',
-                    textAlign: TextAlign.center,
-                    style: AppFonts.ui(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.muted),
-                  )
-                : Container(
-                    height: 34,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: AppColors.bg,
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: AppColors.border, width: 0.5),
-                    ),
-                    child: DropdownSelect<String?>(
-                      options: variationOptions,
-                      value: variationId,
-                      compact: true,
-                      valueColor: AppColors.primary,
-                      createNewLabel: 'New Variation',
-                      onCreateNew: _handleCreateVariation,
-                      onChange: (id) {
-                        if (_isDraft) {
-                          setState(() => _draftVariationId = id);
-                        } else {
-                          widget.viewModel.quickUpdateSet(set!, variationId: id, clearVariation: id == null);
-                        }
-                      },
-                    ),
-                  ),
+          onNotesSave: (v) => viewModel.quickUpdateSet(
+            set,
+            notes: v.trim().isEmpty ? null : v.trim(),
+            clearNotes: v.trim().isEmpty,
           ),
-          const SizedBox(width: 6),
-          GestureDetector(
-            onTap: (widget.readOnly && !hasNotes) ? null : _openNotes,
-            child: Container(
-              width: 32,
-              height: 32,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: hasNotes ? AppColors.accentBg : Colors.transparent,
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(
-                    color: hasNotes
-                        ? AppColors.accent.withValues(alpha: 0.4)
-                        : AppColors.border),
-              ),
-              child: Icon(Icons.sticky_note_2_outlined,
-                  size: 15,
-                  color: hasNotes ? AppColors.accent : AppColors.muted),
-            ),
-          ),
-        ],
-      ),
-    );
-
-    if (!widget.readOnly) {
-      row = SwipeActions(
-        borderRadius: AppRadius.md,
-        actions: [
-          if (!_isDraft)
-            SwipeAction(
-              icon: Icons.copy_rounded,
-              label: 'Duplicate',
-              color: AppColors.accent,
-              onTap: _duplicate,
-            ),
-          SwipeAction(
-            icon: Icons.delete_outline,
-            label: 'Delete',
-            color: AppColors.danger,
-            onTap: _delete,
-          ),
-        ],
-        child: row,
+          onDelete: () => _confirmDeleteSet(set, context),
+          onDuplicate: () => viewModel.duplicateSet(set),
+          variationOptions: variationOptions,
+          allVariations: allVariations,
+          findSimilarVariations: viewModel.findSimilarVariations,
+          submitNewVariation: viewModel.submitNewVariation,
+        ),
+      );
+    }
+    for (var i = 0; i < draftIds.length; i++) {
+      final draftId = draftIds[i];
+      rows.add(
+        SessionSetRow(
+          key: ValueKey('draft-$draftId'),
+          mode: SetRowMode.history,
+          exerciseId: exerciseId,
+          displayIndex: sets.length + i + 1,
+          isDraft: true,
+          initialWeightText: '',
+          initialRepsText: '',
+          initialVariationId: null,
+          hasNotes: false,
+          onCommit: (isDraft, v) async {
+            if (isDraft) {
+              // The row guarantees reps text for history drafts — the
+              // numeric formatter makes this parse safe.
+              final reps = num.tryParse(v.reps!) ?? 0;
+              await viewModel.commitDraftSet(
+                exerciseId,
+                order,
+                draftId,
+                variationId: v.variationId,
+                weight: _parseWeight(v.weight),
+                reps: [reps],
+                notes: v.notes,
+              );
+            }
+          },
+          onVariationChanged: (_) {},
+          onNotesSave: (_) {},
+          onDelete: () async => viewModel.removeDraftSet(order, draftId),
+          onDuplicate: () {},
+          variationOptions: variationOptions,
+          allVariations: allVariations,
+          findSimilarVariations: viewModel.findSimilarVariations,
+          submitNewVariation: viewModel.submitNewVariation,
+        ),
       );
     }
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: row,
-    );
-  }
-
-  Widget _cell({required TextEditingController controller, required FocusNode focusNode}) {
-    return SizedBox(
-      height: 34,
-      child: TextField(
-        controller: controller,
-        focusNode: focusNode,
-        readOnly: widget.readOnly,
-        textAlign: TextAlign.center,
-        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-        inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*$'))],
-        style: AppFonts.mono(fontSize: 15, fontWeight: FontWeight.w500, color: AppColors.primary),
-        decoration: InputDecoration(
-          isDense: true,
-          contentPadding: const EdgeInsets.symmetric(vertical: 8),
-          hintText: '—',
-          hintStyle: AppFonts.mono(fontSize: 14, color: AppColors.muted.withValues(alpha: 0.6)),
-          filled: true,
-          fillColor: widget.readOnly ? Colors.transparent : AppColors.bg,
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(6),
-            borderSide: BorderSide(
-                color: widget.readOnly ? Colors.transparent : AppColors.border, width: 0.5),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(6),
-            borderSide: BorderSide(color: AppColors.primary, width: 1.5),
-          ),
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
-        ),
-      ),
+    return SessionExerciseCard(
+      exerciseNames: [
+        for (final sl in state.exerciseSlots)
+          toProperCase(viewModel.exerciseDisplayName(sl.exerciseId)),
+      ],
+      activeIndex: state.activeSlotIndex,
+      onSelect: (i) => viewModel.tapTab(i),
+      // Edit-only affordances: null greys the reorder arrows and the Add
+      // Exercise row; the hold-to-delete X is hidden in view mode.
+      onMove: state.isEditing
+          ? (i, dir) => viewModel.reorderExercises(i, i + dir)
+          : null,
+      onAdd: state.isEditing ? onAddExercise : null,
+      onDeleteRequest: state.isEditing
+          ? () => _confirmRemoveExercise(context)
+          : null,
+      pinnedLesson: pinnedLesson != null
+          ? PinnedLessonData(
+              text: pinnedLesson.text,
+              date: pinnedLesson.createdDate,
+            )
+          : null,
+      onPinnedLessonTap: openLessonsModal,
+      lessonsCount: viewModel.lessonsFor(exerciseId).length,
+      onLessonsTap: openLessonsModal,
+      prCount: viewModel.prCountFor(exerciseId),
+      onPrTap: viewModel.prCountFor(exerciseId) > 0
+          ? () => showPrModal(context, prs: state.prRecords)
+          : null,
+      // PLANNED badge → the planned card outline, like the live screen.
+      planned: state.session?.parentSessionId != null,
+      rows: rows,
+      onAddSet: state.isEditing ? () => viewModel.addDraftSet(order) : null,
+      history: history,
+      historyDetailSubtitle: 'Past performance for reference.',
+      historyRowBuilder: (s) => HistorySetRow(set: s),
     );
   }
 }
@@ -1219,23 +702,47 @@ class _DetailAddExerciseContent extends StatefulWidget {
   final SessionDetailViewModel viewModel;
 
   @override
-  State<_DetailAddExerciseContent> createState() => _DetailAddExerciseContentState();
+  State<_DetailAddExerciseContent> createState() =>
+      _DetailAddExerciseContentState();
 }
 
 class _DetailAddExerciseContentState extends State<_DetailAddExerciseContent> {
   String _query = '';
 
   List<MapEntry<String, String>> get _filtered {
-    return widget.viewModel.state.value.exerciseDetailMap.entries
-        .where((e) => toProperCase(e.value.name).toLowerCase().contains(_query.toLowerCase()))
+    final s = widget.viewModel.state.value;
+    final entries = s.exerciseDetailMap.entries
+        .where(
+          (e) => toProperCase(
+            e.value.name,
+          ).toLowerCase().contains(_query.toLowerCase()),
+        )
         .map((e) => MapEntry(e.key, toProperCase(e.value.name)))
         .toList();
+    // Most recently used first (newest history session per exercise, nulls
+    // last), then name.
+    final lastUsed = <String, DateTime>{};
+    for (final sessions in s.historyByExercise.values) {
+      if (sessions.isNotEmpty) {
+        lastUsed[sessions.first.sets.first.exerciseId] = sessions.first.date;
+      }
+    }
+    entries.sort((a, b) {
+      final da = lastUsed[a.key];
+      final db = lastUsed[b.key];
+      if (da != null && db != null) return db.compareTo(da);
+      if (da != null) return -1;
+      if (db != null) return 1;
+      return a.value.toLowerCase().compareTo(b.value.toLowerCase());
+    });
+    return entries;
   }
 
   bool get _canCreate =>
       _query.trim().length > 1 &&
-      !widget.viewModel.state.value.exerciseDetailMap.values
-          .any((e) => e.name.toLowerCase() == _query.trim().toLowerCase());
+      !widget.viewModel.state.value.exerciseDetailMap.values.any(
+        (e) => e.name.toLowerCase() == _query.trim().toLowerCase(),
+      );
 
   void _pick(String exerciseId) {
     widget.viewModel.addExerciseGroup(exerciseId);
@@ -1252,7 +759,12 @@ class _DetailAddExerciseContentState extends State<_DetailAddExerciseContent> {
   Widget build(BuildContext context) {
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(AppSpacing.xl, AppSpacing.xl, AppSpacing.xl, AppSpacing.xl),
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.xl,
+          AppSpacing.xl,
+          AppSpacing.xl,
+          AppSpacing.xl,
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1260,8 +772,14 @@ class _DetailAddExerciseContentState extends State<_DetailAddExerciseContent> {
             Row(
               children: [
                 Expanded(
-                  child: Text('Add exercise',
-                      style: AppFonts.ui(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.primary)),
+                  child: Text(
+                    'Add exercise',
+                    style: AppFonts.ui(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.primary,
+                    ),
+                  ),
                 ),
                 GestureDetector(
                   onTap: () => Navigator.of(context, rootNavigator: true).pop(),
@@ -1276,7 +794,11 @@ class _DetailAddExerciseContentState extends State<_DetailAddExerciseContent> {
               decoration: InputDecoration(
                 hintText: 'Search exercises…',
                 hintStyle: AppFonts.ui(color: AppColors.muted),
-                prefixIcon: Icon(Icons.search, size: 18, color: AppColors.muted),
+                prefixIcon: Icon(
+                  Icons.search,
+                  size: 18,
+                  color: AppColors.muted,
+                ),
                 filled: true,
                 fillColor: AppColors.surfaceHigh,
                 border: OutlineInputBorder(
@@ -1294,17 +816,31 @@ class _DetailAddExerciseContentState extends State<_DetailAddExerciseContent> {
                 builder: (context, state, _) => ListView(
                   shrinkWrap: true,
                   children: [
-                    ..._filtered.map((e) => _resultRow(e.value, () => _pick(e.key))),
+                    ..._filtered.map(
+                      (e) => _resultRow(e.value, () => _pick(e.key)),
+                    ),
                     if (_canCreate)
-                      _resultRow('+ Create "${_query.trim()}"',
-                          state.newExCreating ? null : _createNew,
-                          accent: true),
-                    if (_filtered.isEmpty && !_canCreate && _query.trim().isNotEmpty)
+                      _resultRow(
+                        '+ Create "${_query.trim()}"',
+                        state.newExCreating ? null : _createNew,
+                        accent: true,
+                      ),
+                    if (_filtered.isEmpty &&
+                        !_canCreate &&
+                        _query.trim().isNotEmpty)
                       Padding(
-                        padding: const EdgeInsets.symmetric(vertical: AppSpacing.lg),
+                        padding: const EdgeInsets.symmetric(
+                          vertical: AppSpacing.lg,
+                        ),
                         child: Center(
-                            child: Text('No exercises found',
-                                style: AppFonts.ui(fontSize: 13, color: AppColors.muted))),
+                          child: Text(
+                            'No exercises found',
+                            style: AppFonts.ui(
+                              fontSize: 13,
+                              color: AppColors.muted,
+                            ),
+                          ),
+                        ),
                       ),
                   ],
                 ),
@@ -1327,13 +863,19 @@ class _DetailAddExerciseContentState extends State<_DetailAddExerciseContent> {
             color: AppColors.surfaceHigh,
             borderRadius: BorderRadius.circular(AppRadius.md),
             border: Border.all(
-                color: accent ? AppColors.accent.withValues(alpha: 0.35) : AppColors.border),
+              color: accent
+                  ? AppColors.accent.withValues(alpha: 0.35)
+                  : AppColors.border,
+            ),
           ),
-          child: Text(label,
-              style: AppFonts.ui(
-                  fontSize: 14,
-                  fontWeight: accent ? FontWeight.w700 : FontWeight.w600,
-                  color: accent ? AppColors.accent : AppColors.primary)),
+          child: Text(
+            label,
+            style: AppFonts.ui(
+              fontSize: 14,
+              fontWeight: accent ? FontWeight.w700 : FontWeight.w600,
+              color: accent ? AppColors.accent : AppColors.primary,
+            ),
+          ),
         ),
       ),
     );

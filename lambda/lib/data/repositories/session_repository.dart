@@ -45,11 +45,32 @@ class SessionRepository {
     return sessionId;
   }
 
-  Future<void> endSession(String sessionId,
-      {String? postNotes, int? feeling}) async {
+  Future<void> endSession(
+    String sessionId, {
+    String? postNotes,
+    int? feeling,
+  }) async {
     await ps.db.execute(
       'UPDATE fact_session SET is_active = 0, post_notes = ?, post_feeling = ? WHERE session_id = ?',
       [postNotes?.isNotEmpty == true ? postNotes : null, feeling, sessionId],
+    );
+  }
+
+  /// Updates a completed session's pre/post notes without touching
+  /// is_active — the past-session editor's save path (distinct from the
+  /// live [endSession] flow). Empty strings clear the note.
+  Future<void> updateSessionNotes(
+    String sessionId, {
+    String? preNotes,
+    String? postNotes,
+  }) async {
+    await ps.db.execute(
+      'UPDATE fact_session SET pre_notes = ?, post_notes = ? WHERE session_id = ?',
+      [
+        preNotes?.isNotEmpty == true ? preNotes : null,
+        postNotes?.isNotEmpty == true ? postNotes : null,
+        sessionId,
+      ],
     );
   }
 
@@ -62,14 +83,12 @@ class SessionRepository {
 
   Future<void> cancelSession(String sessionId) async {
     // PRs are derived from sets on read — nothing extra to clean up.
-    await ps.db.execute(
-      'DELETE FROM fact_session_set WHERE session_id = ?',
-      [sessionId],
-    );
-    await ps.db.execute(
-      'DELETE FROM fact_session WHERE session_id = ?',
-      [sessionId],
-    );
+    await ps.db.execute('DELETE FROM fact_session_set WHERE session_id = ?', [
+      sessionId,
+    ]);
+    await ps.db.execute('DELETE FROM fact_session WHERE session_id = ?', [
+      sessionId,
+    ]);
   }
 
   Future<String?> getActiveSessionId(String userId) async {
@@ -214,8 +233,7 @@ class SessionRepository {
     return rows.map((r) => SessionSet.fromMap(r)).toList();
   }
 
-  Future<void> reorderSets(
-      String sessionId, List<String> orderedSetIds) async {
+  Future<void> reorderSets(String sessionId, List<String> orderedSetIds) async {
     for (var i = 0; i < orderedSetIds.length; i++) {
       await ps.db.execute(
         'UPDATE fact_session_set SET set_number = ? WHERE session_set_id = ?',
@@ -260,10 +278,12 @@ class SessionRepository {
     }
 
     return sessions
-        .map((w) => SessionWithSets(
-              session: w,
-              sets: setsBySession[w.sessionId] ?? [],
-            ))
+        .map(
+          (w) => SessionWithSets(
+            session: w,
+            sets: setsBySession[w.sessionId] ?? [],
+          ),
+        )
         .toList();
   }
 
@@ -298,7 +318,9 @@ class SessionRepository {
   /// variation) — used to prefill weight/variation/volume-type defaults when
   /// the user selects an exercise while logging a new set.
   Future<SessionSet?> findLastSetForExercise(
-      String userId, String exerciseId) async {
+    String userId,
+    String exerciseId,
+  ) async {
     final rows = await ps.db.getAll(
       '''
       SELECT s.*
@@ -320,7 +342,10 @@ class SessionRepository {
   /// instead of `= ?` so a null variationId matches sets logged with no
   /// variation, rather than matching nothing.
   Future<SessionSet?> findLastSetForExerciseVariation(
-      String userId, String exerciseId, String? variationId) async {
+    String userId,
+    String exerciseId,
+    String? variationId,
+  ) async {
     final rows = await ps.db.getAll(
       '''
       SELECT s.*

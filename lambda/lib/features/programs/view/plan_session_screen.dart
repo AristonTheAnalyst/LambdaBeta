@@ -1,19 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
 import '../../../core/styles/app_radius.dart';
 import '../../../core/styles/app_spacing.dart';
 import '../../../core/styles/app_text_styles.dart';
 import '../../../core/utils/session_format.dart';
-import '../../../data/models/planned_session_set.dart';
 import '../../../data/models/planned_session.dart';
 import '../../../shared/mixins/unsaved_changes_guard.dart';
-import '../../../shared/widgets/exercise_pill_bar.dart';
+import '../../../shared/widgets/bottom_nav_bar.dart';
+import '../../../shared/widgets/dropdown_select.dart';
 import '../../../shared/widgets/segmented_control.dart';
+import '../../../shared/widgets/session_exercise_card.dart';
+import '../../../shared/widgets/session_set_row.dart';
 import '../../../shared/widgets/slide_up_modal.dart';
 import '../../../shared/widgets/stats_row.dart';
 import '../viewmodel/program_detail_viewmodel.dart';
-import 'plan_set_row.dart';
 
 const _dayOfWeekOptions = [
   SegmentOption<int?>(label: 'Mon', value: 1),
@@ -51,7 +53,8 @@ class PlanSessionScreen extends StatefulWidget {
   State<PlanSessionScreen> createState() => _PlanSessionScreenState();
 }
 
-class _PlanSessionScreenState extends State<PlanSessionScreen> with UnsavedChangesGuard<PlanSessionScreen> {
+class _PlanSessionScreenState extends State<PlanSessionScreen>
+    with UnsavedChangesGuard<PlanSessionScreen> {
   late final TextEditingController _nameCtrl;
   late final TextEditingController _notesCtrl;
   final _nameFocus = FocusNode();
@@ -63,7 +66,11 @@ class _PlanSessionScreenState extends State<PlanSessionScreen> with UnsavedChang
     // Initialize controllers from the workout param directly, NOT from the
     // viewmodel state (which may be stale from a previous closeWorkoutEditor).
     // This ensures the TextField shows the correct text from the start.
-    _nameCtrl = TextEditingController(text: widget.workout?.name ?? 'New Session');
+    _nameCtrl = TextEditingController(
+      text: widget.workout?.name ?? 'New Session',
+    );
+    // Session Notes is hidden from the UI for now — the controller and
+    // commit plumbing stay so re-enabling is a one-line addition.
     _notesCtrl = TextEditingController(text: widget.workout?.notes ?? '');
     _nameFocus.addListener(() {
       if (!_nameFocus.hasFocus) widget.viewModel.commitWorkoutName();
@@ -86,6 +93,12 @@ class _PlanSessionScreenState extends State<PlanSessionScreen> with UnsavedChang
       } else {
         widget.viewModel.createWorkoutAndOpen();
       }
+      // The VM may generate a bumped name ("New Session 2") after open —
+      // sync the header controller so the editor shows the real name.
+      final draft = widget.viewModel.state.value.workoutNameDraft;
+      if (draft.isNotEmpty && _nameCtrl.text != draft) {
+        _nameCtrl.text = draft;
+      }
     });
   }
 
@@ -106,10 +119,14 @@ class _PlanSessionScreenState extends State<PlanSessionScreen> with UnsavedChang
   // ── UnsavedChangesGuard ─────────────────────────────────────────────────
 
   @override
-  bool get hasUnsavedChanges => widget.viewModel.state.value.workoutUnsavedChanges;
+  bool get hasUnsavedChanges =>
+      widget.viewModel.state.value.workoutUnsavedChanges;
 
   @override
   Future<void> onSave() async {
+    // Blur first — set cells commit on focus loss; Save must persist the
+    // typed values.
+    FocusManager.instance.primaryFocus?.unfocus();
     await widget.viewModel.saveWorkout();
   }
 
@@ -122,6 +139,16 @@ class _PlanSessionScreenState extends State<PlanSessionScreen> with UnsavedChang
     } else {
       widget.viewModel.closeWorkoutEditor();
     }
+  }
+
+  /// A nav-bar tab tap: run the unsaved-changes guard, then leave the
+  /// editor and jump to the tapped tab.
+  Future<void> _onNavTap(String route) async {
+    final router = GoRouter.of(context);
+    if (!await confirmBack()) return;
+    if (!mounted) return;
+    Navigator.of(context, rootNavigator: true).pop();
+    router.go(route);
   }
 
   @override
@@ -143,25 +170,34 @@ class _PlanSessionScreenState extends State<PlanSessionScreen> with UnsavedChang
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text('Could not open workout',
-                          style: AppFonts.ui(
-                              fontSize: AppTextStyles.lg,
-                              fontWeight: FontWeight.w800,
-                              color: AppColors.primary)),
+                      Text(
+                        'Could not open workout',
+                        style: AppFonts.ui(
+                          fontSize: AppTextStyles.lg,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.primary,
+                        ),
+                      ),
                       const SizedBox(height: AppSpacing.sm),
-                      Text(err,
-                          style: AppFonts.ui(
-                              fontSize: AppTextStyles.sm,
-                              color: AppColors.danger),
-                          textAlign: TextAlign.center),
+                      Text(
+                        err,
+                        style: AppFonts.ui(
+                          fontSize: AppTextStyles.sm,
+                          color: AppColors.danger,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
                       const SizedBox(height: AppSpacing.lg),
                       TextButton(
-                        onPressed: () => Navigator.of(context, rootNavigator: true)
-                            .pop(),
-                        child: Text('Close',
-                            style: AppFonts.ui(
-                                color: AppColors.accent,
-                                fontWeight: FontWeight.w600)),
+                        onPressed: () =>
+                            Navigator.of(context, rootNavigator: true).pop(),
+                        child: Text(
+                          'Close',
+                          style: AppFonts.ui(
+                            color: AppColors.accent,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
                       ),
                     ],
                   ),
@@ -171,56 +207,84 @@ class _PlanSessionScreenState extends State<PlanSessionScreen> with UnsavedChang
           }
           return Scaffold(
             backgroundColor: AppColors.bg,
-            body: Center(child: CircularProgressIndicator(color: AppColors.accent)),
+            body: Center(
+              child: CircularProgressIndicator(color: AppColors.accent),
+            ),
           );
         }
         return buildGuardedScaffold(
           scaffold: Scaffold(
             backgroundColor: AppColors.bg,
+            // The editor is pushed full-screen (root navigator), which covers
+            // the tab shell — re-render the shared nav bar so tab navigation
+            // stays available while editing. Tab taps run the unsaved-changes
+            // guard before leaving.
+            bottomNavigationBar: BottomNavBar(
+              currentRoute: '/exercises',
+              onTap: _onNavTap,
+            ),
             body: Column(
               children: [
-                _editableHeader(state.workoutUnsavedChanges, state.workoutExerciseSlots.isEmpty),
+                _editableHeader(
+                  state.workoutUnsavedChanges,
+                  state.workoutExerciseSlots.isEmpty,
+                ),
                 if (state.error != null)
                   Container(
                     width: double.infinity,
                     color: AppColors.dangerBg,
                     padding: const EdgeInsets.symmetric(
-                        horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
-                    child: Text(state.error!,
-                        style: AppFonts.ui(
-                            color: AppColors.danger, fontSize: AppTextStyles.sm)),
+                      horizontal: AppSpacing.lg,
+                      vertical: AppSpacing.sm,
+                    ),
+                    child: Text(
+                      state.error!,
+                      style: AppFonts.ui(
+                        color: AppColors.danger,
+                        fontSize: AppTextStyles.sm,
+                      ),
+                    ),
                   ),
                 Expanded(
                   child: SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.xxl),
+                    padding: const EdgeInsets.fromLTRB(
+                      AppSpacing.lg,
+                      AppSpacing.md,
+                      AppSpacing.lg,
+                      AppSpacing.xxl,
+                    ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        _notesField(state.workoutNotesDraft),
+                        // Session Notes is hidden from the frontend for now
+                        // (the VM plumbing stays — see initState).
                         if (state.isCalendarMode) ...[
-                          const SizedBox(height: AppSpacing.md),
-                          Text('Day of week',
-                              style: AppFonts.ui(
-                                  fontSize: 13, fontWeight: FontWeight.w500, color: AppColors.primary)),
+                          Text(
+                            'Day of week',
+                            style: AppFonts.ui(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                              color: AppColors.primary,
+                            ),
+                          ),
                           const SizedBox(height: 6),
                           SegmentedControl<int?>(
                             options: _dayOfWeekOptions,
                             value: state.workoutDayOfWeekDraft,
-                            onChange: (v) => widget.viewModel.commitWorkoutDayOfWeek(v),
+                            onChange: (v) =>
+                                widget.viewModel.commitWorkoutDayOfWeek(v),
                           ),
+                          const SizedBox(height: AppSpacing.lg),
                         ],
-                        const SizedBox(height: AppSpacing.lg),
-                        _PlanStatsBar(
-                          setCount: state.workoutPlannedSessionSets.length,
-                          exerciseCount: state.workoutExerciseSlots.length,
-                        ),
-                        const SizedBox(height: AppSpacing.md),
                         if (state.workoutSetsLoading)
                           Center(
-                              child: Padding(
-                            padding: const EdgeInsets.all(AppSpacing.lg),
-                            child: CircularProgressIndicator(color: AppColors.accent),
-                          ))
+                            child: Padding(
+                              padding: const EdgeInsets.all(AppSpacing.lg),
+                              child: CircularProgressIndicator(
+                                color: AppColors.accent,
+                              ),
+                            ),
+                          )
                         else if (state.workoutExerciseSlots.isEmpty) ...[
                           const SizedBox(height: AppSpacing.xl),
                           GestureDetector(
@@ -228,58 +292,75 @@ class _PlanSessionScreenState extends State<PlanSessionScreen> with UnsavedChang
                             child: Container(
                               width: double.infinity,
                               padding: const EdgeInsets.symmetric(
-                                  vertical: AppSpacing.xxl),
+                                vertical: AppSpacing.xxl,
+                              ),
                               decoration: BoxDecoration(
                                 color: AppColors.surface,
-                                borderRadius:
-                                    BorderRadius.circular(AppRadius.lg),
+                                borderRadius: BorderRadius.circular(
+                                  AppRadius.lg,
+                                ),
                                 border: Border.all(color: AppColors.border),
                               ),
                               child: Column(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Icon(Icons.fitness_center_outlined,
-                                      size: 32, color: AppColors.muted),
+                                  Icon(
+                                    Icons.fitness_center_outlined,
+                                    size: 32,
+                                    color: AppColors.muted,
+                                  ),
                                   const SizedBox(height: AppSpacing.sm),
-                                  Text('Tap to add an exercise',
-                                      style: AppFonts.ui(
-                                          fontSize: AppTextStyles.md,
-                                          color: AppColors.muted)),
+                                  Text(
+                                    'Tap to add an exercise',
+                                    style: AppFonts.ui(
+                                      fontSize: AppTextStyles.md,
+                                      color: AppColors.muted,
+                                    ),
+                                  ),
                                   const SizedBox(height: AppSpacing.xs),
                                   Text(
-                                      'A workout needs at least one exercise',
-                                      style: AppFonts.ui(
-                                          fontSize: AppTextStyles.xs,
-                                          color: AppColors.muted)),
+                                    'A workout needs at least one exercise',
+                                    style: AppFonts.ui(
+                                      fontSize: AppTextStyles.xs,
+                                      color: AppColors.muted,
+                                    ),
+                                  ),
                                 ],
                               ),
                             ),
                           ),
-                        ] else ...[
-                          ExercisePillBar(
-                            labels: state.workoutExerciseSlots.map((slot) {
-                              final detail = state.exerciseDetailMap[slot.exerciseId];
-                              return toProperCase(detail?.name ?? '');
-                            }).toList(),
-                            keys: state.workoutExerciseSlots
-                                .map((slot) => slot.exerciseId)
-                                .toList(),
-                            activeIndex: state.activeSlotIndex,
-                            onTap: (i) => widget.viewModel.tapTab(i),
-                            onAdd: _showAddExercise,
-                            onReorder: (oldIndex, newIndex) =>
-                                widget.viewModel.reorderExercises(oldIndex, newIndex),
-                            onRemove: (i) => _confirmRemoveExercise(i),
+                        ] else if (state.activeSlot != null)
+                          _PlanExerciseCard(
+                            viewModel: widget.viewModel,
+                            slot: state.activeSlot!,
+                            onAddExercise: _showAddExercise,
+                            onRemoveExercise: () =>
+                                _confirmRemoveExercise(state.activeSlotIndex),
                           ),
-                          const SizedBox(height: AppSpacing.md),
-                          if (state.activeSlot != null)
-                            _PlanExerciseCard(
-                              viewModel: widget.viewModel,
-                              slot: state.activeSlot!,
-                            ),
-                        ],
                       ],
                     ),
+                  ),
+                ),
+                // Sticky bottom: SETS/EXERCISES, greyed — mirrors the live
+                // session's bottom stats bar; greyed because planning has no
+                // live data to summarize.
+                Container(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.lg,
+                    AppSpacing.sm,
+                    AppSpacing.lg,
+                    AppSpacing.sm,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.bg,
+                    border: Border(
+                      top: BorderSide(color: AppColors.border, width: 0.5),
+                    ),
+                  ),
+                  child: _PlanStatsBar(
+                    setCount: state.workoutPlannedSessionSets.length,
+                    exerciseCount: state.workoutExerciseSlots.length,
+                    greyed: true,
                   ),
                 ),
               ],
@@ -303,14 +384,22 @@ class _PlanSessionScreenState extends State<PlanSessionScreen> with UnsavedChang
         child: Stack(
           alignment: Alignment.center,
           children: [
-            Positioned(left: 16,
+            Positioned(
+              left: 16,
               child: GestureDetector(
                 onTap: () async {
+                  // Blur first — set cells commit on focus loss, and the
+                  // back guard must see the typed values.
+                  FocusManager.instance.primaryFocus?.unfocus();
                   if (await confirmBack() && mounted) {
                     Navigator.of(context, rootNavigator: true).pop();
                   }
                 },
-                child: Icon(Icons.arrow_back_ios_new, size: 18, color: AppColors.primary),
+                child: Icon(
+                  Icons.arrow_back_ios_new,
+                  size: 18,
+                  color: AppColors.primary,
+                ),
               ),
             ),
             Positioned(
@@ -324,7 +413,11 @@ class _PlanSessionScreenState extends State<PlanSessionScreen> with UnsavedChang
                   focusNode: _nameFocus,
                   textAlign: TextAlign.center,
                   textCapitalization: TextCapitalization.words,
-                  style: AppFonts.ui(fontSize: 17, fontWeight: FontWeight.w600, color: AppColors.primary),
+                  style: AppFonts.ui(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.primary,
+                  ),
                   decoration: const InputDecoration(
                     border: InputBorder.none,
                     hintText: 'Session name',
@@ -335,7 +428,8 @@ class _PlanSessionScreenState extends State<PlanSessionScreen> with UnsavedChang
                 ),
               ),
             ),
-            Positioned(right: 6,
+            Positioned(
+              right: 6,
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -343,20 +437,33 @@ class _PlanSessionScreenState extends State<PlanSessionScreen> with UnsavedChang
                     GestureDetector(
                       onTap: () => widget.viewModel.saveWorkout(),
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
                           color: AppColors.successBg,
                           borderRadius: BorderRadius.circular(AppRadius.md),
                           border: Border.all(color: AppColors.success),
                         ),
-                        child: Text('Save',
-                            style: AppFonts.ui(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.success)),
+                        child: Text(
+                          'Save',
+                          style: AppFonts.ui(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.success,
+                          ),
+                        ),
                       ),
                     ),
                   const SizedBox(width: 10),
                   GestureDetector(
                     onTap: _confirmDelete,
-                    child: Icon(Icons.delete_outline, size: 20, color: AppColors.danger),
+                    child: Icon(
+                      Icons.delete_outline,
+                      size: 20,
+                      color: AppColors.danger,
+                    ),
                   ),
                 ],
               ),
@@ -367,61 +474,48 @@ class _PlanSessionScreenState extends State<PlanSessionScreen> with UnsavedChang
     );
   }
 
-  Widget _notesField(String draft) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('Session Notes',
-            style: AppFonts.ui(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.primary)),
-        const SizedBox(height: 6),
-        TextField(
-          controller: _notesCtrl,
-          focusNode: _notesFocus,
-          textCapitalization: TextCapitalization.sentences,
-          style: AppFonts.ui(fontSize: 15, color: AppColors.primary),
-          decoration: InputDecoration(
-            hintText: 'What to focus on…',
-            hintStyle: AppFonts.ui(color: AppColors.muted),
-            filled: true,
-            fillColor: AppColors.surface,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color: AppColors.border),
-            ),
-          ),
-          onChanged: widget.viewModel.setWorkoutNotesDraft,
-        ),
-      ],
-    );
-  }
-
   void _confirmRemoveExercise(int index) {
     final state = widget.viewModel.state.value;
     if (index < 0 || index >= state.workoutExerciseSlots.length) return;
     final slot = state.workoutExerciseSlots[index];
-    final name = toProperCase(state.exerciseDetailMap[slot.exerciseId]?.name ?? 'exercise');
+    final name = toProperCase(
+      state.exerciseDetailMap[slot.exerciseId]?.name ?? 'exercise',
+    );
     final setCount = state.plannedSetsFor(slot.exerciseSequenceOrder).length;
 
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
-        title: Text('Remove Exercise',
-            style: AppFonts.ui(fontWeight: FontWeight.w800, color: AppColors.danger)),
+        title: Text(
+          'Remove Exercise',
+          style: AppFonts.ui(
+            fontWeight: FontWeight.w800,
+            color: AppColors.danger,
+          ),
+        ),
         content: Text(
-            'Remove $name from this workout?\n$setCount set${setCount == 1 ? '' : 's'} will be removed.',
-            style: AppFonts.ui(color: AppColors.muted)),
+          'Remove $name from this workout?\n$setCount set${setCount == 1 ? '' : 's'} will be removed.',
+          style: AppFonts.ui(color: AppColors.muted),
+        ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: Text('Keep', style: AppFonts.ui(color: AppColors.muted))),
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text('Keep', style: AppFonts.ui(color: AppColors.muted)),
+          ),
           TextButton(
-              onPressed: () {
-                Navigator.of(ctx).pop();
-                widget.viewModel.removePlannedExerciseGroup(index);
-              },
-              child: Text('Remove',
-                  style: AppFonts.ui(color: AppColors.danger, fontWeight: FontWeight.w600))),
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              widget.viewModel.removePlannedExerciseGroup(index);
+            },
+            child: Text(
+              'Remove',
+              style: AppFonts.ui(
+                color: AppColors.danger,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -432,22 +526,40 @@ class _PlanSessionScreenState extends State<PlanSessionScreen> with UnsavedChang
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
-        title: Text('Delete Session',
-            style: AppFonts.ui(fontWeight: FontWeight.w800, color: AppColors.danger)),
-        content: Text('Remove this planned workout and its sets?',
-            style: AppFonts.ui(color: AppColors.muted)),
+        title: Text(
+          'Delete Session',
+          style: AppFonts.ui(
+            fontWeight: FontWeight.w800,
+            color: AppColors.danger,
+          ),
+        ),
+        content: Text(
+          'Remove this planned workout and its sets?',
+          style: AppFonts.ui(color: AppColors.muted),
+        ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: Text('Cancel', style: AppFonts.ui(color: AppColors.muted))),
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text('Cancel', style: AppFonts.ui(color: AppColors.muted)),
+          ),
           TextButton(
-            onPressed: () {
+            onPressed: () async {
               Navigator.of(ctx).pop();
-              widget.viewModel.deletePlannedSession();
-              Navigator.of(context, rootNavigator: true).pop();
+              // Await the delete BEFORE popping the editor — the library
+              // reloads on return, and an un-awaited delete races that
+              // reload (the deleted workout would still be listed).
+              await widget.viewModel.deletePlannedSession();
+              if (mounted) {
+                Navigator.of(context, rootNavigator: true).pop();
+              }
             },
-            child: Text('Delete',
-                style: AppFonts.ui(color: AppColors.danger, fontWeight: FontWeight.w600)),
+            child: Text(
+              'Delete',
+              style: AppFonts.ui(
+                color: AppColors.danger,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
         ],
       ),
@@ -467,147 +579,170 @@ class _PlanSessionScreenState extends State<PlanSessionScreen> with UnsavedChang
 // ── Stats Bar ────────────────────────────────────────────────────────────────
 
 class _PlanStatsBar extends StatelessWidget {
-  const _PlanStatsBar({required this.setCount, required this.exerciseCount});
+  const _PlanStatsBar({
+    required this.setCount,
+    required this.exerciseCount,
+    this.greyed = false,
+  });
 
   final int setCount;
   final int exerciseCount;
+  final bool greyed;
 
   @override
   Widget build(BuildContext context) {
-    return StatsRow(tiles: [
-      StatsTile(label: 'SETS', value: '$setCount'),
-      StatsTile(label: 'EXERCISES', value: '$exerciseCount'),
-    ]);
-  }
-}
-
-
-// ── Exercise Card ─────────────────────────────────────────────────────────────
-
-class _PlanExerciseCard extends StatefulWidget {
-  const _PlanExerciseCard({required this.viewModel, required this.slot});
-
-  final ProgramDetailViewModel viewModel;
-  final PlanExerciseSlot slot;
-
-  @override
-  State<_PlanExerciseCard> createState() => _PlanExerciseCardState();
-}
-
-class _PlanExerciseCardState extends State<_PlanExerciseCard> {
-  @override
-  Widget build(BuildContext context) {
-    final vm = widget.viewModel;
-    final s = vm.state.value;
-    final exerciseId = widget.slot.exerciseId;
-    final order = widget.slot.exerciseSequenceOrder;
-    final detail = s.exerciseDetailMap[exerciseId];
-    final name = toProperCase(detail?.name ?? '');
-    final sets = s.plannedSetsFor(order);
-    final draftIds = s.workoutSetDrafts[order] ?? const <int>[];
-
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(AppRadius.lg),
-        border: Border.all(color: AppColors.border),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
-            child: Text(name,
-                style: AppFonts.ui(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.primary)),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(10, 0, 10, 12),
-            child: _setsGrid(sets, draftIds, exerciseId, order, detail),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _setsGrid(
-    List<PlannedSessionSet> sets,
-    List<int> draftIds,
-    String exerciseId,
-    int order,
-    dynamic detail,
-  ) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          child: Row(
-            children: [
-              const SizedBox(width: 26),
-              const SizedBox(width: 6),
-              Expanded(child: _colLabel('KG')),
-              const SizedBox(width: 6),
-              Expanded(child: _colLabel('REPS')),
-              const SizedBox(width: 6),
-              Expanded(child: _colLabel('VARIATION')),
-              const SizedBox(width: 6),
-              SizedBox(width: 32, child: _colLabel('NOTE')),
-            ],
-          ),
-        ),
-        const SizedBox(height: 6),
-        for (var i = 0; i < sets.length; i++)
-          PlanSetRow(
-            key: ValueKey(sets[i].setId),
-            viewModel: widget.viewModel,
-            exerciseId: exerciseId,
-            exerciseSequenceOrder: order,
-            displayIndex: i + 1,
-            detail: detail,
-            set: sets[i],
-          ),
-        for (var i = 0; i < draftIds.length; i++)
-          PlanSetRow(
-            key: ValueKey('draft-${draftIds[i]}'),
-            viewModel: widget.viewModel,
-            exerciseId: exerciseId,
-            exerciseSequenceOrder: order,
-            displayIndex: sets.length + i + 1,
-            detail: detail,
-            draftId: draftIds[i],
-          ),
-        const SizedBox(height: 2),
-        GestureDetector(
-          onTap: () => widget.viewModel.addDraftPlannedSessionSet(order),
-          child: Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(vertical: 10),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(AppRadius.md),
-              border: Border.all(color: AppColors.border, style: BorderStyle.solid),
-            ),
-            child: Center(
-              child: Text('+ ADD SET',
-                  style: AppFonts.ui(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.5,
-                      color: AppColors.muted)),
-            ),
-          ),
-        ),
+    return StatsRow(
+      tiles: [
+        StatsTile(label: 'SETS', value: '$setCount', greyed: greyed),
+        StatsTile(label: 'EXERCISES', value: '$exerciseCount', greyed: greyed),
       ],
     );
   }
-
-  Widget _colLabel(String text) =>
-      Text(text,
-          textAlign: TextAlign.center,
-          style: AppFonts.mono(fontSize: 8, letterSpacing: 0.6, color: AppColors.muted));
 }
 
-// ── Add Exercise Modal ────────────────────────────────────────────────────────
+// ── Exercise Card ─────────────────────────────────────────────────────────────
+
+/// The planner's exercise card — an adapter over the shared
+/// [SessionExerciseCard] with planned-mode rows (targets, not logged sets).
+/// Lessons/History/PRs stay greyed by decision even though the VM holds
+/// lesson/history data: planning is about targets, and those surfaces stay
+/// disabled until they get planner wiring.
+class _PlanExerciseCard extends StatelessWidget {
+  const _PlanExerciseCard({
+    required this.viewModel,
+    required this.slot,
+    required this.onAddExercise,
+    required this.onRemoveExercise,
+  });
+
+  final ProgramDetailViewModel viewModel;
+  final PlanExerciseSlot slot;
+  final VoidCallback onAddExercise;
+  final VoidCallback onRemoveExercise;
+
+  @override
+  Widget build(BuildContext context) {
+    final vm = viewModel;
+    final s = vm.state.value;
+    final exerciseId = slot.exerciseId;
+    final order = slot.exerciseSequenceOrder;
+    final sets = s.plannedSetsFor(order);
+    final draftIds = s.workoutSetDrafts[order] ?? const <int>[];
+
+    final variationOptions = [
+      const DropdownOption<String?>(label: 'No Variation', value: null),
+      ...vm.variationsByRecency.map(
+        (v) => DropdownOption<String?>(label: v.name, value: v.variationId),
+      ),
+    ];
+    final allVariations = [
+      for (final v in s.allVariations) (id: v.variationId, name: v.name),
+    ];
+
+    List<Widget> rows = [];
+    for (var i = 0; i < sets.length; i++) {
+      final set = sets[i];
+      rows.add(
+        SessionSetRow(
+          key: ValueKey(set.setId),
+          mode: SetRowMode.planned,
+          exerciseId: exerciseId,
+          displayIndex: i + 1,
+          isDraft: false,
+          initialWeightText: set.targetWeight ?? '',
+          initialRepsText: set.targetReps ?? '',
+          initialVariationId: set.variationId,
+          initialVariationName: set.variationName,
+          initialNotes: set.targetNotes,
+          hasNotes: set.targetNotes?.isNotEmpty ?? false,
+          onCommit: (isDraft, v) async {
+            if (!isDraft) {
+              await vm.quickUpdatePlannedSessionSet(
+                set,
+                weight: v.weight,
+                clearWeight: v.weight == null,
+                reps: v.reps,
+                clearReps: v.reps == null,
+              );
+            }
+          },
+          onVariationChanged: (id) => vm.quickUpdatePlannedSessionSet(
+            set,
+            variationId: id,
+            clearVariation: id == null,
+          ),
+          onNotesSave: (v) => vm.quickUpdatePlannedSessionSet(
+            set,
+            notes: v.trim().isEmpty ? null : v.trim(),
+            clearNotes: v.trim().isEmpty,
+          ),
+          onDelete: () => vm.deletePlannedSessionSet(set.setId),
+          onDuplicate: () => vm.duplicatePlannedSessionSet(set),
+          variationOptions: variationOptions,
+          allVariations: allVariations,
+          findSimilarVariations: vm.findSimilarVariations,
+          submitNewVariation: vm.submitNewVariation,
+        ),
+      );
+    }
+    for (var i = 0; i < draftIds.length; i++) {
+      final draftId = draftIds[i];
+      rows.add(
+        SessionSetRow(
+          key: ValueKey('draft-$draftId'),
+          mode: SetRowMode.planned,
+          exerciseId: exerciseId,
+          displayIndex: sets.length + i + 1,
+          isDraft: true,
+          initialWeightText: '',
+          initialRepsText: '',
+          initialVariationId: null,
+          hasNotes: false,
+          onCommit: (isDraft, v) async {
+            if (isDraft) {
+              await vm.quickCreatePlannedSessionSet(
+                exerciseId: exerciseId,
+                exerciseSequenceOrder: order,
+                draftId: draftId,
+                variationId: v.variationId,
+                weight: v.weight,
+                reps: v.reps,
+                notes: v.notes,
+              );
+            }
+          },
+          onVariationChanged: (_) {},
+          onNotesSave: (_) {},
+          onDelete: () async => vm.removeDraftPlannedSessionSet(order, draftId),
+          onDuplicate: () {},
+          variationOptions: variationOptions,
+          allVariations: allVariations,
+          findSimilarVariations: vm.findSimilarVariations,
+          submitNewVariation: vm.submitNewVariation,
+        ),
+      );
+    }
+
+    return SessionExerciseCard(
+      exerciseNames: [
+        for (final slot in s.workoutExerciseSlots)
+          toProperCase(s.exerciseDetailMap[slot.exerciseId]?.name ?? ''),
+      ],
+      activeIndex: s.activeSlotIndex,
+      onSelect: (i) => vm.tapTab(i),
+      onMove: (i, dir) => vm.reorderExercises(i, i + dir),
+      onAdd: onAddExercise,
+      onDeleteRequest: onRemoveExercise,
+      lessonsCount: 0,
+      onLessonsTap: null,
+      prCount: 0,
+      onPrTap: null,
+      rows: rows,
+      onAddSet: () => vm.addDraftPlannedSessionSet(order),
+      history: null,
+    );
+  }
+}
 
 class _AddExerciseContent extends StatefulWidget {
   const _AddExerciseContent({required this.viewModel});
@@ -622,16 +757,39 @@ class _AddExerciseContentState extends State<_AddExerciseContent> {
   String _query = '';
 
   List<MapEntry<String, String>> get _filtered {
-    return widget.viewModel.state.value.exerciseDetailMap.entries
-        .where((e) => toProperCase(e.value.name).toLowerCase().contains(_query.toLowerCase()))
+    final s = widget.viewModel.state.value;
+    final entries = s.exerciseDetailMap.entries
+        .where(
+          (e) => toProperCase(
+            e.value.name,
+          ).toLowerCase().contains(_query.toLowerCase()),
+        )
         .map((e) => MapEntry(e.key, toProperCase(e.value.name)))
         .toList();
+    // Most recently used first (newest history session per exercise, nulls
+    // last), then name.
+    final lastUsed = <String, DateTime>{};
+    for (final sessions in s.historyByExercise.values) {
+      if (sessions.isNotEmpty) {
+        lastUsed[sessions.first.sets.first.exerciseId] = sessions.first.date;
+      }
+    }
+    entries.sort((a, b) {
+      final da = lastUsed[a.key];
+      final db = lastUsed[b.key];
+      if (da != null && db != null) return db.compareTo(da);
+      if (da != null) return -1;
+      if (db != null) return 1;
+      return a.value.toLowerCase().compareTo(b.value.toLowerCase());
+    });
+    return entries;
   }
 
   bool get _canCreate =>
       _query.trim().length > 1 &&
-      !widget.viewModel.state.value.exerciseDetailMap.values
-          .any((e) => e.name.toLowerCase() == _query.trim().toLowerCase());
+      !widget.viewModel.state.value.exerciseDetailMap.values.any(
+        (e) => e.name.toLowerCase() == _query.trim().toLowerCase(),
+      );
 
   void _pick(String exerciseId) {
     widget.viewModel.addPlannedExerciseGroup(exerciseId);
@@ -648,7 +806,12 @@ class _AddExerciseContentState extends State<_AddExerciseContent> {
   Widget build(BuildContext context) {
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(AppSpacing.xl, AppSpacing.xl, AppSpacing.xl, AppSpacing.xl),
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.xl,
+          AppSpacing.xl,
+          AppSpacing.xl,
+          AppSpacing.xl,
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -656,9 +819,14 @@ class _AddExerciseContentState extends State<_AddExerciseContent> {
             Row(
               children: [
                 Expanded(
-                  child: Text('Add exercise',
-                      style: AppFonts.ui(
-                          fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.primary)),
+                  child: Text(
+                    'Add exercise',
+                    style: AppFonts.ui(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.primary,
+                    ),
+                  ),
                 ),
                 GestureDetector(
                   onTap: () => Navigator.of(context, rootNavigator: true).pop(),
@@ -673,7 +841,11 @@ class _AddExerciseContentState extends State<_AddExerciseContent> {
               decoration: InputDecoration(
                 hintText: 'Search exercises…',
                 hintStyle: AppFonts.ui(color: AppColors.muted),
-                prefixIcon: Icon(Icons.search, size: 18, color: AppColors.muted),
+                prefixIcon: Icon(
+                  Icons.search,
+                  size: 18,
+                  color: AppColors.muted,
+                ),
                 filled: true,
                 fillColor: AppColors.surfaceHigh,
                 border: OutlineInputBorder(
@@ -691,17 +863,31 @@ class _AddExerciseContentState extends State<_AddExerciseContent> {
                 builder: (context, state, _) => ListView(
                   shrinkWrap: true,
                   children: [
-                    ..._filtered.map((e) => _resultRow(e.value, () => _pick(e.key))),
+                    ..._filtered.map(
+                      (e) => _resultRow(e.value, () => _pick(e.key)),
+                    ),
                     if (_canCreate)
-                      _resultRow('+ Create "${_query.trim()}"',
-                          state.newExCreating ? null : _createNew,
-                          accent: true),
-                    if (_filtered.isEmpty && !_canCreate && _query.trim().isNotEmpty)
+                      _resultRow(
+                        '+ Create "${_query.trim()}"',
+                        state.newExCreating ? null : _createNew,
+                        accent: true,
+                      ),
+                    if (_filtered.isEmpty &&
+                        !_canCreate &&
+                        _query.trim().isNotEmpty)
                       Padding(
-                        padding: const EdgeInsets.symmetric(vertical: AppSpacing.lg),
+                        padding: const EdgeInsets.symmetric(
+                          vertical: AppSpacing.lg,
+                        ),
                         child: Center(
-                            child: Text('No exercises found',
-                                style: AppFonts.ui(fontSize: 13, color: AppColors.muted))),
+                          child: Text(
+                            'No exercises found',
+                            style: AppFonts.ui(
+                              fontSize: 13,
+                              color: AppColors.muted,
+                            ),
+                          ),
+                        ),
                       ),
                   ],
                 ),
@@ -724,13 +910,19 @@ class _AddExerciseContentState extends State<_AddExerciseContent> {
             color: AppColors.surfaceHigh,
             borderRadius: BorderRadius.circular(AppRadius.md),
             border: Border.all(
-                color: accent ? AppColors.accent.withValues(alpha: 0.35) : AppColors.border),
+              color: accent
+                  ? AppColors.accent.withValues(alpha: 0.35)
+                  : AppColors.border,
+            ),
           ),
-          child: Text(label,
-              style: AppFonts.ui(
-                  fontSize: 14,
-                  fontWeight: accent ? FontWeight.w700 : FontWeight.w600,
-                  color: accent ? AppColors.accent : AppColors.primary)),
+          child: Text(
+            label,
+            style: AppFonts.ui(
+              fontSize: 14,
+              fontWeight: accent ? FontWeight.w700 : FontWeight.w600,
+              color: accent ? AppColors.accent : AppColors.primary,
+            ),
+          ),
         ),
       ),
     );

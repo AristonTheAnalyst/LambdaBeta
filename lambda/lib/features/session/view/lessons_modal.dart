@@ -22,8 +22,14 @@ void showLessonsModal(
   required Future<void> Function(String exerciseId, String text) addLesson,
   required Future<void> Function(String exerciseId, String lessonId) toggleLessonPin,
   required Future<void> Function(String exerciseId, String lessonId) deleteLesson,
+  required Future<void> Function(String exerciseId, String lessonId, String text)
+      updateLesson,
   required String exerciseId,
   required String exerciseName,
+
+  /// When non-null (the live session's id), lessons created in that session
+  /// get a 'NEW' badge.
+  String? sessionId,
 }) {
   showLambdaModal(
     context,
@@ -36,8 +42,10 @@ void showLessonsModal(
       addLesson: addLesson,
       toggleLessonPin: toggleLessonPin,
       deleteLesson: deleteLesson,
+      updateLesson: updateLesson,
       exerciseId: exerciseId,
       exerciseName: exerciseName,
+      sessionId: sessionId,
     ),
   );
 }
@@ -50,8 +58,10 @@ class _LessonsModalContent extends StatefulWidget {
     required this.addLesson,
     required this.toggleLessonPin,
     required this.deleteLesson,
+    required this.updateLesson,
     required this.exerciseId,
     required this.exerciseName,
+    this.sessionId,
   });
 
   final Listenable listenable;
@@ -60,8 +70,11 @@ class _LessonsModalContent extends StatefulWidget {
   final Future<void> Function(String exerciseId, String text) addLesson;
   final Future<void> Function(String exerciseId, String lessonId) toggleLessonPin;
   final Future<void> Function(String exerciseId, String lessonId) deleteLesson;
+  final Future<void> Function(String exerciseId, String lessonId, String text)
+      updateLesson;
   final String exerciseId;
   final String exerciseName;
+  final String? sessionId;
 
   @override
   State<_LessonsModalContent> createState() => _LessonsModalContentState();
@@ -188,10 +201,14 @@ class _LessonsModalContentState extends State<_LessonsModalContent> {
                             final lesson = ordered[i];
                             return _LessonRow(
                               lesson: lesson,
+                              isNew: widget.sessionId != null &&
+                                  lesson.sessionId == widget.sessionId,
                               onTogglePin: () =>
                                   widget.toggleLessonPin(widget.exerciseId, lesson.lessonId),
                               onDelete: () =>
                                   widget.deleteLesson(widget.exerciseId, lesson.lessonId),
+                              onUpdateText: (text) => widget.updateLesson(
+                                  widget.exerciseId, lesson.lessonId, text),
                             );
                           },
                         ),
@@ -206,12 +223,54 @@ class _LessonsModalContentState extends State<_LessonsModalContent> {
   }
 }
 
-class _LessonRow extends StatelessWidget {
-  const _LessonRow({required this.lesson, required this.onTogglePin, required this.onDelete});
+class _LessonRow extends StatefulWidget {
+  const _LessonRow({
+    required this.lesson,
+    required this.isNew,
+    required this.onTogglePin,
+    required this.onDelete,
+    required this.onUpdateText,
+  });
 
   final Lesson lesson;
+
+  /// True when this lesson was created in the live session — shows a 'NEW'
+  /// badge next to the timestamp.
+  final bool isNew;
   final VoidCallback onTogglePin;
   final VoidCallback onDelete;
+  final void Function(String text) onUpdateText;
+
+  @override
+  State<_LessonRow> createState() => _LessonRowState();
+}
+
+class _LessonRowState extends State<_LessonRow> {
+  bool _editing = false;
+  late final TextEditingController _editCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _editCtrl = TextEditingController(text: widget.lesson.text);
+  }
+
+  @override
+  void dispose() {
+    _editCtrl.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    if (_editCtrl.text.trim().isEmpty) return;
+    widget.onUpdateText(_editCtrl.text);
+    setState(() => _editing = false);
+  }
+
+  void _cancel() {
+    _editCtrl.text = widget.lesson.text;
+    setState(() => _editing = false);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -222,57 +281,134 @@ class _LessonRow extends StatelessWidget {
           icon: Icons.delete_outline,
           label: 'Delete',
           color: AppColors.danger,
-          onTap: onDelete,
+          onTap: widget.onDelete,
         ),
       ],
       child: Container(
         padding: const EdgeInsets.all(AppSpacing.sm),
         decoration: BoxDecoration(
-          color: lesson.pinned ? AppColors.accentBg : AppColors.surfaceHigh,
+          // The row itself stays neutral — pinning accents only the pin box.
+          color: AppColors.surfaceHigh,
           borderRadius: BorderRadius.circular(AppRadius.md),
-          border: Border.all(
-              color: lesson.pinned ? AppColors.primary.withValues(alpha: 0.3) : AppColors.border),
+          border: Border.all(color: AppColors.border),
         ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Pin sits at the leading edge, far from the trailing Delete
-            // drawer — a tap on the pin can never land on Delete, and the pin
-            // never gets covered when the row slides open.
-            GestureDetector(
-              onTap: onTogglePin,
-              child: Container(
-                width: 28,
-                height: 28,
-                margin: const EdgeInsets.only(right: AppSpacing.sm, top: 1),
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: lesson.pinned ? AppColors.accentBg : Colors.transparent,
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(
-                      color: lesson.pinned ? AppColors.primary : AppColors.border),
-                ),
-                child: Icon(Icons.push_pin,
-                    size: 14, color: lesson.pinned ? AppColors.primary : AppColors.muted),
-              ),
+        child: _editing ? _editor() : _view(),
+      ),
+    );
+  }
+
+  /// Read view: pin box + lesson text (tap the text to edit it).
+  Widget _view() {
+    final lesson = widget.lesson;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Pin sits at the leading edge, far from the trailing Delete
+        // drawer — a tap on the pin can never land on Delete, and the pin
+        // never gets covered when the row slides open. When pinned, the
+        // box alone takes the PR-container styling (accentBg fill +
+        // accent outline).
+        GestureDetector(
+          onTap: widget.onTogglePin,
+          child: Container(
+            width: 28,
+            height: 28,
+            margin: const EdgeInsets.only(right: AppSpacing.sm, top: 1),
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: lesson.pinned ? AppColors.accentBg : Colors.transparent,
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(
+                  color: lesson.pinned ? AppColors.accent : AppColors.border,
+                  width: lesson.pinned ? 1.2 : 0.5),
             ),
+            child: Icon(Icons.push_pin,
+                size: 14, color: lesson.pinned ? AppColors.accent : AppColors.muted),
+          ),
+        ),
+        Expanded(
+          child: GestureDetector(
+            onTap: () => setState(() {
+              _editCtrl.text = widget.lesson.text;
+              _editing = true;
+            }),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(lesson.text,
+                    style: AppFonts.ui(fontSize: 13, color: AppColors.primary)),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Text(DateFormat('MMM d · h:mm a').format(lesson.createdDate),
+                        style: AppFonts.mono(
+                            fontSize: 9, color: AppColors.muted)),
+                    if (widget.isNew) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: AppColors.accentBg,
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(color: AppColors.accent),
+                        ),
+                        child: Text('NEW',
+                            style: AppFonts.mono(
+                                fontSize: 8,
+                                letterSpacing: 0.6,
+                                color: AppColors.accent)),
+                      ),
+                    ],
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Edit view: prefilled field + Save/Cancel, like the add flow.
+  Widget _editor() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        TextField(
+          controller: _editCtrl,
+          autofocus: true,
+          maxLines: 3,
+          style: AppFonts.ui(fontSize: 14, color: AppColors.primary),
+          decoration: InputDecoration(
+            hintText: 'Lesson text…',
+            hintStyle: AppFonts.ui(color: AppColors.muted),
+            filled: true,
+            fillColor: AppColors.surfaceHigh,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(AppRadius.md),
+              borderSide: BorderSide(color: AppColors.primary),
+            ),
+          ),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Row(
+          children: [
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(lesson.text,
-                      style: AppFonts.ui(fontSize: 13, color: AppColors.primary)),
-                  const SizedBox(height: 4),
-                  Text(DateFormat('MMM d · h:mm a').format(lesson.createdDate),
-                      style: AppFonts.mono(
-                          fontSize: 9,
-                          color: lesson.pinned ? AppColors.primary : AppColors.muted)),
-                ],
+                child: GlassButton(
+                    label: 'Save', solid: true, compact: true, onPressed: _save)),
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(
+              child: GlassButton(
+                label: 'Cancel',
+                color: AppColors.muted,
+                compact: true,
+                onPressed: _cancel,
               ),
             ),
           ],
         ),
-      ),
+      ],
     );
   }
 }

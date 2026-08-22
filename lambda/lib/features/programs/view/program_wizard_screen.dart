@@ -58,22 +58,22 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
   }
 
   bool get _canContinue => switch (_step) {
-        0 => _progression != null,
-        1 => _nameCtrl.text.trim().isNotEmpty,
-        _ => true,
-      };
+    0 => _progression != null,
+    1 => _nameCtrl.text.trim().isNotEmpty,
+    _ => true,
+  };
 
   String get _stepTitle => switch (_step) {
-        0 => 'How will it progress?',
-        1 => 'Name your program',
-        _ => 'Design workouts',
-      };
+    0 => 'How will it progress?',
+    1 => 'Name your program',
+    _ => 'Design workouts',
+  };
 
   String get _stepSubtitle => switch (_step) {
-        0 => 'Choose how the program schedules your training.',
-        1 => 'Give it a name and, optionally, a description.',
-        _ => 'Add the workouts in the order they repeat.',
-      };
+    0 => 'Choose how the program schedules your training.',
+    1 => 'Give it a name and, optionally, a description.',
+    _ => 'Add the workouts in the order they repeat.',
+  };
 
   Future<void> _next() async {
     if (_step == 0) {
@@ -114,6 +114,16 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
     await Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(builder: (_) => PlanSessionScreen(viewModel: _vm)),
     );
+    await _reloadWorkouts();
+  }
+
+  /// Reloads the workouts list after the editor pops — the editor's async
+  /// list refetch may still be in flight, and the wizard has no listener to
+  /// pick it up.
+  Future<void> _reloadWorkouts() async {
+    if (_programId != null) {
+      await _vm.load(_programId!);
+    }
     if (mounted) setState(() {});
   }
 
@@ -122,7 +132,8 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
   Future<void> _addExistingWorkout() async {
     final repo = PlannedSessionRepository();
     final workouts = await repo.fetchPlannedSessions(
-        Supabase.instance.client.auth.currentUser!.id);
+      Supabase.instance.client.auth.currentUser!.id,
+    );
     if (workouts.isEmpty || !mounted) return;
     final chosen = await showModalBottomSheet<String>(
       context: context,
@@ -138,23 +149,31 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
           children: [
             Padding(
               padding: const EdgeInsets.all(AppSpacing.lg),
-              child: Text('Add workout to program',
-                  style: AppFonts.ui(
-                      fontSize: AppTextStyles.lg,
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.primary)),
+              child: Text(
+                'Add workout to program',
+                style: AppFonts.ui(
+                  fontSize: AppTextStyles.lg,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.primary,
+                ),
+              ),
             ),
             for (final w in workouts)
               InkWell(
                 onTap: () => Navigator.of(ctx).pop(w.sessionId),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.lg, vertical: AppSpacing.md),
-                  child: Text(toProperCase(w.name),
-                      style: AppFonts.ui(
-                          fontSize: AppTextStyles.md,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.primary)),
+                    horizontal: AppSpacing.lg,
+                    vertical: AppSpacing.md,
+                  ),
+                  child: Text(
+                    toProperCase(w.name),
+                    style: AppFonts.ui(
+                      fontSize: AppTextStyles.md,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.primary,
+                    ),
+                  ),
                 ),
               ),
             const SizedBox(height: AppSpacing.md),
@@ -170,9 +189,10 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
   Future<void> _openWorkout(PlannedSession w) async {
     await Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(
-          builder: (_) => PlanSessionScreen(viewModel: _vm, workout: w)),
+        builder: (_) => PlanSessionScreen(viewModel: _vm, workout: w),
+      ),
     );
-    if (mounted) setState(() {});
+    await _reloadWorkouts();
   }
 
   @override
@@ -186,34 +206,52 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
               title: 'New Program',
               left: GestureDetector(
                 onTap: () => context.pop(),
-                child: Icon(Icons.arrow_back_ios_new,
-                    size: 18, color: AppColors.accent),
+                child: Icon(
+                  Icons.arrow_back_ios_new,
+                  size: 18,
+                  color: AppColors.accent,
+                ),
               ),
             ),
             _stepIndicator(),
             const SizedBox(height: AppSpacing.lg),
             Padding(
               padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.lg, AppSpacing.xs, AppSpacing.lg, AppSpacing.xs),
+                AppSpacing.lg,
+                AppSpacing.xs,
+                AppSpacing.lg,
+                AppSpacing.xs,
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(_stepTitle,
-                      style: AppFonts.ui(
-                          fontSize: AppTextStyles.xl,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.primary)),
+                  Text(
+                    _stepTitle,
+                    style: AppFonts.ui(
+                      fontSize: AppTextStyles.xl,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.primary,
+                    ),
+                  ),
                   const SizedBox(height: 2),
-                  Text(_stepSubtitle,
-                      style: AppFonts.ui(
-                          fontSize: AppTextStyles.sm, color: AppColors.muted)),
+                  Text(
+                    _stepSubtitle,
+                    style: AppFonts.ui(
+                      fontSize: AppTextStyles.sm,
+                      color: AppColors.muted,
+                    ),
+                  ),
                 ],
               ),
             ),
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.fromLTRB(
-                    AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, AppSpacing.lg),
+                  AppSpacing.lg,
+                  AppSpacing.sm,
+                  AppSpacing.lg,
+                  AppSpacing.lg,
+                ),
                 child: switch (_step) {
                   0 => _progressionStep(),
                   1 => _nameStep(),
@@ -255,7 +293,11 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
   Widget _stepIndicator() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(
-          AppSpacing.lg, AppSpacing.md, AppSpacing.lg, 0),
+        AppSpacing.lg,
+        AppSpacing.md,
+        AppSpacing.lg,
+        0,
+      ),
       child: Row(
         children: [
           for (var i = 0; i < 3; i++) ...[
@@ -324,28 +366,39 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
           color: selected ? AppColors.accentBg : AppColors.surface,
           borderRadius: BorderRadius.circular(AppRadius.lg),
           border: Border.all(
-              color: selected ? AppColors.accent : AppColors.border,
-              width: selected ? 1.5 : 1),
+            color: selected ? AppColors.accent : AppColors.border,
+            width: selected ? 1.5 : 1,
+          ),
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon,
-                size: 22, color: selected ? AppColors.accent : AppColors.muted),
+            Icon(
+              icon,
+              size: 22,
+              color: selected ? AppColors.accent : AppColors.muted,
+            ),
             const SizedBox(width: AppSpacing.md),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title,
-                      style: AppFonts.ui(
-                          fontSize: AppTextStyles.md,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.primary)),
+                  Text(
+                    title,
+                    style: AppFonts.ui(
+                      fontSize: AppTextStyles.md,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.primary,
+                    ),
+                  ),
                   const SizedBox(height: 4),
-                  Text(subtitle,
-                      style: AppFonts.ui(
-                          fontSize: AppTextStyles.sm, color: AppColors.muted)),
+                  Text(
+                    subtitle,
+                    style: AppFonts.ui(
+                      fontSize: AppTextStyles.sm,
+                      color: AppColors.muted,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -382,8 +435,7 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
 
   Widget _workoutsStep() {
     final workouts = _vm.state.value.plannedWorkouts;
-    final missingDays =
-        _isCalendar && workouts.any((w) => w.dayOfWeek == null);
+    final missingDays = _isCalendar && workouts.any((w) => w.dayOfWeek == null);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -411,13 +463,20 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
           Padding(
             padding: const EdgeInsets.symmetric(vertical: AppSpacing.xl),
             child: Center(
-              child: Text('No workouts yet — add at least one.',
-                  style: AppFonts.ui(
-                      fontSize: AppTextStyles.sm, color: AppColors.muted)),
+              child: Text(
+                'No workouts yet — add at least one.',
+                style: AppFonts.ui(
+                  fontSize: AppTextStyles.sm,
+                  color: AppColors.muted,
+                ),
+              ),
             ),
           ),
         if (workouts.isNotEmpty)
-          ReorderableListView(
+          // .builder instead of the children-based list: the children form
+          // hits Flutter's duplicate _ReorderableListViewChildGlobalKey bug
+          // when the list rebuilds mid-frame.
+          ReorderableListView.builder(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             buildDefaultDragHandles: false,
@@ -426,82 +485,96 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
               final item = updated.removeAt(oldIndex);
               updated.insert(newIndex, item);
               _vm.reorderWorkouts(
-                  updated, updated.map((w) => w.sessionId).toList());
+                updated,
+                updated.map((w) => w.sessionId).toList(),
+              );
             },
-            children: [
-              for (var i = 0; i < workouts.length; i++)
-                Padding(
-                  key: ValueKey(workouts[i].sessionId),
-                  padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                  child: SwipeActions(
-                    actions: [
-                      SwipeAction(
-                        icon: Icons.copy_rounded,
-                        label: 'Duplicate',
-                        color: AppColors.accent,
-                        onTap: () => _vm.duplicatePlannedSession(workouts[i]),
+            itemCount: workouts.length,
+            itemBuilder: (context, i) => Padding(
+              key: ValueKey(workouts[i].sessionId),
+              padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+              child: SwipeActions(
+                actions: [
+                  SwipeAction(
+                    icon: Icons.copy_rounded,
+                    label: 'Duplicate',
+                    color: AppColors.accent,
+                    onTap: () => _vm.duplicatePlannedSession(workouts[i]),
+                  ),
+                  SwipeAction(
+                    icon: Icons.delete_outline,
+                    label: 'Delete',
+                    color: AppColors.danger,
+                    onTap: () {
+                      _vm.removePlannedSession(workouts[i]);
+                      setState(() {});
+                    },
+                  ),
+                ],
+                child: AppCard(
+                  onTap: () => _openWorkout(workouts[i]),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              toProperCase(workouts[i].name),
+                              style: AppFonts.ui(
+                                fontSize: AppTextStyles.md,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.primary,
+                              ),
+                            ),
+                            if (workouts[i].notes?.isNotEmpty == true)
+                              Text(
+                                workouts[i].notes!,
+                                style: AppFonts.ui(
+                                  fontSize: AppTextStyles.xs,
+                                  color: AppColors.muted,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                          ],
+                        ),
                       ),
-                      SwipeAction(
-                        icon: Icons.delete_outline,
-                        label: 'Delete',
-                        color: AppColors.danger,
-                        onTap: () {
-                          _vm.removePlannedSession(workouts[i]);
-                          setState(() {});
-                        },
+                      _badge(
+                        _isCalendar
+                            ? (workouts[i].dayOfWeek != null
+                                  ? _dayOfWeekLabel(workouts[i].dayOfWeek)
+                                  : 'No day assigned')
+                            : 'Session ${workouts[i].sequenceOrder}',
+                        _isCalendar && workouts[i].dayOfWeek == null
+                            ? AppColors.danger
+                            : AppColors.accent,
+                      ),
+                      const SizedBox(width: AppSpacing.sm),
+                      ReorderableDragStartListener(
+                        index: i,
+                        child: Icon(
+                          Icons.drag_handle,
+                          size: 18,
+                          color: AppColors.muted,
+                        ),
                       ),
                     ],
-                    child: AppCard(
-                      onTap: () => _openWorkout(workouts[i]),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(toProperCase(workouts[i].name),
-                                    style: AppFonts.ui(
-                                        fontSize: AppTextStyles.md,
-                                        fontWeight: FontWeight.w600,
-                                        color: AppColors.primary)),
-                                if (workouts[i].notes?.isNotEmpty == true)
-                                  Text(workouts[i].notes!,
-                                      style: AppFonts.ui(
-                                          fontSize: AppTextStyles.xs,
-                                          color: AppColors.muted),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis),
-                              ],
-                            ),
-                          ),
-                          _badge(
-                              _isCalendar
-                                  ? (workouts[i].dayOfWeek != null
-                                      ? _dayOfWeekLabel(workouts[i].dayOfWeek)
-                                      : 'No day assigned')
-                                  : 'Session ${workouts[i].sequenceOrder}',
-                              _isCalendar && workouts[i].dayOfWeek == null
-                                  ? AppColors.danger
-                                  : AppColors.accent),
-                          const SizedBox(width: AppSpacing.sm),
-                          ReorderableDragStartListener(
-                            index: i,
-                            child: Icon(Icons.drag_handle,
-                                size: 18, color: AppColors.muted),
-                          ),
-                        ],
-                      ),
-                    ),
                   ),
                 ),
-            ],
+              ),
+            ),
           ),
         if (missingDays) ...[
           const SizedBox(height: AppSpacing.md),
-          Text('Calendar workouts need a day of the week — open each workout '
-              'and assign one.',
-              style: AppFonts.ui(
-                  fontSize: AppTextStyles.xs, color: AppColors.danger)),
+          Text(
+            'Calendar workouts need a day of the week — open each workout '
+            'and assign one.',
+            style: AppFonts.ui(
+              fontSize: AppTextStyles.xs,
+              color: AppColors.danger,
+            ),
+          ),
         ],
       ],
     );
@@ -511,22 +584,22 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.15),
+        color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: color.withValues(alpha: 0.4)),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
       ),
       child: Text(text, style: AppFonts.mono(fontSize: 9, color: color)),
     );
   }
 
   static String _dayOfWeekLabel(int? d) => switch (d) {
-        1 => 'Mon',
-        2 => 'Tue',
-        3 => 'Wed',
-        4 => 'Thu',
-        5 => 'Fri',
-        6 => 'Sat',
-        7 => 'Sun',
-        _ => '—',
-      };
+    1 => 'Mon',
+    2 => 'Tue',
+    3 => 'Wed',
+    4 => 'Thu',
+    5 => 'Fri',
+    6 => 'Sat',
+    7 => 'Sun',
+    _ => '—',
+  };
 }

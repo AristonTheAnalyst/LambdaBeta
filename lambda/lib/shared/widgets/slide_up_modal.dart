@@ -8,17 +8,16 @@ Future<T?> showLambdaModal<T>(
   required Widget child,
   bool fitContent = true,
   bool keyboardAware = false,
+  Color? backgroundColor,
 }) {
   return showModalBottomSheet<T>(
     context: context,
     useRootNavigator: true,
     isScrollControlled: fitContent,
     useSafeArea: true,
-    backgroundColor: AppColors.surface,
+    backgroundColor: backgroundColor ?? AppColors.surface,
     shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(
-        top: Radius.circular(AppRadius.lg),
-      ),
+      borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.lg)),
     ),
     builder: (ctx) {
       // Every sheet hosts its own DropdownSheetHost, so any DropdownSelect
@@ -27,9 +26,7 @@ Future<T?> showLambdaModal<T>(
       Widget content = DropdownSheetHost(child: child);
       if (keyboardAware) {
         content = Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.viewInsetsOf(ctx).bottom,
-          ),
+          padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(ctx).bottom),
           child: content,
         );
       }

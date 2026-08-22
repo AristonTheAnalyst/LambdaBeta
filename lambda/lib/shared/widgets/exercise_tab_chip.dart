@@ -39,10 +39,13 @@ class ExerciseTabChip extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.only(left: 12, right: 10, top: 6, bottom: 6),
         decoration: BoxDecoration(
-          color: isActive ? color.withValues(alpha: 0.12) : AppColors.surface,
+          // Active = the neutral glass treatment (translucent tint + soft
+          // hairline), matching GlassButton and the selected feeling square.
+          color: isActive ? color.withAlpha(26) : AppColors.surface,
           borderRadius: BorderRadius.circular(AppRadius.md),
           border: Border.all(
-              color: isActive ? color : AppColors.border),
+            color: isActive ? color.withAlpha(77) : AppColors.border,
+          ),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -51,16 +54,23 @@ class ExerciseTabChip extends StatelessWidget {
               Icon(prefixIcon, size: 11, color: color),
               const SizedBox(width: 4),
             ],
-            Text(label,
-                style: AppFonts.ui(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: isActive ? color : AppColors.primary)),
+            Text(
+              label,
+              style: AppFonts.ui(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: isActive ? color : AppColors.primary,
+              ),
+            ),
             if (onRemove != null) ...[
               const SizedBox(width: 6),
               GestureDetector(
                 onTap: onRemove,
-                child: Icon(Icons.close, size: 13, color: isActive ? color : AppColors.border),
+                child: Icon(
+                  Icons.close,
+                  size: 13,
+                  color: isActive ? color : AppColors.border,
+                ),
               ),
             ],
           ],

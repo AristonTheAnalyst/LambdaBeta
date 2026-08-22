@@ -52,20 +52,18 @@ class _ExercisePillBarState extends State<ExercisePillBar> {
 
   bool get _reorderable => widget.labels.length > 2 && widget.onReorder != null;
 
-  List<Widget> _pills() {
-    return [
-      for (var i = 0; i < widget.labels.length; i++)
-        SizedBox(
-          key: ValueKey('ex-${widget.keys[i]}'),
-          child: _reorderable
-              ? ReorderableDelayedDragStartListener(
-                  index: i,
-                  child: _pill(i),
-                )
-              : _pill(i),
-        ),
-    ];
+  Widget _pillItem(int i) {
+    return SizedBox(
+      key: ValueKey('ex-${widget.keys[i]}'),
+      child: _reorderable
+          ? ReorderableDelayedDragStartListener(index: i, child: _pill(i))
+          : _pill(i),
+    );
   }
+
+  List<Widget> _pills() => [
+    for (var i = 0; i < widget.labels.length; i++) _pillItem(i),
+  ];
 
   Widget _pill(int i) {
     return Padding(
@@ -76,7 +74,12 @@ class _ExercisePillBarState extends State<ExercisePillBar> {
         prefixIcon: widget.prefixIcons != null && i < widget.prefixIcons!.length
             ? widget.prefixIcons![i]
             : null,
-        onTap: () => widget.onTap(i),
+        onTap: () {
+          // Switching exercises must first blur any focused set cell so its
+          // typed value commits (cells auto-commit on focus loss).
+          FocusManager.instance.primaryFocus?.unfocus();
+          widget.onTap(i);
+        },
         onRemove: i == widget.activeIndex && widget.onRemove != null
             ? () => widget.onRemove!(i)
             : null,
@@ -93,6 +96,14 @@ class _ExercisePillBarState extends State<ExercisePillBar> {
       child: Row(children: _pills()),
     );
   }
+
+  /// Disables the theme's automatic scrollbar on the inner scrollable —
+  /// otherwise it stacks a second indicator (and a second, conflicting drag
+  /// surface) on top of the bar's own scrollbar below the pills.
+  Widget _noAutoScrollbar(Widget scrollable) => ScrollConfiguration(
+    behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
+    child: scrollable,
+  );
 
   /// The pill list, feathered on the right edge so pills fade out before the
   /// "+" button instead of clipping hard against it.
@@ -111,10 +122,7 @@ class _ExercisePillBarState extends State<ExercisePillBar> {
                 gradient: LinearGradient(
                   begin: Alignment.centerLeft,
                   end: Alignment.centerRight,
-                  colors: [
-                    AppColors.bg.withValues(alpha: 0),
-                    AppColors.bg,
-                  ],
+                  colors: [AppColors.bg.withValues(alpha: 0), AppColors.bg],
                 ),
               ),
             ),
@@ -131,9 +139,9 @@ class _ExercisePillBarState extends State<ExercisePillBar> {
         Expanded(
           child: SizedBox(
             // Pills (30) centered + scrollbar thumb (3) below + 4px breathing
-            // room under the thumb. Centering splits the slack above/below
-            // the pills so the page gaps on either side read evenly.
-            height: 52,
+            // room under the thumb. Kept tight so the page gaps above/below
+            // the pills stay compact.
+            height: 44,
             child: Padding(
               padding: const EdgeInsets.only(bottom: 4),
               child: Scrollbar(
@@ -145,24 +153,35 @@ class _ExercisePillBarState extends State<ExercisePillBar> {
                   child: SizedBox(
                     height: 30,
                     child: _reorderable
-                        ? _feathered(ReorderableListView(
-                            scrollDirection: Axis.horizontal,
-                            scrollController: _scrollCtrl,
-                            onReorderItem: (oldIndex, newIndex) =>
-                                widget.onReorder!(oldIndex, newIndex),
-                            buildDefaultDragHandles: false,
-                            proxyDecorator: (child, index, _) => Material(
-                              color: Colors.transparent,
-                              child: Opacity(opacity: 0.85, child: child),
+                        ? _feathered(
+                            _noAutoScrollbar(
+                              // .builder instead of the children-based list:
+                              // the children form hits Flutter's duplicate
+                              // _ReorderableListViewChildGlobalKey bug when
+                              // the list rebuilds mid-frame.
+                              ReorderableListView.builder(
+                                scrollDirection: Axis.horizontal,
+                                scrollController: _scrollCtrl,
+                                onReorderItem: (oldIndex, newIndex) =>
+                                    widget.onReorder!(oldIndex, newIndex),
+                                buildDefaultDragHandles: false,
+                                proxyDecorator: (child, index, _) => Material(
+                                  color: Colors.transparent,
+                                  child: Opacity(opacity: 0.85, child: child),
+                                ),
+                                itemCount: widget.labels.length,
+                                itemBuilder: (_, i) => _pillItem(i),
+                              ),
                             ),
-                            children: _pills(),
-                          ))
+                          )
                         // 1-2 pills always fit — a plain Row stays out of the
                         // gesture arena so swiping over the bar still pages
                         // the session screens. More pills scroll instead.
-                        : _feathered(widget.labels.length > 2
-                            ? _scrollablePills()
-                            : Row(children: _pills())),
+                        : _feathered(
+                            widget.labels.length > 2
+                                ? _noAutoScrollbar(_scrollablePills())
+                                : Row(children: _pills()),
+                          ),
                   ),
                 ),
               ),

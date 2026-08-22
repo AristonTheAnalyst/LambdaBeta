@@ -11,7 +11,7 @@ class PlannedSessionSet {
     required this.setNumber,
     this.variationId,
     this.targetWeight,
-    this.targetReps = const [],
+    this.targetReps,
     this.targetNotes,
     this.exerciseName,
     this.variationName,
@@ -25,8 +25,14 @@ class PlannedSessionSet {
   final int exerciseSequenceOrder;
   final int setNumber;
   final String? variationId;
-  final num? targetWeight;
-  final List<num> targetReps;
+
+  /// Raw planned weight text — "60" or a range like "60-70". Free text by
+  /// design: a planned value is a hint, not a literal.
+  final String? targetWeight;
+
+  /// Raw planned reps text — "10" or a range like "8-15". Same semantics.
+  final String? targetReps;
+
   final String? targetNotes;
   final String? exerciseName;
   final String? variationName;
@@ -41,8 +47,8 @@ class PlannedSessionSet {
         exerciseSequenceOrder: _toInt(map['exercise_sequence_order']) ?? 0,
         setNumber: _toInt(map['set_number']) ?? 1,
         variationId: map['custom_variation_id'] as String?,
-        targetWeight: _toNum(map['target_weight']),
-        targetReps: _toNumList(map['target_reps']),
+        targetWeight: _toTargetText(map['target_weight']),
+        targetReps: _toTargetText(map['target_reps']),
         targetNotes: map['target_notes'] as String?,
         exerciseName: map['exercise_name'] as String?,
         variationName: map['variation_name'] as String?,
@@ -61,38 +67,42 @@ class PlannedSessionSet {
     return int.tryParse('$v');
   }
 
-  static num? _toNum(dynamic v) {
+  /// Normalizes a planned-target column to its raw text form. Handles the
+  /// legacy formats: numeric weights written as "60.0", and reps stored as
+  /// JSON arrays ("[3]" or "[8,10]" → "8,10").
+  static String? _toTargetText(dynamic v) {
     if (v == null) return null;
-    if (v is num) return v;
-    return num.tryParse('$v');
-  }
-
-  static List<num> _toNumList(dynamic value) {
-    if (value == null) return [];
-    if (value is List) return value.cast<num>();
-    if (value is String) {
+    var s = '$v'.trim();
+    if (s.isEmpty) return null;
+    if (s.startsWith('[')) {
       try {
-        return (jsonDecode(value) as List).cast<num>();
+        final list = (jsonDecode(s) as List).cast<dynamic>();
+        if (list.isEmpty) return null;
+        return list.join(',');
       } catch (_) {
-        return [];
+        return s;
       }
     }
-    return [];
+    // Legacy numeric writes came through as "60.0" — strip the trailing .0.
+    if (s.contains('.') && num.tryParse(s) != null) {
+      s = s.replaceFirst(RegExp(r'\.0+$'), '');
+    }
+    return s;
   }
 
   Map<String, dynamic> toMap() => {
-        'set_id': setId,
-        'session_id': sessionId,
-        'user_id': userId,
-        'custom_exercise_id': exerciseId,
-        'custom_variation_id': variationId,
-        'exercise_sequence_order': exerciseSequenceOrder,
-        'set_number': setNumber,
-        'target_weight': targetWeight,
-        'target_reps': targetReps,
-        'target_notes': targetNotes,
-        'exercise_name': exerciseName,
-        'variation_name': variationName,
-        'is_archived': isArchived,
-      };
+    'set_id': setId,
+    'session_id': sessionId,
+    'user_id': userId,
+    'custom_exercise_id': exerciseId,
+    'custom_variation_id': variationId,
+    'exercise_sequence_order': exerciseSequenceOrder,
+    'set_number': setNumber,
+    'target_weight': targetWeight,
+    'target_reps': targetReps,
+    'target_notes': targetNotes,
+    'exercise_name': exerciseName,
+    'variation_name': variationName,
+    'is_archived': isArchived,
+  };
 }

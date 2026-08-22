@@ -50,6 +50,16 @@ class LessonRepository {
     );
   }
 
+  /// Updates a lesson's text.
+  Future<void> updateLesson(
+      String userId, String exerciseId, String lessonId, String text) async {
+    await _db.execute(
+      'UPDATE dim_lesson SET lesson_text = ? WHERE lesson_id = ?',
+      [text, lessonId],
+    );
+    _log.info('updateLesson → id=$lessonId countAfter=${(await fetchLessons(userId, exerciseId)).length}');
+  }
+
   /// Sets a lesson's pinned state. Pinning is exclusive per exercise — at most
   /// one lesson can be pinned at a time, so pinning one clears the others.
   Future<void> setPinned(

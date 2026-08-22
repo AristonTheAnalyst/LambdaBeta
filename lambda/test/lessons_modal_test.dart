@@ -50,13 +50,24 @@ class FakeLessonRepo implements LessonRepository {
     lessons.removeWhere((l) => l.lessonId == lessonId);
   }
 
-  Lesson _with(Lesson l, {bool? pinned}) => Lesson(
+  @override
+  Future<void> updateLesson(
+      String userId, String exerciseId, String lessonId, String text) async {
+    for (var i = 0; i < lessons.length; i++) {
+      if (lessons[i].lessonId == lessonId) {
+        lessons[i] = _with(lessons[i], text: text);
+      }
+    }
+  }
+
+  Lesson _with(Lesson l, {bool? pinned, String? text}) => Lesson(
         lessonId: l.lessonId,
         userId: l.userId,
         exerciseId: l.exerciseId,
-        text: l.text,
+        text: text ?? l.text,
         pinned: pinned ?? l.pinned,
         createdDate: l.createdDate,
+        sessionId: l.sessionId,
       );
 }
 
@@ -89,6 +100,10 @@ void main() {
                   },
                   deleteLesson: (_, lessonId) async {
                     await repo.deleteLesson(lessonId);
+                    listenable.value++;
+                  },
+                  updateLesson: (_, lessonId, text) async {
+                    await repo.updateLesson('u1', exerciseId, lessonId, text);
                     listenable.value++;
                   },
                   exerciseId: exerciseId,
@@ -130,5 +145,33 @@ void main() {
     expect(one.pinned, isFalse, reason: 'pinning another must not delete/unpin-affect the first except clearing its pin');
     expect(two.pinned, isTrue, reason: 'pinned lesson should be pinned');
     expect(repo.lessons.length, 2, reason: 'pinning must never delete a lesson');
+  });
+
+  testWidgets('tapping a lesson opens the inline editor and saves the new text',
+      (tester) async {
+    repo.lessons.clear(); // isolate from the pin test's lessons
+    await addLesson('lesson one');
+    await tester.pumpWidget(buildModal());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byType(ElevatedButton));
+    await tester.pumpAndSettle();
+    expect(find.text('lesson one'), findsOneWidget);
+
+    // Tap the lesson text → inline editor prefilled with the current text.
+    await tester.tap(find.text('lesson one'));
+    await tester.pumpAndSettle();
+    expect(find.byType(TextField), findsOneWidget);
+    expect(find.text('lesson one'), findsOneWidget,
+        reason: 'editor should be prefilled with the lesson text');
+
+    // Save an edit → the row shows the new text, no stale copy remains.
+    await tester.enterText(find.byType(TextField), 'lesson one (edited)');
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+
+    expect(repo.lessons.single.text, 'lesson one (edited)');
+    expect(find.text('lesson one (edited)'), findsOneWidget);
+    expect(find.text('lesson one'), findsNothing);
   });
 }

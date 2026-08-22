@@ -4,6 +4,7 @@ import '../../core/styles/app_fonts.dart';
 import '../../core/styles/app_radius.dart';
 import '../../core/styles/app_spacing.dart';
 import '../../core/styles/app_text_styles.dart';
+import '../../core/utils/session_format.dart';
 import 'slide_up_modal.dart';
 
 class DropdownOption<T> {
@@ -45,10 +46,7 @@ class DropdownSheetHostState extends State<DropdownSheetHost> {
         widget.child,
         if (picker != null)
           Positioned.fill(
-            child: Container(
-              color: AppColors.surface,
-              child: picker(_dismiss),
-            ),
+            child: Container(color: AppColors.surface, child: picker(_dismiss)),
           ),
       ],
     );
@@ -67,6 +65,7 @@ class DropdownSelect<T> extends StatelessWidget {
     this.createNewLabel = 'Create new',
     this.compact = false,
     this.valueColor,
+    this.title = 'Choose variation',
   });
 
   final List<DropdownOption<T>> options;
@@ -87,6 +86,9 @@ class DropdownSelect<T> extends StatelessWidget {
   /// Color of the selected value text (defaults to accent orange). The planner
   /// and session set rows pass green so variation matches the kg/reps cells.
   final Color? valueColor;
+
+  /// The picker sheet's header title.
+  final String title;
 
   String get _displayLabel {
     if (value == null) return placeholder;
@@ -111,16 +113,19 @@ class DropdownSelect<T> extends StatelessWidget {
             if (!context.mounted) return;
             final h = DropdownSheetHost.maybeOf(context);
             if (h == null) return;
-            h.showPicker((dismiss) => _DropdownSheetContent<T>(
-                  options: options,
-                  value: value,
-                  searchable: searchable,
-                  onCreateNew: onCreateNew,
-                  createNewLabel: createNewLabel,
-                  fillHeight: true,
-                  onClose: dismiss,
-                  onSelect: onChange,
-                ));
+            h.showPicker(
+              (dismiss) => _DropdownSheetContent<T>(
+                options: options,
+                value: value,
+                searchable: searchable,
+                onCreateNew: onCreateNew,
+                createNewLabel: createNewLabel,
+                title: title,
+                fillHeight: true,
+                onClose: dismiss,
+                onSelect: onChange,
+              ),
+            );
           });
         } else {
           // Plain-page path: open the bottom sheet immediately — deferring
@@ -132,6 +137,7 @@ class DropdownSelect<T> extends StatelessWidget {
             searchable: searchable,
             onCreateNew: onCreateNew,
             createNewLabel: createNewLabel,
+            title: title,
             onSelect: onChange,
           );
         }
@@ -141,15 +147,23 @@ class DropdownSelect<T> extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  _displayLabel,
+                  // Truncated to fit the cell — the picker and the cell's
+                  // tooltip show the full name.
+                  truncateName(_displayLabel),
                   style: AppFonts.ui(
                     fontSize: AppTextStyles.sm,
                     fontWeight: FontWeight.w500,
-                    color: hasValue ? (valueColor ?? AppColors.primary) : AppColors.muted,
+                    color: hasValue
+                        ? (valueColor ?? AppColors.primary)
+                        : AppColors.muted,
                   ),
                   overflow: TextOverflow.ellipsis,
                 ),
-                Icon(Icons.keyboard_arrow_down, size: 14, color: AppColors.muted),
+                Icon(
+                  Icons.keyboard_arrow_down,
+                  size: 14,
+                  color: AppColors.muted,
+                ),
               ],
             )
           : Container(
@@ -171,8 +185,11 @@ class DropdownSelect<T> extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  Icon(Icons.keyboard_arrow_down,
-                      size: 18, color: AppColors.muted),
+                  Icon(
+                    Icons.keyboard_arrow_down,
+                    size: 18,
+                    color: AppColors.muted,
+                  ),
                 ],
               ),
             ),
@@ -194,6 +211,7 @@ void showDropdownPickerSheet<T>(
   bool searchable = false,
   ValueChanged<String>? onCreateNew,
   String createNewLabel = 'Create new',
+  String title = 'Choose variation',
 }) {
   showLambdaModal<T>(
     context,
@@ -205,6 +223,7 @@ void showDropdownPickerSheet<T>(
       searchable: searchable,
       onCreateNew: onCreateNew,
       createNewLabel: createNewLabel,
+      title: title,
       fillHeight: false,
       onClose: () => Navigator.of(context, rootNavigator: true).pop(),
       onSelect: onSelect,
@@ -221,6 +240,7 @@ class _DropdownSheetContent<T> extends StatefulWidget {
     required this.createNewLabel,
     required this.onClose,
     required this.fillHeight,
+    required this.title,
     this.onCreateNew,
   });
 
@@ -238,6 +258,9 @@ class _DropdownSheetContent<T> extends StatefulWidget {
   // sizing itself to content, up to a max height.
   final bool fillHeight;
 
+  /// Header title — mirrors the add-exercise sheet ("Choose variation").
+  final String title;
+
   @override
   State<_DropdownSheetContent<T>> createState() =>
       _DropdownSheetContentState<T>();
@@ -252,91 +275,104 @@ class _DropdownSheetContentState<T> extends State<_DropdownSheetContent<T>> {
 
   @override
   Widget build(BuildContext context) {
-    final list = ListView.separated(
-      shrinkWrap: true,
-      itemCount: _filtered.length,
-      separatorBuilder: (_, _) => Divider(height: 1, color: AppColors.border),
-      itemBuilder: (_, i) {
-        final opt = _filtered[i];
-        return _SheetRow(
-          label: opt.label,
-          isSelected: opt.value == widget.value,
-          onTap: () {
-            widget.onClose();
-            // Defer selection past the frame so the picker dismiss
-            // completes before any parent rebuild from the selection.
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              widget.onSelect(opt.value);
-            });
-          },
-        );
-      },
+    // Same anatomy as the add-exercise sheet: title + close, search field,
+    // container-style rows, accent create row, centered empty note.
+    // The currently selected variation pins to the top, just under the
+    // search bar — tapping it unselects. While one is selected, the
+    // "No Variation" entry hides (the pinned row IS the way back to none).
+    final selectedOpt = widget.value != null
+        ? widget.options.where((o) => o.value == widget.value).firstOrNull
+        : null;
+    final list = ListView(
+      shrinkWrap: !widget.fillHeight,
+      children: [
+        if (selectedOpt != null)
+          _row(
+            selectedOpt,
+            onTap: () {
+              widget.onClose();
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                widget.onSelect(null);
+              });
+            },
+          ),
+        for (final opt in _filtered)
+          if (opt.value != widget.value &&
+              (opt.value != null || widget.value == null))
+            _row(opt),
+        // Create only surfaces once the user has typed — no standalone
+        // "New Variation" button when the picker is idle.
+        if (widget.onCreateNew != null && _query.trim().isNotEmpty)
+          _createRow(),
+        if (_filtered.isEmpty && _query.trim().isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: AppSpacing.lg),
+            child: Center(
+              child: Text(
+                'No variations found',
+                style: AppFonts.ui(fontSize: 13, color: AppColors.muted),
+              ),
+            ),
+          ),
+      ],
     );
 
-    final children = [
-      // Handle bar
-      Container(
-        margin: const EdgeInsets.symmetric(vertical: 10),
-        width: 36,
-        height: 4,
-        decoration: BoxDecoration(
-          color: AppColors.border,
-          borderRadius: BorderRadius.circular(2),
-        ),
-      ),
-      if (widget.searchable)
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-          child: TextField(
-            autofocus: true,
+    final header = Row(
+      children: [
+        Expanded(
+          child: Text(
+            widget.title,
             style: AppFonts.ui(
-                fontSize: AppTextStyles.md, color: AppColors.primary),
-            decoration: InputDecoration(
-              hintText: 'Search…',
-              hintStyle: AppFonts.ui(color: AppColors.muted),
-              filled: true,
-              fillColor: AppColors.surfaceHigh,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(AppRadius.md),
-                borderSide: BorderSide.none,
-              ),
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              prefixIcon:
-                  Icon(Icons.search, size: 18, color: AppColors.muted),
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+              color: AppColors.primary,
             ),
-            onChanged: (v) => setState(() => _query = v),
           ),
         ),
-      if (widget.onCreateNew != null)
-        _SheetRow(
-          label: widget.createNewLabel,
-          color: AppColors.primary,
-          isSelected: false,
-          onTap: () {
-            widget.onClose();
-            final query = _query;
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              widget.onCreateNew!(query);
-            });
-          },
+        GestureDetector(
+          onTap: widget.onClose,
+          child: Icon(Icons.close, size: 20, color: AppColors.muted),
         ),
-      widget.fillHeight
-          ? Expanded(child: list)
-          : Flexible(
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                    maxHeight: MediaQuery.of(context).size.height * 0.5),
-                child: list,
-              ),
-            ),
-      const SizedBox(height: 8),
-    ];
+      ],
+    );
+    final search = TextField(
+      autofocus: true,
+      style: AppFonts.ui(fontSize: 14, color: AppColors.primary),
+      decoration: InputDecoration(
+        hintText: 'Search variations…',
+        hintStyle: AppFonts.ui(color: AppColors.muted),
+        prefixIcon: Icon(Icons.search, size: 18, color: AppColors.muted),
+        filled: true,
+        fillColor: AppColors.surfaceHigh,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          borderSide: BorderSide(color: AppColors.border),
+        ),
+      ),
+      onChanged: (v) => setState(() => _query = v),
+    );
 
     if (widget.fillHeight) {
       return SafeArea(
         top: false,
-        child: Column(children: children),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.xl,
+            AppSpacing.lg,
+            AppSpacing.xl,
+            AppSpacing.xl,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              header,
+              const SizedBox(height: AppSpacing.lg),
+              search,
+              const SizedBox(height: AppSpacing.sm),
+              Expanded(child: list),
+            ],
+          ),
+        ),
       );
     }
 
@@ -348,51 +384,108 @@ class _DropdownSheetContentState<T> extends State<_DropdownSheetContent<T>> {
     return SafeArea(
       child: ConstrainedBox(
         constraints: BoxConstraints(maxHeight: maxSheetHeight * 0.6),
-        child: Column(mainAxisSize: MainAxisSize.min, children: children),
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.xl),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              header,
+              const SizedBox(height: AppSpacing.lg),
+              search,
+              const SizedBox(height: AppSpacing.sm),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 260),
+                child: list,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
-}
 
-class _SheetRow extends StatelessWidget {
-  const _SheetRow({
-    required this.label,
-    required this.isSelected,
-    required this.onTap,
-    this.color,
-  });
-
-  final String label;
-  final bool isSelected;
-  final VoidCallback onTap;
-  final Color? color;
-
-  @override
-  Widget build(BuildContext context) {
-    final effectiveColor =
-        color ?? (isSelected ? AppColors.primary : AppColors.primary);
-    return InkWell(
-      onTap: onTap,
-      child: Container(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
-        color: isSelected ? Colors.transparent : Colors.transparent,
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                label,
-                style: AppFonts.ui(
-                  fontSize: AppTextStyles.md,
-                  color: effectiveColor,
-                  fontWeight:
-                      isSelected ? FontWeight.w600 : FontWeight.w400,
+  /// An option row in the add-exercise sheet's container style — the
+  /// soft-highlight border + check marks the currently selected one.
+  Widget _row(DropdownOption<T> opt, {VoidCallback? onTap}) {
+    final selected = opt.value == widget.value;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: GestureDetector(
+        onTap:
+            onTap ??
+            () {
+              widget.onClose();
+              // Defer selection past the frame so the picker dismiss
+              // completes before any parent rebuild from the selection.
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                widget.onSelect(opt.value);
+              });
+            },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: AppColors.surfaceHigh,
+            borderRadius: BorderRadius.circular(AppRadius.md),
+            border: Border.all(
+              color: selected
+                  ? AppColors.primary.withValues(alpha: 0.35)
+                  : AppColors.border,
+            ),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  opt.label,
+                  style: AppFonts.ui(
+                    fontSize: 14,
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+                    color: AppColors.primary,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
+              if (selected) ...[
+                const SizedBox(width: AppSpacing.sm),
+                Icon(Icons.check, size: 18, color: AppColors.primary),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// The accent create row — "+ Create "query"" for whatever the user typed.
+  Widget _createRow() {
+    final query = _query.trim();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: GestureDetector(
+        onTap: () {
+          widget.onClose();
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            widget.onCreateNew!(_query);
+          });
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: AppColors.surfaceHigh,
+            borderRadius: BorderRadius.circular(AppRadius.md),
+            border: Border.all(
+              color: AppColors.primary.withValues(alpha: 0.35),
             ),
-            if (isSelected)
-              Icon(Icons.check, size: 18, color: AppColors.primary),
-          ],
+          ),
+          child: Text(
+            '+ Create "$query"',
+            style: AppFonts.ui(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: AppColors.primary,
+            ),
+          ),
         ),
       ),
     );
@@ -419,14 +512,20 @@ class DropdownLoadingField extends StatelessWidget {
             width: 14,
             height: 14,
             child: CircularProgressIndicator(
-                strokeWidth: 1.5, color: AppColors.accent),
+              strokeWidth: 1.5,
+              color: AppColors.accent,
+            ),
           ),
           const SizedBox(width: AppSpacing.sm),
           Expanded(
-            child: Text('Creating…',
-                style: AppFonts.ui(
-                    fontSize: AppTextStyles.md, color: AppColors.muted),
-                overflow: TextOverflow.ellipsis),
+            child: Text(
+              'Creating…',
+              style: AppFonts.ui(
+                fontSize: AppTextStyles.md,
+                color: AppColors.muted,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
         ],
       ),

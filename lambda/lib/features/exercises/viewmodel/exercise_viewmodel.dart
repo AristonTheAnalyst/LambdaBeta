@@ -79,20 +79,21 @@ class ExerciseState {
   List<CustomExercise> get filteredExercises => exSearch.isEmpty
       ? exercises
       : exercises
-          .where((e) =>
-              e.name.toLowerCase().contains(exSearch.toLowerCase()))
-          .toList();
+            .where((e) => e.name.toLowerCase().contains(exSearch.toLowerCase()))
+            .toList();
 
   List<CustomVariation> get filteredVariations => varSearch.isEmpty
       ? variations
       : variations
-          .where((v) =>
-              v.name.toLowerCase().contains(varSearch.toLowerCase()))
-          .toList();
+            .where(
+              (v) => v.name.toLowerCase().contains(varSearch.toLowerCase()),
+            )
+            .toList();
 
   /// Exercises sorted by most recently used (lastUsed desc), then name.
   List<CustomExercise> get sortedExercises {
-    final sorted = [...filteredExercises]..sort((a, b) {
+    final sorted = [...filteredExercises]
+      ..sort((a, b) {
         final da = usage[a.exerciseId]?.lastUsed;
         final db = usage[b.exerciseId]?.lastUsed;
         if (da != null && db != null) return db.compareTo(da);
@@ -104,7 +105,8 @@ class ExerciseState {
   }
 
   List<CustomVariation> get sortedVariations {
-    final sorted = [...filteredVariations]..sort((a, b) {
+    final sorted = [...filteredVariations]
+      ..sort((a, b) {
         final da = usage[a.variationId]?.lastUsed;
         final db = usage[b.variationId]?.lastUsed;
         if (da != null && db != null) return db.compareTo(da);
@@ -135,18 +137,22 @@ class ExerciseState {
   int get exTotal => sortedExercises.length;
   int get varTotal => sortedVariations.length;
 
-
   List<CustomExercise> get editVarAssignedExs =>
       exercises.where((e) => editVarDraftExIds.contains(e.exerciseId)).toList();
 
   List<CustomExercise> get editVarAvailableExs {
-    final list = exercises.where((e) => !editVarDraftExIds.contains(e.exerciseId)).toList()
-      ..sort((a, b) => _byRecency(
-            usage[a.exerciseId]?.lastUsed,
-            usage[b.exerciseId]?.lastUsed,
-            a.name,
-            b.name,
-          ));
+    final list =
+        exercises
+            .where((e) => !editVarDraftExIds.contains(e.exerciseId))
+            .toList()
+          ..sort(
+            (a, b) => _byRecency(
+              usage[a.exerciseId]?.lastUsed,
+              usage[b.exerciseId]?.lastUsed,
+              a.name,
+              b.name,
+            ),
+          );
     return list;
   }
 
@@ -179,39 +185,44 @@ class ExerciseState {
     bool? showCreateVar,
     bool? isCreatingEx,
     bool? isCreatingVar,
-  }) =>
-      ExerciseState(
-        isLoading: isLoading ?? this.isLoading,
-        isSaving: isSaving ?? this.isSaving,
-        error: clearError ? null : error ?? this.error,
-        exercises: exercises ?? this.exercises,
-        variations: variations ?? this.variations,
-        exerciseDetailMap: exerciseDetailMap ?? this.exerciseDetailMap,
-        usage: usage ?? this.usage,
-        activeTab: activeTab ?? this.activeTab,
-        exSearch: exSearch ?? this.exSearch,
-        varSearch: varSearch ?? this.varSearch,
-        exPage: exPage ?? this.exPage,
-        varPage: varPage ?? this.varPage,
-        editExercise: clearEditEx ? null : (editExercise ?? this.editExercise),
-        editExName: clearEditEx ? '' : (editExName ?? this.editExName),
-        editVariation: clearEditVar ? null : (editVariation ?? this.editVariation),
-        editVarName: clearEditVar ? '' : (editVarName ?? this.editVarName),
-        editVarOriginalExIds: clearEditVar ? {} : (editVarOriginalExIds ?? this.editVarOriginalExIds),
-        editVarDraftExIds: clearEditVar ? {} : (editVarDraftExIds ?? this.editVarDraftExIds),
-        editVarLoadingExs: clearEditVar ? false : (editVarLoadingExs ?? this.editVarLoadingExs),
-        createExName: createExName ?? this.createExName,
-        createVarName: createVarName ?? this.createVarName,
-        showCreateEx: showCreateEx ?? this.showCreateEx,
-        showCreateVar: showCreateVar ?? this.showCreateVar,
-        isCreatingEx: isCreatingEx ?? this.isCreatingEx,
-        isCreatingVar: isCreatingVar ?? this.isCreatingVar,
-      );
+  }) => ExerciseState(
+    isLoading: isLoading ?? this.isLoading,
+    isSaving: isSaving ?? this.isSaving,
+    error: clearError ? null : error ?? this.error,
+    exercises: exercises ?? this.exercises,
+    variations: variations ?? this.variations,
+    exerciseDetailMap: exerciseDetailMap ?? this.exerciseDetailMap,
+    usage: usage ?? this.usage,
+    activeTab: activeTab ?? this.activeTab,
+    exSearch: exSearch ?? this.exSearch,
+    varSearch: varSearch ?? this.varSearch,
+    exPage: exPage ?? this.exPage,
+    varPage: varPage ?? this.varPage,
+    editExercise: clearEditEx ? null : (editExercise ?? this.editExercise),
+    editExName: clearEditEx ? '' : (editExName ?? this.editExName),
+    editVariation: clearEditVar ? null : (editVariation ?? this.editVariation),
+    editVarName: clearEditVar ? '' : (editVarName ?? this.editVarName),
+    editVarOriginalExIds: clearEditVar
+        ? {}
+        : (editVarOriginalExIds ?? this.editVarOriginalExIds),
+    editVarDraftExIds: clearEditVar
+        ? {}
+        : (editVarDraftExIds ?? this.editVarDraftExIds),
+    editVarLoadingExs: clearEditVar
+        ? false
+        : (editVarLoadingExs ?? this.editVarLoadingExs),
+    createExName: createExName ?? this.createExName,
+    createVarName: createVarName ?? this.createVarName,
+    showCreateEx: showCreateEx ?? this.showCreateEx,
+    showCreateVar: showCreateVar ?? this.showCreateVar,
+    isCreatingEx: isCreatingEx ?? this.isCreatingEx,
+    isCreatingVar: isCreatingVar ?? this.isCreatingVar,
+  );
 }
 
 class ExerciseViewModel {
   ExerciseViewModel({ExerciseRepository? repo})
-      : _repo = repo ?? ExerciseRepository();
+    : _repo = repo ?? ExerciseRepository();
 
   final ExerciseRepository _repo;
   final state = ValueNotifier(const ExerciseState());
@@ -221,10 +232,10 @@ class ExerciseViewModel {
   Future<void> fetchAll() async {
     state.value = state.value.copyWith(isLoading: true, clearError: true);
     try {
-      final exercises  = await _repo.fetchExercises(_userId);
+      final exercises = await _repo.fetchExercises(_userId);
       final variations = await _repo.fetchVariations(_userId);
-      final detailMap  = await _repo.fetchExerciseDetailMap(_userId);
-      final usage      = await _repo.fetchUsage(_userId);
+      final detailMap = await _repo.fetchExerciseDetailMap(_userId);
+      final usage = await _repo.fetchUsage(_userId);
       state.value = state.value.copyWith(
         isLoading: false,
         exercises: exercises,
@@ -237,14 +248,21 @@ class ExerciseViewModel {
     }
   }
 
-  void setTab(int i) => state.value = state.value.copyWith(activeTab: i, exPage: 0, varPage: 0);
-  void setExSearch(String q) => state.value = state.value.copyWith(exSearch: q, exPage: 0);
-  void setVarSearch(String q) => state.value = state.value.copyWith(varSearch: q, varPage: 0);
+  void setTab(int i) =>
+      state.value = state.value.copyWith(activeTab: i, exPage: 0, varPage: 0);
+  void setExSearch(String q) =>
+      state.value = state.value.copyWith(exSearch: q, exPage: 0);
+  void setVarSearch(String q) =>
+      state.value = state.value.copyWith(varSearch: q, varPage: 0);
 
-  void nextExPage() => state.value = state.value.copyWith(exPage: state.value.exPage + 1);
-  void prevExPage() => state.value = state.value.copyWith(exPage: state.value.exPage - 1);
-  void nextVarPage() => state.value = state.value.copyWith(varPage: state.value.varPage + 1);
-  void prevVarPage() => state.value = state.value.copyWith(varPage: state.value.varPage - 1);
+  void nextExPage() =>
+      state.value = state.value.copyWith(exPage: state.value.exPage + 1);
+  void prevExPage() =>
+      state.value = state.value.copyWith(exPage: state.value.exPage - 1);
+  void nextVarPage() =>
+      state.value = state.value.copyWith(varPage: state.value.varPage + 1);
+  void prevVarPage() =>
+      state.value = state.value.copyWith(varPage: state.value.varPage - 1);
 
   // ── Open edit exercise ─────────────────────────────────────────────────────
 
@@ -256,18 +274,21 @@ class ExerciseViewModel {
     );
   }
 
-  void closeEditExercise() => state.value = state.value.copyWith(clearEditEx: true);
+  void closeEditExercise() =>
+      state.value = state.value.copyWith(clearEditEx: true);
 
-  void setEditExName(String v) => state.value = state.value.copyWith(editExName: v);
-
-
+  void setEditExName(String v) =>
+      state.value = state.value.copyWith(editExName: v);
 
   Future<void> saveEditExercise() async {
     final s = state.value;
     if (s.editExercise == null || s.editExName.trim().isEmpty) return;
     state.value = s.copyWith(isSaving: true, clearError: true);
     try {
-      await _repo.updateExercise(s.editExercise!.exerciseId, s.editExName.trim());
+      await _repo.updateExercise(
+        s.editExercise!.exerciseId,
+        s.editExName.trim(),
+      );
 
       state.value = state.value.copyWith(isSaving: false, clearEditEx: true);
       await fetchAll();
@@ -316,9 +337,11 @@ class ExerciseViewModel {
     }
   }
 
-  void closeEditVariation() => state.value = state.value.copyWith(clearEditVar: true);
+  void closeEditVariation() =>
+      state.value = state.value.copyWith(clearEditVar: true);
 
-  void setEditVarName(String v) => state.value = state.value.copyWith(editVarName: v);
+  void setEditVarName(String v) =>
+      state.value = state.value.copyWith(editVarName: v);
 
   void addEditVarExIds(List<String> ids) {
     final next = Set<String>.from(state.value.editVarDraftExIds)..addAll(ids);
@@ -335,9 +358,12 @@ class ExerciseViewModel {
     if (s.editVariation == null || s.editVarName.trim().isEmpty) return;
     state.value = s.copyWith(isSaving: true, clearError: true);
     try {
-      await _repo.updateVariation(s.editVariation!.variationId, s.editVarName.trim());
+      await _repo.updateVariation(
+        s.editVariation!.variationId,
+        s.editVarName.trim(),
+      );
 
-      final toAdd    = s.editVarDraftExIds.difference(s.editVarOriginalExIds);
+      final toAdd = s.editVarDraftExIds.difference(s.editVarOriginalExIds);
       final toRemove = s.editVarOriginalExIds.difference(s.editVarDraftExIds);
       for (final exId in toAdd) {
         await _repo.addBridge(_userId, exId, s.editVariation!.variationId);
@@ -377,31 +403,36 @@ class ExerciseViewModel {
       final existing = await _repo.findExerciseByName(_userId, name);
       String id;
       if (existing != null) {
-        if (existing.isArchived) {
-          state.value = state.value.copyWith(
-              isCreatingEx: false,
-              error: '"$name" already exists.');
-          return null;
-        }
+        // Creating a name that matches an archived exercise restores it —
+        // exercises are per-user, and a soft-deleted name must not block
+        // re-creation (reactivating an active row is a no-op).
         await _repo.reactivateExercise(existing.exerciseId);
         id = existing.exerciseId;
       } else {
         final created = await _repo.createExercise(_userId, name);
         id = created.exerciseId;
       }
-      state.value = state.value.copyWith(isCreatingEx: false, showCreateEx: false);
+      state.value = state.value.copyWith(
+        isCreatingEx: false,
+        showCreateEx: false,
+      );
       await fetchAll();
       return id;
     } catch (e) {
-      state.value = state.value.copyWith(isCreatingEx: false, error: e.toString());
+      state.value = state.value.copyWith(
+        isCreatingEx: false,
+        error: e.toString(),
+      );
       return null;
     }
   }
 
   // ── Create variation ───────────────────────────────────────────────────────
 
-  void openCreateVariation() => state.value =
-      state.value.copyWith(showCreateVar: true, createVarName: '');
+  void openCreateVariation() => state.value = state.value.copyWith(
+    showCreateVar: true,
+    createVarName: '',
+  );
   void closeCreateVariation() =>
       state.value = state.value.copyWith(showCreateVar: false);
   void setCreateVarName(String v) =>
@@ -416,22 +447,25 @@ class ExerciseViewModel {
       final existing = await _repo.findVariationByName(_userId, name);
       String id;
       if (existing != null) {
-        if (existing.isArchived) {
-          state.value = state.value.copyWith(
-              isCreatingVar: false, error: '"$name" already exists.');
-          return null;
-        }
+        // Creating a name that matches an archived variation restores it —
+        // per-user soft-deletes must not block re-creation.
         await _repo.reactivateVariation(existing.variationId);
         id = existing.variationId;
       } else {
         final created = await _repo.createVariation(_userId, name);
         id = created.variationId;
       }
-      state.value = state.value.copyWith(isCreatingVar: false, showCreateVar: false);
+      state.value = state.value.copyWith(
+        isCreatingVar: false,
+        showCreateVar: false,
+      );
       await fetchAll();
       return id;
     } catch (e) {
-      state.value = state.value.copyWith(isCreatingVar: false, error: e.toString());
+      state.value = state.value.copyWith(
+        isCreatingVar: false,
+        error: e.toString(),
+      );
       return null;
     }
   }

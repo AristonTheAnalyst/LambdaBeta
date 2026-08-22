@@ -24,15 +24,15 @@ import '../viewmodel/program_detail_viewmodel.dart';
 import 'plan_session_screen.dart';
 
 String _dayOfWeekLabel(int? d) => switch (d) {
-      1 => 'Mon',
-      2 => 'Tue',
-      3 => 'Wed',
-      4 => 'Thu',
-      5 => 'Fri',
-      6 => 'Sat',
-      7 => 'Sun',
-      _ => '',
-    };
+  1 => 'Mon',
+  2 => 'Tue',
+  3 => 'Wed',
+  4 => 'Thu',
+  5 => 'Fri',
+  6 => 'Sat',
+  7 => 'Sun',
+  _ => '',
+};
 
 class ProgramDetailScreen extends StatefulWidget {
   const ProgramDetailScreen({super.key, required this.programId});
@@ -42,7 +42,8 @@ class ProgramDetailScreen extends StatefulWidget {
   State<ProgramDetailScreen> createState() => _ProgramDetailScreenState();
 }
 
-class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedChangesGuard<ProgramDetailScreen> {
+class _ProgramDetailScreenState extends State<ProgramDetailScreen>
+    with UnsavedChangesGuard<ProgramDetailScreen> {
   late final ProgramDetailViewModel _vm;
 
   final _nameController = TextEditingController();
@@ -77,15 +78,21 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedC
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setState) => AlertDialog(
           backgroundColor: AppColors.surface,
-          title: Text('Begin Program',
-              style: AppFonts.ui(fontWeight: FontWeight.w800, color: AppColors.primary)),
+          title: Text(
+            'Begin Program',
+            style: AppFonts.ui(
+              fontWeight: FontWeight.w800,
+              color: AppColors.primary,
+            ),
+          ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                  'This resets progress on any currently active program.',
-                  style: AppFonts.ui(color: AppColors.muted)),
+                'This resets progress on any currently active program.',
+                style: AppFonts.ui(color: AppColors.muted),
+              ),
               const SizedBox(height: AppSpacing.md),
               if (isCalendar) ...[
                 SegmentedControl<bool>(
@@ -108,9 +115,14 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedC
                   required: true,
                 )
               else ...[
-                Text('End date',
-                    style: AppFonts.ui(fontSize: AppTextStyles.sm,
-                        fontWeight: FontWeight.w600, color: AppColors.primary)),
+                Text(
+                  'End date',
+                  style: AppFonts.ui(
+                    fontSize: AppTextStyles.sm,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.primary,
+                  ),
+                ),
                 const SizedBox(height: 6),
                 GestureDetector(
                   onTap: () async {
@@ -123,16 +135,25 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedC
                     if (picked != null) setState(() => endDate = picked);
                   },
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 14,
+                    ),
                     decoration: BoxDecoration(
                       color: AppColors.surface,
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(color: AppColors.border),
                     ),
-                    child: Text(endDate != null
-                        ? '${endDate!.day}/${endDate!.month}/${endDate!.year}'
-                        : 'Pick a date…',
-                        style: AppFonts.ui(color: endDate != null ? AppColors.primary : AppColors.muted)),
+                    child: Text(
+                      endDate != null
+                          ? '${endDate!.day}/${endDate!.month}/${endDate!.year}'
+                          : 'Pick a date…',
+                      style: AppFonts.ui(
+                        color: endDate != null
+                            ? AppColors.primary
+                            : AppColors.muted,
+                      ),
+                    ),
                   ),
                 ),
               ],
@@ -140,25 +161,32 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedC
           ),
           actions: [
             TextButton(
-                onPressed: () => popDialog(ctx),
-                child: Text('Cancel', style: AppFonts.ui(color: AppColors.muted))),
+              onPressed: () => popDialog(ctx),
+              child: Text('Cancel', style: AppFonts.ui(color: AppColors.muted)),
+            ),
             TextButton(
-                onPressed: () {
-                  final count = int.tryParse(controller.text.trim());
-                  if (isCalendar && useEndDate) {
-                    if (endDate == null) return;
-                    // Release focus before popping — otherwise the dialog's
-                    // FocusScope inherited element deactivates while the
-                    // TextField still depends on it, throwing "depends is
-                    // empty is not true" (framework debugDeactivated assert).
-                    popDialog(ctx, (count: null, endDate: endDate));
-                  } else {
-                    if (count == null || count <= 0) return;
-                    popDialog(ctx, (count: count, endDate: null));
-                  }
-                },
-                child: Text('Begin',
-                    style: AppFonts.ui(color: AppColors.accent, fontWeight: FontWeight.w600))),
+              onPressed: () {
+                final count = int.tryParse(controller.text.trim());
+                if (isCalendar && useEndDate) {
+                  if (endDate == null) return;
+                  // Release focus before popping — otherwise the dialog's
+                  // FocusScope inherited element deactivates while the
+                  // TextField still depends on it, throwing "depends is
+                  // empty is not true" (framework debugDeactivated assert).
+                  popDialog(ctx, (count: null, endDate: endDate));
+                } else {
+                  if (count == null || count <= 0) return;
+                  popDialog(ctx, (count: count, endDate: null));
+                }
+              },
+              child: Text(
+                'Begin',
+                style: AppFonts.ui(
+                  color: AppColors.accent,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -186,8 +214,13 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedC
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
-        title: Text('End program?',
-            style: AppFonts.ui(fontWeight: FontWeight.w600, color: AppColors.primary)),
+        title: Text(
+          'End program?',
+          style: AppFonts.ui(
+            fontWeight: FontWeight.w600,
+            color: AppColors.primary,
+          ),
+        ),
         content: Text(
           'Your progress will be saved. You can start this program again later.',
           style: AppFonts.ui(color: AppColors.muted),
@@ -213,8 +246,10 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedC
   Future<void> _editRunConfig(ProgramRun run) async {
     final isCalendar = _vm.state.value.program?.progressionMode == 'calendar';
     final controller = TextEditingController(
-        text: (run.targetSessions ?? run.targetWeeks ?? '').toString());
-    var useEndDate = isCalendar && run.endDate != null && run.targetWeeks == null;
+      text: (run.targetSessions ?? run.targetWeeks ?? '').toString(),
+    );
+    var useEndDate =
+        isCalendar && run.endDate != null && run.targetWeeks == null;
     var endDate = run.endDate;
 
     final result = await showDialog<({int? count, DateTime? endDate})>(
@@ -222,8 +257,13 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedC
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setState) => AlertDialog(
           backgroundColor: AppColors.surface,
-          title: Text('Edit duration',
-              style: AppFonts.ui(fontWeight: FontWeight.w800, color: AppColors.primary)),
+          title: Text(
+            'Edit duration',
+            style: AppFonts.ui(
+              fontWeight: FontWeight.w800,
+              color: AppColors.primary,
+            ),
+          ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -248,31 +288,47 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedC
                   keyboardType: TextInputType.number,
                 )
               else ...[
-                Text('End date',
-                    style: AppFonts.ui(fontSize: AppTextStyles.sm,
-                        fontWeight: FontWeight.w600, color: AppColors.primary)),
+                Text(
+                  'End date',
+                  style: AppFonts.ui(
+                    fontSize: AppTextStyles.sm,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.primary,
+                  ),
+                ),
                 const SizedBox(height: 6),
                 GestureDetector(
                   onTap: () async {
                     final picked = await showDatePicker(
                       context: ctx,
-                      initialDate: endDate ?? DateTime.now().add(const Duration(days: 7)),
+                      initialDate:
+                          endDate ??
+                          DateTime.now().add(const Duration(days: 7)),
                       firstDate: DateTime.now(),
                       lastDate: DateTime(DateTime.now().year + 5),
                     );
                     if (picked != null) setState(() => endDate = picked);
                   },
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 14,
+                    ),
                     decoration: BoxDecoration(
                       color: AppColors.surface,
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(color: AppColors.border),
                     ),
-                    child: Text(endDate != null
-                        ? '${endDate!.day}/${endDate!.month}/${endDate!.year}'
-                        : 'Pick a date…',
-                        style: AppFonts.ui(color: endDate != null ? AppColors.primary : AppColors.muted)),
+                    child: Text(
+                      endDate != null
+                          ? '${endDate!.day}/${endDate!.month}/${endDate!.year}'
+                          : 'Pick a date…',
+                      style: AppFonts.ui(
+                        color: endDate != null
+                            ? AppColors.primary
+                            : AppColors.muted,
+                      ),
+                    ),
                   ),
                 ),
               ],
@@ -280,21 +336,28 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedC
           ),
           actions: [
             TextButton(
-                onPressed: () => popDialog(ctx),
-                child: Text('Cancel', style: AppFonts.ui(color: AppColors.muted))),
+              onPressed: () => popDialog(ctx),
+              child: Text('Cancel', style: AppFonts.ui(color: AppColors.muted)),
+            ),
             TextButton(
-                onPressed: () {
-                  final count = int.tryParse(controller.text.trim());
-                  if (isCalendar && useEndDate) {
-                    if (endDate == null) return;
-                    popDialog(ctx, (count: null, endDate: endDate));
-                  } else {
-                    if (count == null || count <= 0) return;
-                    popDialog(ctx, (count: count, endDate: null));
-                  }
-                },
-                child: Text('Save',
-                    style: AppFonts.ui(color: AppColors.accent, fontWeight: FontWeight.w600))),
+              onPressed: () {
+                final count = int.tryParse(controller.text.trim());
+                if (isCalendar && useEndDate) {
+                  if (endDate == null) return;
+                  popDialog(ctx, (count: null, endDate: endDate));
+                } else {
+                  if (count == null || count <= 0) return;
+                  popDialog(ctx, (count: count, endDate: null));
+                }
+              },
+              child: Text(
+                'Save',
+                style: AppFonts.ui(
+                  color: AppColors.accent,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -334,9 +397,7 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedC
   void _openCreateWorkout() {
     Navigator.of(context, rootNavigator: true)
         .push<bool>(
-          MaterialPageRoute(
-            builder: (_) => PlanSessionScreen(viewModel: _vm),
-          ),
+          MaterialPageRoute(builder: (_) => PlanSessionScreen(viewModel: _vm)),
         )
         .then((_) {
           if (mounted) _refreshAfterEdit();
@@ -360,24 +421,38 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedC
           children: [
             Padding(
               padding: const EdgeInsets.all(AppSpacing.lg),
-              child: Text('Add workout',
-                  style: AppFonts.ui(
-                      fontSize: AppTextStyles.lg,
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.primary)),
+              child: Text(
+                'Add workout',
+                style: AppFonts.ui(
+                  fontSize: AppTextStyles.lg,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.primary,
+                ),
+              ),
             ),
             ListTile(
               leading: Icon(Icons.add, color: AppColors.accent),
-              title: Text('New workout',
-                  style: AppFonts.ui(
-                      fontSize: AppTextStyles.md, color: AppColors.primary)),
+              title: Text(
+                'New workout',
+                style: AppFonts.ui(
+                  fontSize: AppTextStyles.md,
+                  color: AppColors.primary,
+                ),
+              ),
               onTap: () => Navigator.of(ctx).pop('new'),
             ),
             ListTile(
-              leading: Icon(Icons.library_add_outlined, color: AppColors.accent),
-              title: Text('From Workouts',
-                  style: AppFonts.ui(
-                      fontSize: AppTextStyles.md, color: AppColors.primary)),
+              leading: Icon(
+                Icons.library_add_outlined,
+                color: AppColors.accent,
+              ),
+              title: Text(
+                'From Workouts',
+                style: AppFonts.ui(
+                  fontSize: AppTextStyles.md,
+                  color: AppColors.primary,
+                ),
+              ),
               onTap: () => Navigator.of(ctx).pop('from'),
             ),
             const SizedBox(height: AppSpacing.md),
@@ -401,25 +476,37 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedC
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
-        title: Text(isCurrent ? 'Remove from active program?' : 'Remove Session',
-            style: AppFonts.ui(fontWeight: FontWeight.w800, color: AppColors.danger)),
+        title: Text(
+          isCurrent ? 'Remove from active program?' : 'Remove Session',
+          style: AppFonts.ui(
+            fontWeight: FontWeight.w800,
+            color: AppColors.danger,
+          ),
+        ),
         content: Text(
-            isCurrent
-                ? '"${toProperCase(w.name)}" is part of your active program. '
+          isCurrent
+              ? '"${toProperCase(w.name)}" is part of your active program. '
                     'Removing it changes the workout cycle — the next session '
                     'will skip to the following workout. '
                     'Past logged sets stay intact.'
-                : 'Remove "${toProperCase(w.name)}" from this program?',
-            style: AppFonts.ui(color: AppColors.muted)),
+              : 'Remove "${toProperCase(w.name)}" from this program?',
+          style: AppFonts.ui(color: AppColors.muted),
+        ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: Text('Cancel', style: AppFonts.ui(color: AppColors.muted))),
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text('Cancel', style: AppFonts.ui(color: AppColors.muted)),
+          ),
           TextButton(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: Text('Remove',
-                  style: AppFonts.ui(
-                      color: AppColors.danger, fontWeight: FontWeight.w600))),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(
+              'Remove',
+              style: AppFonts.ui(
+                color: AppColors.danger,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -432,7 +519,8 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedC
   Future<void> _addExistingWorkout() async {
     final repo = PlannedSessionRepository();
     final workouts = await repo.fetchPlannedSessions(
-        Supabase.instance.client.auth.currentUser!.id);
+      Supabase.instance.client.auth.currentUser!.id,
+    );
     if (workouts.isEmpty || !mounted) return;
     final chosen = await showModalBottomSheet<String>(
       context: context,
@@ -448,17 +536,24 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedC
           children: [
             Padding(
               padding: const EdgeInsets.all(AppSpacing.lg),
-              child: Text('Add workout to program',
-                  style: AppFonts.ui(
-                      fontSize: AppTextStyles.lg,
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.primary)),
+              child: Text(
+                'Add workout to program',
+                style: AppFonts.ui(
+                  fontSize: AppTextStyles.lg,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.primary,
+                ),
+              ),
             ),
             for (final w in workouts)
               ListTile(
-                title: Text(toProperCase(w.name),
-                    style: AppFonts.ui(
-                        fontSize: AppTextStyles.md, color: AppColors.primary)),
+                title: Text(
+                  toProperCase(w.name),
+                  style: AppFonts.ui(
+                    fontSize: AppTextStyles.md,
+                    color: AppColors.primary,
+                  ),
+                ),
                 onTap: () => Navigator.of(ctx).pop(w.sessionId),
               ),
             const SizedBox(height: AppSpacing.md),
@@ -479,24 +574,33 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedC
         context: context,
         builder: (ctx) => AlertDialog(
           backgroundColor: AppColors.surface,
-          title: Text('Edit while running?',
-              style: AppFonts.ui(
-                  fontWeight: FontWeight.w800, color: AppColors.primary)),
+          title: Text(
+            'Edit while running?',
+            style: AppFonts.ui(
+              fontWeight: FontWeight.w800,
+              color: AppColors.primary,
+            ),
+          ),
           content: Text(
-              'This program is active. Changes to the workout apply to future '
-              'sessions; past logged sets and PRs won\'t change.',
-              style: AppFonts.ui(color: AppColors.muted)),
+            'This program is active. Changes to the workout apply to future '
+            'sessions; past logged sets and PRs won\'t change.',
+            style: AppFonts.ui(color: AppColors.muted),
+          ),
           actions: [
             TextButton(
-                onPressed: () => Navigator.of(ctx).pop(false),
-                child:
-                    Text('Cancel', style: AppFonts.ui(color: AppColors.muted))),
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: Text('Cancel', style: AppFonts.ui(color: AppColors.muted)),
+            ),
             TextButton(
-                onPressed: () => Navigator.of(ctx).pop(true),
-                child: Text('Edit',
-                    style: AppFonts.ui(
-                        color: AppColors.accent,
-                        fontWeight: FontWeight.w600))),
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: Text(
+                'Edit',
+                style: AppFonts.ui(
+                  color: AppColors.accent,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
           ],
         ),
       );
@@ -540,8 +644,11 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedC
                         nav.pop();
                       }
                     },
-                    child: Icon(Icons.arrow_back_ios_new,
-                        size: 18, color: AppColors.accent),
+                    child: Icon(
+                      Icons.arrow_back_ios_new,
+                      size: 18,
+                      color: AppColors.accent,
+                    ),
                   ),
                   right: GlassButton(
                     label: 'Save',
@@ -556,194 +663,243 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedC
                     width: double.infinity,
                     color: AppColors.dangerBg,
                     padding: const EdgeInsets.symmetric(
-                        horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
-                    child: Text(state.error!,
-                        style: AppFonts.ui(
-                            color: AppColors.danger, fontSize: AppTextStyles.sm)),
+                      horizontal: AppSpacing.lg,
+                      vertical: AppSpacing.sm,
+                    ),
+                    child: Text(
+                      state.error!,
+                      style: AppFonts.ui(
+                        color: AppColors.danger,
+                        fontSize: AppTextStyles.sm,
+                      ),
+                    ),
                   ),
                 if (state.saveSuccess)
                   Container(
                     width: double.infinity,
                     color: AppColors.successBg,
                     padding: const EdgeInsets.symmetric(
-                        horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
-                    child: Text('Program saved.',
-                        style: AppFonts.ui(
-                            color: AppColors.success, fontSize: AppTextStyles.sm)),
+                      horizontal: AppSpacing.lg,
+                      vertical: AppSpacing.sm,
+                    ),
+                    child: Text(
+                      'Program saved.',
+                      style: AppFonts.ui(
+                        color: AppColors.success,
+                        fontSize: AppTextStyles.sm,
+                      ),
+                    ),
                   ),
-              if (state.isLoading)
-                Expanded(
-                    child:
-                        Center(child: CircularProgressIndicator(color: AppColors.accent)))
-              else
-                Expanded(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.all(AppSpacing.lg),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        LambdaInput(
-                          controller: _nameController,
-                          label: 'Program name',
-                          placeholder: 'e.g. Strength Block 1',
-                          textCapitalization: TextCapitalization.words,
-                          onChanged: _vm.setNameDraft,
-                          required: true,
-                        ),
-                        const SizedBox(height: AppSpacing.md),
-                        LambdaInput(
-                          controller: _descriptionController,
-                          label: 'Description',
-                          placeholder: 'What is this program about?',
-                          onChanged: _vm.setDescriptionDraft,
-                        ),
-                        const SizedBox(height: AppSpacing.md),
-                        Text('Progression',
-                            style: AppFonts.ui(
-                                fontSize: AppTextStyles.sm,
-                                fontWeight: FontWeight.w500,
-                                color: AppColors.primary)),
-                        const SizedBox(height: AppSpacing.xs),
-                        // Locked once created — progression determines how the
-                        // run schedules workouts and can't change afterwards.
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 10),
-                          decoration: BoxDecoration(
-                            color: AppColors.surfaceHigh,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: AppColors.border),
+                if (state.isLoading)
+                  Expanded(
+                    child: Center(
+                      child: CircularProgressIndicator(color: AppColors.accent),
+                    ),
+                  )
+                else
+                  Expanded(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.all(AppSpacing.lg),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          LambdaInput(
+                            controller: _nameController,
+                            label: 'Program name',
+                            placeholder: 'e.g. Strength Block 1',
+                            textCapitalization: TextCapitalization.words,
+                            onChanged: _vm.setNameDraft,
+                            required: true,
                           ),
-                          child: Row(
-                            children: [
-                              Icon(Icons.lock_outline,
-                                  size: 14, color: AppColors.muted),
-                              const SizedBox(width: 8),
-                              Text(
-                                state.progressionModeDraft == 'calendar'
-                                    ? 'Calendar'
-                                    : 'Sequential',
-                                style: AppFonts.ui(
+                          const SizedBox(height: AppSpacing.md),
+                          LambdaInput(
+                            controller: _descriptionController,
+                            label: 'Description',
+                            placeholder: 'What is this program about?',
+                            onChanged: _vm.setDescriptionDraft,
+                          ),
+                          const SizedBox(height: AppSpacing.md),
+                          Text(
+                            'Progression',
+                            style: AppFonts.ui(
+                              fontSize: AppTextStyles.sm,
+                              fontWeight: FontWeight.w500,
+                              color: AppColors.primary,
+                            ),
+                          ),
+                          const SizedBox(height: AppSpacing.xs),
+                          // Locked once created — progression determines how the
+                          // run schedules workouts and can't change afterwards.
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 10,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.surfaceHigh,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: AppColors.border),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.lock_outline,
+                                  size: 14,
+                                  color: AppColors.muted,
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  state.progressionModeDraft == 'calendar'
+                                      ? 'Calendar'
+                                      : 'Sequential',
+                                  style: AppFonts.ui(
                                     fontSize: AppTextStyles.sm,
                                     fontWeight: FontWeight.w600,
-                                    color: AppColors.primary),
+                                    color: AppColors.primary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: AppSpacing.lg),
+                          if (!state.isCurrent)
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: GlassButton(
+                                    label: 'Begin Program',
+                                    icon: Icons.play_circle_outline,
+                                    loading: state.settingCurrent,
+                                    disabled: state.settingCurrent,
+                                    onPressed: _confirmBeginProgram,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          if (state.isCurrent && state.activeRun != null) ...[
+                            const SizedBox(height: AppSpacing.sm),
+                            Text(
+                              _runConfigLabel(state.activeRun!),
+                              style: AppFonts.mono(
+                                fontSize: 10,
+                                color: AppColors.muted,
+                              ),
+                            ),
+                            if (state.currentProgress != null) ...[
+                              const SizedBox(height: AppSpacing.xs),
+                              Text(
+                                state.currentProgress!.remainingLabel,
+                                style: AppFonts.mono(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.accent,
+                                ),
                               ),
                             ],
-                          ),
-                        ),
-                        const SizedBox(height: AppSpacing.lg),
-                        if (!state.isCurrent)
+                            const SizedBox(height: AppSpacing.xs),
+                            GlassButton(
+                              label: 'Edit duration',
+                              icon: Icons.tune,
+                              compact: true,
+                              onPressed: () => _editRunConfig(state.activeRun!),
+                            ),
+                            const SizedBox(height: AppSpacing.xs),
+                            GlassButton(
+                              label: 'End Program',
+                              icon: Icons.stop_circle_outlined,
+                              compact: true,
+                              onPressed: () => _confirmEndRun(context),
+                            ),
+                          ],
+                          if (state.isCurrent && state.activeRun != null) ...[
+                            const SizedBox(height: AppSpacing.lg),
+                            _buildGoalsSection(state),
+                          ],
+                          const SizedBox(height: AppSpacing.lg),
+                          Divider(color: AppColors.border),
+                          const SizedBox(height: AppSpacing.sm),
                           Row(
                             children: [
                               Expanded(
-                                child: GlassButton(
-                                  label: 'Begin Program',
-                                  icon: Icons.play_circle_outline,
-                                  loading: state.settingCurrent,
-                                  disabled: state.settingCurrent,
-                                  onPressed: _confirmBeginProgram,
+                                child: Text(
+                                  'Planned Workouts',
+                                  style: AppFonts.ui(
+                                    fontSize: AppTextStyles.md,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.primary,
+                                  ),
                                 ),
+                              ),
+                              GlassButton(
+                                label: '',
+                                icon: Icons.add,
+                                compact: true,
+                                onPressed: _openAddWorkoutMenu,
                               ),
                             ],
                           ),
-                        if (state.isCurrent && state.activeRun != null) ...[
                           const SizedBox(height: AppSpacing.sm),
-                          Text(
-                            _runConfigLabel(state.activeRun!),
-                            style: AppFonts.mono(
-                                fontSize: 10, color: AppColors.muted),
-                          ),
-                          if (state.currentProgress != null) ...[
-                            const SizedBox(height: AppSpacing.xs),
+                          if (state.plannedWorkouts.isEmpty)
                             Text(
-                              state.currentProgress!.remainingLabel,
-                              style: AppFonts.mono(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w600,
-                                  color: AppColors.accent),
-                            ),
-                          ],
-                          const SizedBox(height: AppSpacing.xs),
-                          GlassButton(
-                            label: 'Edit duration',
-                            icon: Icons.tune,
-                            compact: true,
-                            onPressed: () => _editRunConfig(state.activeRun!),
-                          ),
-                          const SizedBox(height: AppSpacing.xs),
-                          GlassButton(
-                            label: 'End Program',
-                            icon: Icons.stop_circle_outlined,
-                            compact: true,
-                            onPressed: () => _confirmEndRun(context),
-                          ),
-                        ],
-                        if (state.isCurrent && state.activeRun != null) ...[
-                          const SizedBox(height: AppSpacing.lg),
-                          _buildGoalsSection(state),
-                        ],
-                        const SizedBox(height: AppSpacing.lg),
-                        Divider(color: AppColors.border),
-                        const SizedBox(height: AppSpacing.sm),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text('Planned Workouts',
-                                  style: AppFonts.ui(
-                                      fontSize: AppTextStyles.md,
-                                      fontWeight: FontWeight.w600,
-                                      color: AppColors.primary)),
-                            ),
-                            GlassButton(
-                              label: '',
-                              icon: Icons.add,
-                              compact: true,
-                              onPressed: _openAddWorkoutMenu,
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: AppSpacing.sm),
-                        if (state.plannedWorkouts.isEmpty)
-                          Text('No planned workouts yet.',
+                              'No planned workouts yet.',
                               style: AppFonts.ui(
-                                  color: AppColors.muted, fontSize: AppTextStyles.sm))
-                        else
-                          ReorderableListView(
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            buildDefaultDragHandles: false,
-                            onReorderItem: (oldIndex, newIndex) {
-                              final updated =
-                                  List<PlannedSession>.from(state.plannedWorkouts);
-                              final item = updated.removeAt(oldIndex);
-                              updated.insert(newIndex, item);
-                              _vm.reorderWorkouts(updated,
-                                  updated.map((w) => w.sessionId).toList());
-                            },
-                            children: [
-                              for (var i = 0; i < state.plannedWorkouts.length; i++)
-                                _PlannedSessionRow(
-                                  key: ValueKey(state.plannedWorkouts[i].sessionId),
-                                  workout: state.plannedWorkouts[i],
-                                  showDayOfWeek: state.isCalendarMode,
-                                  index: i,
-                                  onTap: () => _openEditWorkout(state.plannedWorkouts[i]),
-                                  onDuplicate: () => _vm.duplicatePlannedSession(state.plannedWorkouts[i]),
-                                  onDelete: () => _confirmDeleteWorkout(state.plannedWorkouts[i]),
-                                ),
-                            ],
-                          ),
-                        const SizedBox(height: AppSpacing.xxl),
-                      ],
+                                color: AppColors.muted,
+                                fontSize: AppTextStyles.sm,
+                              ),
+                            )
+                          else
+                            ReorderableListView(
+                              shrinkWrap: true,
+                              physics: const NeverScrollableScrollPhysics(),
+                              buildDefaultDragHandles: false,
+                              onReorderItem: (oldIndex, newIndex) {
+                                final updated = List<PlannedSession>.from(
+                                  state.plannedWorkouts,
+                                );
+                                final item = updated.removeAt(oldIndex);
+                                updated.insert(newIndex, item);
+                                _vm.reorderWorkouts(
+                                  updated,
+                                  updated.map((w) => w.sessionId).toList(),
+                                );
+                              },
+                              children: [
+                                for (
+                                  var i = 0;
+                                  i < state.plannedWorkouts.length;
+                                  i++
+                                )
+                                  _PlannedSessionRow(
+                                    key: ValueKey(
+                                      state.plannedWorkouts[i].sessionId,
+                                    ),
+                                    workout: state.plannedWorkouts[i],
+                                    showDayOfWeek: state.isCalendarMode,
+                                    index: i,
+                                    onTap: () => _openEditWorkout(
+                                      state.plannedWorkouts[i],
+                                    ),
+                                    onDuplicate: () =>
+                                        _vm.duplicatePlannedSession(
+                                          state.plannedWorkouts[i],
+                                        ),
+                                    onDelete: () => _confirmDeleteWorkout(
+                                      state.plannedWorkouts[i],
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          const SizedBox(height: AppSpacing.xxl),
+                        ],
+                      ),
                     ),
                   ),
-                ),
               ],
-          );
-        },
+            );
+          },
+        ),
       ),
-    ),
-  );
+    );
   }
 
   Widget _buildGoalsSection(ProgramDetailState state) {
@@ -754,18 +910,26 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedC
         Row(
           children: [
             Expanded(
-              child: Text('Goals',
-                  style: AppFonts.ui(
-                      fontSize: AppTextStyles.md,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.primary)),
+              child: Text(
+                'Goals',
+                style: AppFonts.ui(
+                  fontSize: AppTextStyles.md,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.primary,
+                ),
+              ),
             ),
           ],
         ),
         const SizedBox(height: AppSpacing.sm),
         if (goals.isEmpty)
-          Text("No goals set — add a PR target you'd like to hit during this run.",
-              style: AppFonts.ui(fontSize: AppTextStyles.sm, color: AppColors.muted)),
+          Text(
+            "No goals set — add a PR target you'd like to hit during this run.",
+            style: AppFonts.ui(
+              fontSize: AppTextStyles.sm,
+              color: AppColors.muted,
+            ),
+          ),
         for (final g in goals) ...[
           Container(
             width: double.infinity,
@@ -777,9 +941,7 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedC
             ),
             child: Row(
               children: [
-                Expanded(
-                  child: _goalLabel(g, state),
-                ),
+                Expanded(child: _goalLabel(g, state)),
                 GestureDetector(
                   onTap: () => _vm.deleteGoal(g.goalId),
                   child: Icon(Icons.close, size: 16, color: AppColors.muted),
@@ -806,20 +968,36 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedC
   }
 
   Widget _goalLabel(Goal goal, ProgramDetailState state) {
-    final exerciseName = toProperCase(state.exerciseDetailMap[goal.exerciseId]?.name ?? goal.text ?? '');
-    final weightStr = goal.targetWeight != null ? '${_fmtNum(goal.targetWeight!)} kg' : '';
-    final repsStr = goal.targetReps != null ? '${goal.targetReps} rep${goal.targetReps == 1 ? '' : 's'}' : '';
-    final targetStr = [weightStr, repsStr].where((s) => s.isNotEmpty).join(' × ');
+    final exerciseName = toProperCase(
+      state.exerciseDetailMap[goal.exerciseId]?.name ?? goal.text ?? '',
+    );
+    final weightStr = goal.targetWeight != null
+        ? '${_fmtNum(goal.targetWeight!)} kg'
+        : '';
+    final repsStr = goal.targetReps != null
+        ? '${goal.targetReps} rep${goal.targetReps == 1 ? '' : 's'}'
+        : '';
+    final targetStr = [
+      weightStr,
+      repsStr,
+    ].where((s) => s.isNotEmpty).join(' × ');
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(targetStr.isNotEmpty ? '$exerciseName — $targetStr' : exerciseName,
-            style: AppFonts.ui(fontSize: AppTextStyles.sm, fontWeight: FontWeight.w600, color: AppColors.primary)),
+        Text(
+          targetStr.isNotEmpty ? '$exerciseName — $targetStr' : exerciseName,
+          style: AppFonts.ui(
+            fontSize: AppTextStyles.sm,
+            fontWeight: FontWeight.w600,
+            color: AppColors.primary,
+          ),
+        ),
       ],
     );
   }
 
-  static String _fmtNum(num n) => n == n.roundToDouble() ? n.toInt().toString() : n.toString();
+  static String _fmtNum(num n) =>
+      n == n.roundToDouble() ? n.toInt().toString() : n.toString();
 }
 
 // ── Goal Picker ─────────────────────────────────────────────────────────────
@@ -827,13 +1005,16 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen> with UnsavedC
 /// An inline picker for adding exercise-target goals. Expands from a compact
 /// toggle into exercise search + weight/reps, then collapses again after add.
 class _GoalPicker extends StatefulWidget {
-  const _GoalPicker({
-    required this.detailMap,
-    required this.onAdd,
-  });
+  const _GoalPicker({required this.detailMap, required this.onAdd});
 
   final Map<String, ExerciseDetail> detailMap;
-  final void Function(String exerciseId, String exerciseName, num? weight, int? reps) onAdd;
+  final void Function(
+    String exerciseId,
+    String exerciseName,
+    num? weight,
+    int? reps,
+  )
+  onAdd;
 
   @override
   State<_GoalPicker> createState() => _GoalPickerState();
@@ -864,7 +1045,9 @@ class _GoalPickerState extends State<_GoalPicker> {
         })
         .map((e) => MapEntry(e.key, toProperCase(e.value.name)))
         .toList();
-    results.sort((a, b) => a.value.toLowerCase().compareTo(b.value.toLowerCase()));
+    results.sort(
+      (a, b) => a.value.toLowerCase().compareTo(b.value.toLowerCase()),
+    );
     return results;
   }
 
@@ -895,11 +1078,14 @@ class _GoalPickerState extends State<_GoalPicker> {
             children: [
               Icon(Icons.add_circle_outline, size: 16, color: AppColors.accent),
               const SizedBox(width: 8),
-              Text('Add a PR target…',
-                  style: AppFonts.ui(
-                      fontSize: AppTextStyles.sm,
-                      color: AppColors.accent,
-                      fontWeight: FontWeight.w600)),
+              Text(
+                'Add a PR target…',
+                style: AppFonts.ui(
+                  fontSize: AppTextStyles.sm,
+                  color: AppColors.accent,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ],
           ),
         ),
@@ -911,7 +1097,10 @@ class _GoalPickerState extends State<_GoalPicker> {
       children: [
         TextField(
           autofocus: true,
-          style: AppFonts.ui(fontSize: AppTextStyles.sm, color: AppColors.primary),
+          style: AppFonts.ui(
+            fontSize: AppTextStyles.sm,
+            color: AppColors.primary,
+          ),
           decoration: InputDecoration(
             hintText: 'Search exercises…',
             hintStyle: AppFonts.ui(color: AppColors.muted),
@@ -941,25 +1130,36 @@ class _GoalPickerState extends State<_GoalPicker> {
             constraints: const BoxConstraints(maxHeight: 160),
             child: ListView(
               shrinkWrap: true,
-              children: _filtered.map((e) => Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: GestureDetector(
-                  onTap: () => setState(() => _selectedExerciseId = e.key),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: AppColors.surfaceHigh,
-                      borderRadius: BorderRadius.circular(AppRadius.md),
-                      border: Border.all(color: AppColors.border),
+              children: _filtered
+                  .map(
+                    (e) => Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: GestureDetector(
+                        onTap: () =>
+                            setState(() => _selectedExerciseId = e.key),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppColors.surfaceHigh,
+                            borderRadius: BorderRadius.circular(AppRadius.md),
+                            border: Border.all(color: AppColors.border),
+                          ),
+                          child: Text(
+                            e.value,
+                            style: AppFonts.ui(
+                              fontSize: AppTextStyles.sm,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.primary,
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
-                    child: Text(e.value,
-                        style: AppFonts.ui(
-                            fontSize: AppTextStyles.sm,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.primary)),
-                  ),
-                ),
-              )).toList(),
+                  )
+                  .toList(),
             ),
           ),
         ],
@@ -968,9 +1168,10 @@ class _GoalPickerState extends State<_GoalPicker> {
           Text(
             toProperCase(widget.detailMap[_selectedExerciseId!]?.name ?? ''),
             style: AppFonts.ui(
-                fontSize: AppTextStyles.sm,
-                fontWeight: FontWeight.w700,
-                color: AppColors.accent),
+              fontSize: AppTextStyles.sm,
+              fontWeight: FontWeight.w700,
+              color: AppColors.accent,
+            ),
           ),
           const SizedBox(height: 8),
           Row(
@@ -979,8 +1180,12 @@ class _GoalPickerState extends State<_GoalPicker> {
                 child: TextField(
                   controller: _weightCtrl,
                   textAlign: TextAlign.center,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*$'))],
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  inputFormatters: [
+                    FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*$')),
+                  ],
                   style: AppFonts.mono(fontSize: 14, color: AppColors.primary),
                   decoration: InputDecoration(
                     hintText: 'kg',
@@ -998,7 +1203,10 @@ class _GoalPickerState extends State<_GoalPicker> {
               ),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 6),
-                child: Text('×', style: AppFonts.ui(fontSize: 14, color: AppColors.muted)),
+                child: Text(
+                  '×',
+                  style: AppFonts.ui(fontSize: 14, color: AppColors.muted),
+                ),
               ),
               Expanded(
                 child: TextField(
@@ -1072,71 +1280,97 @@ class _PlannedSessionRow extends StatelessWidget {
           ),
         ],
         child: AppCard(
-        onTap: onTap,
-        padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.md, vertical: AppSpacing.sm),
-        child: Row(
+          onTap: onTap,
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.md,
+            vertical: AppSpacing.sm,
+          ),
+          child: Row(
             children: [
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(toProperCase(workout.name),
-                        style: AppFonts.ui(
-                            fontSize: AppTextStyles.md,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.primary)),
+                    Text(
+                      toProperCase(workout.name),
+                      style: AppFonts.ui(
+                        fontSize: AppTextStyles.md,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.primary,
+                      ),
+                    ),
                     if (workout.notes?.isNotEmpty == true)
-                      Text(workout.notes!,
-                          style: AppFonts.ui(
-                              fontSize: AppTextStyles.xs, color: AppColors.muted),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis),
+                      Text(
+                        workout.notes!,
+                        style: AppFonts.ui(
+                          fontSize: AppTextStyles.xs,
+                          color: AppColors.muted,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                   ],
                 ),
               ),
               if (showDayOfWeek) ...[
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: workout.dayOfWeek != null
                         ? AppColors.surfaceHigh
                         : AppColors.dangerBg,
                     borderRadius: BorderRadius.circular(999),
                   ),
-                  child: Text(workout.dayOfWeek != null
-                      ? _dayOfWeekLabel(workout.dayOfWeek)
-                      : 'No day',
-                      style: AppFonts.ui(
-                          fontSize: AppTextStyles.xs,
-                          color: workout.dayOfWeek != null
-                              ? AppColors.muted
-                              : AppColors.danger)),
+                  child: Text(
+                    workout.dayOfWeek != null
+                        ? _dayOfWeekLabel(workout.dayOfWeek)
+                        : 'No day',
+                    style: AppFonts.ui(
+                      fontSize: AppTextStyles.xs,
+                      color: workout.dayOfWeek != null
+                          ? AppColors.muted
+                          : AppColors.danger,
+                    ),
+                  ),
                 ),
                 const SizedBox(width: AppSpacing.sm),
               ] else ...[
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
-                    color: AppColors.accent.withValues(alpha: 0.15),
+                    color: AppColors.accent.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(999),
                     border: Border.all(
-                        color: AppColors.accent.withValues(alpha: 0.4)),
+                      color: AppColors.accent.withValues(alpha: 0.3),
+                    ),
                   ),
-                  child: Text('Session ${workout.sequenceOrder}',
-                      style: AppFonts.mono(
-                          fontSize: AppTextStyles.xs,
-                          color: AppColors.accent)),
+                  child: Text(
+                    'Session ${workout.sequenceOrder}',
+                    style: AppFonts.mono(
+                      fontSize: AppTextStyles.xs,
+                      color: AppColors.accent,
+                    ),
+                  ),
                 ),
                 const SizedBox(width: AppSpacing.sm),
               ],
               ReorderableDragStartListener(
                 index: index ?? 0,
-                child: Icon(Icons.drag_handle, size: 18, color: AppColors.muted),
+                child: Icon(
+                  Icons.drag_handle,
+                  size: 18,
+                  color: AppColors.muted,
+                ),
               ),
             ],
           ),
-      ),
+        ),
       ),
     );
     return row;

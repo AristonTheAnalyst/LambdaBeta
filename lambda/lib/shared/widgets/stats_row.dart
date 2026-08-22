@@ -5,11 +5,22 @@ import '../../core/styles/app_radius.dart';
 
 /// One tile within a [StatsRow].
 class StatsTile {
-  const StatsTile({required this.label, required this.value, this.accent = false, this.onTap});
+  const StatsTile({
+    required this.label,
+    required this.value,
+    this.accent = false,
+    this.greyed = false,
+    this.onTap,
+  });
 
   final String label;
   final String value;
   final bool accent;
+
+  /// Disabled look — label and value both muted. The planner's SETS/
+  /// EXERCISES tiles are shown but greyed: planning has no live data.
+  final bool greyed;
+
   final VoidCallback? onTap;
 }
 
@@ -55,7 +66,9 @@ class StatsRow extends StatelessWidget {
               style: AppFonts.mono(
                   fontSize: 17,
                   fontWeight: FontWeight.w500,
-                  color: tile.accent ? AppColors.accent : AppColors.primary)),
+                  color: tile.accent
+                      ? AppColors.accent
+                      : (tile.greyed ? AppColors.muted : AppColors.primary))),
         ],
       ),
     );

@@ -24,7 +24,6 @@ import '../../../shared/widgets/slide_pages.dart';
 import '../model/pr_engine.dart' hide bestEverForExercise;
 import '../model/session_local_state.dart';
 
-
 class SessionViewModel extends ChangeNotifier {
   SessionViewModel({
     SessionRepository? sessionRepo,
@@ -33,12 +32,12 @@ class SessionViewModel extends ChangeNotifier {
     ProgramRunRepository? programRunRepo,
     LessonRepository? lessonRepo,
     PlannedSessionRepository? plannedSessionRepo,
-  })  : _sessionRepo = sessionRepo ?? SessionRepository(),
-        _exerciseRepo = exerciseRepo ?? ExerciseRepository(),
-        _programRepo = programRepo ?? ProgramRepository(),
-        _programRunRepo = programRunRepo ?? ProgramRunRepository(),
-        _lessonRepo = lessonRepo ?? LessonRepository(),
-        _plannedSessionRepo = plannedSessionRepo ?? PlannedSessionRepository() {
+  }) : _sessionRepo = sessionRepo ?? SessionRepository(),
+       _exerciseRepo = exerciseRepo ?? ExerciseRepository(),
+       _programRepo = programRepo ?? ProgramRepository(),
+       _programRunRepo = programRunRepo ?? ProgramRunRepository(),
+       _lessonRepo = lessonRepo ?? LessonRepository(),
+       _plannedSessionRepo = plannedSessionRepo ?? PlannedSessionRepository() {
     slidePagesController = SlidePagesController();
     _init();
   }
@@ -125,46 +124,109 @@ class SessionViewModel extends ChangeNotifier {
   bool pastSetsLoaded = false;
 
   /// exerciseId → most recent workout date, for "most recently used" ordering.
+  /// (The same map also holds variation-id → last use — ids never collide.)
   Map<String, DateTime> lastUsedByExercise = {};
   Map<String, List<ExerciseHistorySession>> historyByExercise = {};
+
+  /// All active variations, most recently used first — the set-row picker
+  /// order. Variations are shared across ALL of a user's exercises now.
+  List<CustomVariation> get variationsByRecency =>
+      CustomVariation.sortByLastUsed(allVariations, lastUsedByExercise);
+
   /// PR baseline keyed by (exerciseId, variationId) — curves are scoped
   /// per exercise × variation, so the live-session baseline must be too.
-  Map<(String, String?), ({num weight, num reps})?> prevBestByExerciseVariation = {};
+  Map<(String, String?), ({num weight, num reps})?>
+  prevBestByExerciseVariation = {};
 
-  /// Previous-best records per axis (rep-max N, weight-max W) derived from
-  /// completed history only — used by the reflection page's before/after.
-  final _prevRepMax = <(String, String?, int), PrRecord?>{};
-  final _prevWeightMax = <(String, String?, num), PrRecord?>{};
+  /// Previous-best records keyed by source set — used by the reflection
+  /// page's before/after. Per-set keys (not per-axis) so two records on the
+  /// same axis in one session each keep their own before; a first PR stays
+  /// null ("First PR") instead of being overwritten with itself.
+  final _prevRepMax = <(String, String?, int, String?), PrRecord?>{};
+  final _prevWeightMax = <(String, String?, num, String?), PrRecord?>{};
 
-  PrRecord? previousRepMax(String exerciseId, String? variationId, int reps) =>
-      _prevRepMax[(exerciseId, variationId, reps)];
+  PrRecord? previousRepMax(PrRecord p) =>
+      _prevRepMax[(
+        p.exerciseId,
+        p.variationId,
+        p.targetReps ?? p.reps.toInt(),
+        p.setId,
+      )];
 
-  PrRecord? previousWeightMax(String exerciseId, String? variationId, num weight) =>
-      _prevWeightMax[(exerciseId, variationId, weight)];
+  PrRecord? previousWeightMax(PrRecord p) =>
+      _prevWeightMax[(
+        p.exerciseId,
+        p.variationId,
+        p.targetWeight ?? p.weight,
+        p.setId,
+      )];
 
-  // ── Latest-session reflection (prep page preview) ──────────────────────────
-  /// Reflection data of the most recent completed session — PRs and lessons
-  /// only — rendered on the prep page so last session's outcome is visible
-  /// before starting the next one. Exercises are in first-appearance order.
-  List<String> latestReflectionExercises = [];
-  Map<String, List<PrRecord>> latestReflectionPrsByExercise = {};
-  Map<String, List<String>> latestReflectionLessonsByExercise = {};
-  Map<String, String> latestReflectionExerciseNames = {};
-  final _latestPrevRepMax = <(String, String?, int), PrRecord?>{};
-  final _latestPrevWeightMax = <(String, String?, num), PrRecord?>{};
+  // ── Previous-session reflection (prep page card, paged) ────────────────────
+  /// Reflection data of a completed past session — PRs and lessons only —
+  /// rendered on the prep page's pressable LAST SESSION card. The card pages
+  /// through completed history: [_reflectionSessionIds] is newest-first and
+  /// [_reflectionIndex] selects which session is shown (0 = most recent).
+  List<String> _reflectionSessionIds = [];
+  int _reflectionIndex = 0;
+  List<String> reflectionExercises = [];
+  Map<String, List<PrRecord>> reflectionPrsByExercise = {};
+  Map<String, List<String>> reflectionLessonsByExercise = {};
+  Map<String, String> reflectionExerciseNames = {};
+  final _reflectionPrevRepMax = <(String, String?, int, String?), PrRecord?>{};
+  final _reflectionPrevWeightMax =
+      <(String, String?, num, String?), PrRecord?>{};
 
-  /// The most recent completed session (fact row) — powers the prep page's
-  /// LAST SESSION block: planned-session name + post-feeling. Null until
-  /// [_computeLatestReflection] finds a completed session.
-  Session? latestSession;
+  /// The session (fact row) the viewer card currently shows — a completed
+  /// session for the prep card, or the still-active workout when the
+  /// reflection page's THIS SESSION position is selected. Null while
+  /// loading or when there is no completed history yet.
+  Session? reflectionSession;
 
-  /// The record a latest-session PR beat on its axis — the before-value for
-  /// the prep preview's before/after rows.
-  PrRecord? previousForLatestReflection(PrRecord p) => p.type == PrType.repMax
-      ? _latestPrevRepMax[
-          (p.exerciseId, p.variationId, p.targetReps ?? p.reps.toInt())]
-      : _latestPrevWeightMax[
-          (p.exerciseId, p.variationId, p.targetWeight ?? p.weight)];
+  /// True when the reflection pager shows the still-active workout (the
+  /// reflection page's THIS SESSION view) instead of a completed session.
+  /// Virtual position: [_reflectionIndex] == -1 (never a real list index).
+  bool get reflectionIsCurrent =>
+      _reflectionIndex == -1 && currentWorkoutId != null;
+
+  /// Whether the viewer card can page left (older) / right (newer). At the
+  /// current-session position, older pages into completed history and newer
+  /// is a dead end.
+  bool get reflectionCanGoOlder {
+    if (_reflectionIndex == -1) return _reflectionSessionIds.isNotEmpty;
+    return _reflectionIndex < _reflectionSessionIds.length - 1;
+  }
+
+  bool get reflectionCanGoNewer {
+    if (_reflectionIndex == -1) return false;
+    if (_reflectionIndex == 0) return currentWorkoutId != null;
+    return true;
+  }
+
+  /// The record a reflection PR beat on its axis — the before-value for
+  /// the viewer card's before/after rows. The live maps feed the current
+  /// session (same per-set key structure as the reflection copies).
+  PrRecord? previousForReflection(PrRecord p) {
+    if (p.type == PrType.repMax) {
+      final key = (
+        p.exerciseId,
+        p.variationId,
+        p.targetReps ?? p.reps.toInt(),
+        p.setId,
+      );
+      return reflectionIsCurrent
+          ? _prevRepMax[key]
+          : _reflectionPrevRepMax[key];
+    }
+    final key = (
+      p.exerciseId,
+      p.variationId,
+      p.targetWeight ?? p.weight,
+      p.setId,
+    );
+    return reflectionIsCurrent
+        ? _prevWeightMax[key]
+        : _reflectionPrevWeightMax[key];
+  }
 
   // ── Historical set editing ─────────────────────────────────────────────────
   bool historyEditConfirmed = false;
@@ -174,14 +236,12 @@ class SessionViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-
   // ── Derived ───────────────────────────────────────────────────────────────
   bool get hasActiveWorkout => currentWorkoutId != null;
 
   int get distinctExerciseCount => sets.map((s) => s.exerciseId).toSet().length;
 
   int get totalPRsThisSession => prSetIds.length;
-
 
   /// PRs achieved this session using the full rep-max timeline engine.
   List<PrRecord> get prsThisSession {
@@ -190,28 +250,31 @@ class SessionViewModel extends ChangeNotifier {
     // Build PastSetRows for current session sets (no createdDate) — use now
     final now = DateTime.now();
     for (final s in sets) {
-      all.add(PastSetRow(
-        sessionSetId: s.sessionSetId,
-        sessionId: s.sessionId,
-        userId: s.userId,
-        exerciseId: s.exerciseId,
-        setNumber: s.setNumber,
-        reps: s.reps,
-        sessionCreatedDate: now,
-        variationId: s.variationId,
-        weight: s.weight,
-        notes: s.notes,
-        exerciseName: s.exerciseName,
-        variationName: s.variationName,
-        supersetGroupNumber: s.supersetGroupNumber,
-      ));
+      all.add(
+        PastSetRow(
+          sessionSetId: s.sessionSetId,
+          sessionId: s.sessionId,
+          userId: s.userId,
+          exerciseId: s.exerciseId,
+          setNumber: s.setNumber,
+          reps: s.reps,
+          sessionCreatedDate: now,
+          variationId: s.variationId,
+          weight: s.weight,
+          notes: s.notes,
+          exerciseName: s.exerciseName,
+          variationName: s.variationName,
+          supersetGroupNumber: s.supersetGroupNumber,
+        ),
+      );
     }
     // PRs in the current workout are those whose sessionId is the active one.
     // Only count explicit (non-propagated) PRs — the user sees what they
     // directly achieved, not the knock-on records the engine inferred.
-    return prsForWorkout(all, currentWorkoutId ?? '')
-        .where((p) => !p.isPropagated)
-        .toList();
+    return prsForWorkout(
+      all,
+      currentWorkoutId ?? '',
+    ).where((p) => !p.isPropagated).toList();
   }
 
   Future<void> _init() async {
@@ -282,11 +345,17 @@ class SessionViewModel extends ChangeNotifier {
   /// Near-duplicate variation names (e.g. "Paused" vs "Pause") to flag as
   /// "did you mean?" before creating a brand-new one, each annotated with how
   /// many exercises it's already assigned to.
-  List<({String id, String name, int exerciseCount})> findSimilarVariations(String name) {
+  List<({String id, String name, int exerciseCount})> findSimilarVariations(
+    String name,
+  ) {
     final results = <({String id, String name, int exerciseCount})>[];
     for (final v in allVariations) {
       if (isSimilarVariationName(name, v.name)) {
-        results.add((id: v.variationId, name: v.name, exerciseCount: variationExerciseCounts[v.variationId] ?? 0));
+        results.add((
+          id: v.variationId,
+          name: v.name,
+          exerciseCount: variationExerciseCounts[v.variationId] ?? 0,
+        ));
       }
     }
     return results;
@@ -311,12 +380,14 @@ class SessionViewModel extends ChangeNotifier {
       programProgress = await _programRunRepo.getProgress(_userId);
       final programId = programProgress?.program.programId;
       if (programId != null) {
-        availableWorkouts =
-            await _programRepo.fetchPlannedSessions(programId);
+        availableWorkouts = await _programRepo.fetchPlannedSessions(programId);
         selectedPlannedSession =
-            programProgress?.nextPlannedSession ?? availableWorkouts.firstOrNull;
+            programProgress?.nextPlannedSession ??
+            availableWorkouts.firstOrNull;
       }
-      standaloneWorkouts = await _plannedSessionRepo.fetchPlannedSessions(_userId);
+      standaloneWorkouts = await _plannedSessionRepo.fetchPlannedSessions(
+        _userId,
+      );
       await _loadSelectedSessionSets();
     } catch (_) {}
     notifyListeners();
@@ -326,7 +397,9 @@ class SessionViewModel extends ChangeNotifier {
   /// standalone).
   Future<void> _loadSelectedSessionSets() async {
     if (selectedStandaloneWorkout != null) {
-      final sets = await _plannedSessionRepo.fetchPlannedSets(selectedStandaloneWorkout!.sessionId);
+      final sets = await _plannedSessionRepo.fetchPlannedSets(
+        selectedStandaloneWorkout!.sessionId,
+      );
       plannedSetsByExercise = _plannedMapFromSessionSets(sets);
       plannedExerciseOrder = _plannedOrderFromSessionSets(sets);
       return;
@@ -338,15 +411,21 @@ class SessionViewModel extends ChangeNotifier {
       return;
     }
     try {
-      final plannedSets = await _programRepo.fetchPlannedSessionSets(pw.sessionId);
+      final plannedSets = await _programRepo.fetchPlannedSessionSets(
+        pw.sessionId,
+      );
       plannedSetsByExercise = _plannedMapFromSets(plannedSets);
       plannedExerciseOrder = _plannedOrderFromSets(plannedSets);
     } catch (_) {}
   }
 
-  Map<String, List<PlannedSessionSet>> _plannedMapFromSets(List<PlannedSessionSet> sets) {
+  Map<String, List<PlannedSessionSet>> _plannedMapFromSets(
+    List<PlannedSessionSet> sets,
+  ) {
     final sorted = [...sets]
-      ..sort((a, b) => a.exerciseSequenceOrder.compareTo(b.exerciseSequenceOrder));
+      ..sort(
+        (a, b) => a.exerciseSequenceOrder.compareTo(b.exerciseSequenceOrder),
+      );
     final byExercise = <String, List<PlannedSessionSet>>{};
     for (final p in sorted) {
       byExercise.putIfAbsent(p.exerciseId, () => []).add(p);
@@ -356,7 +435,9 @@ class SessionViewModel extends ChangeNotifier {
 
   List<String> _plannedOrderFromSets(List<PlannedSessionSet> sets) {
     final sorted = [...sets]
-      ..sort((a, b) => a.exerciseSequenceOrder.compareTo(b.exerciseSequenceOrder));
+      ..sort(
+        (a, b) => a.exerciseSequenceOrder.compareTo(b.exerciseSequenceOrder),
+      );
     final order = <String>[];
     for (final p in sorted) {
       if (!order.contains(p.exerciseId)) order.add(p.exerciseId);
@@ -364,13 +445,15 @@ class SessionViewModel extends ChangeNotifier {
     return order;
   }
 
-  Map<String, List<PlannedSessionSet>> _plannedMapFromSessionSets(List<PlannedSessionSet> sets) =>
-      _plannedMapFromSets(_setsFromSessionSets(sets));
+  Map<String, List<PlannedSessionSet>> _plannedMapFromSessionSets(
+    List<PlannedSessionSet> sets,
+  ) => _plannedMapFromSets(_setsFromSessionSets(sets));
 
   List<String> _plannedOrderFromSessionSets(List<PlannedSessionSet> sets) =>
       _plannedOrderFromSets(_setsFromSessionSets(sets));
 
-  List<PlannedSessionSet> _setsFromSessionSets(List<PlannedSessionSet> sets) => [
+  List<PlannedSessionSet> _setsFromSessionSets(List<PlannedSessionSet> sets) =>
+      [
         for (final s in sets)
           PlannedSessionSet(
             setId: s.setId,
@@ -380,9 +463,9 @@ class SessionViewModel extends ChangeNotifier {
             variationId: s.variationId,
             exerciseSequenceOrder: s.exerciseSequenceOrder,
             setNumber: s.setNumber,
-            targetWeight: s.targetWeight?.toDouble(),
+            targetWeight: s.targetWeight,
             targetReps: s.targetReps,
-                        targetNotes: s.targetNotes,
+            targetNotes: s.targetNotes,
             exerciseName: s.exerciseName,
             variationName: s.variationName,
             isArchived: false,
@@ -435,7 +518,8 @@ class SessionViewModel extends ChangeNotifier {
       // the stale header so we don't show a dangling "Week N · Program".
       if (currentWorkoutId != null && programProgress != null) {
         final program = await _programRepo.fetchProgram(
-            programProgress!.program.programId);
+          programProgress!.program.programId,
+        );
         if (program == null) {
           // Program was deleted — tear down the stale program state.
           programProgress = null;
@@ -452,10 +536,10 @@ class SessionViewModel extends ChangeNotifier {
       programProgress = await _programRunRepo.getProgress(_userId);
       final programId = programProgress?.program.programId;
       if (programId != null) {
-        availableWorkouts =
-            await _programRepo.fetchPlannedSessions(programId);
+        availableWorkouts = await _programRepo.fetchPlannedSessions(programId);
         selectedPlannedSession =
-            programProgress?.nextPlannedSession ?? availableWorkouts.firstOrNull;
+            programProgress?.nextPlannedSession ??
+            availableWorkouts.firstOrNull;
       } else {
         availableWorkouts = [];
         selectedPlannedSession = null;
@@ -464,14 +548,15 @@ class SessionViewModel extends ChangeNotifier {
       }
       // Standalone templates are independent of the program — re-fetch them
       // too so a template created on another tab shows without a restart.
-      standaloneWorkouts =
-          await _plannedSessionRepo.fetchPlannedSessions(_userId);
+      standaloneWorkouts = await _plannedSessionRepo.fetchPlannedSessions(
+        _userId,
+      );
       await _loadSelectedSessionSets();
       notifyListeners();
     } catch (_) {}
   }
 
-  Future<void> _loadPastSets() async {
+  Future<void> _loadPastSets({bool keepReflectionPosition = false}) async {
     try {
       _pastSets = await _sessionRepo.loadPastSetsTimeline(_userId);
       historyByExercise = groupHistoryByExercise(_pastSets);
@@ -481,53 +566,222 @@ class SessionViewModel extends ChangeNotifier {
         byKey.putIfAbsent((s.exerciseId, s.variationId), () => []).add(s);
       }
       prevBestByExerciseVariation = byKey.map(
-          (key, sets) => MapEntry(key, bestEverForExercise(sets, variationId: key.$2)));
+        (key, sets) =>
+            MapEntry(key, bestEverForExercise(sets, variationId: key.$2)),
+      );
     } catch (_) {}
     pastSetsLoaded = true;
     notifyListeners();
-    await _computeLatestReflection();
+    // The live session's PR highlighting and before-maps derive from the
+    // timeline — recompute on every reload so history edits and tab
+    // re-entry don't leave stale badges or "before" values mid-workout.
+    if (currentWorkoutId != null && sets.isNotEmpty) {
+      _recomputePRs();
+    }
+    await _refreshReflection(keepPosition: keepReflectionPosition);
   }
 
-  /// Computes the latest completed session's reflection summary — same
-  /// `fullPrTimeline` walk and session-scoped before-tracking as
-  /// `_recomputePRs`, but for the most recent non-active session.
-  Future<void> _computeLatestReflection() async {
-    latestReflectionExercises = [];
-    latestReflectionPrsByExercise = {};
-    latestReflectionLessonsByExercise = {};
-    latestReflectionExerciseNames = {};
-    latestSession = null;
-    _latestPrevRepMax.clear();
-    _latestPrevWeightMax.clear();
-    if (_pastSets.isEmpty) return;
-
-    // Timeline rows are created_date DESC, set_number ASC — the first row's
-    // session is the most recently completed workout.
-    final latestId = _pastSets.first.sessionId;
-    try {
-      latestSession = await _sessionRepo.fetchSession(latestId);
-    } catch (_) {
-      latestSession = null;
+  /// Rebuilds the viewer card's pageable session list from the past-sets
+  /// timeline and shows the most recent completed session — or THIS SESSION
+  /// (the still-active workout) when the wizard sits on the reflection page.
+  /// Timeline rows are created_date DESC, so first-appearance order of
+  /// session ids is newest-first (left/previous = older, right/next = newer).
+  Future<void> _refreshReflection({bool keepPosition = false}) async {
+    final ids = <String>[];
+    for (final s in _pastSets) {
+      if (!ids.contains(s.sessionId)) ids.add(s.sessionId);
     }
+    _reflectionSessionIds = ids;
+    // Position-preserving refresh — recompute whatever the card currently
+    // shows (used after returning from the past-session viewer, whose edits
+    // change the timeline but not the pager).
+    if (keepPosition) {
+      if (_reflectionIndex == -1) {
+        if (currentWorkoutId != null) {
+          await _computeReflectionFor(null);
+          return;
+        }
+      } else if (_reflectionIndex < ids.length) {
+        await _computeReflectionFor(ids[_reflectionIndex]);
+        return;
+      }
+      // Fall through — stale position (e.g. index past the new end).
+    }
+    if (currentWorkoutId != null && slidePagesController.currentPage == 2) {
+      _reflectionIndex = -1;
+      // Runs even with an empty completed history — a first-ever session
+      // still has live sets to reflect on.
+      await _computeReflectionFor(null);
+      return;
+    }
+    _reflectionIndex = 0;
+    if (ids.isEmpty) {
+      reflectionSession = null;
+      reflectionExercises = [];
+      reflectionPrsByExercise = {};
+      reflectionLessonsByExercise = {};
+      reflectionExerciseNames = {};
+      notifyListeners();
+      return;
+    }
+    await _computeReflectionFor(ids.first);
+  }
+
+  /// Steps the viewer card to the next older completed session (from THIS
+  /// SESSION, the first completed one).
+  void showOlderReflectionSession() {
+    if (!reflectionCanGoOlder) return;
+    _reflectionIndex = _reflectionIndex == -1 ? 0 : _reflectionIndex + 1;
+    _computeReflectionFor(_reflectionSessionIds[_reflectionIndex]);
+  }
+
+  /// Steps the viewer card back toward the most recent completed session —
+  /// and from there to THIS SESSION when a workout is active.
+  void showNewerReflectionSession() {
+    if (!reflectionCanGoNewer) return;
+    _reflectionIndex--;
+    _computeReflectionFor(
+      _reflectionIndex == -1 ? null : _reflectionSessionIds[_reflectionIndex],
+    );
+  }
+
+  /// Shows THIS SESSION (the still-active workout) — the reflection page's
+  /// default position. Called before the wizard slides to page 2.
+  Future<void> showCurrentReflection() async {
+    if (currentWorkoutId == null) return;
+    _reflectionIndex = -1;
+    await _computeReflectionFor(null);
+  }
+
+  /// How many completed sessions the viewer can page through / list.
+  int get completedSessionCount => _reflectionSessionIds.length;
+
+  /// All completed sessions (newest first) with their sets — the data for
+  /// the viewer card's all-sessions picker sheet.
+  Future<List<SessionWithSets>> loadCompletedSessions() =>
+      _sessionRepo.loadSessionsWithSets(_userId);
+
+  /// Jumps the viewer card to a completed session picked from the
+  /// all-sessions sheet.
+  void selectReflectionSession(String sessionId) {
+    final idx = _reflectionSessionIds.indexOf(sessionId);
+    if (idx < 0) return;
+    _reflectionIndex = idx;
+    _computeReflectionFor(sessionId);
+  }
+
+  /// Recomputes the reflection the viewer card currently shows after edits
+  /// made in the past-session viewer — reloads the timeline first (set edits
+  /// change it, and the stale timeline would otherwise poison the next
+  /// workout's PR baseline) while keeping the pager position.
+  Future<void> refreshShownReflection() async {
+    await _loadPastSets(keepReflectionPosition: true);
+  }
+
+  /// Resets the pager to the most recent completed session — called when the
+  /// idle wizard steps back to Prep so a stale THIS SESSION position can
+  /// never leak onto the prep card.
+  Future<void> showLatestReflection() async {
+    _reflectionIndex = 0;
+    if (_reflectionSessionIds.isEmpty) {
+      reflectionSession = null;
+      reflectionExercises = [];
+      reflectionPrsByExercise = {};
+      reflectionLessonsByExercise = {};
+      reflectionExerciseNames = {};
+      notifyListeners();
+      return;
+    }
+    await _computeReflectionFor(_reflectionSessionIds.first);
+  }
+
+  /// Computes one session's reflection summary — same `fullPrTimeline` walk
+  /// and session-scoped before-tracking as `_recomputePRs`. A null
+  /// [sessionId] means the still-active workout: the summary is built from
+  /// live state instead of the completed timeline (which excludes active
+  /// sessions), with live before-maps routed by [previousForReflection].
+  Future<void> _computeReflectionFor(String? sessionId) async {
+    reflectionExercises = [];
+    reflectionPrsByExercise = {};
+    reflectionLessonsByExercise = {};
+    reflectionExerciseNames = {};
+    reflectionSession = null;
+    _reflectionPrevRepMax.clear();
+    _reflectionPrevWeightMax.clear();
+
+    final id = sessionId ?? currentWorkoutId;
+    if (id == null) {
+      notifyListeners();
+      return;
+    }
+    final isLive = sessionId == null;
+
+    try {
+      reflectionSession = await _sessionRepo.fetchSession(id);
+    } catch (_) {
+      reflectionSession = null;
+    }
+
+    // ── Live branch: the still-active workout ──
+    if (isLive) {
+      final sessionPrs = prsThisSession;
+      final orderedIds = <String>[];
+      final nameById = <String, String>{};
+      for (final s in sets) {
+        nameById.putIfAbsent(
+          s.exerciseId,
+          () => exerciseDetailMap[s.exerciseId]?.name ?? s.exerciseName ?? '',
+        );
+        if (!orderedIds.contains(s.exerciseId)) orderedIds.add(s.exerciseId);
+      }
+      for (final exerciseId in orderedIds) {
+        try {
+          lessonsByExercise[exerciseId] = await _lessonRepo.fetchLessons(
+            _userId,
+            exerciseId,
+          );
+        } catch (_) {}
+      }
+      final contentIds = orderedIds
+          .where(
+            (exerciseId) =>
+                sessionPrs.any((p) => p.exerciseId == exerciseId) ||
+                lessonsThisSession(exerciseId).isNotEmpty,
+          )
+          .toList();
+      reflectionExercises = contentIds;
+      reflectionExerciseNames = {
+        for (final exerciseId in contentIds)
+          exerciseId: nameById[exerciseId] ?? '',
+      };
+      reflectionPrsByExercise = {
+        for (final exerciseId in contentIds)
+          exerciseId: sessionPrs
+              .where((p) => p.exerciseId == exerciseId)
+              .toList(),
+      };
+      reflectionLessonsByExercise = {
+        for (final exerciseId in contentIds)
+          exerciseId: [for (final l in lessonsThisSession(exerciseId)) l.text],
+      };
+      notifyListeners();
+      return;
+    }
+
+    // ── Historical branch: a completed session ──
     final records = fullPrTimeline(_pastSets);
 
-    // Before-tracking per axis (history AND earlier sets in the same
-    // session), exactly like _recomputePRs.
-    final lastRepMax = <(String, String?, int), PrRecord?>{};
-    final lastWeightMax = <(String, String?, num), PrRecord?>{};
-    for (final r in records) {
-      if (r.type == PrType.repMax && r.targetReps != null) {
-        final key = (r.exerciseId, r.variationId, r.targetReps!);
-        if (r.sessionId == latestId) _latestPrevRepMax[key] = lastRepMax[key];
-        lastRepMax[key] = r;
-      } else if (r.type == PrType.weightMax && r.targetWeight != null) {
-        final key = (r.exerciseId, r.variationId, r.targetWeight!);
-        if (r.sessionId == latestId) _latestPrevWeightMax[key] = lastWeightMax[key];
-        lastWeightMax[key] = r;
-      }
-    }
+    // Session-scoped before-tracking (history AND earlier sets in the same
+    // session), keyed per source set — exactly like _recomputePRs.
+    final before = sessionBeforeMaps(records, id);
+    _reflectionPrevRepMax
+      ..clear()
+      ..addAll(before.repMax);
+    _reflectionPrevWeightMax
+      ..clear()
+      ..addAll(before.weightMax);
     final sessionPrs = records
-        .where((r) => r.sessionId == latestId && !r.isPropagated)
+        .where((r) => r.sessionId == id && !r.isPropagated)
         .toList();
 
     // Exercise order = first appearance in the session (set-number order);
@@ -536,37 +790,52 @@ class SessionViewModel extends ChangeNotifier {
     final orderedIds = <String>[];
     final nameById = <String, String>{};
     for (final s in _pastSets) {
-      if (s.sessionId != latestId) continue;
-      nameById.putIfAbsent(s.exerciseId,
-          () => exerciseDetailMap[s.exerciseId]?.name ?? s.exerciseName ?? '');
+      if (s.sessionId != id) continue;
+      nameById.putIfAbsent(
+        s.exerciseId,
+        () => exerciseDetailMap[s.exerciseId]?.name ?? s.exerciseName ?? '',
+      );
       if (!orderedIds.contains(s.exerciseId)) orderedIds.add(s.exerciseId);
     }
 
     // Lessons are per-exercise and cross-session — fetch them so the preview
     // is populated without opening the lessons modal first (same pattern as
     // loadLessonsFor), and cache them for the upcoming session's cards.
-    for (final id in orderedIds) {
+    for (final exerciseId in orderedIds) {
       try {
-        lessonsByExercise[id] = await _lessonRepo.fetchLessons(_userId, id);
+        lessonsByExercise[exerciseId] = await _lessonRepo.fetchLessons(
+          _userId,
+          exerciseId,
+        );
       } catch (_) {}
     }
 
     final contentIds = orderedIds
-        .where((id) =>
-            sessionPrs.any((p) => p.exerciseId == id) ||
-            (lessonsByExercise[id] ?? const []).isNotEmpty)
+        .where(
+          (exerciseId) =>
+              sessionPrs.any((p) => p.exerciseId == exerciseId) ||
+              (lessonsByExercise[exerciseId] ?? const []).isNotEmpty,
+        )
         .toList();
-    latestReflectionExercises = contentIds;
-    latestReflectionExerciseNames = {
-      for (final id in contentIds) id: nameById[id] ?? ''
+    reflectionExercises = contentIds;
+    reflectionExerciseNames = {
+      for (final exerciseId in contentIds)
+        exerciseId: nameById[exerciseId] ?? '',
     };
-    latestReflectionPrsByExercise = {
-      for (final id in contentIds)
-        id: sessionPrs.where((p) => p.exerciseId == id).toList()
+    reflectionPrsByExercise = {
+      for (final exerciseId in contentIds)
+        exerciseId: sessionPrs
+            .where((p) => p.exerciseId == exerciseId)
+            .toList(),
     };
-    latestReflectionLessonsByExercise = {
-      for (final id in contentIds)
-        id: [for (final l in lessonsByExercise[id] ?? const <Lesson>[]) l.text]
+    reflectionLessonsByExercise = {
+      for (final exerciseId in contentIds)
+        exerciseId: [
+          // Session-scoped like the live reflection — only lessons born in
+          // this session count toward its preview.
+          for (final l in lessonsByExercise[exerciseId] ?? const <Lesson>[])
+            if (l.sessionId == id) l.text,
+        ],
     };
     notifyListeners();
   }
@@ -604,27 +873,28 @@ class SessionViewModel extends ChangeNotifier {
       prSetIds = {};
       return;
     }
-    final combined = <PastSetRow>[
-      ..._pastSets.where((s) => s.sessionId != id),
-    ];
+    final combined = <PastSetRow>[..._pastSets.where((s) => s.sessionId != id)];
     final sessionDate = workoutStartedAt ?? DateTime.now();
-    final ordered = [...sets]..sort((a, b) => a.setNumber.compareTo(b.setNumber));
+    final ordered = [...sets]
+      ..sort((a, b) => a.setNumber.compareTo(b.setNumber));
     for (final s in ordered) {
-      combined.add(PastSetRow(
-        sessionSetId: s.sessionSetId,
-        sessionId: s.sessionId,
-        userId: s.userId,
-        exerciseId: s.exerciseId,
-        setNumber: s.setNumber,
-        reps: s.reps,
-        sessionCreatedDate: sessionDate,
-        variationId: s.variationId,
-        weight: s.weight,
-        notes: s.notes,
-        exerciseName: s.exerciseName,
-        variationName: s.variationName,
-        supersetGroupNumber: s.supersetGroupNumber,
-      ));
+      combined.add(
+        PastSetRow(
+          sessionSetId: s.sessionSetId,
+          sessionId: s.sessionId,
+          userId: s.userId,
+          exerciseId: s.exerciseId,
+          setNumber: s.setNumber,
+          reps: s.reps,
+          sessionCreatedDate: sessionDate,
+          variationId: s.variationId,
+          weight: s.weight,
+          notes: s.notes,
+          exerciseName: s.exerciseName,
+          variationName: s.variationName,
+          supersetGroupNumber: s.supersetGroupNumber,
+        ),
+      );
     }
     final records = fullPrTimeline(combined);
     // Only THIS session's records — the timeline includes all of history, and
@@ -636,24 +906,17 @@ class SessionViewModel extends ChangeNotifier {
           r.setId!,
     };
 
-    // Session-aware "before" per axis: the previous record for each of this
-    // session's records, considering history AND earlier sets in the same
-    // session (5x7 logged before 5x9 makes the 9-rep record's before = 7).
-    _prevRepMax.clear();
-    _prevWeightMax.clear();
-    final lastRepMax = <(String, String?, int), PrRecord?>{};
-    final lastWeightMax = <(String, String?, num), PrRecord?>{};
-    for (final r in records) {
-      if (r.type == PrType.repMax && r.targetReps != null) {
-        final key = (r.exerciseId, r.variationId, r.targetReps!);
-        if (r.sessionId == id) _prevRepMax[key] = lastRepMax[key];
-        lastRepMax[key] = r;
-      } else if (r.type == PrType.weightMax && r.targetWeight != null) {
-        final key = (r.exerciseId, r.variationId, r.targetWeight!);
-        if (r.sessionId == id) _prevWeightMax[key] = lastWeightMax[key];
-        lastWeightMax[key] = r;
-      }
-    }
+    // Session-aware "before", keyed per source set: the previous record for
+    // each of this session's records, considering history AND earlier sets
+    // in the same session (5x7 logged before 5x9 makes the 9-rep record's
+    // before = 7, while the 7-rep record keeps before = null → First PR).
+    final before = sessionBeforeMaps(records, id);
+    _prevRepMax
+      ..clear()
+      ..addAll(before.repMax);
+    _prevWeightMax
+      ..clear()
+      ..addAll(before.weightMax);
   }
 
   bool isPrSet(String setId) => prSetIds.contains(setId);
@@ -690,11 +953,16 @@ class SessionViewModel extends ChangeNotifier {
         }
       }
       if (unique.isEmpty) return;
-      slots.add(SessionExerciseSlot(
+      slots.add(
+        SessionExerciseSlot(
           id: _nextSlotId++,
-          type: unique.length > 1 ? SessionSlotType.superset : SessionSlotType.single,
+          type: unique.length > 1
+              ? SessionSlotType.superset
+              : SessionSlotType.single,
           exerciseIds: unique,
-          planned: planned));
+          planned: planned,
+        ),
+      );
     }
 
     for (final exId in plannedExerciseOrder) {
@@ -707,10 +975,14 @@ class SessionViewModel extends ChangeNotifier {
       if (group != null) continue; // handled by group slot below
       // An empty trailing set (a freshly-added exercise that hasn't been
       // filled yet) already serves as the next-set slot — don't add a ghost.
-      final exerciseSets = sets.where((x) => x.exerciseId == s.exerciseId).toList();
+      final exerciseSets = sets
+          .where((x) => x.exerciseId == s.exerciseId)
+          .toList();
       final last = exerciseSets.isEmpty ? null : exerciseSets.last;
       final lastEmpty = last != null && last.reps.isEmpty;
-      if (!lastEmpty) draftSlotsByExercise.putIfAbsent(s.exerciseId, () => [_nextDraftId++]);
+      if (!lastEmpty) {
+        draftSlotsByExercise.putIfAbsent(s.exerciseId, () => [_nextDraftId++]);
+      }
       loadLessonsFor(s.exerciseId);
       addSlot([s.exerciseId]);
     }
@@ -741,8 +1013,9 @@ class SessionViewModel extends ChangeNotifier {
     };
     final reordered = <SessionExerciseSlot>[];
     for (final raw in parsed) {
-      final ids = ((raw as Map<String, dynamic>)['exerciseIds'] as List<dynamic>)
-          .cast<String>();
+      final ids =
+          ((raw as Map<String, dynamic>)['exerciseIds'] as List<dynamic>)
+              .cast<String>();
       final match = byIds[ids.join(',')];
       if (match != null) {
         reordered.add(match);
@@ -812,7 +1085,9 @@ class SessionViewModel extends ChangeNotifier {
   /// existing tab (and the right superset sub-index) and reports that it did
   /// so, so the caller doesn't also treat it as "added."
   bool addExerciseSlot(String exerciseId) {
-    final existingIndex = exerciseSlots.indexWhere((s) => s.exerciseIds.contains(exerciseId));
+    final existingIndex = exerciseSlots.indexWhere(
+      (s) => s.exerciseIds.contains(exerciseId),
+    );
     if (existingIndex != -1) {
       activeSlotIndex = existingIndex;
       final slot = exerciseSlots[existingIndex];
@@ -821,8 +1096,13 @@ class SessionViewModel extends ChangeNotifier {
       notifyListeners();
       return false;
     }
-    exerciseSlots.add(SessionExerciseSlot(
-        id: _nextSlotId++, type: SessionSlotType.single, exerciseIds: [exerciseId]));
+    exerciseSlots.add(
+      SessionExerciseSlot(
+        id: _nextSlotId++,
+        type: SessionSlotType.single,
+        exerciseIds: [exerciseId],
+      ),
+    );
     // Persist an empty set row so the exercise survives a hot restart — the
     // restore path only rediscovers exercises that exist in fact_session_set.
     addDraftSet(exerciseId);
@@ -834,8 +1114,13 @@ class SessionViewModel extends ChangeNotifier {
   }
 
   void addSupersetSlot(List<String> exerciseIds) {
-    exerciseSlots.add(SessionExerciseSlot(
-        id: _nextSlotId++, type: SessionSlotType.superset, exerciseIds: exerciseIds));
+    exerciseSlots.add(
+      SessionExerciseSlot(
+        id: _nextSlotId++,
+        type: SessionSlotType.superset,
+        exerciseIds: exerciseIds,
+      ),
+    );
     for (final id in exerciseIds) {
       // Persist an empty set per exercise so supersets survive a hot restart.
       addDraftSet(id);
@@ -856,7 +1141,9 @@ class SessionViewModel extends ChangeNotifier {
 
     // Delete persisted sets for every exercise in the slot
     for (final exerciseId in slot.exerciseIds) {
-      final exerciseSets = sets.where((s) => s.exerciseId == exerciseId).toList();
+      final exerciseSets = sets
+          .where((s) => s.exerciseId == exerciseId)
+          .toList();
       for (final s in exerciseSets) {
         await _sessionRepo.deleteSet(s.sessionSetId);
       }
@@ -866,7 +1153,10 @@ class SessionViewModel extends ChangeNotifier {
 
     // Adjust active tab index
     if (activeSlotIndex >= exerciseSlots.length) {
-      activeSlotIndex = (exerciseSlots.length - 1).clamp(0, exerciseSlots.length);
+      activeSlotIndex = (exerciseSlots.length - 1).clamp(
+        0,
+        exerciseSlots.length,
+      );
     }
     _persistExerciseOrder();
     _recomputePRs();
@@ -881,14 +1171,16 @@ class SessionViewModel extends ChangeNotifier {
   /// queryable/excludable in analytics even after the session ends.
   int? _supersetGroupFor(String exerciseId) {
     final slot = exerciseSlots.firstWhereOrNull(
-        (s) => s.type == SessionSlotType.superset && s.exerciseIds.contains(exerciseId));
+      (s) =>
+          s.type == SessionSlotType.superset &&
+          s.exerciseIds.contains(exerciseId),
+    );
     return slot?.id;
   }
 
   String? _variationName(String exerciseId, String? variationId) {
     if (variationId == null) return null;
-    return exerciseDetailMap[exerciseId]
-        ?.assignedVariations
+    return exerciseDetailMap[exerciseId]?.assignedVariations
         .where((v) => v.variationId == variationId)
         .map((v) => v.name)
         .firstOrNull;
@@ -903,20 +1195,22 @@ class SessionViewModel extends ChangeNotifier {
     final nextNum = sets.isEmpty
         ? 1
         : sets.map((s) => s.setNumber).reduce((a, b) => a > b ? a : b) + 1;
-    _sessionRepo.insertSet(
-      sessionId: currentWorkoutId!,
-      userId: _userId,
-      exerciseId: exerciseId,
-      exerciseName: exerciseDetailMap[exerciseId]?.name,
-      setNumber: nextNum,
-      weight: null,
-      reps: [],
-      supersetGroupNumber: _supersetGroupFor(exerciseId),
-    ).then((newSet) {
-      sets.add(newSet);
-      _recomputePRs();
-      notifyListeners();
-    });
+    _sessionRepo
+        .insertSet(
+          sessionId: currentWorkoutId!,
+          userId: _userId,
+          exerciseId: exerciseId,
+          exerciseName: exerciseDetailMap[exerciseId]?.name,
+          setNumber: nextNum,
+          weight: null,
+          reps: [],
+          supersetGroupNumber: _supersetGroupFor(exerciseId),
+        )
+        .then((newSet) {
+          sets.add(newSet);
+          _recomputePRs();
+          notifyListeners();
+        });
   }
 
   void removeDraftSet(String exerciseId, int draftId) {
@@ -931,17 +1225,20 @@ class SessionViewModel extends ChangeNotifier {
     int draftId, {
     String? variationId,
     double? weight,
-    required List<num> reps,
+    List<num>? reps,
     String? notes,
   }) async {
     if (currentWorkoutId == null) return false;
-    if (reps.isEmpty) return false;
+    // Reps are not mandatory — a draft materializes with weight or a
+    // variation alone (planned reps stay ghost values).
+    final repsList = reps ?? const [];
     final nextNum = sets.isEmpty
         ? 1
         : sets.map((s) => s.setNumber).reduce((a, b) => a > b ? a : b) + 1;
     // Find an empty pre-created set for this exercise to fill in
     final emptyIdx = sets.lastIndexWhere(
-      (s) => s.exerciseId == exerciseId && s.reps.isEmpty);
+      (s) => s.exerciseId == exerciseId && s.reps.isEmpty,
+    );
     try {
       if (emptyIdx >= 0) {
         await _sessionRepo.updateSet(
@@ -950,7 +1247,7 @@ class SessionViewModel extends ChangeNotifier {
           clearVariation: variationId == null,
           weight: weight,
           clearWeight: weight == null,
-          reps: reps,
+          reps: repsList,
           notes: notes,
           clearNotes: notes == null || notes.isEmpty,
         );
@@ -964,7 +1261,7 @@ class SessionViewModel extends ChangeNotifier {
           variationName: _variationName(exerciseId, variationId),
           setNumber: nextNum,
           weight: weight,
-          reps: reps,
+          reps: repsList,
           notes: notes,
           supersetGroupNumber: _supersetGroupFor(exerciseId),
         );
@@ -1049,9 +1346,12 @@ class SessionViewModel extends ChangeNotifier {
         sessionId: currentWorkoutId!,
         userId: _userId,
         exerciseId: set.exerciseId,
-        exerciseName: set.exerciseName ?? exerciseDetailMap[set.exerciseId]?.name,
+        exerciseName:
+            set.exerciseName ?? exerciseDetailMap[set.exerciseId]?.name,
         variationId: set.variationId,
-        variationName: set.variationName ?? _variationName(set.exerciseId, set.variationId),
+        variationName:
+            set.variationName ??
+            _variationName(set.exerciseId, set.variationId),
         setNumber: nextNum,
         weight: set.weight,
         reps: set.reps,
@@ -1070,13 +1370,28 @@ class SessionViewModel extends ChangeNotifier {
   List<Lesson> lessonsFor(String exerciseId) =>
       lessonsByExercise[exerciseId] ?? const [];
 
+  /// Lessons created during the CURRENT session only — the session-scoped
+  /// counts (stats bar, exercise-card button, reflection). [lessonsFor]
+  /// remains the full cross-session list for the lessons modal and the
+  /// pinned lesson bar, so past lessons stay visible without inflating
+  /// this session's numbers.
+  List<Lesson> lessonsThisSession(String exerciseId) =>
+      (lessonsByExercise[exerciseId] ?? const <Lesson>[])
+          .where((l) => l.sessionId == currentWorkoutId)
+          .toList();
+
   /// Loads (or refreshes) the persisted lessons for one exercise — called
   /// whenever an exercise slot is created so the card's lesson preview/count
   /// is populated without requiring the Lessons modal to be opened first.
   Future<void> loadLessonsFor(String exerciseId) async {
     try {
-      lessonsByExercise[exerciseId] = await _lessonRepo.fetchLessons(_userId, exerciseId);
-      _lessonLog.info('loadLessonsFor($exerciseId) → ${lessonsByExercise[exerciseId]!.length}');
+      lessonsByExercise[exerciseId] = await _lessonRepo.fetchLessons(
+        _userId,
+        exerciseId,
+      );
+      _lessonLog.info(
+        'loadLessonsFor($exerciseId) → ${lessonsByExercise[exerciseId]!.length}',
+      );
       notifyListeners();
     } catch (e) {
       error = e.toString();
@@ -1087,8 +1402,12 @@ class SessionViewModel extends ChangeNotifier {
   Future<void> addLesson(String exerciseId, String text) async {
     if (text.trim().isEmpty) return;
     try {
-      await _lessonRepo.createLesson(_userId, exerciseId, text.trim(),
-          sessionId: currentWorkoutId);
+      await _lessonRepo.createLesson(
+        _userId,
+        exerciseId,
+        text.trim(),
+        sessionId: currentWorkoutId,
+      );
       await loadLessonsFor(exerciseId);
     } catch (e) {
       error = e.toString();
@@ -1097,11 +1416,17 @@ class SessionViewModel extends ChangeNotifier {
   }
 
   Future<void> toggleLessonPin(String exerciseId, String lessonId) async {
-    final lesson =
-        lessonsByExercise[exerciseId]?.firstWhereOrNull((l) => l.lessonId == lessonId);
+    final lesson = lessonsByExercise[exerciseId]?.firstWhereOrNull(
+      (l) => l.lessonId == lessonId,
+    );
     if (lesson == null) return;
     try {
-      await _lessonRepo.setPinned(_userId, exerciseId, lessonId, !lesson.pinned);
+      await _lessonRepo.setPinned(
+        _userId,
+        exerciseId,
+        lessonId,
+        !lesson.pinned,
+      );
       await loadLessonsFor(exerciseId);
     } catch (e) {
       error = e.toString();
@@ -1119,21 +1444,46 @@ class SessionViewModel extends ChangeNotifier {
     }
   }
 
+  Future<void> updateLessonText(
+    String exerciseId,
+    String lessonId,
+    String text,
+  ) async {
+    if (text.trim().isEmpty) return;
+    try {
+      await _lessonRepo.updateLesson(
+        _userId,
+        exerciseId,
+        lessonId,
+        text.trim(),
+      );
+      await loadLessonsFor(exerciseId);
+    } catch (e) {
+      error = e.toString();
+      notifyListeners();
+    }
+  }
+
   // ── History / PR baseline ─────────────────────────────────────────────────
 
   List<ExerciseHistorySession> historyFor(String exerciseId) =>
       historyByExercise[exerciseId] ?? const [];
 
-  ({num weight, num reps})? prevBestFor(String exerciseId, String? variationId) =>
-      prevBestByExerciseVariation[(exerciseId, variationId)];
+  ({num weight, num reps})? prevBestFor(
+    String exerciseId,
+    String? variationId,
+  ) => prevBestByExerciseVariation[(exerciseId, variationId)];
 
   /// The PR baseline for [exerciseId]: the better of the past-best and the
   /// best set logged earlier in the current session (excluding [excludingSetId],
   /// so a set isn't compared against itself). Lets a set that beats something
   /// done earlier in the same workout highlight as a PR, matching what the
   /// engine persists at endWorkout (the day's best).
-  ({num weight, num reps})? baselineFor(String exerciseId, String? variationId,
-      {String? excludingSetId}) {
+  ({num weight, num reps})? baselineFor(
+    String exerciseId,
+    String? variationId, {
+    String? excludingSetId,
+  }) {
     final pastBest = prevBestByExerciseVariation[(exerciseId, variationId)];
     ({num weight, num reps})? sessionBest;
     for (final s in sets) {
@@ -1152,14 +1502,18 @@ class SessionViewModel extends ChangeNotifier {
     if (pastBest == null) return sessionBest;
     if (sessionBest == null) return pastBest;
     if (sessionBest.weight > pastBest.weight ||
-        (sessionBest.weight == pastBest.weight && sessionBest.reps > pastBest.reps)) {
+        (sessionBest.weight == pastBest.weight &&
+            sessionBest.reps > pastBest.reps)) {
       return sessionBest;
     }
     return pastBest;
   }
 
-  int prCountFor(String exerciseId) =>
-      sets.where((s) => s.exerciseId == exerciseId && prSetIds.contains(s.sessionSetId)).length;
+  int prCountFor(String exerciseId) => sets
+      .where(
+        (s) => s.exerciseId == exerciseId && prSetIds.contains(s.sessionSetId),
+      )
+      .length;
 
   // ── Start / end / cancel workout ──────────────────────────────────────────
 
@@ -1207,9 +1561,10 @@ class SessionViewModel extends ChangeNotifier {
     try {
       await _purgeEmptySets();
       await _sessionRepo.endSession(
-          currentWorkoutId!,
-          postNotes: endNotes.trim().isEmpty ? null : endNotes.trim(),
-          feeling: endFeeling);
+        currentWorkoutId!,
+        postNotes: endNotes.trim().isEmpty ? null : endNotes.trim(),
+        feeling: endFeeling,
+      );
       _resetActiveWorkoutState();
       // Wizard lands back on Prep with the completion message; reload the
       // past-sets timeline so LAST SESSION now shows the just-finished one.
@@ -1233,6 +1588,9 @@ class SessionViewModel extends ChangeNotifier {
     // with the cached VM — and all prep state — intact.
     notifyListeners();
     await _sessionRepo.cancelSession(id);
+    // Reload the timeline — the cancelled session must leave the past-sets
+    // timeline and the viewer card's pager (endSession reloads too).
+    await _loadPastSets();
   }
 
   Future<void> _purgeEmptySets() async {
@@ -1244,7 +1602,6 @@ class SessionViewModel extends ChangeNotifier {
       } catch (_) {}
     }
   }
-
 
   void _resetActiveWorkoutState() {
     currentWorkoutId = null;
@@ -1275,12 +1632,9 @@ class SessionViewModel extends ChangeNotifier {
       final existing = await _exerciseRepo.findExerciseByName(_userId, trimmed);
       String id;
       if (existing != null) {
-        if (existing.isArchived) {
-          error = '"$trimmed" already exists.';
-          newExCreating = false;
-          notifyListeners();
-          return null;
-        }
+        // Creating a name that matches an archived exercise restores it —
+        // exercises are per-user, and a soft-deleted name must not block
+        // re-creation (reactivating an active row is a no-op).
         await _exerciseRepo.reactivateExercise(existing.exerciseId);
         id = existing.exerciseId;
       } else {
@@ -1305,7 +1659,11 @@ class SessionViewModel extends ChangeNotifier {
   /// [useExistingId] short-circuits straight to that reuse-and-bridge path —
   /// used when the caller already resolved a "did you mean?" pick, so this
   /// doesn't re-run the name lookup.
-  Future<String?> submitNewVariation(String name, {required String exerciseId, String? useExistingId}) async {
+  Future<String?> submitNewVariation(
+    String name, {
+    required String exerciseId,
+    String? useExistingId,
+  }) async {
     final trimmed = name.trim();
     if (trimmed.isEmpty && useExistingId == null) return null;
     newVarCreating = true;
@@ -1314,17 +1672,28 @@ class SessionViewModel extends ChangeNotifier {
       String id;
       if (useExistingId != null) {
         id = useExistingId;
-        final existing = allVariations.firstWhereOrNull((v) => v.variationId == useExistingId);
-        if (existing != null && !existing.isArchived) {
+        final existing = allVariations.firstWhereOrNull(
+          (v) => v.variationId == useExistingId,
+        );
+        if (existing != null) {
+          // Reusing an archived variation must bring it back — the bridge
+          // alone would point at a variation nothing displays.
           await _exerciseRepo.reactivateVariation(id);
         }
       } else {
-        final existing = await _exerciseRepo.findVariationByName(_userId, trimmed);
+        final existing = await _exerciseRepo.findVariationByName(
+          _userId,
+          trimmed,
+        );
         if (existing != null) {
-          if (!existing.isArchived) await _exerciseRepo.reactivateVariation(existing.variationId);
+          // Creating a name that matches an archived variation restores it.
+          await _exerciseRepo.reactivateVariation(existing.variationId);
           id = existing.variationId;
         } else {
-          final variation = await _exerciseRepo.createVariation(_userId, trimmed);
+          final variation = await _exerciseRepo.createVariation(
+            _userId,
+            trimmed,
+          );
           id = variation.variationId;
         }
       }

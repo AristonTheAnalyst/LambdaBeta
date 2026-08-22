@@ -232,9 +232,11 @@ List<PrRecord> fullPrTimeline(List<PastSetRow> sets) {
         targetWeight: weight,
         isPropagated: false,
       ));
-      // Propagate downward: create propagated records for lighter weights
-      // whose implied max-reps also increased. Never reaches 0kg — the
-      // bodyweight axis tracks its own reps independently.
+      // Propagate downward to lighter weights that were EXPLICITLY lifted
+      // before (existing map keys) whose implied max-reps also increased.
+      // Weights the user never actually lifted are never fabricated — doing
+      // 100kg × 10 does not invent a record for 95kg. Never reaches 0kg —
+      // the bodyweight axis tracks its own reps independently.
       for (final entry in exMaxReps.entries.toList()) {
         if (entry.key < weight && entry.key > 0 && entry.value < newReps) {
           exMaxReps[entry.key] = newReps;
@@ -258,6 +260,39 @@ List<PrRecord> fullPrTimeline(List<PastSetRow> sets) {
   }
 
   return prs;
+}
+
+/// Before-tracking for one session's records: maps each record belonging to
+/// [sessionId] to the previous record on its axis — history OR an earlier set
+/// in the same session. Keyed per source set so two records on the same axis
+/// in one session each keep their own before; an axis-keyed map would
+/// overwrite the first record's null before with itself and misreport a
+/// first PR as "10 reps → 10 reps" instead of "(First PR)".
+({Map<(String, String?, int, String?), PrRecord?> repMax,
+        Map<(String, String?, num, String?), PrRecord?> weightMax})
+    sessionBeforeMaps(List<PrRecord> records, String sessionId) {
+  final repMax = <(String, String?, int, String?), PrRecord?>{};
+  final weightMax = <(String, String?, num, String?), PrRecord?>{};
+  final lastRepMax = <(String, String?, int), PrRecord?>{};
+  final lastWeightMax = <(String, String?, num), PrRecord?>{};
+  for (final r in records) {
+    if (r.type == PrType.repMax && r.targetReps != null) {
+      final axis = (r.exerciseId, r.variationId, r.targetReps!);
+      if (r.sessionId == sessionId) {
+        repMax[(r.exerciseId, r.variationId, r.targetReps!, r.setId)] =
+            lastRepMax[axis];
+      }
+      lastRepMax[axis] = r;
+    } else if (r.type == PrType.weightMax && r.targetWeight != null) {
+      final axis = (r.exerciseId, r.variationId, r.targetWeight!);
+      if (r.sessionId == sessionId) {
+        weightMax[(r.exerciseId, r.variationId, r.targetWeight!, r.setId)] =
+            lastWeightMax[axis];
+      }
+      lastWeightMax[axis] = r;
+    }
+  }
+  return (repMax: repMax, weightMax: weightMax);
 }
 
 /// PRs set during a single workout.
