@@ -85,6 +85,7 @@ class _ExerciseSelectorState extends State<ExerciseSelector> {
               Icons.keyboard_arrow_left,
               widget.exercises.length > 1 && widget.activeIndex > 0,
               () => widget.onSelect(widget.activeIndex - 1),
+              key: const ValueKey('exercise-selector-prev'),
             ),
             const SizedBox(width: AppSpacing.xs),
             Expanded(
@@ -151,6 +152,7 @@ class _ExerciseSelectorState extends State<ExerciseSelector> {
               widget.exercises.length > 1 &&
                   widget.activeIndex < widget.exercises.length - 1,
               () => widget.onSelect(widget.activeIndex + 1),
+              key: const ValueKey('exercise-selector-next'),
             ),
           ],
         ),
@@ -271,8 +273,9 @@ class _ExerciseSelectorState extends State<ExerciseSelector> {
     );
   }
 
-  Widget _arrow(IconData icon, bool enabled, VoidCallback onTap) {
+  Widget _arrow(IconData icon, bool enabled, VoidCallback onTap, {Key? key}) {
     return GestureDetector(
+      key: key,
       onTap: enabled ? onTap : () {},
       child: Container(
         width: 24,

@@ -404,7 +404,9 @@ class SessionViewModel extends ChangeNotifier {
   /// standalone).
   Future<void> _loadSelectedSessionSets() async {
     if (selectedStandaloneWorkout != null) {
-      final sets = await _plannedSessionRepo.fetchPlannedSets(
+      // Consolidation keeps the preview consistent with the planner — one
+      // group per exercise, no-target stubs archived (idempotent).
+      final sets = await _plannedSessionRepo.consolidateDuplicateExerciseGroups(
         selectedStandaloneWorkout!.sessionId,
       );
       plannedSetsByExercise = _plannedMapFromSessionSets(sets);
@@ -418,9 +420,10 @@ class SessionViewModel extends ChangeNotifier {
       return;
     }
     try {
-      final plannedSets = await _programRepo.fetchPlannedSessionSets(
-        pw.sessionId,
-      );
+      final plannedSets =
+          await _plannedSessionRepo.consolidateDuplicateExerciseGroups(
+            pw.sessionId,
+          );
       plannedSetsByExercise = _plannedMapFromSets(plannedSets);
       plannedExerciseOrder = _plannedOrderFromSets(plannedSets);
     } catch (_) {}
@@ -483,7 +486,9 @@ class SessionViewModel extends ChangeNotifier {
   Future<void> selectStandaloneWorkout(PlannedSession w) async {
     selectedStandaloneWorkout = w;
     selectedPlannedSession = null;
-    final sets = await _plannedSessionRepo.fetchPlannedSets(w.sessionId);
+    final sets = await _plannedSessionRepo.consolidateDuplicateExerciseGroups(
+      w.sessionId,
+    );
     plannedSetsByExercise = _plannedMapFromSessionSets(sets);
     plannedExerciseOrder = _plannedOrderFromSessionSets(sets);
     notifyListeners();
@@ -889,7 +894,10 @@ class SessionViewModel extends ChangeNotifier {
       selectedStandaloneWorkout = null;
     }
     try {
-      final plannedSets = await _plannedSessionRepo.fetchPlannedSets(parentId);
+      final plannedSets =
+          await _plannedSessionRepo.consolidateDuplicateExerciseGroups(
+            parentId,
+          );
       plannedSetsByExercise = _plannedMapFromSets(plannedSets);
       plannedExerciseOrder = _plannedOrderFromSets(plannedSets);
     } catch (_) {}

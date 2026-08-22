@@ -272,6 +272,10 @@ class ProgramDetailViewModel {
   /// instead of a program's planned workout.
   String? _standaloneWorkoutId;
   bool get isStandaloneMode => _standaloneWorkoutId != null;
+
+  /// Virtual draft row ids for the workout editor — "+ ADD SET" and new
+  /// exercise groups add drafts that materialize on input or explicit Save.
+  int _nextDraftId = 1;
   final state = ValueNotifier(const ProgramDetailState());
 
   String get _userId => Supabase.instance.client.auth.currentUser!.id;
@@ -655,7 +659,13 @@ class ProgramDetailViewModel {
       workoutSetsLoading: true,
     );
     try {
-      final sets = await _plannedSessionRepo.fetchPlannedSets(w.sessionId);
+      // Consolidation enforces "exercises are unique per session" on legacy
+      // data — duplicate exercise groups merge into one and no-target
+      // keep-alive stubs archive — so the planner shows the same view the
+      // session preview shows.
+      final sets = await _plannedSessionRepo.consolidateDuplicateExerciseGroups(
+        w.sessionId,
+      );
       final plannedSets = _setsFromSessionSets(sets);
       state.value = state.value.copyWith(
         workoutPlannedSessionSets: plannedSets,
@@ -705,7 +715,12 @@ class ProgramDetailViewModel {
       workoutSetsLoading: true,
     );
     try {
-      final sets = await _plannedSessionRepo.fetchPlannedSets(sessionId);
+      // Same legacy-data consolidation as openEditWorkout — one group per
+      // exercise, no-target stubs archived, so the planner and the session
+      // preview agree.
+      final sets = await _plannedSessionRepo.consolidateDuplicateExerciseGroups(
+        sessionId,
+      );
       state.value = state.value.copyWith(
         workoutPlannedSessionSets: _setsFromSessionSets(sets),
         workoutExerciseSlots: _slotsFromSessionSets(sets),
@@ -841,6 +856,25 @@ class ProgramDetailViewModel {
       return;
     }
     await Future.wait([commitWorkoutName(), commitWorkoutNotes()]);
+    // Persist any remaining draft rows as (possibly empty) planned sets —
+    // empty sets are valid and an explicit Save is intent.
+    final workout = s.editingWorkout;
+    if (workout != null) {
+      var anyDrafts = false;
+      for (final entry in state.value.workoutSetDrafts.entries) {
+        final slot = state.value.workoutExerciseSlots
+            .where((sl) => sl.exerciseSequenceOrder == entry.key)
+            .firstOrNull;
+        if (slot == null) continue;
+        for (final _ in entry.value) {
+          await _persistEmptyPlannedSessionSet(slot.exerciseId, entry.key);
+          anyDrafts = true;
+        }
+      }
+      if (anyDrafts) {
+        state.value = state.value.copyWith(workoutSetDrafts: const {});
+      }
+    }
     if (isStandaloneMode) {
       state.value = state.value.copyWith(workoutUnsavedChanges: false);
       return;
@@ -1068,20 +1102,16 @@ class ProgramDetailViewModel {
         exerciseId: exerciseId,
       ),
     ];
-    // No draft row — the persisted empty planned set (below) IS the first set
-    // row, so adding a ghost would double it.
+    // The new group gets one virtual draft row — its entry row, persisted on
+    // input or on explicit Save (never as a silent keep-alive stub).
+    final drafts = Map<int, List<int>>.from(s.workoutSetDrafts);
+    drafts.putIfAbsent(nextOrder, () => []).add(_nextDraftId++);
     state.value = s.copyWith(
       workoutExerciseSlots: slots,
+      workoutSetDrafts: drafts,
       activeSlotIndex: slots.length - 1,
       workoutUnsavedChanges: true,
     );
-    // Persist an empty planned set so the exercise survives a save/reopen —
-    // slots are reconstructed from persisted sets, so an exercise with no
-    // committed set would otherwise vanish.
-    final workout = s.editingWorkout;
-    if (workout != null) {
-      _persistEmptyPlannedSessionSet(exerciseId, nextOrder);
-    }
     loadLessonsFor(exerciseId);
   }
 
@@ -1205,14 +1235,20 @@ class ProgramDetailViewModel {
   }
 
   void addDraftPlannedSessionSet(int exerciseSequenceOrder) {
-    // Persist an empty planned set immediately so "+ ADD SET" rows survive a
-    // save/reopen even when no target is entered. The set number is assigned
-    // here; the caller's PlanSetRow fills weight/reps on commit.
+    // "+ ADD SET" adds a virtual draft row — visible immediately and a REAL
+    // change (marks the editor dirty, so the guard prompts on back and the
+    // Save button appears). The draft materializes as a row on input, or as
+    // an empty row on explicit Save (empty sets are valid).
     final slot = state.value.workoutExerciseSlots
         .where((s) => s.exerciseSequenceOrder == exerciseSequenceOrder)
         .firstOrNull;
     if (slot == null) return;
-    _persistEmptyPlannedSessionSet(slot.exerciseId, exerciseSequenceOrder);
+    final drafts = Map<int, List<int>>.from(state.value.workoutSetDrafts);
+    drafts.putIfAbsent(exerciseSequenceOrder, () => []).add(_nextDraftId++);
+    state.value = state.value.copyWith(
+      workoutSetDrafts: drafts,
+      workoutUnsavedChanges: true,
+    );
   }
 
   void removeDraftPlannedSessionSet(int exerciseSequenceOrder, int draftId) {

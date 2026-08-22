@@ -173,6 +173,47 @@ class PlannedSessionRepository {
     return PlannedSession.fromMap(rows.first);
   }
 
+  /// Consolidates a template to the "exercises are unique per session" rule:
+  /// every exercise gets ONE group containing all of its rows (original
+  /// order), groups ordered by first appearance. Also archives no-target
+  /// rows — the old keep-alive stubs from group creation, which carry no
+  /// information and only made the planner's counts disagree with the
+  /// session preview. Rows with target data are never deleted, so the user
+  /// can prune unwanted ones in one place afterwards. Idempotent.
+  Future<List<PlannedSessionSet>> consolidateDuplicateExerciseGroups(
+    String sessionId,
+  ) async {
+    final sets = await fetchPlannedSets(sessionId);
+    for (final s in sets) {
+      final noTargetData = s.targetWeight == null &&
+          s.targetReps == null &&
+          (s.targetNotes?.isEmpty ?? true) &&
+          s.variationId == null;
+      if (noTargetData) {
+        await ps.db.execute(
+          'UPDATE dim_planned_session_set SET is_archived = 1 WHERE set_id = ?',
+          [s.setId],
+        );
+      }
+    }
+    final remaining = await fetchPlannedSets(sessionId);
+    final orderByExercise = <String, int>{};
+    final nextSetNumber = <String, int>{};
+    var nextOrder = 0;
+    for (final s in remaining) {
+      final order = orderByExercise.putIfAbsent(s.exerciseId, () => ++nextOrder);
+      final number = nextSetNumber.putIfAbsent(s.exerciseId, () => 1);
+      nextSetNumber[s.exerciseId] = number + 1;
+      if (order != s.exerciseSequenceOrder || number != s.setNumber) {
+        await ps.db.execute(
+          'UPDATE dim_planned_session_set SET exercise_sequence_order = ?, set_number = ? WHERE set_id = ?',
+          [order, number, s.setId],
+        );
+      }
+    }
+    return fetchPlannedSets(sessionId);
+  }
+
   Future<List<PlannedSessionSet>> fetchPlannedSets(String sessionId) async {
     final rows = await ps.db.getAll(
       '''
