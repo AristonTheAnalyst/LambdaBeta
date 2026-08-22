@@ -77,55 +77,82 @@ class _ExerciseSelectorState extends State<ExerciseSelector> {
       // The field fills the full width its parent offers.
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        CompositedTransformTarget(
-          link: _link,
-          child: GestureDetector(
-            key: const ValueKey('exercise-selector-field'),
-            onTap: _toggle,
-            child: Container(
-              key: _fieldKey,
-              // Glass compact — the neutral translucent treatment.
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: AppColors.primary.withAlpha(26),
-                borderRadius: BorderRadius.circular(AppRadius.md),
-                border: Border.all(color: AppColors.primary.withAlpha(77)),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      widget.exercises.isEmpty
-                          ? ''
-                          : widget.exercises[widget.activeIndex],
-                      overflow: TextOverflow.ellipsis,
-                      style: AppFonts.ui(
-                        fontSize: AppTextStyles.sm,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.primary,
+        Row(
+          children: [
+            // Left/right flanking arrows — step between exercises without
+            // opening the popover. Greyed at the ends of the list.
+            _arrow(
+              Icons.keyboard_arrow_left,
+              widget.exercises.length > 1 && widget.activeIndex > 0,
+              () => widget.onSelect(widget.activeIndex - 1),
+            ),
+            const SizedBox(width: AppSpacing.xs),
+            Expanded(
+              child: CompositedTransformTarget(
+                link: _link,
+                child: GestureDetector(
+                  key: const ValueKey('exercise-selector-field'),
+                  onTap: _toggle,
+                  child: Container(
+                    key: _fieldKey,
+                    // Glass compact — the neutral translucent treatment.
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withAlpha(26),
+                      borderRadius: BorderRadius.circular(AppRadius.md),
+                      border: Border.all(
+                        color: AppColors.primary.withAlpha(77),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: AppSpacing.sm),
-                  // Chevron right of the exercise name — the field's
-                  // dropdown affordance. Points up while the popover is open.
-                  AnimatedRotation(
-                    turns: _open ? 0.5 : 0,
-                    duration: const Duration(milliseconds: 150),
-                    child: Icon(
-                      Icons.keyboard_arrow_down,
-                      size: 16,
-                      color: AppColors.primary,
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            widget.exercises.isEmpty
+                                ? ''
+                                : widget.exercises[widget.activeIndex],
+                            overflow: TextOverflow.ellipsis,
+                            style: AppFonts.ui(
+                              fontSize: AppTextStyles.sm,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.primary,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: AppSpacing.sm),
+                        // Chevron right of the exercise name — the field's
+                        // dropdown affordance. Points up while the popover
+                        // is open.
+                        AnimatedRotation(
+                          turns: _open ? 0.5 : 0,
+                          duration: const Duration(milliseconds: 150),
+                          child: Icon(
+                            Icons.keyboard_arrow_down,
+                            size: 16,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                        if (widget.onDeleteRequest != null) ...[
+                          const SizedBox(width: AppSpacing.xs),
+                          _HoldToDeleteX(onComplete: widget.onDeleteRequest!),
+                        ],
+                      ],
                     ),
                   ),
-                  if (widget.onDeleteRequest != null) ...[
-                    const SizedBox(width: AppSpacing.xs),
-                    _HoldToDeleteX(onComplete: widget.onDeleteRequest!),
-                  ],
-                ],
+                ),
               ),
             ),
-          ),
+            const SizedBox(width: AppSpacing.xs),
+            _arrow(
+              Icons.keyboard_arrow_right,
+              widget.exercises.length > 1 &&
+                  widget.activeIndex < widget.exercises.length - 1,
+              () => widget.onSelect(widget.activeIndex + 1),
+            ),
+          ],
         ),
         // The popover lives in the app's Overlay, anchored to the field via
         // the LayerLink — exact field width, fixed height, scrollable rows,
@@ -304,8 +331,8 @@ class _ExerciseSelectorState extends State<ExerciseSelector> {
   }
 }
 
-/// Hold-to-delete X — fills a danger progress ring over one second; once
-/// complete, fires [onComplete].
+/// Hold-to-delete X — the container's background and outline fill with
+/// danger red over one second; once complete, fires [onComplete].
 class _HoldToDeleteX extends StatefulWidget {
   const _HoldToDeleteX({required this.onComplete});
 
@@ -363,23 +390,33 @@ class _HoldToDeleteXState extends State<_HoldToDeleteX>
           height: 28,
           child: AnimatedBuilder(
             animation: _progress,
-            builder: (context, _) => Stack(
-              alignment: Alignment.center,
-              children: [
-                SizedBox(
-                  width: 24,
-                  height: 24,
-                  child: CircularProgressIndicator(
-                    // Always determinate — an indeterminate ring would
-                    // animate forever at rest.
-                    value: _progress.value,
-                    strokeWidth: 2,
-                    color: AppColors.danger,
+            builder: (context, _) {
+              // The hold fills the container — background and outline
+              // graduate from neutral to danger as the progress advances.
+              final t = _progress.value;
+              return Container(
+                width: 24,
+                height: 24,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: Color.lerp(Colors.transparent, AppColors.dangerBg, t),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(
+                    color: Color.lerp(
+                      AppColors.border,
+                      AppColors.danger,
+                      t,
+                    )!,
+                    width: 0.5,
                   ),
                 ),
-                Icon(Icons.close, size: 14, color: AppColors.muted),
-              ],
-            ),
+                child: Icon(
+                  Icons.close,
+                  size: 14,
+                  color: Color.lerp(AppColors.muted, AppColors.primary, t),
+                ),
+              );
+            },
           ),
         ),
       ),
