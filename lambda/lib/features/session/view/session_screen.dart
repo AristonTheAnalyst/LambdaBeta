@@ -14,13 +14,15 @@ import '../../../data/models/planned_session_set.dart';
 import '../../../data/models/session.dart';
 import '../../../data/models/session_set.dart';
 import '../../../shared/widgets/app_card.dart';
-import '../../../shared/widgets/exercise_pill_bar.dart';
+import '../../../shared/widgets/dropdown_select.dart';
 import '../../../shared/widgets/feeling_rating.dart';
 import '../../../shared/widgets/glass_button.dart';
 import '../../../shared/widgets/lambda_input.dart';
 import '../../../shared/widgets/page_header.dart';
 import '../../../shared/widgets/press_squash.dart';
 import '../../../shared/widgets/reflection_summary.dart';
+import '../../../shared/widgets/session_exercise_card.dart';
+import '../../../shared/widgets/session_set_row.dart';
 import '../../../shared/widgets/slide_pages.dart';
 import '../../../shared/widgets/slide_up_modal.dart';
 import '../viewmodel/session_viewmodel.dart';
@@ -35,7 +37,8 @@ class SessionScreen extends StatefulWidget {
   State<SessionScreen> createState() => _SessionScreenState();
 }
 
-class _SessionScreenState extends State<SessionScreen> {
+class _SessionScreenState extends State<SessionScreen>
+    with WidgetsBindingObserver {
   static SessionViewModel? _cachedVm;
 
   static void _clearCachedVm() => _cachedVm = null;
@@ -56,6 +59,7 @@ class _SessionScreenState extends State<SessionScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     ps.onSignOutReset = _resetCachedVmOnSignOut;
     if (_cachedVm != null) {
       // Reuse across hot reload — workout state stays intact
@@ -90,6 +94,7 @@ class _SessionScreenState extends State<SessionScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     if (ps.onSignOutReset == _resetCachedVmOnSignOut) {
       ps.onSignOutReset = null;
     }
@@ -97,6 +102,18 @@ class _SessionScreenState extends State<SessionScreen> {
     _startNotesCtrl.dispose();
     _endNotesCtrl.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Commit is blur-only — backgrounding the app (or a hard kill right
+    // after) must not lose typed set values. paused/inactive both fire on
+    // the way to the background; detached covers a terminated app.
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.detached) {
+      _vm.flushPendingCommits();
+    }
   }
 
   // ── Modals ─────────────────────────────────────────────────────────────────
@@ -1502,12 +1519,13 @@ class _TrainingPage extends StatelessWidget {
 ///
 /// Planned template: read-only planned rows (plannedBg fill + planned
 /// outline) with static values — no editing, no reorder/remove/add.
-/// Freestyle (no template): a ghosted, non-interactive version — sample
-/// pills from recently-used exercises and an empty 3-row set container —
-/// so the page still reads like a session without pretending anything is
+/// Freestyle (no template): a ghosted, non-interactive version of the same
+/// shared card — recently-used exercise names and an empty 3-row grid — so
+/// the page still reads like a session without pretending anything is
 /// planned.
-/// One-screen-only by design (the planner has its own editable set rows), so
-/// it lives here rather than in shared/widgets.
+/// An adapter over the shared [SessionExerciseCard] + [SessionSetRow] — the
+/// exact chrome the live session uses, read-only by construction (nulls grey
+/// the shared card's controls).
 class _SessionPreview extends StatefulWidget {
   const _SessionPreview({required this.vm});
 
@@ -1527,21 +1545,60 @@ class _SessionPreviewState extends State<_SessionPreview> {
     if (order.isEmpty) return _freestylePreview(vm);
     final activeIndex = _selectedIndex.clamp(0, order.length - 1);
     final exerciseId = order[activeIndex];
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        ExercisePillBar(
-          labels: [
-            for (final id in order) toProperCase(vm.exerciseDisplayName(id)),
-          ],
-          keys: order,
-          activeIndex: activeIndex,
-          onTap: (i) => setState(() => _selectedIndex = i),
-          // No onReorder/onRemove/onAdd — the preview is read-only.
-        ),
-        const SizedBox(height: AppSpacing.xs),
-        _previewCard(vm, exerciseId),
+    return SessionExerciseCard(
+      exerciseNames: [
+        for (final id in order) toProperCase(vm.exerciseDisplayName(id)),
       ],
+      activeIndex: activeIndex,
+      onSelect: (i) => setState(() => _selectedIndex = i),
+      // No onMove/onAdd/onDeleteRequest — the preview is read-only (the
+      // shared card greys the arrows and Add row, hides the delete X).
+      planned: true,
+      rows: _previewRows(vm, exerciseId),
+      // No pills / history / ADD SET — all greyed or hidden via nulls.
+    );
+  }
+
+  /// The selected exercise's planned sets as the shared read-only rows —
+  /// planned mode gives the exact planned-row chrome (plannedBg fill +
+  /// planned outline) with every callback inert.
+  List<Widget> _previewRows(SessionViewModel vm, String exerciseId) {
+    final sets = (vm.plannedSetsByExercise[exerciseId] ?? const [])
+        .where((s) => !s.isArchived)
+        .toList();
+    return [
+      for (var i = 0; i < sets.length; i++)
+        _readOnlyPlannedRow(i + 1, sets[i], 'preview-${sets[i].setId}'),
+    ];
+  }
+
+  Widget _readOnlyPlannedRow(
+    int index,
+    PlannedSessionSet set,
+    String keySuffix,
+  ) {
+    return SessionSetRow(
+      key: ValueKey(keySuffix),
+      mode: SetRowMode.planned,
+      exerciseId: set.exerciseId,
+      displayIndex: index,
+      isDraft: false,
+      initialWeightText: set.targetWeight ?? '',
+      initialRepsText: set.targetReps ?? '',
+      initialVariationId: set.variationId,
+      initialVariationName: set.variationName,
+      initialNotes: set.targetNotes,
+      hasNotes: set.targetNotes?.isNotEmpty ?? false,
+      readOnly: true,
+      onCommit: (_, _) async {},
+      onVariationChanged: (_) {},
+      onNotesSave: (_) {},
+      onDelete: () async {},
+      onDuplicate: () {},
+      variationOptions: _noVariationOptions,
+      allVariations: const [],
+      findSimilarVariations: (_) => const [],
+      submitNewVariation: _inertSubmitVariation,
     );
   }
 
@@ -1552,368 +1609,53 @@ class _SessionPreviewState extends State<_SessionPreview> {
     return [for (final e in entries) e.key].take(6).toList();
   }
 
-  /// Freestyle ghosts: pills + exercise container are inert placeholders —
-  /// dimmed, non-clickable, showing what a session will look like.
+  /// Freestyle ghosts: the shared card, inert and dimmed — showing what a
+  /// session will look like without pretending anything is planned.
   Widget _freestylePreview(SessionViewModel vm) {
     final recentIds = _recentExerciseIds(vm);
     return IgnorePointer(
       child: Opacity(
         opacity: 0.45,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (recentIds.isNotEmpty) ...[
-              ExercisePillBar(
-                labels: [
-                  for (final id in recentIds)
-                    toProperCase(vm.exerciseDisplayName(id)),
-                ],
-                keys: recentIds,
-                activeIndex: -1, // ghost: no active pill
-                onTap: (_) {},
+        child: SessionExerciseCard(
+          exerciseNames: [
+            if (recentIds.isEmpty)
+              'Exercise'
+            else
+              for (final id in recentIds)
+                toProperCase(vm.exerciseDisplayName(id)),
+          ],
+          activeIndex: 0,
+          onSelect: (_) {},
+          // Three empty neutral rows so the grid keeps its shape.
+          rows: [
+            for (var i = 0; i < 3; i++)
+              SessionSetRow(
+                key: ValueKey('ghost-$i'),
+                mode: SetRowMode.history,
+                exerciseId: '',
+                displayIndex: i + 1,
+                isDraft: false,
+                initialWeightText: '',
+                initialRepsText: '',
+                initialVariationId: null,
+                hasNotes: false,
+                readOnly: true,
+                onCommit: (_, _) async {},
+                onVariationChanged: (_) {},
+                onNotesSave: (_) {},
+                onDelete: () async {},
+                onDuplicate: () {},
+                variationOptions: _noVariationOptions,
+                allVariations: const [],
+                findSimilarVariations: (_) => const [],
+                submitNewVariation: _inertSubmitVariation,
               ),
-              const SizedBox(height: AppSpacing.sm),
-            ],
-            _freestyleCard(vm, recentIds.isEmpty ? null : recentIds.first),
           ],
         ),
       ),
     );
   }
 
-  /// The ghost exercise container — neutral chrome with 3 empty set rows so
-  /// the grid keeps its shape even though nothing is planned.
-  Widget _freestyleCard(SessionViewModel vm, String? exerciseId) {
-    final name = exerciseId == null
-        ? 'Exercise'
-        : toProperCase(vm.exerciseDisplayName(exerciseId));
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(AppRadius.lg),
-        border: Border.all(color: AppColors.border),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Text(
-                    name,
-                    style: AppFonts.ui(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w800,
-                      color: exerciseId == null
-                          ? AppColors.muted
-                          : AppColors.primary,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.sm),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    _disabledPill(
-                      icon: Icons.menu_book_outlined,
-                      label: 'Lessons',
-                    ),
-                    const SizedBox(width: 6),
-                    _disabledPill(icon: Icons.history, label: 'History'),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(10, 0, 10, 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Same column header row as the live set grid.
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: Row(
-                    children: [
-                      const SizedBox(width: 26),
-                      const SizedBox(width: 6),
-                      Expanded(child: _colLabel('KG')),
-                      const SizedBox(width: 6),
-                      Expanded(child: _colLabel('REPS')),
-                      const SizedBox(width: 6),
-                      Expanded(child: _colLabel('VARIATION')),
-                      const SizedBox(width: 6),
-                      SizedBox(width: 32, child: _colLabel('NOTE')),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 6),
-                // Three empty rows — the container holds its shape.
-                for (var i = 0; i < 3; i++) _emptyRow(i + 1),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// One empty (nothing-planned) row in the freestyle ghost grid.
-  Widget _emptyRow(int index) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-        decoration: BoxDecoration(
-          color: AppColors.surfaceHigh,
-          borderRadius: BorderRadius.circular(AppRadius.md),
-          border: Border.all(color: AppColors.border, width: 0.5),
-        ),
-        child: Row(
-          children: [
-            SizedBox(
-              width: 26,
-              child: Text(
-                '$index',
-                style: AppFonts.mono(fontSize: 11, color: AppColors.muted),
-              ),
-            ),
-            const SizedBox(width: 6),
-            Expanded(child: _valueCell('—', color: AppColors.muted)),
-            const SizedBox(width: 6),
-            Expanded(child: _valueCell('—', color: AppColors.muted)),
-            const SizedBox(width: 6),
-            Expanded(
-              child: Container(
-                height: 34,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: AppColors.bg,
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: AppColors.border, width: 0.5),
-                ),
-              ),
-            ),
-            const SizedBox(width: 6),
-            const SizedBox(width: 32),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// The exercise card mirror: surface card with the planned outline, the
-  /// header (name + PLANNED tag), and the live grid's column layout filled
-  /// with static planned values.
-  Widget _previewCard(SessionViewModel vm, String exerciseId) {
-    final sets = (vm.plannedSetsByExercise[exerciseId] ?? const [])
-        .where((s) => !s.isArchived)
-        .toList();
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(AppRadius.lg),
-        border: Border.all(color: AppColors.planned.withValues(alpha: 0.35)),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Text(
-                    toProperCase(vm.exerciseDisplayName(exerciseId)),
-                    style: AppFonts.ui(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.primary,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.sm),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppColors.planned.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(
-                      color: AppColors.planned.withValues(alpha: 0.35),
-                    ),
-                  ),
-                  child: Text(
-                    'PLANNED',
-                    style: AppFonts.mono(
-                      fontSize: 11,
-                      letterSpacing: 0.4,
-                      color: AppColors.planned,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(10, 0, 10, 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Same column header row as the live set grid.
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: Row(
-                    children: [
-                      const SizedBox(width: 26),
-                      const SizedBox(width: 6),
-                      Expanded(child: _colLabel('KG')),
-                      const SizedBox(width: 6),
-                      Expanded(child: _colLabel('REPS')),
-                      const SizedBox(width: 6),
-                      Expanded(child: _colLabel('VARIATION')),
-                      const SizedBox(width: 6),
-                      SizedBox(width: 32, child: _colLabel('NOTE')),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 6),
-                if (sets.isEmpty)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      vertical: AppSpacing.sm,
-                    ),
-                    child: Text(
-                      'No planned sets',
-                      style: TextStyle(
-                        color: AppColors.muted,
-                        fontSize: AppTextStyles.sm,
-                      ),
-                    ),
-                  ),
-                for (var i = 0; i < sets.length; i++)
-                  _previewRow(i + 1, sets[i]),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _colLabel(String text) => Text(
-    text,
-    textAlign: TextAlign.center,
-    style: AppFonts.mono(
-      fontSize: 8,
-      letterSpacing: 0.6,
-      color: AppColors.muted,
-    ),
-  );
-
-  /// One planned set as a static row — the live session's planned-row look
-  /// (plannedBg fill + planned outline) without any edit affordances.
-  Widget _previewRow(int index, PlannedSessionSet set) {
-    final weight = set.targetWeight;
-    final reps = set.targetReps;
-    final variation = set.variationName;
-    final hasNotes = set.targetNotes != null && set.targetNotes!.isNotEmpty;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-        decoration: BoxDecoration(
-          color: AppColors.plannedBg,
-          borderRadius: BorderRadius.circular(AppRadius.md),
-          border: Border.all(
-            color: AppColors.planned.withValues(alpha: 0.35),
-            width: 0.5,
-          ),
-        ),
-        child: Row(
-          children: [
-            SizedBox(
-              width: 26,
-              child: Text(
-                '$index',
-                style: AppFonts.mono(fontSize: 11, color: AppColors.muted),
-              ),
-            ),
-            const SizedBox(width: 6),
-            Expanded(child: _valueCell(weight != null ? '${weight}kg' : '—')),
-            const SizedBox(width: 6),
-            Expanded(
-              child: _valueCell(reps == null || reps.isEmpty ? '—' : reps),
-            ),
-            const SizedBox(width: 6),
-            Expanded(
-              child: Container(
-                height: 34,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: AppColors.bg,
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: AppColors.border, width: 0.5),
-                ),
-                child: variation != null
-                    ? Text(
-                        toProperCase(variation),
-                        textAlign: TextAlign.center,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppFonts.mono(
-                          fontSize: 10,
-                          color: AppColors.planned,
-                        ),
-                      )
-                    : null,
-              ),
-            ),
-            const SizedBox(width: 6),
-            SizedBox(
-              width: 32,
-              child: hasNotes
-                  ? Icon(
-                      Icons.sticky_note_2_outlined,
-                      size: 16,
-                      color: AppColors.planned,
-                    )
-                  : null,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _valueCell(String text, {Color? color}) {
-    return SizedBox(
-      height: 34,
-      child: Container(
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: AppColors.bg,
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: AppColors.border, width: 0.5),
-        ),
-        child: Text(
-          text,
-          style: AppFonts.mono(
-            fontSize: 15,
-            fontWeight: FontWeight.w500,
-            color: color ?? AppColors.planned,
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 /// The training page's exercise-card placeholder shown before the first
@@ -2017,6 +1759,18 @@ class _PlaceholderExerciseCard extends StatelessWidget {
 /// The lessons/history pill chrome in its disabled state — used by the
 /// active-session placeholder card and the freestyle ghost preview, where
 /// the pills can't act on an exercise that isn't part of a session yet.
+/// Inert set-row plumbing for the read-only preview rows — the shared row
+/// requires these callbacks even when nothing can ever fire them.
+const _noVariationOptions = [
+  DropdownOption<String?>(label: 'No Variation', value: null),
+];
+
+Future<String?> _inertSubmitVariation(
+  String _, {
+  required String exerciseId,
+  String? useExistingId,
+}) async => null;
+
 Widget _disabledPill({required IconData icon, required String label}) {
   return Container(
     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),

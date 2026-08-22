@@ -103,6 +103,13 @@ class SessionViewModel extends ChangeNotifier {
   Map<String, List<PlannedSessionSet>> plannedSetsByExercise = {};
   List<String> plannedExerciseOrder = [];
 
+  /// setId → planned row, for matching a logged set to its template row by
+  /// [SessionSet.parentSetId] — id-anchored, never positional.
+  Map<String, PlannedSessionSet> get plannedSetById => {
+        for (final list in plannedSetsByExercise.values)
+          for (final p in list) p.setId: p,
+      };
+
   // ── Exercise tabs ──────────────────────────────────────────────────────────
   List<SessionExerciseSlot> exerciseSlots = [];
   int activeSlotIndex = 0;
@@ -847,10 +854,45 @@ class SessionViewModel extends ChangeNotifier {
       final workout = await _sessionRepo.fetchSession(activeId);
       _session = workout;
       workoutStartedAt = workout?.createdDate;
+      await _restorePlannedContext(workout);
       slidePagesController.resetToPage(1);
       await _loadSets();
       _seedExerciseSlots();
     }
+  }
+
+  /// Re-derives the planned context from the active session's persisted
+  /// [Session.parentSessionId] — the template that was actually started, not
+  /// whatever the default picker would choose. Without this, a hot restart
+  /// of a standalone (or non-default) session loses its planned rows and
+  /// hints entirely.
+  Future<void> _restorePlannedContext(Session? workout) async {
+    final parentId = workout?.parentSessionId;
+    if (parentId == null) return; // freestyle — no plan to restore
+    final template = await _plannedSessionRepo.fetchPlannedSessionById(
+      parentId,
+    );
+    if (template == null) {
+      // Template is gone (deleted/archived) — the session keeps its logged
+      // rows but has no planned hints left to show.
+      plannedSetsByExercise = {};
+      plannedExerciseOrder = [];
+      return;
+    }
+    // Attribute the selection so the header and picker read the right
+    // template.
+    if (template.programId == null) {
+      selectedStandaloneWorkout = template;
+      selectedPlannedSession = null;
+    } else {
+      selectedPlannedSession = template;
+      selectedStandaloneWorkout = null;
+    }
+    try {
+      final plannedSets = await _plannedSessionRepo.fetchPlannedSets(parentId);
+      plannedSetsByExercise = _plannedMapFromSets(plannedSets);
+      plannedExerciseOrder = _plannedOrderFromSets(plannedSets);
+    } catch (_) {}
   }
 
   Future<void> _loadSets() async {
@@ -942,13 +984,17 @@ class SessionViewModel extends ChangeNotifier {
     bool isSuperseded(String exerciseId) =>
         groupMembers.any((m) => m.contains(exerciseId));
 
-    void addSlot(List<String> ids, {bool planned = false}) {
+    void addSlot(List<String> ids, {bool planned = false, bool seedDraft = true}) {
       final unique = <String>[];
       for (final id in ids) {
         if (unique.contains(id)) continue;
         unique.add(id);
         if (seen.add(id)) {
-          draftSlotsByExercise.putIfAbsent(id, () => [_nextDraftId++]);
+          // Planned exercises don't need a draft when their materialized
+          // rows are the entry rows — see the planned loop below.
+          if (seedDraft) {
+            draftSlotsByExercise.putIfAbsent(id, () => [_nextDraftId++]);
+          }
           loadLessonsFor(id);
         }
       }
@@ -967,7 +1013,14 @@ class SessionViewModel extends ChangeNotifier {
 
     for (final exId in plannedExerciseOrder) {
       if (isSuperseded(exId)) continue;
-      addSlot([exId], planned: true);
+      // Materialized planned rows are the entry rows — seed a draft only when
+      // the exercise has no rows left or its last row is filled (mirrors the
+      // freestyle rule below).
+      final exerciseSets = sets
+          .where((x) => x.exerciseId == exId)
+          .toList();
+      final lastEmpty = exerciseSets.isNotEmpty && exerciseSets.last.reps.isEmpty;
+      addSlot([exId], planned: true, seedDraft: !lastEmpty);
     }
     for (final s in sets) {
       if (!seen.add(s.exerciseId)) continue;
@@ -1033,7 +1086,13 @@ class SessionViewModel extends ChangeNotifier {
 
   /// Tapping the already-active superset tab cycles to its next exercise;
   /// tapping any other tab switches to it.
-  void tapTab(int index) {
+  Future<void> tapTab(int index) async {
+    if (index == activeSlotIndex) return;
+    // Flush in-flight row edits before the rows unmount — switching tabs must
+    // never lose typed values (commit is otherwise blur-only). Awaited so the
+    // switch rebuild can't dispose rows mid-flush.
+    await flushPendingCommits();
+    if (index == activeSlotIndex) return;
     activeSlotIndex = index;
     notifyListeners();
   }
@@ -1189,7 +1248,8 @@ class SessionViewModel extends ChangeNotifier {
   // ── Draft set rows ─────────────────────────────────────────────────────────
 
   /// Tapping "+ ADD SET" pre-creates an empty set in the DB so it survives
-  /// hot restarts. Empty sets are purged on endWorkout.
+  /// hot restarts. An empty set is a valid row — user-added rows persist even
+  /// if never filled.
   void addDraftSet(String exerciseId) {
     if (currentWorkoutId == null) return;
     final nextNum = sets.isEmpty
@@ -1207,7 +1267,11 @@ class SessionViewModel extends ChangeNotifier {
           supersetGroupNumber: _supersetGroupFor(exerciseId),
         )
         .then((newSet) {
-          sets.add(newSet);
+          // Guard against a concurrent _loadSets having already included the
+          // row — a duplicate entry would break the grid's ValueKey identity.
+          if (!sets.any((s) => s.sessionSetId == newSet.sessionSetId)) {
+            sets.add(newSet);
+          }
           _recomputePRs();
           notifyListeners();
         });
@@ -1218,8 +1282,12 @@ class SessionViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Commits a set — if the last set for this exercise is empty, fills it in;
-  /// otherwise inserts a new row.
+  /// Commits a draft row — always inserts a fresh set row. Draft slots are
+  /// virtual (their data lives in the row widget until commit); planned rows
+  /// are real rows from materialization and commit through their own id, so
+  /// there is no empty-row filling here. The old "fill the last empty set"
+  /// heuristic landed typed data on the wrong row whenever an empty row and
+  /// a draft coexisted.
   Future<bool> commitDraftSet(
     String exerciseId,
     int draftId, {
@@ -1230,42 +1298,25 @@ class SessionViewModel extends ChangeNotifier {
   }) async {
     if (currentWorkoutId == null) return false;
     // Reps are not mandatory — a draft materializes with weight or a
-    // variation alone (planned reps stay ghost values).
+    // variation alone.
     final repsList = reps ?? const [];
     final nextNum = sets.isEmpty
         ? 1
         : sets.map((s) => s.setNumber).reduce((a, b) => a > b ? a : b) + 1;
-    // Find an empty pre-created set for this exercise to fill in
-    final emptyIdx = sets.lastIndexWhere(
-      (s) => s.exerciseId == exerciseId && s.reps.isEmpty,
-    );
     try {
-      if (emptyIdx >= 0) {
-        await _sessionRepo.updateSet(
-          sets[emptyIdx].sessionSetId,
-          variationId: variationId,
-          clearVariation: variationId == null,
-          weight: weight,
-          clearWeight: weight == null,
-          reps: repsList,
-          notes: notes,
-          clearNotes: notes == null || notes.isEmpty,
-        );
-      } else {
-        await _sessionRepo.insertSet(
-          sessionId: currentWorkoutId!,
-          userId: _userId,
-          exerciseId: exerciseId,
-          exerciseName: exerciseDetailMap[exerciseId]?.name,
-          variationId: variationId,
-          variationName: _variationName(exerciseId, variationId),
-          setNumber: nextNum,
-          weight: weight,
-          reps: repsList,
-          notes: notes,
-          supersetGroupNumber: _supersetGroupFor(exerciseId),
-        );
-      }
+      await _sessionRepo.insertSet(
+        sessionId: currentWorkoutId!,
+        userId: _userId,
+        exerciseId: exerciseId,
+        exerciseName: exerciseDetailMap[exerciseId]?.name,
+        variationId: variationId,
+        variationName: _variationName(exerciseId, variationId),
+        setNumber: nextNum,
+        weight: weight,
+        reps: repsList,
+        notes: notes,
+        supersetGroupNumber: _supersetGroupFor(exerciseId),
+      );
       draftSlotsByExercise[exerciseId]?.remove(draftId);
       await _loadSets();
       return true;
@@ -1515,6 +1566,26 @@ class SessionViewModel extends ChangeNotifier {
       )
       .length;
 
+  // ── Pending-edit flush ─────────────────────────────────────────────────────
+  /// Rows register their commit closure so the screen can flush in-flight
+  /// edits on lifecycle pause / tab switch / session end — commit is
+  /// otherwise blur-only, which loses typed values on a hard app kill.
+  final List<Future<void> Function()> _commitHandles = [];
+
+  void registerCommitHandle(Future<void> Function() handle) =>
+      _commitHandles.add(handle);
+
+  void unregisterCommitHandle(Future<void> Function() handle) =>
+      _commitHandles.remove(handle);
+
+  Future<void> flushPendingCommits() async {
+    for (final handle in List.of(_commitHandles)) {
+      try {
+        await handle();
+      } catch (_) {}
+    }
+  }
+
   // ── Start / end / cancel workout ──────────────────────────────────────────
 
   Future<void> startWorkout() async {
@@ -1545,6 +1616,7 @@ class SessionViewModel extends ChangeNotifier {
       sessionJustCompleted = false;
       // Prep state (feeling + notes) intentionally survives the start — the
       // user may return to Prep mid-session and it must read as they left it.
+      await _materializePlannedSets();
       _seedExerciseSlots();
       slidePagesController.slideIn();
     } catch (e) {
@@ -1554,12 +1626,47 @@ class SessionViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// The plan becomes real rows at session start: one fact row per planned
+  /// target, linked to its template row via `parent_set_id`. Actual values
+  /// (weight/reps/variation) start empty — the plan's targets stay
+  /// background hints rendered from the dim row, never copied into the
+  /// numeric columns. Freestyle sessions materialize nothing.
+  Future<void> _materializePlannedSets() async {
+    final id = currentWorkoutId;
+    if (id == null || plannedExerciseOrder.isEmpty) return;
+    final materialized = <SessionSet>[];
+    var setNumber = 1;
+    for (final exerciseId in plannedExerciseOrder) {
+      final plannedSets = [...?plannedSetsByExercise[exerciseId]]
+        ..sort((a, b) => a.setNumber.compareTo(b.setNumber));
+      for (final p in plannedSets) {
+        materialized.add(
+          await _sessionRepo.insertSet(
+            sessionId: id,
+            userId: _userId,
+            exerciseId: exerciseId,
+            setNumber: setNumber++,
+            weight: null,
+            reps: const [],
+            parentSetId: p.setId,
+            exerciseName: p.exerciseName ?? exerciseDetailMap[exerciseId]?.name,
+            variationName: p.variationName,
+          ),
+        );
+      }
+    }
+    sets = materialized;
+  }
+
   Future<void> endSession() async {
     if (currentWorkoutId == null) return;
     endLoading = true;
     notifyListeners();
     try {
-      await _purgeEmptySets();
+      // Flush any in-flight row edits (typed but not yet blurred) so nothing
+      // is pruned or finalized before the last keystroke lands.
+      await flushPendingCommits();
+      await _pruneUntouchedPlannedRows();
       await _sessionRepo.endSession(
         currentWorkoutId!,
         postNotes: endNotes.trim().isEmpty ? null : endNotes.trim(),
@@ -1593,10 +1700,21 @@ class SessionViewModel extends ChangeNotifier {
     await _loadPastSets();
   }
 
-  Future<void> _purgeEmptySets() async {
+  /// Planned rows the user never entered any data into are plan hints, not
+  /// facts — remove them at session end so the log shows what actually
+  /// happened. User-added rows (no parent link) persist even when empty, and
+  /// any row with data (weight, reps, variation, or notes) persists.
+  Future<void> _pruneUntouchedPlannedRows() async {
     if (currentWorkoutId == null) return;
-    final empty = sets.where((s) => s.reps.isEmpty).toList();
-    for (final s in empty) {
+    final untouched = sets.where(
+      (s) =>
+          s.parentSetId != null &&
+          s.weight == null &&
+          s.reps.isEmpty &&
+          s.variationId == null &&
+          (s.notes == null || s.notes!.isEmpty),
+    );
+    for (final s in untouched) {
       try {
         await _sessionRepo.deleteSet(s.sessionSetId);
       } catch (_) {}

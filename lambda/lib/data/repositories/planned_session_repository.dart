@@ -161,6 +161,18 @@ class PlannedSessionRepository {
     );
   }
 
+  /// One template by id — used to restore a session's planned context from
+  /// its persisted `parent_session_id` (the template may be standalone or
+  /// program-attached; both live in the same table).
+  Future<PlannedSession?> fetchPlannedSessionById(String sessionId) async {
+    final rows = await ps.db.getAll(
+      'SELECT * FROM dim_planned_session WHERE session_id = ? AND is_archived = 0',
+      [sessionId],
+    );
+    if (rows.isEmpty) return null;
+    return PlannedSession.fromMap(rows.first);
+  }
+
   Future<List<PlannedSessionSet>> fetchPlannedSets(String sessionId) async {
     final rows = await ps.db.getAll(
       '''

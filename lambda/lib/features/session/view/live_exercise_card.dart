@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../core/utils/session_format.dart';
 import '../../../data/models/lesson.dart';
-import '../../../data/models/planned_session_set.dart';
-import '../../../data/models/session_set.dart';
 import '../../../shared/widgets/dropdown_select.dart';
 import '../../../shared/widgets/session_exercise_card.dart';
 import '../../../shared/widgets/session_set_row.dart';
@@ -52,7 +50,6 @@ class LiveExerciseCard extends StatelessWidget {
             vm.sets.where((s) => s.exerciseId == exerciseId).toList()
               ..sort((a, b) => a.setNumber.compareTo(b.setNumber));
         final draftIds = vm.draftSlotsByExercise[exerciseId] ?? const <int>[];
-        final plannedSets = vm.plannedSetsByExercise[exerciseId] ?? const [];
 
         // The pinned lesson shows right under the exercise — pinning is what
         // decides whether a note appears there.
@@ -88,23 +85,15 @@ class LiveExerciseCard extends StatelessWidget {
           for (final v in vm.allVariations) (id: v.variationId, name: v.name),
         ];
 
-        // A planned WEIGHT that is strictly a number becomes the actual
-        // value — prefilled so committing it is automatic. Ranges stay
-        // ghosts (the row shows them as hints).
-        String weightSeed(SessionSet? set, PlannedSessionSet? planned) {
-          final w = set?.weight;
-          if (w != null) return _fmtNum(w);
-          final plannedWeight = planned?.targetWeight;
-          final numeric = plannedWeight == null
-              ? null
-              : double.tryParse(plannedWeight);
-          return numeric != null ? _fmtNum(numeric) : '';
-        }
-
+        // Id-anchored pairing — a row's ghost target is the template row it
+        // was materialized from (parent_set_id), immune to insert/delete
+        // re-shuffling. Planned values are hints only, never prefilled into
+        // the actual-value cells.
+        final plannedById = vm.plannedSetById;
         List<Widget> rows = [];
         for (var i = 0; i < realSets.length; i++) {
           final set = realSets[i];
-          final planned = i < plannedSets.length ? plannedSets[i] : null;
+          final planned = plannedById[set.parentSetId];
           rows.add(
             SessionSetRow(
               key: ValueKey(set.sessionSetId),
@@ -112,7 +101,7 @@ class LiveExerciseCard extends StatelessWidget {
               exerciseId: exerciseId,
               displayIndex: i + 1,
               isDraft: false,
-              initialWeightText: weightSeed(set, planned),
+              initialWeightText: set.weight != null ? _fmtNum(set.weight!) : '',
               initialRepsText: set.reps.isNotEmpty ? _fmtNum(set.reps.first) : '',
               initialVariationId: set.variationId,
               initialVariationName: set.variationName,
@@ -120,6 +109,8 @@ class LiveExerciseCard extends StatelessWidget {
               hasNotes: set.notes?.isNotEmpty ?? false,
               plannedTarget: planned,
               isPr: vm.isPrSet(set.sessionSetId),
+              onRegisterCommit: vm.registerCommitHandle,
+              onUnregisterCommit: vm.unregisterCommitHandle,
               onCommit: (isDraft, v) async {
                 if (!isDraft) {
                   await vm.updateSetField(
@@ -151,10 +142,6 @@ class LiveExerciseCard extends StatelessWidget {
         }
         for (var i = 0; i < draftIds.length; i++) {
           final draftId = draftIds[i];
-          final plannedIndex = realSets.length + i;
-          final planned = plannedIndex < plannedSets.length
-              ? plannedSets[plannedIndex]
-              : null;
           rows.add(
             SessionSetRow(
               key: ValueKey('draft-$draftId'),
@@ -162,11 +149,15 @@ class LiveExerciseCard extends StatelessWidget {
               exerciseId: exerciseId,
               displayIndex: realSets.length + i + 1,
               isDraft: true,
-              initialWeightText: weightSeed(null, planned),
+              initialWeightText: '',
               initialRepsText: '',
               initialVariationId: null,
               hasNotes: false,
-              plannedTarget: planned,
+              // Freestyle drafts carry no planned target — planned rows are
+              // materialized as real sets at session start.
+              plannedTarget: null,
+              onRegisterCommit: vm.registerCommitHandle,
+              onUnregisterCommit: vm.unregisterCommitHandle,
               onCommit: (isDraft, v) async {
                 if (isDraft) {
                   await vm.commitDraftSet(

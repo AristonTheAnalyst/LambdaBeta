@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide Session;
 import '../../../data/models/custom_variation.dart';
@@ -158,15 +160,48 @@ class SessionDetailViewModel {
 
   String get _userId => Supabase.instance.client.auth.currentUser!.id;
 
-  List<SessionDetailExerciseSlot> _buildSlots(List<SessionSet> sets) {
+  /// Builds slots in the order the user arranged them during the session —
+  /// `fact_session.exercise_order` (a JSON blob of tab slots, possibly
+  /// superset groups). Exercises the blob doesn't name keep their
+  /// first-appearance-in-sets position (legacy sessions without a blob).
+  List<SessionDetailExerciseSlot> _buildSlots(
+    List<SessionSet> sets,
+    Session? session,
+  ) {
     final seen = <String>{};
     final slots = <SessionDetailExerciseSlot>[];
-    for (var i = 0; i < sets.length; i++) {
-      if (seen.add(sets[i].exerciseId)) {
+
+    final order = session?.exerciseOrder;
+    if (order != null && order.isNotEmpty) {
+      try {
+        final parsed = jsonDecode(order) as List<dynamic>;
+        for (final raw in parsed) {
+          final ids =
+              ((raw as Map<String, dynamic>)['exerciseIds'] as List<dynamic>)
+                  .cast<String>();
+          for (final id in ids) {
+            // Only name exercises that actually have rows in this session.
+            if (sets.any((s) => s.exerciseId == id) && seen.add(id)) {
+              slots.add(
+                SessionDetailExerciseSlot(
+                  groupOrder: slots.length + 1,
+                  exerciseId: id,
+                ),
+              );
+            }
+          }
+        }
+      } catch (_) {
+        // Malformed blob — fall through to set order.
+      }
+    }
+
+    for (final s in sets) {
+      if (seen.add(s.exerciseId)) {
         slots.add(
           SessionDetailExerciseSlot(
             groupOrder: slots.length + 1,
-            exerciseId: sets[i].exerciseId,
+            exerciseId: s.exerciseId,
           ),
         );
       }
@@ -205,10 +240,11 @@ class SessionDetailViewModel {
         _sessionRepo.loadSetsForSession(sessionId),
       ]);
       final sets = results[1] as List<SessionSet>;
-      final slots = _buildSlots(sets);
+      final session = results[0] as Session?;
+      final slots = _buildSlots(sets, session);
       state.value = state.value.copyWith(
         isLoading: false,
-        session: results[0] as Session?,
+        session: session,
         exerciseSlots: slots,
         setsByOrder: _groupByOrder(sets, slots),
       );
@@ -436,6 +472,22 @@ class SessionDetailViewModel {
       newActive = s.activeSlotIndex + 1;
     }
     state.value = s.copyWith(exerciseSlots: slots, activeSlotIndex: newActive);
+    // Persist the arrangement back to the session's exercise_order so a
+    // reorder made here sticks for the live viewer's restore too.
+    final w = state.value.session;
+    if (w != null) {
+      _sessionRepo.saveExerciseOrder(
+        w.sessionId,
+        jsonEncode([
+          for (final slot in state.value.exerciseSlots)
+            {
+              'id': slot.groupOrder,
+              'type': 'single',
+              'exerciseIds': [slot.exerciseId],
+            },
+        ]),
+      );
+    }
   }
 
   void addExerciseGroup(String exerciseId) {
@@ -524,8 +576,10 @@ class SessionDetailViewModel {
     state.value = state.value.copyWith(workoutSetDrafts: drafts);
   }
 
-  /// Finds an existing empty set for this exercise and fills it in, or
-  /// inserts a new row. Allows empty reps for finished workouts (the user
+  /// Commits a draft row — always inserts a fresh set row (mirrors the live
+  /// session's fix: the old "fill the last empty set" heuristic landed typed
+  /// data on a different row whenever an empty "+ ADD SET" row and a draft
+  /// coexisted). Allows empty reps for finished workouts (the user
   /// explicitly added them in edit mode).
   Future<bool> commitDraftSet(
     String exerciseId,
@@ -542,34 +596,19 @@ class SessionDetailViewModel {
     final nextNum = existing.isEmpty
         ? 1
         : existing.map((s) => s.setNumber).reduce((a, b) => a > b ? a : b) + 1;
-    // Find an empty pre-created set for this exercise
-    final emptyIdx = existing.lastIndexWhere((s) => s.reps.isEmpty);
     try {
-      if (emptyIdx >= 0) {
-        await _sessionRepo.updateSet(
-          existing[emptyIdx].sessionSetId,
-          variationId: variationId,
-          clearVariation: variationId == null,
-          weight: weight,
-          clearWeight: weight == null,
-          reps: reps,
-          notes: notes,
-          clearNotes: notes == null || notes.isEmpty,
-        );
-      } else {
-        await _sessionRepo.insertSet(
-          sessionId: w.sessionId,
-          userId: _userId,
-          exerciseId: exerciseId,
-          exerciseName: _exerciseName(exerciseId),
-          variationId: variationId,
-          variationName: _variationName(exerciseId, variationId),
-          setNumber: nextNum,
-          weight: weight,
-          reps: reps,
-          notes: notes?.trim().isEmpty == true ? null : notes?.trim(),
-        );
-      }
+      await _sessionRepo.insertSet(
+        sessionId: w.sessionId,
+        userId: _userId,
+        exerciseId: exerciseId,
+        exerciseName: _exerciseName(exerciseId),
+        variationId: variationId,
+        variationName: _variationName(exerciseId, variationId),
+        setNumber: nextNum,
+        weight: weight,
+        reps: reps,
+        notes: notes?.trim().isEmpty == true ? null : notes?.trim(),
+      );
       removeDraftSet(groupOrder, draftId);
       await _reloadSets(w.sessionId);
       await recomputeExercisePRs(exerciseId);

@@ -68,6 +68,12 @@ class SessionSetRow extends StatefulWidget {
     // Orthogonal state:
     this.isPr = false,
     this.readOnly = false,
+    // ── Pending-edit flush (live only) ──
+    // The row registers its commit closure so the screen's VM can flush
+    // in-flight edits on lifecycle pause / tab switch / session end —
+    // commit is otherwise blur-only and typed values would be lost.
+    this.onRegisterCommit,
+    this.onUnregisterCommit,
     // ── Bridge callbacks (screen closures over its VM) ──
     required this.onCommit,
     required this.onVariationChanged,
@@ -97,6 +103,9 @@ class SessionSetRow extends StatefulWidget {
   final PlannedSessionSet? plannedTarget;
   final bool isPr;
   final bool readOnly;
+
+  final void Function(Future<void> Function())? onRegisterCommit;
+  final void Function(Future<void> Function())? onUnregisterCommit;
 
   /// Commit on blur: `(isDraft, values)`. Draft commits also carry the
   /// row-local variation and notes; real-set commits carry weight/reps only
@@ -157,7 +166,8 @@ class _SessionSetRowState extends State<SessionSetRow> {
     super.initState();
     _weightCtrl = TextEditingController(text: widget.initialWeightText);
     _repsCtrl = TextEditingController(text: widget.initialRepsText);
-    // A planned variation becomes the actual value on live drafts.
+    // Drafts keep their variation row-local until commit; the planned
+    // variation is a hint on the ghost target, never a preset value.
     if (_isDraft && widget.mode == SetRowMode.live) {
       _draftVariationId = widget.plannedTarget?.variationId;
     }
@@ -169,10 +179,34 @@ class _SessionSetRowState extends State<SessionSetRow> {
         if (!_repsFocus.hasFocus) _commit();
       });
     }
+    widget.onRegisterCommit?.call(_commit);
+  }
+
+  @override
+  void didUpdateWidget(SessionSetRow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // The element can be reused across VM reloads (same ValueKey). When the
+    // seeds change externally — a commit reload, a re-paired ghost — re-seed
+    // non-focused cells so stale controller text can't re-commit old values
+    // into the row. Mirrors HistorySetRow's re-seed.
+    if (!_weightFocus.hasFocus &&
+        widget.initialWeightText != oldWidget.initialWeightText) {
+      _weightCtrl.text = widget.initialWeightText;
+    }
+    if (!_repsFocus.hasFocus &&
+        widget.initialRepsText != oldWidget.initialRepsText) {
+      _repsCtrl.text = widget.initialRepsText;
+    }
+    if (_isDraft &&
+        widget.plannedTarget?.variationId !=
+            oldWidget.plannedTarget?.variationId) {
+      _draftVariationId = widget.plannedTarget?.variationId;
+    }
   }
 
   @override
   void dispose() {
+    widget.onUnregisterCommit?.call(_commit);
     _weightCtrl.dispose();
     _repsCtrl.dispose();
     _weightFocus.dispose();
