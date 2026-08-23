@@ -324,7 +324,15 @@ Future<void> openDatabase() async {
         await db.disconnectAndClear();
         resetForSignOut();
       case AuthChangeEvent.tokenRefreshed:
-        connector?.prefetchCredentials();
+        // A cold start with an already-expired token created no connector
+        // (isLoggedIn was false at openDatabase time) — create it now that
+        // the refresh succeeded, so sync resumes without an app restart.
+        if (connector == null && isLoggedIn()) {
+          connector = SupabaseConnector(db);
+          db.connect(connector: connector!);
+        } else {
+          connector?.prefetchCredentials();
+        }
       default:
         break;
     }

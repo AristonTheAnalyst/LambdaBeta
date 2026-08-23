@@ -183,11 +183,15 @@ class SessionRepository {
     if (clearVariation) {
       setClauses.add('custom_variation_id = ?');
       params.add(null);
+      // Never leave a stale snapshot name behind — cleared variation means
+      // no variation, and the name would resurrect in COALESCE lookups.
+      setClauses.add('variation_name = ?');
+      params.add(null);
     } else if (variationId != null) {
       setClauses.add('custom_variation_id = ?');
       params.add(variationId);
-    }
-    if (variationName != null) {
+      // Snapshot the name when the caller provides one; otherwise clear the
+      // stale value so lookups resolve from the live variation table.
       setClauses.add('variation_name = ?');
       params.add(variationName);
     }
@@ -227,7 +231,15 @@ class SessionRepository {
 
   Future<List<SessionSet>> loadSetsForSession(String sessionId) async {
     final rows = await ps.db.getAll(
-      'SELECT * FROM fact_session_set WHERE session_id = ? ORDER BY set_number',
+      '''
+      SELECT s.*,
+             COALESCE(s.exercise_name, e.exercise_name) AS exercise_name,
+             COALESCE(s.variation_name, v.variation_name) AS variation_name
+      FROM fact_session_set s
+      LEFT JOIN dim_exercise e ON e.custom_exercise_id = s.custom_exercise_id
+      LEFT JOIN dim_variation v ON v.custom_variation_id = s.custom_variation_id
+      WHERE s.session_id = ? ORDER BY s.set_number
+      ''',
       [sessionId],
     );
     return rows.map((r) => SessionSet.fromMap(r)).toList();

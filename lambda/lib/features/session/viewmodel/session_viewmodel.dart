@@ -123,6 +123,15 @@ class SessionViewModel extends ChangeNotifier {
   Map<String, List<int>> draftSlotsByExercise = {};
   int _nextDraftId = 1;
 
+  /// draftId → the persisted empty row backing that draft slot. Drafts are
+  /// bound to a real row from the moment they're seeded, so every keystroke
+  /// writes to the DB — killing the app can't lose a typed draft (and the
+  /// draft UI never remounts, so focus survives). Rows are excluded from
+  /// the real-set list while their draft owns them.
+  final Map<int, String> _draftRowIds = {};
+
+  bool isDraftBoundRow(String setId) => _draftRowIds.containsValue(setId);
+
   // ── Lessons (persisted — per-exercise, cross-session) ─────────────────────
   Map<String, List<Lesson>> lessonsByExercise = {};
 
@@ -1001,7 +1010,7 @@ class SessionViewModel extends ChangeNotifier {
           // Planned exercises don't need a draft when their materialized
           // rows are the entry rows — see the planned loop below.
           if (seedDraft) {
-            draftSlotsByExercise.putIfAbsent(id, () => [_nextDraftId++]);
+            _seedDraft(id);
           }
           loadLessonsFor(id);
         }
@@ -1042,7 +1051,7 @@ class SessionViewModel extends ChangeNotifier {
       final last = exerciseSets.isEmpty ? null : exerciseSets.last;
       final lastEmpty = last != null && last.reps.isEmpty;
       if (!lastEmpty) {
-        draftSlotsByExercise.putIfAbsent(s.exerciseId, () => [_nextDraftId++]);
+        _seedDraft(s.exerciseId);
       }
       loadLessonsFor(s.exerciseId);
       addSlot([s.exerciseId]);
@@ -1285,17 +1294,60 @@ class SessionViewModel extends ChangeNotifier {
         });
   }
 
+  /// Seeds a draft slot for [exerciseId] and immediately binds it to a
+  /// persisted empty row — the draft's editor without the loss window.
+  void _seedDraft(String exerciseId) {
+    final draftId = _nextDraftId++;
+    draftSlotsByExercise.putIfAbsent(exerciseId, () => []).add(draftId);
+    _bindDraftRow(exerciseId, draftId);
+  }
+
+  Future<void> _bindDraftRow(String exerciseId, int draftId) async {
+    final id = currentWorkoutId;
+    if (id == null) return;
+    final nextNum = sets.isEmpty
+        ? 1
+        : sets.map((s) => s.setNumber).reduce((a, b) => a > b ? a : b) + 1;
+    try {
+      final set = await _sessionRepo.insertSet(
+        sessionId: id,
+        userId: _userId,
+        exerciseId: exerciseId,
+        exerciseName: exerciseDetailMap[exerciseId]?.name,
+        setNumber: nextNum,
+        weight: null,
+        reps: const [],
+        supersetGroupNumber: _supersetGroupFor(exerciseId),
+      );
+      _draftRowIds[draftId] = set.sessionSetId;
+      // Guard against a concurrent _loadSets having already included the row.
+      if (!sets.any((s) => s.sessionSetId == set.sessionSetId)) {
+        sets.add(set);
+      }
+      _recomputePRs();
+      notifyListeners();
+    } catch (_) {
+      // Binding failed (e.g. no active workout) — the draft falls back to
+      // insert-on-commit in commitDraftSet.
+    }
+  }
+
   void removeDraftSet(String exerciseId, int draftId) {
     draftSlotsByExercise[exerciseId]?.remove(draftId);
+    final rowId = _draftRowIds.remove(draftId);
+    if (rowId != null) {
+      _sessionRepo.deleteSet(rowId);
+      sets.removeWhere((s) => s.sessionSetId == rowId);
+    }
+    _recomputePRs();
     notifyListeners();
   }
 
-  /// Commits a draft row — always inserts a fresh set row. Draft slots are
-  /// virtual (their data lives in the row widget until commit); planned rows
-  /// are real rows from materialization and commit through their own id, so
-  /// there is no empty-row filling here. The old "fill the last empty set"
-  /// heuristic landed typed data on the wrong row whenever an empty row and
-  /// a draft coexisted.
+  /// Commits a draft row. Drafts are bound to a persisted row from seeding,
+  /// so commit updates that row (the draft slot stays — the row keeps its
+  /// draft editor; removing it would remount the row and drop the field's
+  /// focus). If the binding failed, falls back to inserting a fresh row and
+  /// retiring the draft, as before.
   Future<bool> commitDraftSet(
     String exerciseId,
     int draftId, {
@@ -1308,24 +1360,39 @@ class SessionViewModel extends ChangeNotifier {
     // Reps are not mandatory — a draft materializes with weight or a
     // variation alone.
     final repsList = reps ?? const [];
-    final nextNum = sets.isEmpty
-        ? 1
-        : sets.map((s) => s.setNumber).reduce((a, b) => a > b ? a : b) + 1;
+    final boundId = _draftRowIds[draftId];
     try {
-      await _sessionRepo.insertSet(
-        sessionId: currentWorkoutId!,
-        userId: _userId,
-        exerciseId: exerciseId,
-        exerciseName: exerciseDetailMap[exerciseId]?.name,
-        variationId: variationId,
-        variationName: _variationName(exerciseId, variationId),
-        setNumber: nextNum,
-        weight: weight,
-        reps: repsList,
-        notes: notes,
-        supersetGroupNumber: _supersetGroupFor(exerciseId),
-      );
-      draftSlotsByExercise[exerciseId]?.remove(draftId);
+      if (boundId != null) {
+        await _sessionRepo.updateSet(
+          boundId,
+          variationId: variationId,
+          clearVariation: variationId == null,
+          variationName: _variationName(exerciseId, variationId),
+          weight: weight,
+          clearWeight: weight == null,
+          reps: repsList,
+          notes: notes,
+          clearNotes: notes == null || notes.isEmpty,
+        );
+      } else {
+        final nextNum = sets.isEmpty
+            ? 1
+            : sets.map((s) => s.setNumber).reduce((a, b) => a > b ? a : b) + 1;
+        await _sessionRepo.insertSet(
+          sessionId: currentWorkoutId!,
+          userId: _userId,
+          exerciseId: exerciseId,
+          exerciseName: exerciseDetailMap[exerciseId]?.name,
+          variationId: variationId,
+          variationName: _variationName(exerciseId, variationId),
+          setNumber: nextNum,
+          weight: weight,
+          reps: repsList,
+          notes: notes,
+          supersetGroupNumber: _supersetGroupFor(exerciseId),
+        );
+        draftSlotsByExercise[exerciseId]?.remove(draftId);
+      }
       await _loadSets();
       return true;
     } catch (e) {
@@ -1748,6 +1815,7 @@ class SessionViewModel extends ChangeNotifier {
     exerciseSlots = [];
     activeSlotIndex = 0;
     draftSlotsByExercise = {};
+    _draftRowIds.clear();
     // lessonsByExercise is intentionally NOT cleared — lessons are durable,
     // cross-session data now, not reset per workout.
     historyEditConfirmed = false;

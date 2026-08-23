@@ -46,9 +46,16 @@ class LiveExerciseCard extends StatelessWidget {
         final exerciseId = slot.activeExerciseId;
         final name = toProperCase(vm.exerciseDisplayName(exerciseId));
         final history = vm.historyFor(exerciseId);
-        final realSets =
-            vm.sets.where((s) => s.exerciseId == exerciseId).toList()
-              ..sort((a, b) => a.setNumber.compareTo(b.setNumber));
+        // Rows bound to an active draft slot render as the draft row, not
+        // as a real row — they'd otherwise appear twice.
+        final realSets = vm.sets
+            .where(
+              (s) =>
+                  s.exerciseId == exerciseId &&
+                  !vm.isDraftBoundRow(s.sessionSetId),
+            )
+            .toList()
+          ..sort((a, b) => a.setNumber.compareTo(b.setNumber));
         final draftIds = vm.draftSlotsByExercise[exerciseId] ?? const <int>[];
 
         // The pinned lesson shows right under the exercise — pinning is what

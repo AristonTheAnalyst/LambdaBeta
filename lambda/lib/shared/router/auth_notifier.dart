@@ -46,7 +46,13 @@ class AuthNotifier extends ChangeNotifier {
   Timer? _expiryTimer;
   final _userRepo = UserRepository();
 
-  bool get isAuthenticated => _session != null && !_isSessionExpired(_session!);
+  /// A session that exists counts as authenticated even when its access
+  /// token has expired — offline, the refresh can't complete, and bouncing
+  /// the user to /login (which needs network) would lock them out of their
+  /// own locally-synced data. A genuinely dead session still resolves: the
+  /// refresh attempt in [_scheduleExpiryCheck] fails non-retryably and
+  /// gotrue emits signedOut.
+  bool get isAuthenticated => _session != null;
 
   static bool _isSessionExpired(Session s) {
     final exp = s.expiresAt;
@@ -54,9 +60,12 @@ class AuthNotifier extends ChangeNotifier {
     return DateTime.now().millisecondsSinceEpoch / 1000 >= (exp - 30);
   }
 
-  /// Schedules a forced sign-out at the moment the current session's token
-  /// expires (if no fresh token arrives first), so the router bounces to
-  /// `/login` instead of showing a dead, permanently-unauthenticated UI.
+  /// At token expiry, asks gotrue to refresh. If the network is unreachable
+  /// the failure is retryable and the session survives — being offline must
+  /// NEVER log the user out (signOut also wipes the local PowerSync DB,
+  /// queued offline writes included). If the session is revoked, the refresh
+  /// fails non-retryably and gotrue removes the session + emits signedOut,
+  /// which routes to login.
   void _scheduleExpiryCheck() {
     _expiryTimer?.cancel();
     final session = _session;
@@ -67,11 +76,10 @@ class AuthNotifier extends ChangeNotifier {
         (expiresAt * 1000 - DateTime.now().millisecondsSinceEpoch) + 30000;
     _expiryTimer = Timer(Duration(milliseconds: msUntilExpiry), () {
       final cur = _session;
-      if (cur == null || _isSessionExpired(cur)) {
-        // Token expired without a refresh — force the session closed so the
-        // router redirects to login rather than sitting in a dead state.
-        Supabase.instance.client.auth.signOut().then((_) {}, onError: (_) {});
-      }
+      if (cur == null || !_isSessionExpired(cur)) return;
+      Supabase.instance.client.auth
+          .refreshSession()
+          .then((_) {}, onError: (_) {});
     });
   }
   bool get isPasswordRecovery => _isPasswordRecovery;
