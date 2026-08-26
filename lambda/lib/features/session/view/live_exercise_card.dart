@@ -52,7 +52,7 @@ class LiveExerciseCard extends StatelessWidget {
             .where(
               (s) =>
                   s.exerciseId == exerciseId &&
-                  !vm.isDraftBoundRow(s.sessionSetId),
+                  !vm.isDraftBoundRow(s.sessionExerciseSetId),
             )
             .toList()
           ..sort((a, b) => a.setNumber.compareTo(b.setNumber));
@@ -100,10 +100,10 @@ class LiveExerciseCard extends StatelessWidget {
         List<Widget> rows = [];
         for (var i = 0; i < realSets.length; i++) {
           final set = realSets[i];
-          final planned = plannedById[set.parentSetId];
+          final planned = plannedById[set.plannedSetId];
           rows.add(
             SessionSetRow(
-              key: ValueKey(set.sessionSetId),
+              key: ValueKey(set.sessionExerciseSetId),
               mode: SetRowMode.live,
               exerciseId: exerciseId,
               displayIndex: i + 1,
@@ -115,7 +115,7 @@ class LiveExerciseCard extends StatelessWidget {
               initialNotes: set.notes,
               hasNotes: set.notes?.isNotEmpty ?? false,
               plannedTarget: planned,
-              isPr: vm.isPrSet(set.sessionSetId),
+              isPr: vm.isPrSet(set.sessionExerciseSetId),
               onRegisterCommit: vm.registerCommitHandle,
               onUnregisterCommit: vm.unregisterCommitHandle,
               onCommit: (isDraft, v) async {
@@ -138,7 +138,7 @@ class LiveExerciseCard extends StatelessWidget {
                 notes: v.trim().isEmpty ? null : v.trim(),
                 clearNotes: v.trim().isEmpty,
               ),
-              onDelete: () => vm.deleteSetById(set.sessionSetId),
+              onDelete: () => vm.deleteSetById(set.sessionExerciseSetId),
               onDuplicate: () => vm.duplicateSet(set),
               variationOptions: variationOptions,
               allVariations: allVariations,

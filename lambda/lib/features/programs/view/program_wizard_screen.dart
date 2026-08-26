@@ -17,13 +17,14 @@ import '../../../../shared/widgets/swipe_actions.dart';
 import '../viewmodel/program_detail_viewmodel.dart';
 import 'plan_session_screen.dart';
 
-/// 3-step guided program creation: choose progression, name the program,
-/// then design the planned workouts. Calendar workouts must have a weekday
-/// assigned; sequential ones cycle by order.
+/// 2-step guided program creation: name the program, then design the planned
+/// workouts. Progression mode is NOT chosen here — it's a run property,
+/// picked when the program is started (frequency vs order). Day assignment
+/// happens in the workout editor (day-of-week lives on the program link).
 ///
-/// The program is created as soon as progression is chosen (step 1), then the
-/// wizard edits it via a real [ProgramDetailViewModel]. Goals are set later
-/// from the program detail screen once a run is active.
+/// The program is created when the name step continues, then the wizard edits
+/// it via a real [ProgramDetailViewModel]. Goals are set later from the
+/// program detail screen once a run is active.
 class ProgramWizardScreen extends StatefulWidget {
   const ProgramWizardScreen({super.key});
 
@@ -33,13 +34,10 @@ class ProgramWizardScreen extends StatefulWidget {
 
 class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
   int _step = 0;
-  String? _progression;
   String? _programId;
   ProgramDetailViewModel? _detailVm;
   final _nameCtrl = TextEditingController();
   final _descriptionCtrl = TextEditingController();
-
-  bool get _isCalendar => _progression == 'calendar';
 
   @override
   void dispose() {
@@ -58,28 +56,26 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
   }
 
   bool get _canContinue => switch (_step) {
-    0 => _progression != null,
-    1 => _nameCtrl.text.trim().isNotEmpty,
+    0 => _nameCtrl.text.trim().isNotEmpty,
     _ => true,
   };
 
   String get _stepTitle => switch (_step) {
-    0 => 'How will it progress?',
-    1 => 'Name your program',
+    0 => 'Name your program',
     _ => 'Design workouts',
   };
 
   String get _stepSubtitle => switch (_step) {
-    0 => 'Choose how the program schedules your training.',
-    1 => 'Give it a name and, optionally, a description.',
+    0 => 'Give it a name and, optionally, a description.',
     _ => 'Add the workouts in the order they repeat.',
   };
 
   Future<void> _next() async {
     if (_step == 0) {
-      // Create the program now so steps 2-3 operate on a real program.
+      // Create the program now so the workouts step operates on a real
+      // program. Progression mode is chosen at run start, not here.
       final vm = ProgramDetailViewModel();
-      final id = await vm.createNewProgram(_progression!);
+      final id = await vm.createNewProgram();
       if (id == null) return;
       await vm.load(id);
       if (!mounted) return;
@@ -91,23 +87,15 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
       });
       return;
     }
-    if (_step == 1) {
-      _vm.setNameDraft(_nameCtrl.text);
-      _vm.setDescriptionDraft(_descriptionCtrl.text);
-      await _vm.saveProgramDetails();
-      if (!mounted) return;
-      setState(() => _step = 2);
-      return;
-    }
-    if (_step == 2) {
-      if (!mounted || _programId == null) return;
-      // Close the wizard (a plain MaterialPageRoute overlay), then navigate to
-      // the program detail via the go_router.
-      final router = GoRouter.of(context);
-      Navigator.of(context, rootNavigator: true).pop();
-      router.push('/exercises/programs/$_programId');
-      return;
-    }
+    // Workouts step: save the name/description, close the wizard, and open
+    // the program detail via the go_router.
+    _vm.setNameDraft(_nameCtrl.text);
+    _vm.setDescriptionDraft(_descriptionCtrl.text);
+    await _vm.saveProgramDetails();
+    if (!mounted || _programId == null) return;
+    final router = GoRouter.of(context);
+    Navigator.of(context, rootNavigator: true).pop();
+    router.push('/exercises/programs/$_programId');
   }
 
   Future<void> _addWorkout() async {
@@ -253,8 +241,7 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
                   AppSpacing.lg,
                 ),
                 child: switch (_step) {
-                  0 => _progressionStep(),
-                  1 => _nameStep(),
+                  0 => _nameStep(),
                   _ => _workoutsStep(),
                 },
               ),
@@ -275,7 +262,7 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
                   Expanded(
                     flex: 2,
                     child: GlassButton(
-                      label: _step == 2 ? 'Finish' : 'Continue',
+                      label: _step == 1 ? 'Finish' : 'Continue',
                       solid: true,
                       disabled: !_canContinue,
                       onPressed: _canContinue ? _next : () {},
@@ -300,7 +287,7 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
       ),
       child: Row(
         children: [
-          for (var i = 0; i < 3; i++) ...[
+          for (var i = 0; i < 2; i++) ...[
             if (i > 0)
               Expanded(
                 child: Container(
@@ -318,94 +305,6 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
             ),
           ],
         ],
-      ),
-    );
-  }
-
-  Widget _progressionStep() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _choiceCard(
-          icon: Icons.loop,
-          title: 'Sessions-based',
-          subtitle:
-              'You log workout 1, then 2, then 3… in order, no matter the day '
-              'or how much rest you take. The next workout is always the next '
-              'one in line.',
-          selected: _progression == 'sequential',
-          onTap: () => setState(() => _progression = 'sequential'),
-        ),
-        const SizedBox(height: AppSpacing.md),
-        _choiceCard(
-          icon: Icons.calendar_month_outlined,
-          title: 'Calendar-based',
-          subtitle:
-              'Workouts are pinned to specific weekdays (e.g. Mon / Wed / Fri). '
-              'If you miss a day, you simply do the next scheduled workout on '
-              'its day.',
-          selected: _progression == 'calendar',
-          onTap: () => setState(() => _progression = 'calendar'),
-        ),
-      ],
-    );
-  }
-
-  Widget _choiceCard({
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required bool selected,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(AppSpacing.lg),
-        decoration: BoxDecoration(
-          color: selected ? AppColors.accentBg : AppColors.surface,
-          borderRadius: BorderRadius.circular(AppRadius.lg),
-          border: Border.all(
-            color: selected ? AppColors.accent : AppColors.border,
-            width: selected ? 1.5 : 1,
-          ),
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(
-              icon,
-              size: 22,
-              color: selected ? AppColors.accent : AppColors.muted,
-            ),
-            const SizedBox(width: AppSpacing.md),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: AppFonts.ui(
-                      fontSize: AppTextStyles.md,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.primary,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    subtitle,
-                    style: AppFonts.ui(
-                      fontSize: AppTextStyles.sm,
-                      color: AppColors.muted,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            if (selected)
-              Icon(Icons.check_circle, size: 18, color: AppColors.accent),
-          ],
-        ),
       ),
     );
   }
@@ -435,7 +334,6 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
 
   Widget _workoutsStep() {
     final workouts = _vm.state.value.plannedWorkouts;
-    final missingDays = _isCalendar && workouts.any((w) => w.dayOfWeek == null);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -541,14 +439,8 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
                         ),
                       ),
                       _badge(
-                        _isCalendar
-                            ? (workouts[i].dayOfWeek != null
-                                  ? _dayOfWeekLabel(workouts[i].dayOfWeek)
-                                  : 'No day assigned')
-                            : 'Session ${workouts[i].sequenceOrder}',
-                        _isCalendar && workouts[i].dayOfWeek == null
-                            ? AppColors.danger
-                            : AppColors.accent,
+                        'Session ${i + 1}',
+                        AppColors.accent,
                       ),
                       const SizedBox(width: AppSpacing.sm),
                       ReorderableDragStartListener(
@@ -565,17 +457,6 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
               ),
             ),
           ),
-        if (missingDays) ...[
-          const SizedBox(height: AppSpacing.md),
-          Text(
-            'Calendar workouts need a day of the week — open each workout '
-            'and assign one.',
-            style: AppFonts.ui(
-              fontSize: AppTextStyles.xs,
-              color: AppColors.danger,
-            ),
-          ),
-        ],
       ],
     );
   }
@@ -591,15 +472,4 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
       child: Text(text, style: AppFonts.mono(fontSize: 9, color: color)),
     );
   }
-
-  static String _dayOfWeekLabel(int? d) => switch (d) {
-    1 => 'Mon',
-    2 => 'Tue',
-    3 => 'Wed',
-    4 => 'Thu',
-    5 => 'Fri',
-    6 => 'Sat',
-    7 => 'Sun',
-    _ => '—',
-  };
 }

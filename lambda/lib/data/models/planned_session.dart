@@ -1,6 +1,6 @@
-/// A planned session — a session template. Either standalone
-/// (program_id = null) or attached to a program via the
-/// program_id / sequence_order / day_of_week columns.
+/// A planned session — a session template. Standalone when no
+/// dim_planned_session_program row references it; program membership and
+/// schedule slots (sequence/day) live on the join table.
 class PlannedSession {
   const PlannedSession({
     required this.sessionId,
@@ -8,9 +8,6 @@ class PlannedSession {
     required this.name,
     required this.isArchived,
     this.notes,
-    this.programId,
-    this.sequenceOrder,
-    this.dayOfWeek,
     this.createdDate,
   });
 
@@ -19,9 +16,6 @@ class PlannedSession {
   final String name;
   final String? notes;
   final bool isArchived;
-  final String? programId;
-  final int? sequenceOrder;
-  final int? dayOfWeek;
   final DateTime? createdDate;
 
   factory PlannedSession.fromMap(Map<String, dynamic> map) => PlannedSession(
@@ -30,9 +24,6 @@ class PlannedSession {
         name: map['name'] as String,
         notes: map['notes'] as String?,
         isArchived: _toBool(map['is_archived']),
-        programId: map['program_id'] as String?,
-        sequenceOrder: _toInt(map['sequence_order']),
-        dayOfWeek: _toInt(map['day_of_week']),
         createdDate: map['created_date'] != null
             ? DateTime.tryParse(map['created_date'] as String)
             : null,
@@ -44,21 +35,12 @@ class PlannedSession {
     return false;
   }
 
-  static int? _toInt(dynamic v) {
-    if (v == null) return null;
-    if (v is int) return v;
-    return int.tryParse('$v');
-  }
-
   Map<String, dynamic> toMap() => {
         'session_id': sessionId,
         'user_id': userId,
         'name': name,
         'notes': notes,
         'is_archived': isArchived,
-        'program_id': programId,
-        'sequence_order': sequenceOrder,
-        'day_of_week': dayOfWeek,
         'created_date': createdDate?.toIso8601String(),
       };
 }

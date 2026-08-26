@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../data/models/session.dart';
-import '../../../data/models/session_set.dart';
+import '../../../data/models/session_exercise_set.dart';
 import '../../../data/repositories/session_repository.dart';
 
 class LogsState {
@@ -46,6 +46,7 @@ class LogsViewModel {
 
   final SessionRepository _repo;
   final state = ValueNotifier(const LogsState());
+  bool _disposed = false;
 
   String get _userId => Supabase.instance.client.auth.currentUser!.id;
 
@@ -56,12 +57,14 @@ class LogsViewModel {
         _repo.loadSessionsWithSets(_userId),
         _repo.loadPastSetsTimeline(_userId),
       ]);
+      if (_disposed) return;
       state.value = state.value.copyWith(
         isLoading: false,
         sessions: results[0] as List<SessionWithSets>,
         pastSets: results[1] as List<PastSetRow>,
       );
     } catch (e) {
+      if (_disposed) return;
       state.value =
           state.value.copyWith(isLoading: false, error: e.toString());
     }
@@ -74,18 +77,26 @@ class LogsViewModel {
         _repo.loadSessionsWithSets(_userId),
         _repo.loadPastSetsTimeline(_userId),
       ]);
+      if (_disposed) return;
       state.value = state.value.copyWith(
         isRefreshing: false,
         sessions: results[0] as List<SessionWithSets>,
         pastSets: results[1] as List<PastSetRow>,
       );
     } catch (e) {
+      if (_disposed) return;
       state.value =
           state.value.copyWith(isRefreshing: false, error: e.toString());
     }
   }
 
-  void setTab(int i) => state.value = state.value.copyWith(activeTab: i);
+  void setTab(int i) {
+    if (_disposed) return;
+    state.value = state.value.copyWith(activeTab: i);
+  }
 
-  void dispose() => state.dispose();
+  void dispose() {
+    _disposed = true;
+    state.dispose();
+  }
 }

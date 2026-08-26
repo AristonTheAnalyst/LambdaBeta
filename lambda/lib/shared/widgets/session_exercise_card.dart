@@ -4,7 +4,7 @@ import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_fonts.dart';
 import '../../core/styles/app_radius.dart';
 import '../../core/utils/session_format.dart';
-import '../../data/models/session_set.dart';
+import '../../data/models/session_exercise_set.dart';
 import '../../features/session/model/session_local_state.dart';
 import 'card_pill_button.dart';
 import 'exercise_selector.dart';

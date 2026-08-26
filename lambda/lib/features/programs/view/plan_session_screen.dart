@@ -259,8 +259,11 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         // Session Notes is hidden from the frontend for now
-                        // (the VM plumbing stays — see initState).
-                        if (state.isCalendarMode) ...[
+                        // (the VM plumbing stays — see initState). The
+                        // day-of-week assignment lives on the program link
+                        // row, so it only applies to program workouts
+                        // (standalone templates have no schedule).
+                        if (!widget.viewModel.isStandaloneMode) ...[
                           Text(
                             'Day of week',
                             style: AppFonts.ui(
@@ -360,7 +363,7 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
                     ),
                   ),
                   child: _PlanStatsBar(
-                    setCount: state.workoutPlannedSessionSets.length,
+                    setCount: state.workoutPlannedSessionExerciseSets.length,
                     exerciseCount: state.workoutExerciseSlots.length,
                     greyed: true,
                   ),
@@ -483,7 +486,9 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
     final name = toProperCase(
       state.exerciseDetailMap[slot.exerciseId]?.name ?? 'exercise',
     );
-    final setCount = state.plannedSetsFor(slot.exerciseSequenceOrder).length;
+    final setCount = state
+        .plannedSetsFor(slot.plannedExerciseId ?? '')
+        .length;
 
     showDialog<void>(
       context: context,
@@ -627,9 +632,9 @@ class _PlanExerciseCard extends StatelessWidget {
     final vm = viewModel;
     final s = vm.state.value;
     final exerciseId = slot.exerciseId;
-    final order = slot.exerciseSequenceOrder;
-    final sets = s.plannedSetsFor(order);
-    final draftIds = s.workoutSetDrafts[order] ?? const <int>[];
+    final plannedExerciseId = slot.plannedExerciseId ?? '';
+    final sets = s.plannedSetsFor(plannedExerciseId);
+    final draftIds = s.workoutSetDrafts[plannedExerciseId] ?? const <int>[];
 
     final variationOptions = [
       const DropdownOption<String?>(label: 'No Variation', value: null),
@@ -646,7 +651,7 @@ class _PlanExerciseCard extends StatelessWidget {
       final set = sets[i];
       rows.add(
         SessionSetRow(
-          key: ValueKey(set.setId),
+          key: ValueKey(set.plannedSetId),
           mode: SetRowMode.planned,
           exerciseId: exerciseId,
           displayIndex: i + 1,
@@ -659,7 +664,7 @@ class _PlanExerciseCard extends StatelessWidget {
           hasNotes: set.targetNotes?.isNotEmpty ?? false,
           onCommit: (isDraft, v) async {
             if (!isDraft) {
-              await vm.quickUpdatePlannedSessionSet(
+              await vm.quickUpdatePlannedSessionExerciseSet(
                 set,
                 weight: v.weight,
                 clearWeight: v.weight == null,
@@ -668,18 +673,18 @@ class _PlanExerciseCard extends StatelessWidget {
               );
             }
           },
-          onVariationChanged: (id) => vm.quickUpdatePlannedSessionSet(
+          onVariationChanged: (id) => vm.quickUpdatePlannedSessionExerciseSet(
             set,
             variationId: id,
             clearVariation: id == null,
           ),
-          onNotesSave: (v) => vm.quickUpdatePlannedSessionSet(
+          onNotesSave: (v) => vm.quickUpdatePlannedSessionExerciseSet(
             set,
             notes: v.trim().isEmpty ? null : v.trim(),
             clearNotes: v.trim().isEmpty,
           ),
-          onDelete: () => vm.deletePlannedSessionSet(set.setId),
-          onDuplicate: () => vm.duplicatePlannedSessionSet(set),
+          onDelete: () => vm.deletePlannedSessionExerciseSet(set.plannedSetId),
+          onDuplicate: () => vm.duplicatePlannedSessionExerciseSet(set),
           variationOptions: variationOptions,
           allVariations: allVariations,
           findSimilarVariations: vm.findSimilarVariations,
@@ -702,9 +707,9 @@ class _PlanExerciseCard extends StatelessWidget {
           hasNotes: false,
           onCommit: (isDraft, v) async {
             if (isDraft) {
-              await vm.quickCreatePlannedSessionSet(
+              await vm.quickCreatePlannedSessionExerciseSet(
                 exerciseId: exerciseId,
-                exerciseSequenceOrder: order,
+                plannedExerciseId: plannedExerciseId,
                 draftId: draftId,
                 variationId: v.variationId,
                 weight: v.weight,
@@ -715,7 +720,10 @@ class _PlanExerciseCard extends StatelessWidget {
           },
           onVariationChanged: (_) {},
           onNotesSave: (_) {},
-          onDelete: () async => vm.removeDraftPlannedSessionSet(order, draftId),
+          onDelete: () async => vm.removeDraftPlannedSessionExerciseSet(
+            plannedExerciseId,
+            draftId,
+          ),
           onDuplicate: () {},
           variationOptions: variationOptions,
           allVariations: allVariations,
@@ -728,7 +736,7 @@ class _PlanExerciseCard extends StatelessWidget {
     return SessionExerciseCard(
       exerciseNames: [
         for (final slot in s.workoutExerciseSlots)
-          toProperCase(s.exerciseDetailMap[slot.exerciseId]?.name ?? ''),
+          toProperCase(vm.exerciseDisplayName(slot.exerciseId)),
       ],
       activeIndex: s.activeSlotIndex,
       onSelect: (i) => vm.tapTab(i),
@@ -740,7 +748,7 @@ class _PlanExerciseCard extends StatelessWidget {
       prCount: 0,
       onPrTap: null,
       rows: rows,
-      onAddSet: () => vm.addDraftPlannedSessionSet(order),
+      onAddSet: () => vm.addDraftPlannedSessionExerciseSet(plannedExerciseId),
       history: null,
     );
   }
@@ -773,7 +781,8 @@ class _AddExerciseContentState extends State<_AddExerciseContent> {
     final lastUsed = <String, DateTime>{};
     for (final sessions in s.historyByExercise.values) {
       if (sessions.isNotEmpty) {
-        lastUsed[sessions.first.sets.first.exerciseId] = sessions.first.date;
+        final exId = sessions.first.sets.first.exerciseId;
+        if (exId != null) lastUsed[exId] = sessions.first.date;
       }
     }
     entries.sort((a, b) {

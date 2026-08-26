@@ -1,87 +1,72 @@
-import 'session_set.dart';
+import 'session_exercise_set.dart';
 
 /// A logged session — the fact record of one workout. When started from a
-/// planned session, [parentSessionId] links back to the template; the name
-/// snapshots on this row survive later template edits.
+/// planned session, [plannedSessionId] links back to the template; the name
+/// snapshot on this row survives later template edits. [endDatetime] NULL
+/// means the session is still in progress.
 class Session {
   const Session({
     required this.sessionId,
     required this.userId,
-    required this.createdDate,
-    required this.isActive,
+    required this.createdDatetime,
+    this.endDatetime,
     this.preNotes,
     this.postNotes,
     this.preFeeling,
     this.feeling,
-    this.programId,
-    this.programName,
     this.programRunId,
-    this.parentSessionId,
-    this.parentSessionName,
-    this.exerciseOrder,
+    this.plannedSessionId,
+    this.plannedSessionName,
   });
 
   final String sessionId;
   final String userId;
   final String? preNotes;
   final String? postNotes;
-  final DateTime createdDate;
-  final bool isActive;
+  final DateTime createdDatetime;
+  final DateTime? endDatetime;
   final int? preFeeling;
   final int? feeling;
-  final String? programId;
-  final String? programName;
   final String? programRunId;
-  final String? parentSessionId;
-  final String? parentSessionName;
+  final String? plannedSessionId;
+  final String? plannedSessionName;
 
-  /// JSON string of the session's exercise tab slots (order + superset
-  /// grouping), so the tab bar survives a hot restart.
-  final String? exerciseOrder;
+  /// A session with no end time is still being logged.
+  bool get isActive => endDatetime == null;
 
   factory Session.fromMap(Map<String, dynamic> map) => Session(
         sessionId: map['session_id'] as String,
         userId: map['user_id'] as String,
         preNotes: map['pre_notes'] as String?,
         postNotes: map['post_notes'] as String?,
-        createdDate: DateTime.parse(map['created_date'] as String),
-        isActive: _toBool(map['is_active']),
+        createdDatetime: DateTime.parse(map['created_datetime'] as String),
+        endDatetime: map['end_datetime'] != null
+            ? DateTime.parse(map['end_datetime'] as String)
+            : null,
         preFeeling: map['pre_feeling'] as int?,
         feeling: map['post_feeling'] as int?,
-        programId: map['program_id'] as String?,
-        programName: map['program_name'] as String?,
         programRunId: map['program_run_id'] as String?,
-        parentSessionId: map['parent_session_id'] as String?,
-        parentSessionName: map['parent_session_name'] as String?,
-        exerciseOrder: map['exercise_order'] as String?,
+        plannedSessionId: map['planned_session_id'] as String?,
+        plannedSessionName: map['planned_session_name'] as String?,
       );
-
-  static bool _toBool(dynamic v) {
-    if (v is bool) return v;
-    if (v is int) return v != 0;
-    return false;
-  }
 
   Map<String, dynamic> toMap() => {
         'session_id': sessionId,
         'user_id': userId,
         'pre_notes': preNotes,
         'post_notes': postNotes,
-        'created_date': createdDate.toIso8601String(),
-        'is_active': isActive,
+        'created_datetime': createdDatetime.toIso8601String(),
+        'end_datetime': endDatetime?.toIso8601String(),
         'pre_feeling': preFeeling,
         'post_feeling': feeling,
-        'program_id': programId,
-        'program_name': programName,
         'program_run_id': programRunId,
-        'parent_session_id': parentSessionId,
-        'parent_session_name': parentSessionName,
-        'exercise_order': exerciseOrder,
+        'planned_session_id': plannedSessionId,
+        'planned_session_name': plannedSessionName,
       };
 }
 
 class SessionWithSets {
   const SessionWithSets({required this.session, required this.sets});
   final Session session;
-  final List<SessionSet> sets;
+  final List<SessionExerciseSet> sets;
 }

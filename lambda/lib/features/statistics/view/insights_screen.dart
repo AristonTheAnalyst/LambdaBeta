@@ -9,7 +9,7 @@ import '../../../core/styles/app_spacing.dart';
 import '../../../core/styles/app_text_styles.dart';
 import '../../../core/utils/session_format.dart';
 import '../../../data/models/exercise_usage.dart';
-import '../../../data/models/session_set.dart';
+import '../../../data/models/session_exercise_set.dart';
 import '../../../data/repositories/session_repository.dart';
 import '../../../shared/widgets/app_card.dart';
 import '../../../shared/widgets/glass_button.dart';
@@ -72,7 +72,8 @@ class _InsightsScreenState extends State<InsightsScreen> {
   Future<void> _load() async {
     try {
       final sets = await _sessionRepo.loadPastSetsTimeline(_userId);
-      final prs = fullPrTimeline(sets);
+      // Counts are explicit rep-max only — weight-max is display-only.
+      final prs = countableRecords(fullPrTimeline(sets));
       if (mounted) {
         setState(() {
           _sets = sets;
@@ -97,7 +98,9 @@ class _InsightsScreenState extends State<InsightsScreen> {
     final seen = <String, String?>{};
     final lastUsed = lastUsedByEntity(_sets ?? const <PastSetRow>[]);
     for (final s in _sets ?? const <PastSetRow>[]) {
-      seen.putIfAbsent(s.exerciseId, () => s.exerciseName);
+      final exId = s.exerciseId;
+      if (exId == null) continue;
+      seen.putIfAbsent(exId, () => s.exerciseName);
     }
     final list = seen.entries
         .map((e) => (id: e.key, name: e.value ?? e.key))

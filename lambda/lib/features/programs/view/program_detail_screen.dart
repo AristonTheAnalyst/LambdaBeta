@@ -67,13 +67,13 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
   }
 
   Future<void> _confirmBeginProgram() async {
-    final state = _vm.state.value;
-    final isCalendar = state.program?.progressionMode == 'calendar';
     final controller = TextEditingController();
+    var mode = 'order';
     var useEndDate = false;
     DateTime? endDate;
+    bool isFrequency() => mode == 'frequency';
 
-    final result = await showDialog<({int? count, DateTime? endDate})>(
+    final result = await showDialog<({int? count, DateTime? endDate, String mode})>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setState) => AlertDialog(
@@ -94,7 +94,17 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
                 style: AppFonts.ui(color: AppColors.muted),
               ),
               const SizedBox(height: AppSpacing.md),
-              if (isCalendar) ...[
+              SegmentedControl<String>(
+                subtle: true,
+                options: const [
+                  SegmentOption(label: 'Order', value: 'order'),
+                  SegmentOption(label: 'Frequency', value: 'frequency'),
+                ],
+                value: mode,
+                onChange: (v) => setState(() => mode = v),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              if (isFrequency()) ...[
                 SegmentedControl<bool>(
                   subtle: true,
                   options: const [
@@ -106,11 +116,11 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
                 ),
                 const SizedBox(height: AppSpacing.md),
               ],
-              if (!isCalendar || !useEndDate)
+              if (!isFrequency() || !useEndDate)
                 LambdaInput(
                   controller: controller,
-                  label: isCalendar ? 'Number of weeks' : 'Number of sessions',
-                  placeholder: isCalendar ? 'e.g. 6' : 'e.g. 12',
+                  label: isFrequency() ? 'Number of weeks' : 'Number of sessions',
+                  placeholder: isFrequency() ? 'e.g. 6' : 'e.g. 12',
                   keyboardType: TextInputType.number,
                   required: true,
                 )
@@ -167,16 +177,16 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
             TextButton(
               onPressed: () {
                 final count = int.tryParse(controller.text.trim());
-                if (isCalendar && useEndDate) {
+                if (isFrequency() && useEndDate) {
                   if (endDate == null) return;
                   // Release focus before popping — otherwise the dialog's
                   // FocusScope inherited element deactivates while the
                   // TextField still depends on it, throwing "depends is
                   // empty is not true" (framework debugDeactivated assert).
-                  popDialog(ctx, (count: null, endDate: endDate));
+                  popDialog(ctx, (count: null, endDate: endDate, mode: mode));
                 } else {
                   if (count == null || count <= 0) return;
-                  popDialog(ctx, (count: count, endDate: null));
+                  popDialog(ctx, (count: count, endDate: null, mode: mode));
                 }
               },
               child: Text(
@@ -194,8 +204,11 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
     controller.dispose();
     if (result == null || !mounted) return;
     await _vm.setAsCurrent(
-      targetSessions: isCalendar ? null : result.count,
-      targetWeeks: (isCalendar && !useEndDate) ? result.count : null,
+      progressionMode: result.mode,
+      targetSessions: result.mode == 'order' ? result.count : null,
+      targetWeeks: (result.mode == 'frequency' && !useEndDate)
+          ? result.count
+          : null,
       endDate: result.endDate,
     );
   }
@@ -207,6 +220,14 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
     final end = run.endDate;
     if (end != null) return 'ends ${end.day}/${end.month}/${end.year}';
     return 'duration not set';
+  }
+
+  /// The day assigned to a planned session via its program link row.
+  int? _dayFor(PlannedSession w) {
+    for (final l in _vm.state.value.programLinks) {
+      if (l.plannedSessionId == w.sessionId) return l.dayOfWeek;
+    }
+    return null;
   }
 
   Future<void> _confirmEndRun(BuildContext context) async {
@@ -242,23 +263,25 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
     }
   }
 
-  /// Edits the active run's duration config while the program is running.
+  /// Edits the active run's config while the program is running — progression
+  /// mode and/or duration.
   Future<void> _editRunConfig(ProgramRun run) async {
-    final isCalendar = _vm.state.value.program?.progressionMode == 'calendar';
+    var mode = run.progressionMode ?? 'order';
+    bool isFrequency() => mode == 'frequency';
     final controller = TextEditingController(
       text: (run.targetSessions ?? run.targetWeeks ?? '').toString(),
     );
     var useEndDate =
-        isCalendar && run.endDate != null && run.targetWeeks == null;
+        isFrequency() && run.endDate != null && run.targetWeeks == null;
     var endDate = run.endDate;
 
-    final result = await showDialog<({int? count, DateTime? endDate})>(
+    final result = await showDialog<({int? count, DateTime? endDate, String mode})>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setState) => AlertDialog(
           backgroundColor: AppColors.surface,
           title: Text(
-            'Edit duration',
+            'Edit run config',
             style: AppFonts.ui(
               fontWeight: FontWeight.w800,
               color: AppColors.primary,
@@ -268,7 +291,17 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              if (isCalendar) ...[
+              SegmentedControl<String>(
+                subtle: true,
+                options: const [
+                  SegmentOption(label: 'Order', value: 'order'),
+                  SegmentOption(label: 'Frequency', value: 'frequency'),
+                ],
+                value: mode,
+                onChange: (v) => setState(() => mode = v),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              if (isFrequency()) ...[
                 SegmentedControl<bool>(
                   subtle: true,
                   options: const [
@@ -280,11 +313,11 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
                 ),
                 const SizedBox(height: AppSpacing.md),
               ],
-              if (!isCalendar || !useEndDate)
+              if (!isFrequency() || !useEndDate)
                 LambdaInput(
                   controller: controller,
-                  label: isCalendar ? 'Number of weeks' : 'Number of sessions',
-                  placeholder: isCalendar ? 'e.g. 6' : 'e.g. 12',
+                  label: isFrequency() ? 'Number of weeks' : 'Number of sessions',
+                  placeholder: isFrequency() ? 'e.g. 6' : 'e.g. 12',
                   keyboardType: TextInputType.number,
                 )
               else ...[
@@ -342,12 +375,12 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
             TextButton(
               onPressed: () {
                 final count = int.tryParse(controller.text.trim());
-                if (isCalendar && useEndDate) {
+                if (isFrequency() && useEndDate) {
                   if (endDate == null) return;
-                  popDialog(ctx, (count: null, endDate: endDate));
+                  popDialog(ctx, (count: null, endDate: endDate, mode: mode));
                 } else {
                   if (count == null || count <= 0) return;
-                  popDialog(ctx, (count: count, endDate: null));
+                  popDialog(ctx, (count: count, endDate: null, mode: mode));
                 }
               },
               child: Text(
@@ -365,12 +398,15 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
     controller.dispose();
     if (result == null || !mounted) return;
     await _vm.updateRunConfig(
-      targetSessions: isCalendar ? null : result.count,
-      clearSessions: !isCalendar,
-      targetWeeks: (isCalendar && !useEndDate) ? result.count : null,
-      clearWeeks: (isCalendar && useEndDate),
+      progressionMode: result.mode,
+      targetSessions: result.mode == 'order' ? result.count : null,
+      clearSessions: result.mode != 'order',
+      targetWeeks: (result.mode == 'frequency' && !useEndDate)
+          ? result.count
+          : null,
+      clearWeeks: (result.mode != 'frequency' || useEndDate),
       endDate: result.endDate,
-      clearEndDate: (isCalendar && !useEndDate),
+      clearEndDate: (result.mode != 'frequency' || !useEndDate),
     );
   }
 
@@ -718,49 +754,6 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
                             placeholder: 'What is this program about?',
                             onChanged: _vm.setDescriptionDraft,
                           ),
-                          const SizedBox(height: AppSpacing.md),
-                          Text(
-                            'Progression',
-                            style: AppFonts.ui(
-                              fontSize: AppTextStyles.sm,
-                              fontWeight: FontWeight.w500,
-                              color: AppColors.primary,
-                            ),
-                          ),
-                          const SizedBox(height: AppSpacing.xs),
-                          // Locked once created — progression determines how the
-                          // run schedules workouts and can't change afterwards.
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 14,
-                              vertical: 10,
-                            ),
-                            decoration: BoxDecoration(
-                              color: AppColors.surfaceHigh,
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: AppColors.border),
-                            ),
-                            child: Row(
-                              children: [
-                                Icon(
-                                  Icons.lock_outline,
-                                  size: 14,
-                                  color: AppColors.muted,
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  state.progressionModeDraft == 'calendar'
-                                      ? 'Calendar'
-                                      : 'Sequential',
-                                  style: AppFonts.ui(
-                                    fontSize: AppTextStyles.sm,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppColors.primary,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
                           const SizedBox(height: AppSpacing.lg),
                           if (!state.isCurrent)
                             Row(
@@ -874,7 +867,9 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
                                       state.plannedWorkouts[i].sessionId,
                                     ),
                                     workout: state.plannedWorkouts[i],
-                                    showDayOfWeek: state.isCalendarMode,
+                                    dayOfWeek: _dayFor(
+                                      state.plannedWorkouts[i],
+                                    ),
                                     index: i,
                                     onTap: () => _openEditWorkout(
                                       state.plannedWorkouts[i],
@@ -1246,18 +1241,20 @@ class _PlannedSessionRow extends StatelessWidget {
   const _PlannedSessionRow({
     super.key,
     required this.workout,
-    required this.showDayOfWeek,
     required this.onTap,
     required this.onDuplicate,
     required this.onDelete,
+    this.dayOfWeek,
     this.index,
   });
 
   final PlannedSession workout;
-  final bool showDayOfWeek;
   final VoidCallback onTap;
   final VoidCallback onDuplicate;
   final VoidCallback onDelete;
+
+  /// The session's assigned day (from its program link row) — null = none.
+  final int? dayOfWeek;
   final int? index;
 
   @override
@@ -1312,53 +1309,45 @@ class _PlannedSessionRow extends StatelessWidget {
                   ],
                 ),
               ),
-              if (showDayOfWeek) ...[
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 2,
+                ),
+                decoration: BoxDecoration(
+                  color: AppColors.accent.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: AppColors.accent.withValues(alpha: 0.3),
+                  ),
+                ),
+                child: Text(
+                  'Session ${(index ?? 0) + 1}',
+                  style: AppFonts.mono(
+                    fontSize: AppTextStyles.xs,
+                    color: AppColors.accent,
+                  ),
+                ),
+              ),
+              if (dayOfWeek != null) ...[
+                const SizedBox(width: AppSpacing.sm),
                 Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 8,
                     vertical: 2,
                   ),
                   decoration: BoxDecoration(
-                    color: workout.dayOfWeek != null
-                        ? AppColors.surfaceHigh
-                        : AppColors.dangerBg,
+                    color: AppColors.surfaceHigh,
                     borderRadius: BorderRadius.circular(999),
                   ),
                   child: Text(
-                    workout.dayOfWeek != null
-                        ? _dayOfWeekLabel(workout.dayOfWeek)
-                        : 'No day',
+                    _dayOfWeekLabel(dayOfWeek),
                     style: AppFonts.ui(
                       fontSize: AppTextStyles.xs,
-                      color: workout.dayOfWeek != null
-                          ? AppColors.muted
-                          : AppColors.danger,
+                      color: AppColors.muted,
                     ),
                   ),
                 ),
-                const SizedBox(width: AppSpacing.sm),
-              ] else ...[
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppColors.accent.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(
-                      color: AppColors.accent.withValues(alpha: 0.3),
-                    ),
-                  ),
-                  child: Text(
-                    'Session ${workout.sequenceOrder}',
-                    style: AppFonts.mono(
-                      fontSize: AppTextStyles.xs,
-                      color: AppColors.accent,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.sm),
               ],
               ReorderableDragStartListener(
                 index: index ?? 0,

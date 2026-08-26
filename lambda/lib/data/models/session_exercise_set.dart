@@ -1,27 +1,31 @@
 import 'dart:convert';
 
-/// One logged set within a session (fact).
-class SessionSet {
-  const SessionSet({
-    required this.sessionSetId,
+/// One logged set within a session (fact_session_exercise_set). Its exercise
+/// lives one level up on fact_session_exercise; [exerciseId] and
+/// [exerciseName] are hydrated from the parent row by the repository JOINs so
+/// consumers don't need to re-join.
+class SessionExerciseSet {
+  const SessionExerciseSet({
+    required this.sessionExerciseSetId,
+    required this.sessionExerciseId,
     required this.sessionId,
     required this.userId,
-    required this.exerciseId,
     required this.setNumber,
     required this.reps,
+    this.exerciseId,
     this.variationId,
     this.weight,
     this.notes,
     this.exerciseName,
     this.variationName,
-    this.supersetGroupNumber,
-    this.parentSetId,
+    this.plannedSetId,
   });
 
-  final String sessionSetId;
+  final String sessionExerciseSetId;
+  final String sessionExerciseId;
   final String sessionId;
   final String userId;
-  final String exerciseId;
+  final String? exerciseId;
   final String? variationId;
   final int setNumber;
   final double? weight;
@@ -29,14 +33,18 @@ class SessionSet {
   final String? notes;
   final String? exerciseName;
   final String? variationName;
-  final int? supersetGroupNumber;
-  final String? parentSetId;
 
-  factory SessionSet.fromMap(Map<String, dynamic> map) => SessionSet(
-        sessionSetId: map['session_set_id'] as String,
+  /// Plain ref to the template row (dim_planned_session_exercise_set) this
+  /// set was materialized from — the ghost-hint anchor.
+  final String? plannedSetId;
+
+  factory SessionExerciseSet.fromMap(Map<String, dynamic> map) =>
+      SessionExerciseSet(
+        sessionExerciseSetId: map['session_exercise_set_id'] as String,
+        sessionExerciseId: map['session_exercise_id'] as String,
         sessionId: map['session_id'] as String,
         userId: map['user_id'] as String,
-        exerciseId: map['custom_exercise_id'] as String,
+        exerciseId: map['custom_exercise_id'] as String?,
         variationId: map['custom_variation_id'] as String?,
         setNumber: map['set_number'] as int,
         weight: _toDouble(map['weight']),
@@ -44,12 +52,12 @@ class SessionSet {
         notes: map['notes'] as String?,
         exerciseName: map['exercise_name'] as String?,
         variationName: map['variation_name'] as String?,
-        supersetGroupNumber: map['superset_group_number'] as int?,
-        parentSetId: map['parent_set_id'] as String?,
+        plannedSetId: map['planned_set_id'] as String?,
       );
 
   Map<String, dynamic> toMap() => {
-        'session_set_id': sessionSetId,
+        'session_exercise_set_id': sessionExerciseSetId,
+        'session_exercise_id': sessionExerciseId,
         'session_id': sessionId,
         'user_id': userId,
         'custom_exercise_id': exerciseId,
@@ -58,10 +66,9 @@ class SessionSet {
         'weight': weight,
         'reps': reps,
         'notes': notes,
-        'superset_group_number': supersetGroupNumber,
         'exercise_name': exerciseName,
         'variation_name': variationName,
-        'parent_set_id': parentSetId,
+        'planned_set_id': plannedSetId,
       };
 
   static double? _toDouble(dynamic v) {
@@ -87,40 +94,40 @@ class SessionSet {
 
 /// A logged set joined with its session's created date, for the
 /// per-exercise history timeline.
-class PastSetRow extends SessionSet {
+class PastSetRow extends SessionExerciseSet {
   const PastSetRow({
-    required super.sessionSetId,
+    required super.sessionExerciseSetId,
+    required super.sessionExerciseId,
     required super.sessionId,
     required super.userId,
-    required super.exerciseId,
     required super.setNumber,
     required super.reps,
     required this.sessionCreatedDate,
+    super.exerciseId,
     super.variationId,
     super.weight,
     super.notes,
     super.exerciseName,
     super.variationName,
-    super.supersetGroupNumber,
-    super.parentSetId,
+    super.plannedSetId,
   });
 
   final DateTime sessionCreatedDate;
 
   factory PastSetRow.fromMap(Map<String, dynamic> map) => PastSetRow(
-        sessionSetId: map['session_set_id'] as String,
+        sessionExerciseSetId: map['session_exercise_set_id'] as String,
+        sessionExerciseId: map['session_exercise_id'] as String,
         sessionId: map['session_id'] as String,
         userId: map['user_id'] as String,
-        exerciseId: map['custom_exercise_id'] as String,
+        exerciseId: map['custom_exercise_id'] as String?,
         variationId: map['custom_variation_id'] as String?,
         setNumber: map['set_number'] as int,
-        weight: SessionSet._toDouble(map['weight']),
-        reps: SessionSet._toNumList(map['reps']),
+        weight: SessionExerciseSet._toDouble(map['weight']),
+        reps: SessionExerciseSet._toNumList(map['reps']),
         notes: map['notes'] as String?,
-        sessionCreatedDate: DateTime.parse(map['created_date'] as String),
+        sessionCreatedDate: DateTime.parse(map['created_datetime'] as String),
         exerciseName: map['exercise_name'] as String?,
         variationName: map['variation_name'] as String?,
-        supersetGroupNumber: map['superset_group_number'] as int?,
-        parentSetId: map['parent_set_id'] as String?,
+        plannedSetId: map['planned_set_id'] as String?,
       );
 }

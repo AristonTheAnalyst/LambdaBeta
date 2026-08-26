@@ -149,8 +149,9 @@ class _ProgramLibraryScreenState extends State<ProgramLibraryScreen> {
     try {
       await _viewModel.setCurrentProgram(
         p.programId,
-        targetSessions: p.progressionMode == 'calendar' ? null : result.count,
-        targetWeeks: (p.progressionMode == 'calendar' && !result.useEndDate)
+        progressionMode: result.mode,
+        targetSessions: result.mode == 'order' ? result.count : null,
+        targetWeeks: (result.mode == 'frequency' && !result.useEndDate)
             ? result.count
             : null,
         endDate: result.endDate,
@@ -390,7 +391,7 @@ class _ProgramCard extends StatelessWidget {
             Text(
               progress!.isFinished
                   ? 'Finished'
-                  : progress!.program.progressionMode == 'calendar'
+                  : progress!.run.progressionMode == 'frequency'
                       ? 'Week ${progress!.weekNumber} of ${progress!.totalWeeks ?? '?'} · ${progress!.remainingLabel}'
                       : '${progress!.workoutsCompletedInCycle}/${progress!.totalWorkoutsInCycle} sessions · ${progress!.remainingLabel}',
               style: AppFonts.mono(fontSize: 9, color: AppColors.muted),
@@ -422,12 +423,18 @@ class _ProgramCard extends StatelessWidget {
   }
 }
 
-/// Result of the "Begin Program" duration-config dialog.
+/// Result of the "Begin Program" config dialog — progression mode + duration.
 class _RunConfig {
-  const _RunConfig({this.count, this.endDate, this.useEndDate = false});
+  const _RunConfig({
+    this.count,
+    this.endDate,
+    this.useEndDate = false,
+    this.mode = 'order',
+  });
   final int? count;
   final DateTime? endDate;
   final bool useEndDate;
+  final String mode; // 'frequency' | 'order'
 }
 
 /// The "Begin Program" duration-config dialog. Stateful so it owns the
@@ -447,8 +454,11 @@ class _BeginConfigDialogState extends State<_BeginConfigDialog> {
   final _controller = TextEditingController();
   bool _useEndDate = false;
   DateTime? _endDate;
+  String _mode = 'order';
 
-  bool get _isCalendar => widget.program.progressionMode == 'calendar';
+  /// Frequency runs schedule by days in the week/fortnight; order runs work
+  /// through the list. The mode lives on the run, chosen here at run start.
+  bool get _isFrequency => _mode == 'frequency';
 
   @override
   void dispose() {
@@ -458,13 +468,17 @@ class _BeginConfigDialogState extends State<_BeginConfigDialog> {
 
   void _submit() {
     final count = int.tryParse(_controller.text.trim());
-    if (_isCalendar && _useEndDate) {
+    if (_isFrequency && _useEndDate) {
       final end = _endDate;
       if (end == null) return;
-      Navigator.of(context).pop(_RunConfig(endDate: end, useEndDate: true));
+      Navigator.of(context).pop(_RunConfig(
+        endDate: end,
+        useEndDate: true,
+        mode: _mode,
+      ));
     } else {
       if (count == null || count <= 0) return;
-      Navigator.of(context).pop(_RunConfig(count: count));
+      Navigator.of(context).pop(_RunConfig(count: count, mode: _mode));
     }
   }
 
@@ -479,7 +493,17 @@ class _BeginConfigDialogState extends State<_BeginConfigDialog> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (_isCalendar) ...[
+          SegmentedControl<String>(
+            subtle: true,
+            options: const [
+              SegmentOption(label: 'Order', value: 'order'),
+              SegmentOption(label: 'Frequency', value: 'frequency'),
+            ],
+            value: _mode,
+            onChange: (v) => setState(() => _mode = v),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          if (_isFrequency) ...[
             SegmentedControl<bool>(
               subtle: true,
               options: const [
@@ -491,11 +515,11 @@ class _BeginConfigDialogState extends State<_BeginConfigDialog> {
             ),
             const SizedBox(height: AppSpacing.md),
           ],
-          if (!_isCalendar || !_useEndDate)
+          if (!_isFrequency || !_useEndDate)
             LambdaInput(
               controller: _controller,
-              label: _isCalendar ? 'Number of weeks' : 'Number of sessions',
-              placeholder: _isCalendar ? 'e.g. 6' : 'e.g. 12',
+              label: _isFrequency ? 'Number of weeks' : 'Number of sessions',
+              placeholder: _isFrequency ? 'e.g. 6' : 'e.g. 12',
               keyboardType: TextInputType.number,
               required: true,
             )

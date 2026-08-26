@@ -2,8 +2,10 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 import '../../core/powersync/database.dart' as ps;
 import '../models/planned_session.dart';
+import '../models/program.dart';
 import '../models/program_progress.dart';
 import '../models/program_run.dart';
+import 'planned_session_repository.dart';
 import 'program_repository.dart';
 
 const _uuid = Uuid();
@@ -16,6 +18,7 @@ class ProgramRunRepository {
       : _programRepo = programRepository ?? ProgramRepository();
 
   final ProgramRepository _programRepo;
+  final PlannedSessionRepository _plannedRepo = PlannedSessionRepository();
 
   Future<ProgramRun?> getCurrentRun(String userId) async {
     // 1. Try the local PowerSync mirror first — it's fast and offline-safe.
@@ -43,8 +46,8 @@ class ProgramRunRepository {
   }
 
   /// Ends any existing current run and starts a fresh one for [programId],
-  /// optionally carrying the duration config (sessions for sequential, weeks
-  /// or end date for calendar).
+  /// carrying how it progresses ('frequency' | 'order') and the duration
+  /// config (sessions for order, weeks or end date for frequency).
   ///
   /// Writes to Supabase REST first (the authoritative write), then mirrors
   /// locally through PowerSync so the UI shows the change immediately.  If the
@@ -52,6 +55,7 @@ class ProgramRunRepository {
   Future<ProgramRun> startProgramRun(
     String userId,
     String programId, {
+    String? progressionMode,
     int? targetSessions,
     int? targetWeeks,
     DateTime? endDate,
@@ -85,6 +89,7 @@ class ProgramRunRepository {
       'target_sessions': targetSessions,
       'target_weeks': targetWeeks,
       'end_date': endDate?.toUtc().toIso8601String(),
+      'progression_mode': progressionMode,
     }).timeout(const Duration(seconds: 8));
 
     // No local PowerSync mirror — writing locally creates a CRUD entry that
@@ -100,15 +105,17 @@ class ProgramRunRepository {
       targetSessions: targetSessions,
       targetWeeks: targetWeeks,
       endDate: endDate?.toUtc(),
+      progressionMode: progressionMode,
     );
   }
 
-  /// Updates an active run's duration config — programs are mutable while
-  /// running. Pass `clear: true` alongside a null value to explicitly clear a
-  /// previously-set field (e.g. switching a calendar run from end date to
+  /// Updates an active run's config — runs are mutable while in progress.
+  /// Pass `clear: true` alongside a null value to explicitly clear a
+  /// previously-set field (e.g. switching a frequency run from end date to
   /// weeks must clear the old end date).
   Future<void> updateRunConfig(
     String programRunId, {
+    String? progressionMode,
     int? targetSessions,
     int? targetWeeks,
     DateTime? endDate,
@@ -117,6 +124,7 @@ class ProgramRunRepository {
     bool clearEndDate = false,
   }) async {
     final updates = <String, dynamic>{};
+    if (progressionMode != null) updates['progression_mode'] = progressionMode;
     if (clearSessions) updates['target_sessions'] = null;
     if (targetSessions != null) updates['target_sessions'] = targetSessions;
     if (clearWeeks) updates['target_weeks'] = null;
@@ -148,7 +156,7 @@ class ProgramRunRepository {
 
   Future<int> _completedWorkoutCount(String programRunId) async {
     final rows = await ps.db.getAll(
-      'SELECT COUNT(*) as cnt FROM fact_session WHERE program_run_id = ? AND is_active = 0',
+      'SELECT COUNT(*) as cnt FROM fact_session WHERE program_run_id = ? AND end_datetime IS NOT NULL',
       [programRunId],
     );
     if (rows.isEmpty) return 0;
@@ -158,29 +166,52 @@ class ProgramRunRepository {
     return 0;
   }
 
-  /// Branches on the program's progression_mode:
-  /// - sequential: strict cursor over completed-workout count, never skips
-  ///   based on calendar gaps.
-  /// - calendar: whichever planned workout's day_of_week matches today; null
-  ///   (rest day / free-form only) when nothing matches.
-  Future<PlannedSession?> getNextPlannedSession(
-    String programId,
-    String programRunId, {
-    required String progressionMode,
+  /// Branches on the run's progression_mode:
+  /// - 'frequency': whichever planned session's join-row day_of_week matches
+  ///   today (respecting a fortnight week_offset against the run's start);
+  ///   null (rest day / free-form only) when nothing matches.
+  /// - 'order' (default, incl. legacy runs with no mode): strict cursor over
+  ///   completed-session count following the join rows' sequence_order,
+  ///   never skipping based on calendar gaps.
+  Future<PlannedSession?> getNextPlannedSession({
+    required Program program,
+    required ProgramRun run,
   }) async {
-    final workouts = await _programRepo.fetchPlannedSessions(programId);
-    if (workouts.isEmpty) return null;
+    final links = await _plannedRepo.fetchProgramLinks(program.programId);
+    if (links.isEmpty) return null;
+    final sessions = await _plannedRepo.fetchPlannedSessions(
+      run.userId,
+      programId: program.programId,
+    );
+    final sessionById = {for (final s in sessions) s.sessionId: s};
 
-    if (progressionMode == 'calendar') {
+    if (run.progressionMode == 'frequency') {
       final today = DateTime.now().weekday; // 1=Mon..7=Sun
-      for (final w in workouts) {
-        if (w.dayOfWeek == today) return w;
+      final daysSinceStart =
+          DateTime.now().difference(run.startedDate).inDays;
+      final fortnightWeek = (daysSinceStart ~/ 7) % 2;
+      for (final link in links) {
+        if (link.dayOfWeek == today &&
+            (link.weekOffset == null || link.weekOffset == fortnightWeek)) {
+          final session = sessionById[link.plannedSessionId];
+          if (session != null) return session;
+        }
       }
       return null;
     }
 
-    final completed = await _completedWorkoutCount(programRunId);
-    return workouts[completed % workouts.length];
+    final ordered = links
+        .where((l) => l.sequenceOrder != null)
+        .toList()
+      ..sort((a, b) => a.sequenceOrder!.compareTo(b.sequenceOrder!));
+    final orderedSessions = ordered
+        .map((l) => sessionById[l.plannedSessionId])
+        .whereType<PlannedSession>()
+        .toList();
+    if (orderedSessions.isEmpty) return null;
+
+    final completed = await _completedWorkoutCount(run.programRunId);
+    return orderedSessions[completed % orderedSessions.length];
   }
 
   Future<ProgramProgress?> getProgress(String userId) async {
@@ -189,15 +220,18 @@ class ProgramRunRepository {
     final program = await _programRepo.fetchProgram(run.programId);
     if (program == null) return null;
 
-    final workouts = await _programRepo.fetchPlannedSessions(program.programId);
+    final workouts = await _plannedRepo.fetchPlannedSessions(
+      userId,
+      programId: program.programId,
+    );
     final completed = await _completedWorkoutCount(run.programRunId);
     final totalInCycle = workouts.length;
 
-    // Sequential: the run's configured session count overrides the planned
-    // workout count for progress/finish. Calendar: the run's weeks or end date
-    // overrides program.lengthWeeks.
+    // Order: the run's configured session count overrides the planned
+    // session count for progress/finish. Frequency: the run's weeks or end
+    // date drive it.
     final effectiveTotal =
-        program.progressionMode == 'sequential'
+        run.progressionMode == 'order' || run.progressionMode == null
             ? (run.targetSessions ?? totalInCycle)
             : totalInCycle;
     final workoutsCompletedInCycle =
@@ -205,15 +239,11 @@ class ProgramRunRepository {
 
     final now = DateTime.now();
     final rawWeek = (now.difference(run.startedDate).inDays ~/ 7) + 1;
-    final totalWeeks = run.targetWeeks ?? program.lengthWeeks;
+    final totalWeeks = run.targetWeeks;
     final weekNumber =
         totalWeeks != null && rawWeek > totalWeeks ? totalWeeks : rawWeek;
 
-    final next = await getNextPlannedSession(
-      program.programId,
-      run.programRunId,
-      progressionMode: program.progressionMode,
-    );
+    final next = await getNextPlannedSession(program: program, run: run);
 
     final progress = ProgramProgress(
       program: program,

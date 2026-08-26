@@ -1,16 +1,17 @@
-import 'dart:convert';
-
 import 'package:uuid/uuid.dart';
 import '../../core/powersync/database.dart' as ps;
 import '../../shared/utils/unique_name.dart';
 import '../models/planned_session.dart';
-import '../models/planned_session_set.dart';
+import '../models/planned_session_exercise.dart';
+import '../models/planned_session_exercise_set.dart';
+import '../models/planned_session_program.dart';
 
 const _uuid = Uuid();
 
-/// Owns planned sessions (session templates — standalone or program-attached)
-/// and their planned sets. Dimensions are soft-deleted via is_archived so
-/// logged history that references them never dangles.
+/// Owns planned sessions (session templates — standalone or program-attached
+/// via the join table) and their exercise groups + planned sets. Dimensions
+/// are soft-deleted via is_archived so logged history that references them
+/// never dangles; join-table rows hard-delete (nothing references them).
 class PlannedSessionRepository {
   /// Planned session names for [userId], used to bump auto-generated defaults.
   Future<Set<String>> _sessionNames(String userId) async {
@@ -48,16 +49,31 @@ class PlannedSessionRepository {
     }
   }
 
-  /// Fetches planned sessions — standalone (programId null) or attached to
-  /// [programId].
+  /// Fetches planned sessions — standalone (no program link) or attached to
+  /// [programId] via the join table.
   Future<List<PlannedSession>> fetchPlannedSessions(
     String userId, {
     String? programId,
   }) async {
     final rows = await ps.db.getAll(
       programId != null
-          ? 'SELECT * FROM dim_planned_session WHERE user_id = ? AND program_id = ? AND is_archived = 0 ORDER BY sequence_order'
-          : 'SELECT * FROM dim_planned_session WHERE user_id = ? AND program_id IS NULL AND is_archived = 0 ORDER BY created_date DESC',
+          ? '''
+            SELECT dps.*, psp.sequence_order, psp.day_of_week, psp.week_offset
+            FROM dim_planned_session dps
+            JOIN dim_planned_session_program psp
+              ON psp.planned_session_id = dps.session_id
+            WHERE dps.user_id = ? AND psp.program_id = ? AND dps.is_archived = 0
+            ORDER BY psp.sequence_order NULLS LAST, dps.created_date
+            '''
+          : '''
+            SELECT * FROM dim_planned_session dps
+            WHERE dps.user_id = ? AND dps.is_archived = 0
+              AND NOT EXISTS (
+                SELECT 1 FROM dim_planned_session_program psp
+                WHERE psp.planned_session_id = dps.session_id
+              )
+            ORDER BY dps.created_date DESC
+            ''',
       programId != null ? [userId, programId] : [userId],
     );
     return rows.map((r) => PlannedSession.fromMap(r)).toList();
@@ -76,9 +92,6 @@ class PlannedSessionRepository {
     String userId, {
     String? name,
     String? notes,
-    String? programId,
-    int? sequenceOrder,
-    int? dayOfWeek,
   }) async {
     var finalName = name;
     if (finalName == null) {
@@ -92,9 +105,8 @@ class PlannedSessionRepository {
     await ps.db.execute(
       '''
       INSERT INTO dim_planned_session
-        (id, session_id, user_id, name, notes, is_archived, created_date,
-         program_id, sequence_order, day_of_week)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (id, session_id, user_id, name, notes, is_archived, created_date)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
       ''',
       [
         id,
@@ -104,9 +116,6 @@ class PlannedSessionRepository {
         notes,
         0,
         createdDate.toIso8601String(),
-        programId,
-        sequenceOrder,
-        dayOfWeek,
       ],
     );
     return PlannedSession(
@@ -115,9 +124,6 @@ class PlannedSessionRepository {
       name: finalName,
       notes: notes,
       isArchived: false,
-      programId: programId,
-      sequenceOrder: sequenceOrder,
-      dayOfWeek: dayOfWeek,
       createdDate: createdDate,
     );
   }
@@ -127,8 +133,6 @@ class PlannedSessionRepository {
     String? name,
     String? notes,
     bool clearNotes = false,
-    int? dayOfWeek,
-    bool clearDayOfWeek = false,
     String userId = '',
   }) async {
     if (name != null) {
@@ -141,11 +145,6 @@ class PlannedSessionRepository {
     } else if (notes != null) {
       updates['notes'] = notes;
     }
-    if (clearDayOfWeek) {
-      updates['day_of_week'] = null;
-    } else if (dayOfWeek != null) {
-      updates['day_of_week'] = dayOfWeek;
-    }
     if (updates.isEmpty) return;
     final setClause = updates.keys.map((k) => '$k = ?').join(', ');
     await ps.db.execute(
@@ -154,20 +153,35 @@ class PlannedSessionRepository {
     );
   }
 
-  /// Soft-deletes a planned session and its sets (is_archived = 1).
+  /// Soft-deletes a planned session, its exercise groups and sets
+  /// (is_archived = 1), and hard-deletes its program links.
   Future<void> deletePlannedSession(String sessionId) async {
     await ps.db.execute(
-      'UPDATE dim_planned_session_set SET is_archived = 1 WHERE session_id = ?',
+      '''
+      UPDATE dim_planned_session_exercise_set SET is_archived = 1
+      WHERE planned_exercise_id IN (
+        SELECT planned_exercise_id FROM dim_planned_session_exercise
+        WHERE planned_session_id = ?
+      )
+      ''',
+      [sessionId],
+    );
+    await ps.db.execute(
+      'UPDATE dim_planned_session_exercise SET is_archived = 1 WHERE planned_session_id = ?',
       [sessionId],
     );
     await ps.db.execute(
       'UPDATE dim_planned_session SET is_archived = 1 WHERE session_id = ?',
       [sessionId],
     );
+    await ps.db.execute(
+      'DELETE FROM dim_planned_session_program WHERE planned_session_id = ?',
+      [sessionId],
+    );
   }
 
   /// One template by id — used to restore a session's planned context from
-  /// its persisted `parent_session_id` (the template may be standalone or
+  /// its persisted `planned_session_id` (the template may be standalone or
   /// program-attached; both live in the same table).
   Future<PlannedSession?> fetchPlannedSessionById(String sessionId) async {
     final rows = await ps.db.getAll(
@@ -178,72 +192,102 @@ class PlannedSessionRepository {
     return PlannedSession.fromMap(rows.first);
   }
 
-  /// Consolidates a template to the "exercises are unique per session" rule:
-  /// every exercise gets ONE group containing all of its rows (original
-  /// order), groups ordered by first appearance. Also archives no-target
-  /// rows — the old keep-alive stubs from group creation, which carry no
-  /// information and only made the planner's counts disagree with the
-  /// session preview. Rows with target data are never deleted, so the user
-  /// can prune unwanted ones in one place afterwards. Idempotent.
-  Future<List<PlannedSessionSet>> consolidateDuplicateExerciseGroups(
-    String sessionId,
+  // ── Exercise groups ────────────────────────────────────────────────────────
+
+  Future<List<PlannedSessionExercise>> fetchPlannedExercises(
+    String plannedSessionId,
   ) async {
-    final sets = await fetchPlannedSets(sessionId);
-    for (final s in sets) {
-      final noTargetData = s.targetWeight == null &&
-          s.targetReps == null &&
-          (s.targetNotes?.isEmpty ?? true) &&
-          s.variationId == null;
-      if (noTargetData) {
-        await ps.db.execute(
-          'UPDATE dim_planned_session_set SET is_archived = 1 WHERE set_id = ?',
-          [s.setId],
-        );
-      }
-    }
-    final remaining = await fetchPlannedSets(sessionId);
-    final orderByExercise = <String, int>{};
-    final nextSetNumber = <String, int>{};
-    var nextOrder = 0;
-    for (final s in remaining) {
-      final order = orderByExercise.putIfAbsent(s.exerciseId, () => ++nextOrder);
-      final number = nextSetNumber.putIfAbsent(s.exerciseId, () => 1);
-      nextSetNumber[s.exerciseId] = number + 1;
-      if (order != s.exerciseSequenceOrder || number != s.setNumber) {
-        await ps.db.execute(
-          'UPDATE dim_planned_session_set SET exercise_sequence_order = ?, set_number = ? WHERE set_id = ?',
-          [order, number, s.setId],
-        );
-      }
-    }
-    return fetchPlannedSets(sessionId);
+    final rows = await ps.db.getAll(
+      '''
+      SELECT pe.*, e.exercise_name AS exercise_name
+      FROM dim_planned_session_exercise pe
+      LEFT JOIN dim_exercise e ON e.custom_exercise_id = pe.custom_exercise_id
+      WHERE pe.planned_session_id = ? AND pe.is_archived = 0
+      ORDER BY pe.exercise_order
+      ''',
+      [plannedSessionId],
+    );
+    return rows.map((r) => PlannedSessionExercise.fromMap(r)).toList();
   }
 
-  Future<List<PlannedSessionSet>> fetchPlannedSets(String sessionId) async {
+  Future<PlannedSessionExercise> createPlannedExercise(
+    String userId,
+    String plannedSessionId, {
+    String? exerciseId,
+    required int exerciseOrder,
+  }) async {
+    final id = _uuid.v4();
+    await ps.db.execute(
+      '''
+      INSERT INTO dim_planned_session_exercise
+        (id, planned_exercise_id, planned_session_id, user_id, custom_exercise_id,
+         exercise_order, is_archived)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ''',
+      [
+        id,
+        id,
+        plannedSessionId,
+        userId,
+        exerciseId,
+        exerciseOrder,
+        0,
+      ],
+    );
+    return PlannedSessionExercise(
+      plannedExerciseId: id,
+      plannedSessionId: plannedSessionId,
+      userId: userId,
+      exerciseId: exerciseId,
+      exerciseOrder: exerciseOrder,
+    );
+  }
+
+  /// Archives an exercise group and its sets.
+  Future<void> deletePlannedExercise(String plannedExerciseId) async {
+    await ps.db.execute(
+      'UPDATE dim_planned_session_exercise_set SET is_archived = 1 WHERE planned_exercise_id = ?',
+      [plannedExerciseId],
+    );
+    await ps.db.execute(
+      'UPDATE dim_planned_session_exercise SET is_archived = 1 WHERE planned_exercise_id = ?',
+      [plannedExerciseId],
+    );
+  }
+
+  // ── Planned sets ───────────────────────────────────────────────────────────
+
+  /// Fetches a template's active target sets, hydrated with the exercise from
+  /// their parent group so consumers don't need to re-join.
+  Future<List<PlannedSessionExerciseSet>> fetchPlannedSets(
+    String plannedSessionId,
+  ) async {
     final rows = await ps.db.getAll(
       '''
       SELECT s.*,
-        COALESCE(e.exercise_name, s.exercise_name) AS exercise_name,
-        COALESCE(v.variation_name, s.variation_name) AS variation_name
-      FROM dim_planned_session_set s
-      LEFT JOIN dim_exercise e ON e.custom_exercise_id = s.custom_exercise_id
+             pe.custom_exercise_id,
+             pe.planned_session_id,
+             e.exercise_name,
+             v.variation_name
+      FROM dim_planned_session_exercise_set s
+      JOIN dim_planned_session_exercise pe
+        ON pe.planned_exercise_id = s.planned_exercise_id
+      LEFT JOIN dim_exercise e ON e.custom_exercise_id = pe.custom_exercise_id
       LEFT JOIN dim_variation v ON v.custom_variation_id = s.custom_variation_id
-      WHERE s.session_id = ? AND s.is_archived = 0
-      ORDER BY s.exercise_sequence_order, s.set_number
+      WHERE pe.planned_session_id = ? AND s.is_archived = 0
+      ORDER BY pe.exercise_order, s.set_number
       ''',
-      [sessionId],
+      [plannedSessionId],
     );
-    return rows.map((r) => PlannedSessionSet.fromMap(r)).toList();
+    return rows.map((r) => PlannedSessionExerciseSet.fromMap(r)).toList();
   }
 
-  Future<PlannedSessionSet> createPlannedSet(
+  Future<PlannedSessionExerciseSet> createPlannedSet(
     String userId,
-    String sessionId, {
-    required String exerciseId,
-    String? exerciseName,
+    String plannedExerciseId, {
+    required String plannedSessionId,
+    String? exerciseId,
     String? variationId,
-    String? variationName,
-    required int exerciseSequenceOrder,
     required int setNumber,
     String? targetWeight,
     String? targetReps,
@@ -252,54 +296,46 @@ class PlannedSessionRepository {
     final id = _uuid.v4();
     await ps.db.execute(
       '''
-      INSERT INTO dim_planned_session_set
-        (id, set_id, session_id, user_id, custom_exercise_id, custom_variation_id,
-         exercise_sequence_order, set_number, target_weight, target_reps,
-         target_notes, exercise_name, variation_name, is_archived)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO dim_planned_session_exercise_set
+        (id, planned_set_id, planned_exercise_id, user_id, custom_variation_id,
+         set_number, target_weight, target_reps, target_notes, is_archived)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ''',
       [
         id,
         id,
-        sessionId,
+        plannedExerciseId,
         userId,
-        exerciseId,
         variationId,
-        exerciseSequenceOrder,
         setNumber,
         targetWeight?.isNotEmpty == true ? targetWeight : null,
         targetReps?.isNotEmpty == true ? targetReps : null,
         targetNotes,
-        exerciseName,
-        variationName,
         0,
       ],
     );
-    return PlannedSessionSet(
-      setId: id,
-      sessionId: sessionId,
+    return PlannedSessionExerciseSet(
+      plannedSetId: id,
+      plannedExerciseId: plannedExerciseId,
+      plannedSessionId: plannedSessionId,
       userId: userId,
       exerciseId: exerciseId,
-      exerciseSequenceOrder: exerciseSequenceOrder,
-      setNumber: setNumber,
       variationId: variationId,
+      setNumber: setNumber,
       targetWeight: targetWeight,
       targetReps: targetReps,
       targetNotes: targetNotes,
-      exerciseName: exerciseName,
-      variationName: variationName,
     );
   }
 
   Future<void> updatePlannedSet(
-    String setId, {
+    String plannedSetId, {
     String? targetWeight,
     bool clearWeight = false,
     String? targetReps,
     bool clearReps = false,
     String? variationId,
     bool clearVariation = false,
-    String? variationName,
     String? targetNotes,
     bool clearNotes = false,
   }) async {
@@ -316,10 +352,8 @@ class PlannedSessionRepository {
     }
     if (clearVariation) {
       updates['custom_variation_id'] = null;
-      updates['variation_name'] = null;
     } else if (variationId != null) {
       updates['custom_variation_id'] = variationId;
-      if (variationName != null) updates['variation_name'] = variationName;
     }
     if (clearNotes) {
       updates['target_notes'] = null;
@@ -329,25 +363,79 @@ class PlannedSessionRepository {
     if (updates.isEmpty) return;
     final setClause = updates.keys.map((k) => '$k = ?').join(', ');
     await ps.db.execute(
-      'UPDATE dim_planned_session_set SET $setClause WHERE set_id = ?',
-      [...updates.values, setId],
+      'UPDATE dim_planned_session_exercise_set SET $setClause WHERE planned_set_id = ?',
+      [...updates.values, plannedSetId],
     );
   }
 
   /// Soft-deletes a planned set.
-  Future<void> deletePlannedSet(String setId) async {
+  Future<void> deletePlannedSet(String plannedSetId) async {
     await ps.db.execute(
-      'UPDATE dim_planned_session_set SET is_archived = 1 WHERE set_id = ?',
-      [setId],
+      'UPDATE dim_planned_session_exercise_set SET is_archived = 1 WHERE planned_set_id = ?',
+      [plannedSetId],
     );
   }
 
-  /// Deep-copies a planned session with all its sets (standalone — no program
-  /// linkage; callers re-attach program_id when duplicating within a program).
+  /// Consolidates a template to the "exercises are unique per session" rule:
+  /// archives no-target rows (the old keep-alive stubs from group creation,
+  /// which carry no information), then renumbers exercise_order per group and
+  /// set_number within groups by first appearance so the planner's counts
+  /// agree with the session preview. Rows with target data are never deleted,
+  /// so the user can prune unwanted ones in one place afterwards. Idempotent.
+  Future<List<PlannedSessionExerciseSet>> consolidateDuplicateExerciseGroups(
+    String plannedSessionId,
+  ) async {
+    final exercises = await fetchPlannedExercises(plannedSessionId);
+    final sets = await fetchPlannedSets(plannedSessionId);
+    for (final s in sets) {
+      final noTargetData = s.targetWeight == null &&
+          s.targetReps == null &&
+          (s.targetNotes?.isEmpty ?? true) &&
+          s.variationId == null;
+      if (noTargetData) {
+        await deletePlannedSet(s.plannedSetId);
+      }
+    }
+    final remaining = await fetchPlannedSets(plannedSessionId);
+    final orderByExercise = <String, int>{};
+    final nextSetNumber = <String, int>{};
+    var nextOrder = 0;
+    for (final s in remaining) {
+      final key = s.plannedExerciseId;
+      orderByExercise.putIfAbsent(key, () => ++nextOrder);
+      final number = nextSetNumber.putIfAbsent(key, () => 1);
+      nextSetNumber[key] = number + 1;
+      if (number != s.setNumber) {
+        await ps.db.execute(
+          'UPDATE dim_planned_session_exercise_set SET set_number = ? WHERE planned_set_id = ?',
+          [number, s.plannedSetId],
+        );
+      }
+    }
+    for (final e in exercises) {
+      final order = orderByExercise[e.plannedExerciseId];
+      if (order == null) {
+        // Every set of the group was pruned — archive the group itself.
+        await deletePlannedExercise(e.plannedExerciseId);
+      } else if (order != e.exerciseOrder) {
+        await ps.db.execute(
+          'UPDATE dim_planned_session_exercise SET exercise_order = ? WHERE planned_exercise_id = ?',
+          [order, e.plannedExerciseId],
+        );
+      }
+    }
+    return fetchPlannedSets(plannedSessionId);
+  }
+
+  /// Deep-copies a planned session with all its exercise groups and sets
+  /// (standalone). When [sourceLink] is given, the copy is also linked into
+  /// the same program right after the source's slot (sequence bump included).
   Future<String> duplicatePlannedSession(
     String userId,
-    PlannedSession source,
-  ) async {
+    PlannedSession source, {
+    PlannedSessionProgram? sourceLink,
+  }) async {
+    final exercises = await fetchPlannedExercises(source.sessionId);
     final sets = await fetchPlannedSets(source.sessionId);
 
     final names = await _sessionNames(userId);
@@ -378,32 +466,82 @@ class PlannedSessionRepository {
         ],
       );
 
-      for (final set in sets) {
-        final newSetId = _uuid.v4();
+      for (final exercise in exercises) {
+        final newExerciseId = _uuid.v4();
         await tx.execute(
           '''
-          INSERT INTO dim_planned_session_set
-            (id, set_id, session_id, user_id, custom_exercise_id,
-             custom_variation_id, exercise_sequence_order, set_number,
-             target_weight, target_reps, target_notes,
-             exercise_name, variation_name, is_archived)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO dim_planned_session_exercise
+            (id, planned_exercise_id, planned_session_id, user_id,
+             custom_exercise_id, exercise_order, is_archived)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
           ''',
           [
-            newSetId,
-            newSetId,
+            newExerciseId,
+            newExerciseId,
             newId,
             userId,
-            set.exerciseId,
-            set.variationId,
-            set.exerciseSequenceOrder,
-            set.setNumber,
-            set.targetWeight,
-            jsonEncode(set.targetReps),
-            set.targetNotes,
-            set.exerciseName,
-            set.variationName,
+            exercise.exerciseId,
+            exercise.exerciseOrder,
             0,
+          ],
+        );
+
+        final exerciseSets = sets
+            .where((s) => s.plannedExerciseId == exercise.plannedExerciseId)
+            .toList();
+        for (final set in exerciseSets) {
+          final newSetId = _uuid.v4();
+          await tx.execute(
+            '''
+            INSERT INTO dim_planned_session_exercise_set
+              (id, planned_set_id, planned_exercise_id, user_id,
+               custom_variation_id, set_number, target_weight, target_reps,
+               target_notes, is_archived)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''',
+            [
+              newSetId,
+              newSetId,
+              newExerciseId,
+              userId,
+              set.variationId,
+              set.setNumber,
+              set.targetWeight,
+              set.targetReps,
+              set.targetNotes,
+              0,
+            ],
+          );
+        }
+      }
+
+      if (sourceLink != null) {
+        // Bump later slots so the copy doesn't clobber sequence order.
+        await tx.execute(
+          '''
+          UPDATE dim_planned_session_program
+          SET sequence_order = sequence_order + 1
+          WHERE program_id = ? AND sequence_order > ?
+          ''',
+          [sourceLink.programId, sourceLink.sequenceOrder ?? 0],
+        );
+        final newLinkId = _uuid.v4();
+        await tx.execute(
+          '''
+          INSERT INTO dim_planned_session_program
+            (id, planned_session_program_id, program_id, planned_session_id,
+             user_id, sequence_order, day_of_week, week_offset)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          ''',
+          [
+            newLinkId,
+            newLinkId,
+            sourceLink.programId,
+            newId,
+            userId,
+            (sourceLink.sequenceOrder ?? 0) + 1,
+            sourceLink.dayOfWeek,
+            sourceLink.weekOffset,
           ],
         );
       }
@@ -412,45 +550,129 @@ class PlannedSessionRepository {
     return newId;
   }
 
-  /// Swaps the exercise sequence order between two exercises' sets in a
-  /// planned session (for exercise-tab reordering).
-  Future<void> swapSetExerciseOrders(
-    String sessionId,
+  /// Swaps the exercise_order between two exercise groups in a planned
+  /// session (for exercise-tab reordering).
+  Future<void> swapExerciseOrders(
+    String plannedSessionId,
     int orderA,
     int orderB,
   ) async {
     await ps.db.execute(
       '''
-      UPDATE dim_planned_session_set
-        SET exercise_sequence_order = CASE exercise_sequence_order
+      UPDATE dim_planned_session_exercise
+        SET exercise_order = CASE exercise_order
           WHEN ? THEN ? ELSE ? END
-      WHERE session_id = ? AND is_archived = 0
+      WHERE planned_session_id = ? AND is_archived = 0
       ''',
-      [orderA, orderB, orderA, sessionId],
+      [orderA, orderB, orderA, plannedSessionId],
     );
   }
 
-  /// Renumbers every exercise's sequence order so each (old order → new
-  /// index) entry in [orderToIndex] lands at index+1. Two-phase (shift to
+  /// Renumbers every exercise group's order so each (old order → new index)
+  /// entry in [orderToIndex] lands at index+1. Two-phase (shift to
   /// negatives, then assign) so intermediate collisions can't occur.
-  Future<void> renumberSetExerciseOrders(
-    String sessionId,
+  Future<void> renumberExerciseOrders(
+    String plannedSessionId,
     List<(int, int)> orderToIndex,
   ) async {
     final n = orderToIndex.length;
     for (final (old, index) in orderToIndex) {
       await ps.db.execute(
-        'UPDATE dim_planned_session_set SET exercise_sequence_order = ? '
-        'WHERE session_id = ? AND exercise_sequence_order = ? AND is_archived = 0',
-        [-n - index - 1, sessionId, old],
+        'UPDATE dim_planned_session_exercise SET exercise_order = ? '
+        'WHERE planned_session_id = ? AND exercise_order = ? AND is_archived = 0',
+        [-n - index - 1, plannedSessionId, old],
       );
     }
     for (final (_, index) in orderToIndex) {
       await ps.db.execute(
-        'UPDATE dim_planned_session_set SET exercise_sequence_order = ? '
-        'WHERE session_id = ? AND exercise_sequence_order = ? AND is_archived = 0',
-        [index + 1, sessionId, -n - index - 1],
+        'UPDATE dim_planned_session_exercise SET exercise_order = ? '
+        'WHERE planned_session_id = ? AND exercise_order = ? AND is_archived = 0',
+        [index + 1, plannedSessionId, -n - index - 1],
       );
     }
+  }
+
+  // ── Program links (join table) ─────────────────────────────────────────────
+
+  Future<List<PlannedSessionProgram>> fetchProgramLinks(String programId) async {
+    final rows = await ps.db.getAll(
+      'SELECT * FROM dim_planned_session_program WHERE program_id = ? ORDER BY sequence_order NULLS LAST',
+      [programId],
+    );
+    return rows.map((r) => PlannedSessionProgram.fromMap(r)).toList();
+  }
+
+  Future<PlannedSessionProgram> createProgramLink(
+    String userId, {
+    required String programId,
+    required String plannedSessionId,
+    int? sequenceOrder,
+    int? dayOfWeek,
+    int? weekOffset,
+  }) async {
+    final id = _uuid.v4();
+    await ps.db.execute(
+      '''
+      INSERT INTO dim_planned_session_program
+        (id, planned_session_program_id, program_id, planned_session_id,
+         user_id, sequence_order, day_of_week, week_offset)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ''',
+      [
+        id,
+        id,
+        programId,
+        plannedSessionId,
+        userId,
+        sequenceOrder,
+        dayOfWeek,
+        weekOffset,
+      ],
+    );
+    return PlannedSessionProgram(
+      plannedSessionProgramId: id,
+      programId: programId,
+      plannedSessionId: plannedSessionId,
+      userId: userId,
+      sequenceOrder: sequenceOrder,
+      dayOfWeek: dayOfWeek,
+      weekOffset: weekOffset,
+    );
+  }
+
+  Future<void> updateProgramLink(
+    String plannedSessionProgramId, {
+    int? sequenceOrder,
+    int? dayOfWeek,
+    bool clearDayOfWeek = false,
+    int? weekOffset,
+    bool clearWeekOffset = false,
+  }) async {
+    final updates = <String, dynamic>{};
+    if (sequenceOrder != null) updates['sequence_order'] = sequenceOrder;
+    if (clearDayOfWeek) {
+      updates['day_of_week'] = null;
+      updates['week_offset'] = null;
+    } else {
+      if (dayOfWeek != null) updates['day_of_week'] = dayOfWeek;
+      if (clearWeekOffset) {
+        updates['week_offset'] = null;
+      } else if (weekOffset != null) {
+        updates['week_offset'] = weekOffset;
+      }
+    }
+    if (updates.isEmpty) return;
+    final setClause = updates.keys.map((k) => '$k = ?').join(', ');
+    await ps.db.execute(
+      'UPDATE dim_planned_session_program SET $setClause WHERE planned_session_program_id = ?',
+      [...updates.values, plannedSessionProgramId],
+    );
+  }
+
+  Future<void> deleteProgramLink(String plannedSessionProgramId) async {
+    await ps.db.execute(
+      'DELETE FROM dim_planned_session_program WHERE planned_session_program_id = ?',
+      [plannedSessionProgramId],
+    );
   }
 }

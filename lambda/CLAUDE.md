@@ -108,45 +108,60 @@ The app has three session surfaces that share one UX. **The live session screen 
 | Model | DB Table | Purpose |
 |---|---|---|
 | `Session` | `fact_session` | A completed/active session |
-| `SessionSet` | `fact_session_set` | One logged set within a session |
-| `PastSetRow` | extends SessionSet | Adds `sessionCreatedDate` for history timeline |
+| `SessionExercise` | `fact_session_exercise` | One exercise tab within a session (the layer between session and sets) |
+| `SessionExerciseSet` | `fact_session_exercise_set` | One logged set within a session exercise |
+| `PastSetRow` | extends SessionExerciseSet | Adds `sessionCreatedDate` for history timeline |
 | `PlannedSession` | `dim_planned_session` | Template for a planned session (standalone or in a program) |
-| `PlannedSessionSet` | `dim_planned_session_set` | Target row within a planned session |
-| `ExerciseDetail` | `dim_exercise` + bridge | Exercise with its assigned variations |
+| `PlannedSessionProgram` | `dim_planned_session_program` | M2M join row — program membership + schedule slots |
+| `PlannedSessionExercise` | `dim_planned_session_exercise` | One exercise group within a planned session |
+| `PlannedSessionExerciseSet` | `dim_planned_session_exercise_set` | Target row within a planned exercise group |
+| `ExerciseDetail` | `dim_exercise` | Thin wrapper (variations are a flat library — no bridge) |
 | `CustomVariation` | `dim_variation` | A variation (e.g. "Incline", "Paused") |
 | `Lesson` | `dim_lesson` | Per-exercise text cue/prompt |
-| `Program` | `dim_program` | A program containing planned sessions |
-| `ProgramRun` / `ProgramProgress` | `fact_program_run` | Active program tracking |
+| `Program` | `dim_program` | A program containing planned sessions (no progression mode) |
+| `ProgramRun` / `ProgramProgress` | `fact_program_run` | Active program tracking (carries `progression_mode`) |
 
 ### Key model fields
 
 ```
-Session: sessionId, userId, createdDate, isActive, preNotes, postNotes, preFeeling,
-         postFeeling, programId, programRunId, parentSessionId, parentSessionName,
-         programName, exerciseOrder (JSON blob of tab state)
+Session: sessionId, userId, createdDatetime, endDatetime (NULL = active),
+         preNotes, postNotes, preFeeling, postFeeling, programRunId,
+         plannedSessionId (the template link), plannedSessionName (snapshot)
 
-SessionSet: sessionSetId, sessionId, exerciseId, variationId, setNumber, weight,
-            reps (List<num>), notes, exerciseName, variationName,
-            parentSetId (plain ref to the template row — the planned link),
-            supersetGroupNumber
+SessionExercise: sessionExerciseId, sessionId, exerciseId (nullable — free tab,
+                 FK → dim_exercise), exerciseOrder (real column — replaced the
+                 old JSON blob), exerciseName (hydrated live from dim_exercise),
+                 plannedExerciseId (ghost-hint anchor)
 
-PlannedSessionSet: setId, sessionId, exerciseId, variationId, exerciseSequenceOrder,
+SessionExerciseSet: sessionExerciseSetId, sessionExerciseId, sessionId,
+                    variationId (FK → dim_variation), setNumber, weight,
+                    reps (List<num>), notes, variationName (hydrated live),
+                    plannedSetId (plain ref to the template row)
+
+PlannedSessionExercise: plannedExerciseId, plannedSessionId, exerciseId,
+                        exerciseOrder, exerciseName (hydrated live), isArchived
+
+PlannedSessionExerciseSet: plannedSetId, plannedExerciseId, variationId,
                    setNumber, targetWeight (free TEXT — "60" or "60-70"),
                    targetReps (free TEXT — "10", "8-15", "AMRAP", "3 RIR"),
-                   targetNotes, exerciseName, variationName
+                   targetNotes, variationName (hydrated live)
 
-PlannedSession: sessionId, programId (nullable — NULL = standalone), name, notes,
-                sequenceOrder, dayOfWeek
+PlannedSessionProgram: plannedSessionProgramId, programId, plannedSessionId,
+                       sequenceOrder (order split), dayOfWeek + weekOffset
+                       (frequency split — fortnight)
+
+PlannedSession: sessionId, name, notes, createdDate (standalone when no join row)
 ```
 
 ## How Planned Sessions Work
 
-- **Template** = `dim_planned_session` + `dim_planned_session_set`. Targets are **background values**: free text by design ("8-15", "AMRAP", "3 RIR") — a plan is a hint layer, not a contract. There is **no validation** tying what gets logged to what was planned.
-- **Start** (`SessionViewModel.startWorkout`) → `createSession` writes `fact_session` with `parent_session_id`/`parent_session_name` snapshots and `is_active = 1`, then **materializes** the plan: one `fact_session_set` row per planned target with `parent_set_id` = the dim row's id, `set_number` copied, actual values empty. Planned targets render as ghost hints looked up by `parent_set_id` (id-anchored, never positional); actual values (`weight`, `reps`) are strictly numeric.
+- **Template** = `dim_planned_session` + `dim_planned_session_exercise` + `dim_planned_session_exercise_set`. Targets are **background values**: free text by design ("8-15", "AMRAP", "3 RIR") — a plan is a hint layer, not a contract. There is **no validation** tying what gets logged to what was planned.
+- **Program membership** = `dim_planned_session_program` join rows (M2M — one template can sit in several programs). Schedule slots (`sequence_order`, `day_of_week`, `week_offset`) live on the join row; progression mode ('frequency' | 'order') lives on the **run** (`fact_program_run.progression_mode`), chosen at run start.
+- **Start** (`SessionViewModel.startWorkout`) → `createSession` writes `fact_session` with `planned_session_id` (FK) and `end_datetime` NULL, then **materializes** the plan two levels deep: one `fact_session_exercise` per planned exercise (with `planned_exercise_id` + `exercise_order`), then one `fact_session_exercise_set` row per planned target with `planned_set_id` = the dim row's id, `set_number` copied, actual values empty. Planned targets render as ghost hints looked up by `planned_set_id` (id-anchored, never positional); actual values (`weight`, `reps`) are strictly numeric.
 - **Log** — typing commits to the row's own id. Weight/reps/variation/notes from the plan never prefill actual values.
-- **End** (`endSession`) → flush pending edits, delete **untouched planned rows** (parent link + no weight/reps/variation/notes — they were hints, so logs show what actually happened), set `is_active = 0`. **Empty sets are valid**: any row the user added or touched persists, completely empty ones included.
-- **Restart** — restore loads the template via the persisted `parent_session_id` (not the default picker), and re-pairs rows by `parent_set_id`.
-- Editing the template never affects logged sessions (name snapshots, plain refs, no FKs).
+- **End** (`endSession`) → flush pending edits, delete **untouched planned rows** (planned link + no weight/reps/variation/notes — they were hints, so logs show what actually happened), set `end_datetime = now`. **Empty sets are valid**: any row the user added or touched persists, completely empty ones included.
+- **Restart** — restore loads the template via the persisted `planned_session_id` (not the default picker), and re-pairs rows by `planned_exercise_id`/`planned_set_id`.
+- Editing the template never affects logged sessions' VALUES (the planned link is a plain ref, no FK). **Names** are different: exercise/variation names live in the dims and update everywhere — renames apply to all past data (the rename flows warn about this). No name snapshots exist (dropped 2026-08-26).
 
 ### Workflow: Plan → Log → Review
 
@@ -199,11 +214,11 @@ Rule of thumb: complex state needing selective rebuilds → immutable state; tig
 
 Each repository wraps PowerSync SQLite CRUD.
 
-- `SessionRepository`: createSession, endSession, updateSessionNotes, saveExerciseOrder, cancelSession, getActiveSessionId, insertSet, updateSet, deleteSet, loadSetsForSession, reorderSets, loadSessionsWithSets, loadPastSetsTimeline, fetchSession, findLastSetForExercise(Variation)
-- `PlannedSessionRepository`: fetchPlannedSessions (standalone), fetchPlannedSessionById, fetchPlannedSets, createPlannedSession, updatePlannedSession, deletePlannedSession (archives + its sets), createPlannedSet, updatePlannedSet, deletePlannedSet, duplicatePlannedSession, swapSetExerciseOrders, renumberSetExerciseOrders
-- `ProgramRepository`: fetchPrograms, fetchProgram, createProgram, updateProgram, deleteProgram (archives + unlinks planned sessions), fetchPlannedSessions(programId), fetchPlannedSessionSets, duplicatePlannedSession, fetchProgramWithSessions, duplicateProgram, fetchGoals, createGoal, deleteGoal
-- `ProgramRunRepository`: getCurrentRun, startProgramRun, updateRunConfig, endCurrentRun, fetchProgramHistory, getNextPlannedSession, getProgress
-- `ExerciseRepository`: fetchExerciseDetailMap, fetchVariations, fetchBridges, findExerciseByName, createExercise, reactivateExercise, findVariationByName, createVariation, reactivateVariation, addBridge, deactivate/update variants
+- `SessionRepository`: createSession, endSession, updateSessionNotes, reorderSessionExercises, cancelSession, getActiveSessionId, insertSessionExercise, updateSessionExercise, loadSessionExercises, deleteSessionExercise, insertSet, updateSet, deleteSet, loadSetsForSession, reorderSets, loadSessionsWithSets, loadPastSetsTimeline, fetchSession, findLastSetForExercise(Variation)
+- `PlannedSessionRepository`: fetchPlannedSessions (standalone or via program links), fetchPlannedSessionById, fetchPlannedExercises, fetchPlannedSets, createPlannedSession, updatePlannedSession, deletePlannedSession (archives + its groups/sets, hard-deletes links), createPlannedExercise, deletePlannedExercise, createPlannedSet, updatePlannedSet, deletePlannedSet, consolidateDuplicateExerciseGroups, duplicatePlannedSession, swapExerciseOrders, renumberExerciseOrders, fetchProgramLinks, createProgramLink, updateProgramLink, deleteProgramLink
+- `ProgramRepository`: fetchPrograms, fetchProgram, createProgram, updateProgram, deleteProgram (archives + hard-deletes links), fetchPlannedSessions(programId), fetchPlannedSessionSets, duplicatePlannedSession, fetchProgramWithSessions, duplicateProgram, fetchGoals, createGoal, deleteGoal
+- `ProgramRunRepository`: getCurrentRun, startProgramRun (takes progressionMode), updateRunConfig, endCurrentRun, fetchProgramHistory, getNextPlannedSession (from run mode + join rows), getProgress
+- `ExerciseRepository`: fetchExerciseDetailMap, fetchVariations, findExerciseByName, createExercise, reactivateExercise, findVariationByName, createVariation, reactivateVariation, deactivate/update variants
 - `LessonRepository`: fetchLessons, createLesson, updateLesson, setPinned, deleteLesson
 
 ## PR Methodology
@@ -211,9 +226,10 @@ Each repository wraps PowerSync SQLite CRUD.
 PRs are **fully derived on read** — there is no PR table. On every relevant read, the engine (`lib/features/session/model/pr_engine.dart`, used via `pr_service.dart` / `_recomputePRs`) walks logged `fact_session_set` history chronologically:
 
 - **Axes**: rep-max (`curve[N]` = best weight for ≥ N reps, N ∈ 1–10, 12, 15, 20, 25, 30) and weight-max (most reps at an exact weight). One set can be a PR on many axes at once (105 × 3 improves 1RM, 2RM, 3RM).
-- **Scope**: per (exercise × variation) — null variation is its own key. Bodyweight sets (weight null) have their own reps-only axis.
+- **Scope**: per (exercise × variation) — null variation is its own key. Bodyweight is just weight 0 — it feeds the curve like any other weight (a 13-rep dips set is a 12RM at 0kg). Reps that fall between tracked values claim the highest tracked value below them as the explicit record (13 reps → explicit 12RM); lower tracked Ns stay propagated.
 - **Propagation**: heavier lifts bump implied records on lighter axes, but only for weights the user has actually lifted — nothing is fabricated.
 - **Edit-past-data self-heals**: correcting a set removes its derived PRs on the next read; no stale rows to clean up.
+- **Display & counting rules (2026-08-26)**: propagated records appear nowhere (`achievedRecords`); weight-max records (bodyweight 0kg included) are display-only — counts, badges, session totals, and insights charts use explicit rep-max only (`countableRecords`).
 
 Full spec: `docs/pr_methodology.md` (note: its "snapshot rows in fact_pr" sections are historical — the table was dropped 2026-08-14).
 
@@ -232,8 +248,8 @@ Full spec: `docs/pr_methodology.md` (note: its "snapshot rows in fact_pr" sectio
 3. **Draft rows (freestyle only)** — virtual rows that insert a fresh set on commit; a draft materializes on any user-entered value (weight, reps, variation, or notes). Planned rows are real rows from materialization — there is NO empty-row filling (that heuristic landed data on the wrong row).
 4. **Swipe-to-reveal** — SwipeActions for Duplicate/Delete; delete is immediate.
 5. **Lessons modal is polymorphic** — takes a `Listenable` + callbacks, works with both VM patterns.
-6. **Exercise order** — planner reorder persists to `exercise_sequence_order`; session reorder persists to `fact_session.exercise_order` (JSON) and restores on hot restart; the logs viewer orders by the same blob (fallback: first appearance in set rows).
+6. **Exercise order** — planner reorder persists to `dim_planned_session_exercise.exercise_order`; session reorder persists to `fact_session_exercise.exercise_order` (a real column — the old JSON blob is gone) and restores on hot restart; the logs viewer orders by the same column.
 7. **History** — `groupHistoryByExercise` from `session_local_state.dart`; read-only in planner/logs, editable with a confirmation gate only in the live session.
 8. **initState defer** — VM methods that mutate `ValueNotifier` state synchronously must run post-frame via `WidgetsBinding.instance.addPostFrameCallback`.
-9. **Supersets retired from the frontend (2026-08-14)** — no UI creates or emphasizes supersets. The DB column (`fact_session_set.superset_group_number`) and dormant VM support remain for compatibility; a restored superset slot renders as its first exercise.
+9. **Supersets retired (2026-08-14, column dropped 2026-08-24)** — no UI creates or emphasizes supersets, and `superset_group_number` no longer exists (schema v2). Dormant slot support in the live session VM remains; a restored multi-exercise slot renders as its first exercise.
 10. **Preview mirrors the session UI** — `_SessionPreview` is a read-only adapter over the shared card/row, not a hand-rolled layout.

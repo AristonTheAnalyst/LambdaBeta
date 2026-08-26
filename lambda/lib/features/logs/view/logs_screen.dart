@@ -8,7 +8,7 @@ import '../../../../core/styles/app_spacing.dart';
 import '../../../../core/styles/app_text_styles.dart';
 import '../../../../data/models/exercise_usage.dart';
 import '../../../../data/models/session.dart';
-import '../../../../data/models/session_set.dart';
+import '../../../../data/models/session_exercise_set.dart';
 import '../../../../shared/widgets/app_card.dart';
 import '../../../../shared/widgets/dropdown_select.dart';
 import '../../../../shared/widgets/page_header.dart';
@@ -117,14 +117,16 @@ class _LogsScreenState extends State<LogsScreen> with RouteAware {
           // ── derive filter options ─────────────────────────────────────────────
           final allSets = isWorkouts
               ? state.sessions.expand((w) => w.sets).toList()
-              : state.pastSets.cast<SessionSet>();
+              : state.pastSets.cast<SessionExerciseSet>();
 
           // Most recently used first (names derived from the dated timeline).
           final byId = lastUsedByEntity(state.pastSets);
           final lastUsed = <String, DateTime>{};
           for (final s in state.pastSets) {
-            final exD = byId[s.exerciseId];
-            final exName = s.exerciseName ?? s.exerciseId;
+            final exId = s.exerciseId;
+            if (exId == null) continue;
+            final exD = byId[exId];
+            final exName = s.exerciseName ?? exId;
             if (exD != null && (!lastUsed.containsKey(exName) || exD.isAfter(lastUsed[exName]!))) {
               lastUsed[exName] = exD;
             }
@@ -138,7 +140,8 @@ class _LogsScreenState extends State<LogsScreen> with RouteAware {
           }
 
           final exercises = allSets
-              .map((s) => s.exerciseName ?? s.exerciseId)
+              .where((s) => s.exerciseId != null)
+              .map((s) => s.exerciseName ?? s.exerciseId!)
               .toSet()
               .toList()
             ..sort((a, b) => _byNameRecency(a, b, lastUsed));
@@ -154,11 +157,11 @@ class _LogsScreenState extends State<LogsScreen> with RouteAware {
             ..sort((a, b) => _byNameRecency(a, b, lastUsed));
 
           // ── client-side filtering ─────────────────────────────────────────────
-          bool matchesExercise(SessionSet s) =>
+          bool matchesExercise(SessionExerciseSet s) =>
               _selectedExercise == null ||
               (s.exerciseName ?? s.exerciseId) == _selectedExercise;
 
-          bool matchesVariation(SessionSet s) =>
+          bool matchesVariation(SessionExerciseSet s) =>
               _selectedVariation == null ||
               s.variationName == _selectedVariation;
 
@@ -170,7 +173,7 @@ class _LogsScreenState extends State<LogsScreen> with RouteAware {
           }
 
           final filteredWorkouts = state.sessions.where((w) {
-            if (!matchesDate(w.session.createdDate)) return false;
+            if (!matchesDate(w.session.createdDatetime)) return false;
             return w.sets.any((s) => matchesExercise(s) && matchesVariation(s));
           }).toList();
 
@@ -672,13 +675,13 @@ class _WorkoutsPanel extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     Text(
-                      formatDate(w.session.createdDate),
+                      formatDate(w.session.createdDatetime),
                       style: AppFonts.mono(
                           fontSize: AppTextStyles.sm,
                           fontWeight: FontWeight.w700,
                           color: AppColors.accent),
                     ),
-                    if (w.session.parentSessionName != null) ...[
+                    if (w.session.plannedSessionName != null) ...[
                       const SizedBox(height: AppSpacing.xs),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -688,7 +691,7 @@ class _WorkoutsPanel extends StatelessWidget {
                           border: Border.all(color: AppColors.planned.withValues(alpha: 0.35)),
                         ),
                         child: Text(
-                          w.session.parentSessionName!,
+                          w.session.plannedSessionName!,
                           style: AppFonts.ui(
                               fontSize: AppTextStyles.xs,
                               fontWeight: FontWeight.w700,
@@ -736,16 +739,18 @@ class _WorkoutsPanel extends StatelessWidget {
     );
   }
 
-  List<Widget> _exerciseSummaries(List<SessionSet> sets) {
+  List<Widget> _exerciseSummaries(List<SessionExerciseSet> sets) {
     final order  = <String>[];
     final counts = <String, int>{};
     final names  = <String, String>{};
     for (final s in sets) {
-      if (!names.containsKey(s.exerciseId)) {
-        order.add(s.exerciseId);
-        names[s.exerciseId] = s.exerciseName ?? s.exerciseId;
+      final exId = s.exerciseId;
+      if (exId == null) continue;
+      if (!names.containsKey(exId)) {
+        order.add(exId);
+        names[exId] = s.exerciseName ?? exId;
       }
-      counts[s.exerciseId] = (counts[s.exerciseId] ?? 0) + 1;
+      counts[exId] = (counts[exId] ?? 0) + 1;
     }
     return order.map((exId) {
       final count = counts[exId]!;

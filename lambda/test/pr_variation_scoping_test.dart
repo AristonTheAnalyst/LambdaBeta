@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:lambda/data/models/session_set.dart';
+import 'package:lambda/data/models/session_exercise_set.dart';
 import 'package:lambda/features/session/model/pr_engine.dart';
 
 PastSetRow _set(
@@ -11,7 +11,8 @@ PastSetRow _set(
   DateTime? date,
 }) =>
     PastSetRow(
-      sessionSetId: id,
+      sessionExerciseSetId: id,
+      sessionExerciseId: id,
       sessionId: 'w1',
       userId: 'u1',
       exerciseId: exerciseId,
@@ -104,10 +105,11 @@ void main() {
       expect(regularMax.first.reps, 3);
     });
 
-    test('bodyweight sets never feed the weighted rep-max curve', () {
-      // 10 bodyweight reps, then 5kg x 5: the 5kg set must NOT generate
-      // rep-max records comparing against 0kg, and the bodyweight 10 reps
-      // must not be beaten by 5 weighted reps on the weight-max axis.
+    test('bodyweight feeds the 0kg curve; weighted lifts chain past it', () {
+      // 10 bodyweight reps, then 5kg x 5. Bodyweight is just weight 0:
+      // it produces 0kg rep-max records like any other weight, and the
+      // 5kg set improves the curve past 0kg. The bodyweight 10-rep
+      // weight-max (at 0kg) is still not beaten by 5 weighted reps.
       final sets = [
         _set('s1', exerciseId: 'pushup', weight: 0, reps: 10,
             date: DateTime(2024, 1, 1)),
@@ -116,15 +118,22 @@ void main() {
       ];
       final prs = fullPrTimeline(sets);
 
-      // The bodyweight 10-rep set generates NO rep-max records — 0kg never
-      // feeds the weighted curve.
+      // The bodyweight 10-rep set gets rep-max records at 0kg — explicit
+      // 10RM (a tracked value), propagated 1-9RM.
       final repMaxFromBodyweight = prs.where((p) =>
-          p.type == PrType.repMax && p.weight == 0);
-      expect(repMaxFromBodyweight, isEmpty);
+          p.type == PrType.repMax && p.weight == 0).toList();
+      expect(repMaxFromBodyweight, isNotEmpty);
+      expect(repMaxFromBodyweight.length, 10);
+      expect(
+        repMaxFromBodyweight
+            .where((p) => !p.isPropagated)
+            .map((p) => p.targetReps),
+        [10],
+      );
 
-      // The 5kg set gets its own rep-max records (1-5RM at 5kg) — the
-      // previous 0kg curve is not consulted, so the display's "before" is
-      // absent rather than 0kg.
+      // The 5kg set gets its own rep-max records (1-5RM at 5kg) — explicit
+      // 5RM, propagated 1-4RM. Under achieved-only chains the 5RM's "before"
+      // is absent, because the 0kg 5RM was propagated and never chains.
       final repMax5 = prs.where((p) =>
           p.type == PrType.repMax && p.weight == 5 && p.targetReps == 5);
       expect(repMax5.length, 1);
@@ -141,6 +150,21 @@ void main() {
           p.type == PrType.weightMax && p.targetWeight == 5);
       expect(fiveWeightMax.length, 1);
       expect(fiveWeightMax.first.reps, 5);
+    });
+
+    test('reps between tracked values claim the floor RM as explicit', () {
+      // 13 reps at 100kg: 13 is not a tracked value, so the explicit record
+      // is the 12RM — the highest tracked value the set covers.
+      final prs = fullPrTimeline([
+        _set('s1', exerciseId: 'bench', weight: 100, reps: 13,
+            date: DateTime(2024, 1, 1)),
+      ]);
+      final explicit = prs.where((p) => !p.isPropagated && p.type == PrType.repMax);
+      expect(explicit.length, 1);
+      expect(explicit.first.targetReps, 12);
+      // 1-10RM at 100 remain propagated.
+      final propagated = prs.where((p) => p.isPropagated && p.type == PrType.repMax);
+      expect(propagated.length, 10);
     });
 
     test('same variation curve evolves chronologically', () {
@@ -206,7 +230,8 @@ void main() {
   group('session before-tracking', () {
     PastSetRow row(String setId, int setNumber, double weight, int reps) =>
         PastSetRow(
-          sessionSetId: setId,
+          sessionExerciseSetId: setId,
+          sessionExerciseId: setId,
           sessionId: 'wB',
           userId: 'u1',
           exerciseId: 'pushup',
@@ -233,7 +258,7 @@ void main() {
           !r.isPropagated);
       expect(
           before.weightMax[
-              (first0.exerciseId, first0.variationId, 0, first0.setId)],
+              (first0.exerciseId, first0.variationId, 0, first0.sessionExerciseSetId)],
           isNull,
           reason: 'the first 0kg PR must render as First PR, not against itself');
 
@@ -243,7 +268,7 @@ void main() {
           r.reps == 12 &&
           !r.isPropagated);
       expect(
-          before.weightMax[(second0.exerciseId, second0.variationId, 0, second0.setId)]
+          before.weightMax[(second0.exerciseId, second0.variationId, 0, second0.sessionExerciseSetId)]
               ?.reps,
           10);
     });
@@ -258,7 +283,7 @@ void main() {
       final first5 = records.firstWhere((r) =>
           r.type == PrType.repMax && r.targetReps == 5 && r.weight == 100);
       expect(
-          before.repMax[(first5.exerciseId, first5.variationId, 5, first5.setId)],
+          before.repMax[(first5.exerciseId, first5.variationId, 5, first5.sessionExerciseSetId)],
           isNull,
           reason: 'the first 5RM must render as First PR, not "100kg → 100kg"');
 
@@ -266,7 +291,7 @@ void main() {
           r.type == PrType.repMax && r.targetReps == 5 && r.weight == 120);
       expect(
           before
-              .repMax[(second5.exerciseId, second5.variationId, 5, second5.setId)]
+              .repMax[(second5.exerciseId, second5.variationId, 5, second5.sessionExerciseSetId)]
               ?.weight,
           100);
     });

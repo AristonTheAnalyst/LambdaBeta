@@ -27,12 +27,12 @@ class ProgramProgress {
   final int totalWorkoutsCompleted;
   final PlannedSession? nextPlannedSession;
 
-  /// Whether the program's cycle is complete. Sequential: the configured
-  /// session count (or the planned-workout cycle) has been worked through.
-  /// Calendar: the run has passed its weeks or explicit end date. When true,
+  /// Whether the program's cycle is complete. Order: the configured
+  /// session count (or the planned-session cycle) has been worked through.
+  /// Frequency: the run has passed its weeks or explicit end date. When true,
   /// the run should no longer be "current".
   bool get isFinished {
-    if (program.progressionMode == 'calendar') {
+    if (run.progressionMode == 'frequency') {
       final end = run.effectiveEndDate;
       if (end != null && DateTime.now().isAfter(end)) return true;
       return totalWeeks != null && weekNumber > totalWeeks!;
@@ -43,7 +43,7 @@ class ProgramProgress {
 
   /// 0..1 fraction of the program complete, for progress bars.
   double get progress {
-    if (program.progressionMode == 'calendar') {
+    if (run.progressionMode == 'frequency') {
       final w = totalWeeks;
       if (w == null || w <= 0) return 0;
       return (weekNumber / w).clamp(0.0, 1.0);
@@ -52,11 +52,11 @@ class ProgramProgress {
     return (workoutsCompletedInCycle / totalWorkoutsInCycle).clamp(0.0, 1.0);
   }
 
-  /// Human-readable "how much is left" — sequential shows remaining sessions,
-  /// calendar shows weeks or days remaining (by weeks or end date).
+  /// Human-readable "how much is left" — order shows remaining sessions,
+  /// frequency shows weeks or days remaining (by weeks or end date).
   String get remainingLabel {
     if (isFinished) return 'finished';
-    if (program.progressionMode == 'calendar') {
+    if (run.progressionMode == 'frequency') {
       final end = run.effectiveEndDate;
       if (end != null) {
         final days = end.difference(DateTime.now()).inDays;

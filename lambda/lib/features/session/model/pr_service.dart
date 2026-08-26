@@ -2,7 +2,8 @@ import '../../../data/repositories/session_repository.dart';
 import 'pr_engine.dart';
 
 /// Derives PRs on demand from the full set history — the single source of
-/// truth is `fact_session_set`; nothing is persisted or kept in sync.
+/// truth is `fact_session_exercise_set` (joined through fact_session_exercise);
+/// nothing is persisted or kept in sync.
 ///
 /// The derivation is a pure function of the sets, so it is correct by
 /// construction: editing or deleting a set changes every PR view on the next
@@ -25,13 +26,14 @@ class PrService {
     _cachedTimeline = null;
   }
 
-  /// The full PR timeline derived from current history. Memoized until the
-  /// next invalidation.
+  /// The PR timeline a user should see: explicit achievements only (both
+  /// axes) — propagated records are curve internals and never shown.
+  /// Memoized until the next invalidation.
   Future<List<PrRecord>> timeline(String userId) async {
     final cached = _cachedTimeline;
     if (!_cacheDirty && cached != null) return cached;
     final sets = await _sessionRepo.loadPastSetsTimeline(userId);
-    final derived = fullPrTimeline(sets);
+    final derived = achievedRecords(fullPrTimeline(sets));
     _cachedTimeline = derived;
     _cacheDirty = false;
     return derived;
@@ -52,8 +54,11 @@ class PrService {
   /// PRs whose source sets are in [setIds].
   Future<List<PrRecord>> forSets(String userId, List<String> setIds) async {
     final all = await timeline(userId);
-    return all.where((p) => p.setId != null && setIds.contains(p.setId)).toList();
+    return all.where((p) => p.sessionExerciseSetId != null && setIds.contains(p.sessionExerciseSetId)).toList();
   }
 
-  Future<int> count(String userId) async => (await timeline(userId)).length;
+  /// The achievement count — explicit rep-max records only (weight-max is
+  /// display-only).
+  Future<int> count(String userId) async =>
+      countableRecords(await timeline(userId)).length;
 }

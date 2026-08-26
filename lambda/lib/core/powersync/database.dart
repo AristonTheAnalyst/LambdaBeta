@@ -22,24 +22,25 @@ const _pkColumns = {
   'dim_exercise': 'custom_exercise_id',
   'dim_variation': 'custom_variation_id',
   'fact_bodyweight': 'user_weight_id',
-  'fact_session_set': 'session_set_id',
+  'fact_session_exercise_set': 'session_exercise_set_id',
+  'fact_session_exercise': 'session_exercise_id',
   'dim_program': 'program_id',
   'fact_program_run': 'program_run_id',
   'dim_lesson': 'lesson_id',
   'dim_planned_session': 'session_id',
-  'dim_planned_session_set': 'set_id',
+  'dim_planned_session_exercise_set': 'planned_set_id',
+  'dim_planned_session_exercise': 'planned_exercise_id',
+  'dim_planned_session_program': 'planned_session_program_id',
   'fact_goal': 'goal_id',
 };
 
-// dim_exercise_variation_bridge is the one table with no single-column PK —
+// coaching_relationship is the one remaining table with no single-column PK —
 // its real Postgres primary key is the composite pair below (there's no 'id'
 // column server-side at all). PUT upserts on the pair instead of a pkCol;
 // PATCH needs the pair's actual values, which aren't in a PATCH's opData
 // (only changed columns are), so those get looked up locally by PowerSync's
-// internal id first. No DELETE case: bridge rows are soft-deleted via
-// deleted_locally instead of a hard delete, sidestepping this entirely.
+// internal id first.
 const _compositeKeyTables = {
-  'dim_exercise_variation_bridge': ['custom_exercise_id', 'custom_variation_id'],
   'coaching_relationship': ['coach_user_id', 'athlete_user_id'],
 };
 
@@ -68,6 +69,9 @@ Map<String, dynamic> _decodeArrayColumns(Map<String, dynamic> data) {
 final _fatalCodes = [
   RegExp(r'^22...$'), // data exception
   RegExp(r'^23502$'), // NOT NULL violation (permanent)
+  RegExp(r'^23503$'), // FK violation (permanent — dims are archive-only, so a
+                      // violating fact ref is unrecoverable data; quarantining
+                      // it keeps the checkpoint from stalling on it forever)
   RegExp(r'^23505$'), // unique violation (permanent)
   RegExp(r'^23514$'), // check violation (permanent)
   RegExp(r'^42501$'), // insufficient privilege / RLS
@@ -292,6 +296,10 @@ Future<void> openDatabase() async {
         'dim_program_goal',
         'fact_rest',
         'fact_pr',
+        // Schema redesign v2 (2026-08-24) — dropped/restructured tables.
+        'fact_session_set',
+        'dim_planned_session_set',
+        'dim_exercise_variation_bridge',
       ]) {
         await tx.execute(
           'DELETE FROM ps_crud WHERE table_name = ?',

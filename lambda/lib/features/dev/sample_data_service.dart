@@ -34,8 +34,6 @@ class SampleDataService {
     final ex1 = await _ensureExercise(userId, exercise1Name);
     final ex2 = await _ensureExercise(userId, exercise2Name);
     final var1 = await _ensureVariation(userId, variationName);
-    // Variation-first assignment: variation1 is enabled for test2.
-    await _exerciseRepo.addBridge(userId, ex2, var1);
 
     // ── Build the last 36 Mon/Wed/Fri dates, oldest first ──────────────────
     final today = DateTime.now();
@@ -52,7 +50,7 @@ class SampleDataService {
     }
     dates.sort();
 
-    // ── Insert sessions + sets in one transaction ──────────────────────────
+    // ── Insert sessions + exercises + sets in one transaction ──────────────
     await ps.db.writeTransaction((tx) async {
       for (var i = 0; i < dates.length; i++) {
         final sessionId = _uuid.v4();
@@ -61,35 +59,53 @@ class SampleDataService {
         final preFeeling = (i % 5) + 1;
         final postFeeling = ((i + 2) % 5) + 1;
         final hasNotes = i % 6 == 0;
+        final created = date.add(const Duration(hours: 18)).toUtc();
 
         await tx.execute(
           '''
           INSERT INTO fact_session
-            (id, session_id, user_id, pre_notes, post_notes, created_date,
-             is_active, program_id, program_run_id, parent_session_id,
-             pre_feeling, post_feeling, exercise_order,
-             parent_session_name, program_name)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (id, session_id, user_id, pre_notes, post_notes, created_datetime,
+             end_datetime, pre_feeling, post_feeling)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
           ''',
           [
             sessionId, sessionId, userId,
             hasNotes ? 'Sample pre-note for session ${i + 1}' : null,
             hasNotes ? 'Sample post-note for session ${i + 1}' : null,
-            date.add(const Duration(hours: 18)).toUtc().toIso8601String(),
-            0, null, null, null,
-            preFeeling, postFeeling, null, null, null,
+            created.toIso8601String(),
+            created.add(const Duration(hours: 1)).toIso8601String(),
+            preFeeling, postFeeling,
           ],
+        );
+
+        final exerciseRow1 = _uuid.v4();
+        await tx.execute(
+          '''
+          INSERT INTO fact_session_exercise
+            (id, session_exercise_id, session_id, user_id, custom_exercise_id,
+             exercise_order)
+          VALUES (?, ?, ?, ?, ?, ?)
+          ''',
+          [exerciseRow1, exerciseRow1, sessionId, userId, ex1, 1],
+        );
+        final exerciseRow2 = _uuid.v4();
+        await tx.execute(
+          '''
+          INSERT INTO fact_session_exercise
+            (id, session_exercise_id, session_id, user_id, custom_exercise_id,
+             exercise_order)
+          VALUES (?, ?, ?, ?, ?, ?)
+          ''',
+          [exerciseRow2, exerciseRow2, sessionId, userId, ex2, 2],
         );
 
         // test1 — non-variated
         for (var setNo = 1; setNo <= 3; setNo++) {
-          await _insertSet(tx, sessionId, userId, ex1, null,
-              setNo, weight, exercise1Name, null);
+          await _insertSet(tx, exerciseRow1, userId, null, setNo, weight);
         }
         // test2 — variated only
         for (var setNo = 1; setNo <= 3; setNo++) {
-          await _insertSet(tx, sessionId, userId, ex2, var1,
-              setNo, weight, exercise2Name, variationName);
+          await _insertSet(tx, exerciseRow2, userId, var1, setNo, weight);
         }
       }
     });
@@ -99,34 +115,29 @@ class SampleDataService {
 
   Future<void> _insertSet(
     dynamic tx,
-    String sessionId,
+    String sessionExerciseId,
     String userId,
-    String exerciseId,
     String? variationId,
     int setNumber,
     double weight,
-    String exerciseName,
-    String? variationName,
   ) async {
     final setId = _uuid.v4();
     await tx.execute(
       '''
-      INSERT INTO fact_session_set
-        (id, session_set_id, session_id, user_id, custom_exercise_id,
-         custom_variation_id, set_number, weight, reps, notes,
-         parent_set_id, superset_group_number, exercise_name, variation_name)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO fact_session_exercise_set
+        (id, session_exercise_set_id, session_exercise_id, user_id,
+         custom_variation_id, set_number, weight, reps, notes)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       ''',
       [
-        setId, setId, sessionId, userId, exerciseId, variationId,
-        setNumber, weight, jsonEncode([5]), null, null, null,
-        exerciseName, variationName,
+        setId, setId, sessionExerciseId, userId, variationId,
+        setNumber, weight, jsonEncode([5]), null,
       ],
     );
   }
 
   /// Hard-deletes everything tied to the sample exercises — sessions whose
-  /// sets reference test1/test2, and those sets themselves. Safe because
+  /// exercise rows reference test1/test2, and those rows' sets. Safe because
   /// these exercise names are exclusively used by the sample data.
   Future<int> deleteSampleData(String userId) async {
     final ex1 =
@@ -140,14 +151,24 @@ class SampleDataService {
     await ps.db.writeTransaction((tx) async {
       final placeholders = List.filled(ids.length, '?').join(',');
       final sessionRows = await tx.getAll(
-        'SELECT DISTINCT session_id FROM fact_session_set WHERE user_id = ? AND custom_exercise_id IN ($placeholders)',
+        'SELECT DISTINCT session_id FROM fact_session_exercise WHERE user_id = ? AND custom_exercise_id IN ($placeholders)',
         [userId, ...ids],
       );
       final sessionIds =
           sessionRows.map((r) => r['session_id'] as String).toList();
 
       await tx.execute(
-        'DELETE FROM fact_session_set WHERE user_id = ? AND custom_exercise_id IN ($placeholders)',
+        '''
+        DELETE FROM fact_session_exercise_set WHERE user_id = ?
+          AND session_exercise_id IN (
+            SELECT session_exercise_id FROM fact_session_exercise
+            WHERE custom_exercise_id IN ($placeholders)
+          )
+        ''',
+        [userId, ...ids],
+      );
+      await tx.execute(
+        'DELETE FROM fact_session_exercise WHERE user_id = ? AND custom_exercise_id IN ($placeholders)',
         [userId, ...ids],
       );
       if (sessionIds.isNotEmpty) {

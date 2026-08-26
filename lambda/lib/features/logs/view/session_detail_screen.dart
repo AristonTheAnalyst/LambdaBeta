@@ -5,16 +5,21 @@ import '../../../core/styles/app_radius.dart';
 import '../../../core/styles/app_spacing.dart';
 import '../../../core/utils/session_format.dart';
 import '../../../data/models/lesson.dart';
-import '../../../data/models/session_set.dart';
+import '../../../data/models/session_exercise_set.dart';
 import '../../../shared/mixins/unsaved_changes_guard.dart';
+import '../../../shared/widgets/app_card.dart';
 import '../../../shared/widgets/dropdown_select.dart';
-import '../../../shared/widgets/feeling_rating.dart';
 import '../../../shared/widgets/glass_button.dart';
 import '../../../shared/widgets/page_header.dart';
+import '../../../shared/widgets/planned_banner.dart';
+import '../../../shared/widgets/reflection_summary.dart';
+import '../../../shared/widgets/segmented_control.dart';
+import '../../../shared/widgets/session_bookend.dart';
 import '../../../shared/widgets/session_exercise_card.dart';
 import '../../../shared/widgets/session_set_row.dart';
 import '../../../shared/widgets/slide_up_modal.dart';
 import '../../../shared/widgets/stats_row.dart';
+import '../../session/model/pr_engine.dart';
 import '../../session/view/lessons_modal.dart';
 import '../../session/view/pr_modal.dart';
 import '../viewmodel/session_detail_viewmodel.dart';
@@ -30,6 +35,10 @@ class SessionDetailScreen extends StatefulWidget {
 class _SessionDetailScreenState extends State<SessionDetailScreen>
     with UnsavedChangesGuard<SessionDetailScreen> {
   late final SessionDetailViewModel _vm;
+
+  /// Which of the two surfaces is shown: the sets (details) or the
+  /// pre/PRS/lessons/post summary. Plain UI state — no VM involvement.
+  String _tab = 'details';
 
   @override
   void initState() {
@@ -116,8 +125,24 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
                             onPressed: _vm.startEditing,
                           ),
                   ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      AppSpacing.lg,
+                      AppSpacing.md,
+                      AppSpacing.lg,
+                      AppSpacing.xs,
+                    ),
+                    child: SegmentedControl<String>(
+                      options: const [
+                        SegmentOption(label: 'Details', value: 'details'),
+                        SegmentOption(label: 'Summary', value: 'summary'),
+                      ],
+                      value: _tab,
+                      onChange: (v) => setState(() => _tab = v),
+                    ),
+                  ),
                   Expanded(
-                    child: _SessionBody(viewModel: _vm, state: state),
+                    child: _SessionBody(viewModel: _vm, state: state, tab: _tab),
                   ),
                 ],
               ),
@@ -132,13 +157,23 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
 // ── Body ─────────────────────────────────────────────────────────────────────
 
 class _SessionBody extends StatelessWidget {
-  const _SessionBody({required this.viewModel, required this.state});
+  const _SessionBody({
+    required this.viewModel,
+    required this.state,
+    required this.tab,
+  });
 
   final SessionDetailViewModel viewModel;
   final SessionDetailState state;
 
+  /// 'details' (the sets surface) or 'summary' (pre → PRS/LESSONS → post).
+  final String tab;
+
   @override
   Widget build(BuildContext context) {
+    if (tab == 'summary') {
+      return _SessionSummaryBody(viewModel: viewModel, state: state);
+    }
     if (state.exerciseSlots.isEmpty) {
       return Center(
         child: Text(
@@ -161,29 +196,16 @@ class _SessionBody extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                if (state.session?.parentSessionName != null)
+                if (state.session?.plannedSessionName != null)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 6),
                     child: Text(
-                      state.session!.parentSessionName!,
+                      state.session!.plannedSessionName!,
                       style: AppFonts.mono(
                         fontSize: 10,
                         letterSpacing: 0.6,
                         color: AppColors.planned,
                       ),
-                    ),
-                  ),
-                if (state.session?.preFeeling != null)
-                  Padding(
-                    padding: const EdgeInsets.only(
-                      top: AppSpacing.sm,
-                      bottom: AppSpacing.xs,
-                    ),
-                    child: FeelingRating(
-                      value: state.session!.preFeeling,
-                      label: 'Pre-workout feeling: ',
-                      size: 20,
-                      spacing: 4,
                     ),
                   ),
                 if (state.activeSlot != null)
@@ -231,151 +253,8 @@ class _SessionBody extends StatelessWidget {
             ],
           ),
         ),
-        Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.lg,
-            vertical: AppSpacing.sm,
-          ),
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            border: Border(top: BorderSide(color: AppColors.border)),
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: _notesButton(
-                  context,
-                  'Pre-Notes',
-                  state.session?.preNotes ?? '',
-                  'pre',
-                  state.isEditing,
-                ),
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              Expanded(
-                child: _notesButton(
-                  context,
-                  'Post-Notes',
-                  state.session?.postNotes ?? '',
-                  'post',
-                  state.isEditing,
-                ),
-              ),
-            ],
-          ),
-        ),
       ],
     );
-  }
-
-  Widget _notesButton(
-    BuildContext context,
-    String label,
-    String content,
-    String target,
-    bool editing,
-  ) {
-    final filled = content.isNotEmpty;
-    final tappable = editing || filled;
-    return GestureDetector(
-      onTap: tappable ? () => _showNotesModal(context, target) : null,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 10),
-        decoration: BoxDecoration(
-          color: filled
-              ? AppColors.accentBg
-              : editing
-              ? AppColors.surfaceHigh
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(AppRadius.md),
-          border: Border.all(
-            color: editing
-                ? AppColors.border
-                : filled
-                ? AppColors.accent.withValues(alpha: 0.4)
-                : AppColors.border,
-          ),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.notes_outlined,
-              size: 15,
-              color: filled ? AppColors.accent : AppColors.muted,
-            ),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: AppFonts.ui(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: filled ? AppColors.accent : AppColors.muted,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _showNotesModal(BuildContext context, String target) async {
-    final preCtrl = TextEditingController(text: state.preNotesDraft);
-    final postCtrl = TextEditingController(text: state.postNotesDraft);
-    await showLambdaModal<void>(
-      context,
-      fitContent: true,
-      keyboardAware: true,
-      child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.xl),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                target == 'pre' ? 'Pre-Workout Notes' : 'Post-Workout Notes',
-                style: AppFonts.ui(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.primary,
-                ),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              TextField(
-                controller: target == 'pre' ? preCtrl : postCtrl,
-                readOnly: !state.isEditing,
-                maxLines: 3,
-                style: AppFonts.ui(fontSize: 14, color: AppColors.primary),
-                decoration: InputDecoration(
-                  hintText: !state.isEditing ? '' : 'Notes…',
-                  hintStyle: AppFonts.ui(color: AppColors.muted),
-                  filled: true,
-                  fillColor: AppColors.surfaceHigh,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(AppRadius.md),
-                    borderSide: BorderSide(color: AppColors.border),
-                  ),
-                ),
-                onChanged: state.isEditing
-                    ? (target == 'pre'
-                          ? viewModel.setPreNotesDraft
-                          : viewModel.setPostNotesDraft)
-                    : null,
-              ),
-              const SizedBox(height: AppSpacing.md),
-              GlassButton(
-                label: 'Done',
-                onPressed: () =>
-                    Navigator.of(context, rootNavigator: true).pop(),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-    preCtrl.dispose();
-    postCtrl.dispose();
   }
 
   void _showAddExercise(BuildContext context) {
@@ -384,6 +263,104 @@ class _SessionBody extends StatelessWidget {
       fitContent: true,
       keyboardAware: true,
       child: _DetailAddExerciseContent(viewModel: viewModel),
+    );
+  }
+}
+
+// ── Summary tab ───────────────────────────────────────────────────────────────
+
+/// The session's bookends and reflection — the same layout as the prep
+/// page's LAST SESSION card, minus its date row and session pager (this
+/// screen is a focused view of one session). Order per spec: pre-training
+/// data, then PRS + LESSONS, then post-training data.
+class _SessionSummaryBody extends StatelessWidget {
+  const _SessionSummaryBody({required this.viewModel, required this.state});
+
+  final SessionDetailViewModel viewModel;
+  final SessionDetailState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final session = state.session;
+
+    // Explicit (non-propagated) PRs grouped by exercise — the VM already
+    // filters propagated records out of state.prRecords.
+    final prsByExercise = <String, List<PrRecord>>{};
+    for (final p in state.prRecords) {
+      prsByExercise.putIfAbsent(p.exerciseId, () => []).add(p);
+    }
+    // Session-scoped lessons only — mirrors the prep card, where only
+    // lessons born in the shown session count toward its preview.
+    final lessonsByExercise = <String, List<String>>{};
+    for (final e in state.lessonsByExercise.entries) {
+      lessonsByExercise[e.key] = [
+        for (final l in e.value)
+          if (l.sessionId == session?.sessionId) l.text,
+      ];
+    }
+    final exerciseIds = [
+      for (final sl in state.exerciseSlots) sl.exerciseId,
+    ];
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.lg,
+        AppSpacing.md,
+        AppSpacing.lg,
+        AppSpacing.xxl,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Pre card: planned source (if any) + the PRE-WORKOUT bookend.
+          AppCard(
+            padding: const EdgeInsets.all(AppSpacing.md),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (session?.plannedSessionName != null) ...[
+                  PlannedBanner(name: session!.plannedSessionName!),
+                  const SizedBox(height: AppSpacing.lg),
+                ],
+                SessionBookend(
+                  label: 'PRE-WORKOUT',
+                  feeling: session?.preFeeling,
+                  notes: session?.preNotes,
+                  emptyNotes: 'No pre-workout notes',
+                  question: 'How well do you think you\'re going to do',
+                  notesLabel: 'Why do you feel that way',
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          // The PRS and LESSONS sections — the sections carry their own
+          // empty notes.
+          AppCard(
+            padding: const EdgeInsets.all(AppSpacing.md),
+            child: ReflectionSummary(
+              exerciseIds: exerciseIds,
+              prsByExercise: prsByExercise,
+              lessonsByExercise: lessonsByExercise,
+              exerciseNameFor: viewModel.exerciseDisplayName,
+              previousFor: viewModel.summaryPreviousFor,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          // Post card: the POST-WORKOUT bookend.
+          AppCard(
+            padding: const EdgeInsets.all(AppSpacing.md),
+            child: SessionBookend(
+              label: 'POST-WORKOUT',
+              feeling: session?.feeling,
+              notes: session?.postNotes,
+              emptyNotes: 'No post-workout notes',
+              question: 'How well did you do this session',
+              notesLabel: 'What could have made this session better',
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -464,10 +441,13 @@ class _DetailCardBuilder extends StatelessWidget {
   }
 
   /// Delete with the PR-count warning — cascade so PRs recompute.
-  Future<void> _confirmDeleteSet(SessionSet set, BuildContext context) async {
-    // In-memory PR count from the already-computed workout PR records.
+  Future<void> _confirmDeleteSet(SessionExerciseSet set, BuildContext context) async {
+    // In-memory PR count from the already-computed workout PR records —
+    // countable (explicit rep-max) only, matching every other count.
     final prCount = state.prRecords
-        .where((r) => r.setId == set.sessionSetId)
+        .where((r) =>
+            r.sessionExerciseSetId == set.sessionExerciseSetId &&
+            r.type == PrType.repMax)
         .length;
 
     final ok = await showDialog<bool>(
@@ -506,7 +486,10 @@ class _DetailCardBuilder extends StatelessWidget {
       ),
     );
     if (ok == true) {
-      await viewModel.deleteSetCascade(set.sessionSetId, set.exerciseId);
+      await viewModel.deleteSetCascade(
+        set.sessionExerciseSetId,
+        set.exerciseId ?? '',
+      );
       if (context.mounted) _showDeleteErrorIfAny(context);
     }
   }
@@ -527,9 +510,14 @@ class _DetailCardBuilder extends StatelessWidget {
     final history = viewModel.historyFor(exerciseId);
     final sets = state.setsFor(order);
     final draftIds = state.workoutSetDrafts[order] ?? const <int>[];
+    // The orange PR accent is a COUNT surface — explicit rep-max only,
+    // matching the stats tile and every other count. Weight-max records
+    // (bodyweight included) stay visible in the PRs modal, never highlighted.
     final prSetIds = state.prRecords
-        .where((r) => r.setId != null)
-        .map((r) => r.setId!)
+        .where(
+          (r) => r.type == PrType.repMax && r.sessionExerciseSetId != null,
+        )
+        .map((r) => r.sessionExerciseSetId!)
         .toSet();
 
     // The pinned lesson shows right under the exercise — pinning is what
@@ -571,7 +559,7 @@ class _DetailCardBuilder extends StatelessWidget {
       final set = sets[i];
       rows.add(
         SessionSetRow(
-          key: ValueKey(set.sessionSetId),
+          key: ValueKey(set.sessionExerciseSetId),
           mode: SetRowMode.history,
           exerciseId: exerciseId,
           displayIndex: i + 1,
@@ -582,7 +570,7 @@ class _DetailCardBuilder extends StatelessWidget {
           initialVariationName: set.variationName,
           initialNotes: set.notes,
           hasNotes: set.notes?.isNotEmpty ?? false,
-          isPr: prSetIds.contains(set.sessionSetId),
+          isPr: prSetIds.contains(set.sessionExerciseSetId),
           readOnly: !state.isEditing,
           onCommit: (isDraft, v) async {
             if (!isDraft) {
@@ -680,11 +668,16 @@ class _DetailCardBuilder extends StatelessWidget {
       lessonsCount: viewModel.lessonsFor(exerciseId).length,
       onLessonsTap: openLessonsModal,
       prCount: viewModel.prCountFor(exerciseId),
-      onPrTap: viewModel.prCountFor(exerciseId) > 0
-          ? () => showPrModal(context, prs: state.prRecords)
+      // Gate on DISPLAYABLE records, not the countable count — a
+      // weight-max-only exercise still has PRs to show.
+      onPrTap: viewModel.displayPrsFor(exerciseId).isNotEmpty
+          ? () => showPrModal(
+              context,
+              prs: viewModel.displayPrsFor(exerciseId),
+            )
           : null,
       // PLANNED badge → the planned card outline, like the live screen.
-      planned: state.session?.parentSessionId != null,
+      planned: state.session?.plannedSessionId != null,
       rows: rows,
       onAddSet: state.isEditing ? () => viewModel.addDraftSet(order) : null,
       history: history,
@@ -724,7 +717,8 @@ class _DetailAddExerciseContentState extends State<_DetailAddExerciseContent> {
     final lastUsed = <String, DateTime>{};
     for (final sessions in s.historyByExercise.values) {
       if (sessions.isNotEmpty) {
-        lastUsed[sessions.first.sets.first.exerciseId] = sessions.first.date;
+        final exId = sessions.first.sets.first.exerciseId;
+        if (exId != null) lastUsed[exId] = sessions.first.date;
       }
     }
     entries.sort((a, b) {

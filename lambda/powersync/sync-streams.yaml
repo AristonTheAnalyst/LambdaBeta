@@ -4,12 +4,19 @@
 # One user-scoped stream per table so each user gets only their own rows.
 #
 # Every query aliases the real PK as `id` — PowerSync requires a text PK column
-# named `id` on the client. For the two composite-PK tables (no server-side id),
+# named `id` on the client. For the one composite-PK table (no server-side id),
 # a synthetic id is built from the pair with a '-' separator.
+#
+# 2026-08-24 (schema redesign v2): fact_session_set → fact_session_exercise_set,
+# dim_planned_session_set → dim_planned_session_exercise (+_set), new
+# dim_planned_session_program join table; dim_exercise_variation_bridge removed.
 #
 # Deploy steps (PowerSync Dashboard → Sync Streams):
 #   1. Replace the current YAML with this file.
-#   2. Validate, then Deploy.
+#   2. Bump the app version BEFORE deploying — sync streams attach to app
+#      versions, and the old app must keep the old streams until the new
+#      build ships.
+#   3. Validate, then Deploy.
 #
 # NOTE: if the app ever adds a synced table, update lib/core/powersync/schema.dart
 # AND lib/core/powersync/database.dart AND this file — see the sync-contract skill.
@@ -25,13 +32,15 @@ streams:
       - SELECT *, session_id as id FROM fact_session WHERE user_id = auth.user_id()
       - SELECT *, custom_exercise_id as id FROM dim_exercise WHERE user_id = auth.user_id()
       - SELECT *, custom_variation_id as id FROM dim_variation WHERE user_id = auth.user_id()
-      - SELECT *, (custom_exercise_id || '-' || custom_variation_id) as id FROM dim_exercise_variation_bridge WHERE user_id = auth.user_id()
       - SELECT *, user_weight_id as id FROM fact_bodyweight WHERE user_id = auth.user_id()
-      - SELECT *, session_set_id as id FROM fact_session_set WHERE user_id = auth.user_id()
+      - SELECT *, session_exercise_set_id as id FROM fact_session_exercise_set WHERE user_id = auth.user_id()
+      - SELECT *, session_exercise_id as id FROM fact_session_exercise WHERE user_id = auth.user_id()
       - SELECT *, program_id as id FROM dim_program WHERE user_id = auth.user_id()
       - SELECT *, program_run_id as id FROM fact_program_run WHERE user_id = auth.user_id()
       - SELECT *, lesson_id as id FROM dim_lesson WHERE user_id = auth.user_id()
       - SELECT *, session_id as id FROM dim_planned_session WHERE user_id = auth.user_id()
-      - SELECT *, set_id as id FROM dim_planned_session_set WHERE user_id = auth.user_id()
+      - SELECT *, planned_exercise_id as id FROM dim_planned_session_exercise WHERE user_id = auth.user_id()
+      - SELECT *, planned_set_id as id FROM dim_planned_session_exercise_set WHERE user_id = auth.user_id()
+      - SELECT *, planned_session_program_id as id FROM dim_planned_session_program WHERE user_id = auth.user_id()
       - SELECT *, goal_id as id FROM fact_goal WHERE user_id = auth.user_id()
       - SELECT *, (coach_user_id || '-' || athlete_user_id) as id FROM coaching_relationship WHERE coach_user_id = auth.user_id() OR athlete_user_id = auth.user_id()

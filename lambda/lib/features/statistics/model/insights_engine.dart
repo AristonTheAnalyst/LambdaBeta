@@ -1,4 +1,4 @@
-import '../../../data/models/session_set.dart';
+import '../../../data/models/session_exercise_set.dart';
 import '../../session/model/pr_engine.dart';
 
 /// Pure computation module for the Insights screen — no DB, no widgets.
@@ -109,7 +109,7 @@ List<PrRecord> filterPrs(
 
 /// The effective rep value for a set — first reps entry, else duration as a
 /// proxy for timed exercises (mirrors the PR engine's semantics).
-num? effectiveReps(SessionSet s) =>
+num? effectiveReps(SessionExerciseSet s) =>
     s.reps.isNotEmpty ? s.reps.first : null;
 
 /// Weight distribution. Bodyweight (null weight) counts as 0kg; keys are

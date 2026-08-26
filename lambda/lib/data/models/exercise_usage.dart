@@ -1,4 +1,4 @@
-import 'session_set.dart';
+import 'session_exercise_set.dart';
 
 /// exerciseId/variationId → most recent sessionCreatedDate seen for it.
 /// Single source of truth for "most recently used" ordering everywhere.
@@ -6,8 +6,11 @@ Map<String, DateTime> lastUsedByEntity(List<PastSetRow> sets) {
   final last = <String, DateTime>{};
   for (final s in sets) {
     final d = s.sessionCreatedDate;
-    final ex = last[s.exerciseId];
-    if (ex == null || d.isAfter(ex)) last[s.exerciseId] = d;
+    final exId = s.exerciseId;
+    if (exId != null) {
+      final ex = last[exId];
+      if (ex == null || d.isAfter(ex)) last[exId] = d;
+    }
     final vid = s.variationId;
     if (vid != null) {
       final v = last[vid];

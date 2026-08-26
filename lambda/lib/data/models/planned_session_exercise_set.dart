@@ -1,14 +1,16 @@
 import 'dart:convert';
 
-/// A planned set within a planned session (template target row).
-class PlannedSessionSet {
-  const PlannedSessionSet({
-    required this.setId,
-    required this.sessionId,
+/// A planned target set within a planned session exercise group. The exercise
+/// lives one level up; [exerciseId] and [exerciseName] are hydrated from the
+/// parent row by the repository JOINs.
+class PlannedSessionExerciseSet {
+  const PlannedSessionExerciseSet({
+    required this.plannedSetId,
+    required this.plannedExerciseId,
+    required this.plannedSessionId,
     required this.userId,
-    required this.exerciseId,
-    required this.exerciseSequenceOrder,
     required this.setNumber,
+    this.exerciseId,
     this.variationId,
     this.targetWeight,
     this.targetReps,
@@ -18,13 +20,13 @@ class PlannedSessionSet {
     this.isArchived = false,
   });
 
-  final String setId;
-  final String sessionId;
+  final String plannedSetId;
+  final String plannedExerciseId;
+  final String plannedSessionId;
   final String userId;
-  final String exerciseId;
-  final int exerciseSequenceOrder;
-  final int setNumber;
+  final String? exerciseId;
   final String? variationId;
+  final int setNumber;
 
   /// Raw planned weight text — "60" or a range like "60-70". Free text by
   /// design: a planned value is a hint, not a literal.
@@ -38,13 +40,13 @@ class PlannedSessionSet {
   final String? variationName;
   final bool isArchived;
 
-  factory PlannedSessionSet.fromMap(Map<String, dynamic> map) =>
-      PlannedSessionSet(
-        setId: map['set_id'] as String,
-        sessionId: map['session_id'] as String,
+  factory PlannedSessionExerciseSet.fromMap(Map<String, dynamic> map) =>
+      PlannedSessionExerciseSet(
+        plannedSetId: map['planned_set_id'] as String,
+        plannedExerciseId: map['planned_exercise_id'] as String,
+        plannedSessionId: map['planned_session_id'] as String,
         userId: map['user_id'] as String,
-        exerciseId: map['custom_exercise_id'] as String,
-        exerciseSequenceOrder: _toInt(map['exercise_sequence_order']) ?? 0,
+        exerciseId: map['custom_exercise_id'] as String?,
         setNumber: _toInt(map['set_number']) ?? 1,
         variationId: map['custom_variation_id'] as String?,
         targetWeight: _toTargetText(map['target_weight']),
@@ -91,18 +93,18 @@ class PlannedSessionSet {
   }
 
   Map<String, dynamic> toMap() => {
-    'set_id': setId,
-    'session_id': sessionId,
-    'user_id': userId,
-    'custom_exercise_id': exerciseId,
-    'custom_variation_id': variationId,
-    'exercise_sequence_order': exerciseSequenceOrder,
-    'set_number': setNumber,
-    'target_weight': targetWeight,
-    'target_reps': targetReps,
-    'target_notes': targetNotes,
-    'exercise_name': exerciseName,
-    'variation_name': variationName,
-    'is_archived': isArchived,
-  };
+        'planned_set_id': plannedSetId,
+        'planned_exercise_id': plannedExerciseId,
+        'planned_session_id': plannedSessionId,
+        'user_id': userId,
+        'custom_exercise_id': exerciseId,
+        'custom_variation_id': variationId,
+        'set_number': setNumber,
+        'target_weight': targetWeight,
+        'target_reps': targetReps,
+        'target_notes': targetNotes,
+        'exercise_name': exerciseName,
+        'variation_name': variationName,
+        'is_archived': isArchived,
+      };
 }

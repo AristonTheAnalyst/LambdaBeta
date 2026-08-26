@@ -3,11 +3,14 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
+import '../../../core/powersync/database.dart' as ps;
 import '../../../data/models/custom_variation.dart';
 import '../../../data/models/exercise_detail.dart';
 import '../../../data/models/lesson.dart';
-import '../../../data/models/planned_session_set.dart';
+import '../../../data/models/planned_session_exercise.dart';
+import '../../../data/models/planned_session_exercise_set.dart';
 import '../../../data/models/planned_session.dart';
+import '../../../data/models/planned_session_program.dart';
 import '../../../data/models/program.dart';
 import '../../../data/models/goal.dart';
 import '../../../data/models/program_progress.dart';
@@ -18,22 +21,26 @@ import '../../../data/repositories/program_repository.dart';
 import '../../../data/repositories/planned_session_repository.dart';
 import '../../../data/repositories/program_run_repository.dart';
 import '../../../data/repositories/session_repository.dart';
-import '../../../core/powersync/database.dart' as ps;
 import '../../session/model/session_local_state.dart'
     show ExerciseHistorySession, groupHistoryByExercise, isSimilarVariationName;
 
-/// One tab in the plan-workout screen — a single exercise within the
-/// workout being planned. Unlike the session screen there's no superset
-/// concept here (no schema support for grouping multiple exercises under
-/// one planned "round"), so this is deliberately simpler than
-/// `SessionExerciseSlot`: one exercise per slot, always.
+/// One tab in the plan-workout screen — a single exercise group within the
+/// workout being planned. Backed by a dim_planned_session_exercise row
+/// ([plannedExerciseId]); unlike the session screen there's no superset
+/// concept here, so this is deliberately simpler than `SessionExerciseSlot`:
+/// one exercise per slot, always.
 class PlanExerciseSlot {
   const PlanExerciseSlot({
-    required this.exerciseSequenceOrder,
+    required this.exerciseOrder,
     required this.exerciseId,
+    this.plannedExerciseId,
   });
-  final int exerciseSequenceOrder;
+  final int exerciseOrder;
   final String exerciseId;
+
+  /// Null for a virtual slot (added this editing session, persisted on
+  /// input/Save — never a silent keep-alive stub).
+  final String? plannedExerciseId;
 }
 
 class ProgramDetailState {
@@ -44,6 +51,7 @@ class ProgramDetailState {
     this.error,
     this.program,
     this.plannedWorkouts = const [],
+    this.programLinks = const [],
     this.exerciseDetailMap = const {},
     this.isCurrent = false,
     this.settingCurrent = false,
@@ -52,14 +60,13 @@ class ProgramDetailState {
     // Program field drafts
     this.nameDraft = '',
     this.descriptionDraft = '',
-    this.lengthWeeksDraft = '',
-    this.progressionModeDraft = 'sequential',
     // Planned workout editor (full screen)
     this.editingWorkout,
     this.workoutNameDraft = '',
     this.workoutNotesDraft = '',
     this.workoutDayOfWeekDraft,
-    this.workoutPlannedSessionSets = const [],
+    this.workoutPlannedSessionExerciseSets = const [],
+    this.workoutPlannedExercises = const [],
     this.workoutExerciseSlots = const [],
     this.activeSlotIndex = 0,
     this.workoutSetDrafts = const {},
@@ -67,13 +74,12 @@ class ProgramDetailState {
     this.workoutUnsavedChanges = false,
     // Catalog / create-new (mirrors SessionViewModel)
     this.allVariations = const [],
-    this.variationExerciseCounts = const {},
     this.newExCreating = false,
     this.newVarCreating = false,
     // Goals
     this.programGoals = const [],
     this.goalsLoading = false,
-    // Lessons (per-exercise, cross-session — reuses fact_lesson as-is)
+    // Lessons (per-exercise, cross-session — reuses dim_lesson as-is)
     this.lessonsByExercise = const {},
     // History (read-only past-sets, reuses the session's read path as-is)
     this.historyByExercise = const {},
@@ -86,12 +92,16 @@ class ProgramDetailState {
   final String? error;
   final Program? program;
   final List<PlannedSession> plannedWorkouts;
+
+  /// The program's join rows — day_of_week / sequence_order / week_offset
+  /// live here per (program, planned session) pair.
+  final List<PlannedSessionProgram> programLinks;
   final Map<String, ExerciseDetail> exerciseDetailMap;
   final bool isCurrent;
   final bool settingCurrent;
 
   /// The active run for this program (when it's the current program) — carries
-  /// the run's duration config, editable while running.
+  /// the run's progression mode and duration config, editable while running.
   final ProgramRun? activeRun;
 
   /// Progress of the active run (null unless this program is current).
@@ -99,22 +109,20 @@ class ProgramDetailState {
 
   final String nameDraft;
   final String descriptionDraft;
-  final String lengthWeeksDraft;
-  final String progressionModeDraft;
 
   final PlannedSession? editingWorkout;
   final String workoutNameDraft;
   final String workoutNotesDraft;
   final int? workoutDayOfWeekDraft;
-  final List<PlannedSessionSet> workoutPlannedSessionSets;
+  final List<PlannedSessionExerciseSet> workoutPlannedSessionExerciseSets;
+  final List<PlannedSessionExercise> workoutPlannedExercises;
   final List<PlanExerciseSlot> workoutExerciseSlots;
   final int activeSlotIndex;
-  final Map<int, List<int>> workoutSetDrafts;
+  final Map<String, List<int>> workoutSetDrafts;
   final bool workoutSetsLoading;
   final bool workoutUnsavedChanges;
 
   final List<CustomVariation> allVariations;
-  final Map<String, int> variationExerciseCounts;
   final bool newExCreating;
   final bool newVarCreating;
 
@@ -124,8 +132,6 @@ class ProgramDetailState {
 
   final List<Goal> programGoals;
   final bool goalsLoading;
-
-  bool get isCalendarMode => progressionModeDraft == 'calendar';
 
   /// True when the program name or description has been edited in the form
   /// but not yet persisted — used by [UnsavedChangesGuard] to warn on back.
@@ -142,9 +148,9 @@ class ProgramDetailState {
           workoutExerciseSlots.length - 1,
         )];
 
-  List<PlannedSessionSet> plannedSetsFor(int exerciseSequenceOrder) =>
-      workoutPlannedSessionSets
-          .where((ps) => ps.exerciseSequenceOrder == exerciseSequenceOrder)
+  List<PlannedSessionExerciseSet> plannedSetsFor(String plannedExerciseId) =>
+      workoutPlannedSessionExerciseSets
+          .where((ps) => ps.plannedExerciseId == plannedExerciseId)
           .toList()
         ..sort((a, b) => a.setNumber.compareTo(b.setNumber));
 
@@ -156,6 +162,7 @@ class ProgramDetailState {
     bool clearError = false,
     Program? program,
     List<PlannedSession>? plannedWorkouts,
+    List<PlannedSessionProgram>? programLinks,
     Map<String, ExerciseDetail>? exerciseDetailMap,
     bool? isCurrent,
     bool? settingCurrent,
@@ -163,22 +170,20 @@ class ProgramDetailState {
     ProgramProgress? currentProgress,
     String? nameDraft,
     String? descriptionDraft,
-    String? lengthWeeksDraft,
-    String? progressionModeDraft,
     PlannedSession? editingWorkout,
     bool clearEditingWorkout = false,
     String? workoutNameDraft,
     String? workoutNotesDraft,
     int? workoutDayOfWeekDraft,
     bool clearWorkoutDayOfWeekDraft = false,
-    List<PlannedSessionSet>? workoutPlannedSessionSets,
+    List<PlannedSessionExerciseSet>? workoutPlannedSessionExerciseSets,
+    List<PlannedSessionExercise>? workoutPlannedExercises,
     List<PlanExerciseSlot>? workoutExerciseSlots,
     int? activeSlotIndex,
-    Map<int, List<int>>? workoutSetDrafts,
+    Map<String, List<int>>? workoutSetDrafts,
     bool? workoutSetsLoading,
     bool? workoutUnsavedChanges,
     List<CustomVariation>? allVariations,
-    Map<String, int>? variationExerciseCounts,
     bool? newExCreating,
     bool? newVarCreating,
     Map<String, List<Lesson>>? lessonsByExercise,
@@ -193,6 +198,7 @@ class ProgramDetailState {
     error: clearError ? null : error ?? this.error,
     program: program ?? this.program,
     plannedWorkouts: plannedWorkouts ?? this.plannedWorkouts,
+    programLinks: programLinks ?? this.programLinks,
     exerciseDetailMap: exerciseDetailMap ?? this.exerciseDetailMap,
     isCurrent: isCurrent ?? this.isCurrent,
     settingCurrent: settingCurrent ?? this.settingCurrent,
@@ -200,8 +206,6 @@ class ProgramDetailState {
     currentProgress: currentProgress ?? this.currentProgress,
     nameDraft: nameDraft ?? this.nameDraft,
     descriptionDraft: descriptionDraft ?? this.descriptionDraft,
-    lengthWeeksDraft: lengthWeeksDraft ?? this.lengthWeeksDraft,
-    progressionModeDraft: progressionModeDraft ?? this.progressionModeDraft,
     editingWorkout: clearEditingWorkout
         ? null
         : (editingWorkout ?? this.editingWorkout),
@@ -214,9 +218,12 @@ class ProgramDetailState {
     workoutDayOfWeekDraft: clearEditingWorkout || clearWorkoutDayOfWeekDraft
         ? null
         : (workoutDayOfWeekDraft ?? this.workoutDayOfWeekDraft),
-    workoutPlannedSessionSets: clearEditingWorkout
+    workoutPlannedSessionExerciseSets: clearEditingWorkout
         ? const []
-        : (workoutPlannedSessionSets ?? this.workoutPlannedSessionSets),
+        : (workoutPlannedSessionExerciseSets ?? this.workoutPlannedSessionExerciseSets),
+    workoutPlannedExercises: clearEditingWorkout
+        ? const []
+        : (workoutPlannedExercises ?? this.workoutPlannedExercises),
     workoutExerciseSlots: clearEditingWorkout
         ? const []
         : (workoutExerciseSlots ?? this.workoutExerciseSlots),
@@ -233,8 +240,6 @@ class ProgramDetailState {
         ? false
         : (workoutUnsavedChanges ?? this.workoutUnsavedChanges),
     allVariations: allVariations ?? this.allVariations,
-    variationExerciseCounts:
-        variationExerciseCounts ?? this.variationExerciseCounts,
     newExCreating: newExCreating ?? this.newExCreating,
     newVarCreating: newVarCreating ?? this.newVarCreating,
     lessonsByExercise: lessonsByExercise ?? this.lessonsByExercise,
@@ -273,15 +278,20 @@ class ProgramDetailViewModel {
   String? _standaloneWorkoutId;
   bool get isStandaloneMode => _standaloneWorkoutId != null;
 
+  /// The join row for the workout being edited (program mode only) — its
+  /// day_of_week / week_offset live here, not on the planned session.
+  PlannedSessionProgram? _editingLink;
+
   /// Virtual draft row ids for the workout editor — "+ ADD SET" and new
   /// exercise groups add drafts that materialize on input or explicit Save.
   int _nextDraftId = 1;
 
   // ── Discard rollback snapshot ─────────────────────────────────────────────
-  /// The workout's state at open (or last Save) — sets + header fields.
-  /// Discard restores exactly this: sets auto-commit as they're edited,
-  /// so without a snapshot "Discard" could never undo them.
-  List<PlannedSessionSet> _openedSetsSnapshot = const [];
+  /// The workout's state at open (or last Save) — groups + sets + header
+  /// fields. Discard restores exactly this: sets auto-commit as they're
+  /// edited, so without a snapshot "Discard" could never undo them.
+  List<PlannedSessionExercise> _openedExercises = const [];
+  List<PlannedSessionExerciseSet> _openedSetsSnapshot = const [];
   String? _openedName;
   String? _openedNotes;
   int? _openedDayOfWeek;
@@ -290,14 +300,12 @@ class ProgramDetailViewModel {
 
   String get _userId => Supabase.instance.client.auth.currentUser!.id;
 
-  /// Creates a new program with only a progression mode (name/goals are set
-  /// by the wizard's later steps) and returns its id, ready for [load].
-  Future<String?> createNewProgram(String progressionMode) async {
+  /// Creates a new program (name/goals are set by the wizard's later steps)
+  /// and returns its id, ready for [load]. Progression mode is NOT a program
+  /// property — it's chosen when a run starts.
+  Future<String?> createNewProgram() async {
     try {
-      final created = await _repo.createProgram(
-        _userId,
-        progressionMode: progressionMode,
-      );
+      final created = await _repo.createProgram(_userId);
       return created.programId;
     } catch (e) {
       state.value = state.value.copyWith(error: e.toString());
@@ -372,6 +380,9 @@ class ProgramDetailViewModel {
         _plannedSessionRepo
             .fetchPlannedSessions(_userId, programId: programId)
             .timeout(const Duration(seconds: 4)),
+        _plannedSessionRepo
+            .fetchProgramLinks(programId)
+            .timeout(const Duration(seconds: 4)),
         _exerciseRepo
             .fetchExerciseDetailMap(_userId)
             .timeout(const Duration(seconds: 4)),
@@ -379,17 +390,9 @@ class ProgramDetailViewModel {
         _exerciseRepo
             .fetchVariations(_userId)
             .timeout(const Duration(seconds: 4)),
-        _exerciseRepo.fetchBridges(_userId).timeout(const Duration(seconds: 4)),
       ]);
       final program = results[0] as Program?;
-      final currentRun = results[3] as ProgramRun?;
-      final variations = results[4] as List<CustomVariation>;
-      final bridges = results[5] as List<Map<String, dynamic>>;
-      final counts = <String, int>{};
-      for (final b in bridges) {
-        final varId = b['custom_variation_id'] as String;
-        counts[varId] = (counts[varId] ?? 0) + 1;
-      }
+      final currentRun = results[4] as ProgramRun?;
       final isCurrent = currentRun != null && currentRun.programId == programId;
       ProgramProgress? progress;
       if (isCurrent) {
@@ -401,16 +404,14 @@ class ProgramDetailViewModel {
         isLoading: false,
         program: program,
         plannedWorkouts: (results[1] as List<PlannedSession>),
-        exerciseDetailMap: results[2] as Map<String, ExerciseDetail>,
+        programLinks: results[2] as List<PlannedSessionProgram>,
+        exerciseDetailMap: results[3] as Map<String, ExerciseDetail>,
         nameDraft: program?.name ?? '',
         descriptionDraft: program?.description ?? '',
-        lengthWeeksDraft: program?.lengthWeeks?.toString() ?? '',
-        progressionModeDraft: program?.progressionMode ?? 'sequential',
         isCurrent: isCurrent,
         activeRun: isCurrent ? currentRun : null,
         currentProgress: progress,
-        allVariations: variations,
-        variationExerciseCounts: counts,
+        allVariations: results[5] as List<CustomVariation>,
       );
       // Goals load independently — they aren't critical for rendering.
       _loadGoals();
@@ -425,10 +426,6 @@ class ProgramDetailViewModel {
       state.value = state.value.copyWith(nameDraft: v);
   void setDescriptionDraft(String v) =>
       state.value = state.value.copyWith(descriptionDraft: v);
-  void setLengthWeeksDraft(String v) =>
-      state.value = state.value.copyWith(lengthWeeksDraft: v);
-  void setProgressionModeDraft(String v) =>
-      state.value = state.value.copyWith(progressionModeDraft: v);
 
   Future<void> saveProgramDetails() async {
     final s = state.value;
@@ -439,8 +436,6 @@ class ProgramDetailViewModel {
         s.program!.programId,
         name: s.nameDraft.trim(),
         description: s.descriptionDraft.trim(),
-        lengthWeeks: int.tryParse(s.lengthWeeksDraft.trim()),
-        progressionMode: s.progressionModeDraft,
         userId: _userId,
       );
       final updated = await _repo.fetchProgram(s.program!.programId);
@@ -458,7 +453,11 @@ class ProgramDetailViewModel {
     }
   }
 
+  /// Starts a run of this program. [progressionMode] is chosen HERE —
+  /// 'frequency' (sessions assigned to days) or 'order' (work through the
+  /// list) — and lives on the run, not the program.
   Future<void> setAsCurrent({
+    String progressionMode = 'order',
     int? targetSessions,
     int? targetWeeks,
     DateTime? endDate,
@@ -476,6 +475,7 @@ class ProgramDetailViewModel {
       userId: _userId,
       startedDate: DateTime.now().toUtc(),
       isCurrent: true,
+      progressionMode: progressionMode,
       targetSessions: targetSessions,
       targetWeeks: targetWeeks,
       endDate: endDate?.toUtc(),
@@ -493,6 +493,7 @@ class ProgramDetailViewModel {
       await _runRepo.startProgramRun(
         _userId,
         s.program!.programId,
+        progressionMode: progressionMode,
         targetSessions: targetSessions,
         targetWeeks: targetWeeks,
         endDate: endDate,
@@ -534,8 +535,10 @@ class ProgramDetailViewModel {
     }
   }
 
-  /// Updates the active run's duration config (mutable while running).
+  /// Updates the active run's config (mutable while running) — progression
+  /// mode and/or the duration targets.
   Future<void> updateRunConfig({
+    String? progressionMode,
     int? targetSessions,
     int? targetWeeks,
     DateTime? endDate,
@@ -548,6 +551,7 @@ class ProgramDetailViewModel {
     try {
       await _runRepo.updateRunConfig(
         run.programRunId,
+        progressionMode: progressionMode,
         targetSessions: targetSessions,
         targetWeeks: targetWeeks,
         endDate: endDate,
@@ -564,6 +568,7 @@ class ProgramDetailViewModel {
         startedDate: run.startedDate,
         isCurrent: run.isCurrent,
         endedDate: run.endedDate,
+        progressionMode: progressionMode ?? run.progressionMode,
         targetSessions: clearSessions
             ? null
             : (targetSessions ?? run.targetSessions),
@@ -578,40 +583,20 @@ class ProgramDetailViewModel {
 
   // ── Planned workout editor (full screen) ─────────────────────────────────
 
-  List<PlannedSessionSet> _setsFromSessionSets(List<PlannedSessionSet> sets) =>
-      [
-        for (final s in sets)
-          PlannedSessionSet(
-            setId: s.setId,
-            sessionId: s.sessionId,
-            userId: s.userId,
-            exerciseId: s.exerciseId,
-            variationId: s.variationId,
-            exerciseSequenceOrder: s.exerciseSequenceOrder,
-            setNumber: s.setNumber,
-            targetWeight: s.targetWeight,
-            targetReps: s.targetReps,
-            targetNotes: s.targetNotes,
-            exerciseName: s.exerciseName,
-            variationName: s.variationName,
-            isArchived: true,
-          ),
-      ];
-
-  List<PlanExerciseSlot> _slotsFromSessionSets(List<PlannedSessionSet> sets) {
-    final seen = <int>{};
-    final slots = <PlanExerciseSlot>[];
-    for (final s in sets) {
-      if (seen.add(s.exerciseSequenceOrder)) {
-        slots.add(
-          PlanExerciseSlot(
-            exerciseSequenceOrder: s.exerciseSequenceOrder,
-            exerciseId: s.exerciseId,
-          ),
-        );
-      }
-    }
-    return slots;
+  /// Builds the editor's exercise slots from the persisted group rows.
+  List<PlanExerciseSlot> _slotsFromExercises(
+    List<PlannedSessionExercise> exercises,
+  ) {
+    final sorted = [...exercises]
+      ..sort((a, b) => a.exerciseOrder.compareTo(b.exerciseOrder));
+    return [
+      for (final e in sorted)
+        PlanExerciseSlot(
+          exerciseOrder: e.exerciseOrder,
+          exerciseId: e.exerciseId ?? '',
+          plannedExerciseId: e.plannedExerciseId,
+        ),
+    ];
   }
 
   /// Creates a brand-new planned workout immediately (placeholder name) and
@@ -623,37 +608,30 @@ class ProgramDetailViewModel {
     state.value = state.value.copyWith(clearError: true);
     try {
       final seqOrder = state.value.plannedWorkouts.length + 1;
-      final wp = await _plannedSessionRepo.createPlannedSession(
+      final wp = await _plannedSessionRepo.createPlannedSession(_userId);
+      final link = await _plannedSessionRepo.createProgramLink(
         _userId,
         programId: programId,
+        plannedSessionId: wp.sessionId,
         sequenceOrder: seqOrder,
       );
-      final created = PlannedSession(
-        sessionId: wp.sessionId,
-        programId: programId,
-        userId: wp.userId,
-        name: wp.name,
-        notes: wp.notes,
-        sequenceOrder: seqOrder,
-        isArchived: true,
-      );
+      _editingLink = link;
       // Created this editing session — Discard rolls back its existence.
       _openedExisting = false;
+      _openedExercises = const [];
       _openedSetsSnapshot = const [];
-      // Fetch from the standalone table (dim_workout) which is the source of
-      // truth for all workouts now.
       final workouts = await _plannedSessionRepo.fetchPlannedSessions(
         _userId,
         programId: programId,
       );
-      final plannedWorkouts = workouts;
       state.value = state.value.copyWith(
-        plannedWorkouts: plannedWorkouts,
-        editingWorkout: created,
-        workoutNameDraft: created.name,
-        workoutNotesDraft: created.notes ?? '',
+        plannedWorkouts: workouts,
+        editingWorkout: wp,
+        workoutNameDraft: wp.name,
+        workoutNotesDraft: wp.notes ?? '',
         clearWorkoutDayOfWeekDraft: true,
-        workoutPlannedSessionSets: const [],
+        workoutPlannedExercises: const [],
+        workoutPlannedSessionExerciseSets: const [],
         workoutExerciseSlots: const [],
         activeSlotIndex: 0,
       );
@@ -663,12 +641,15 @@ class ProgramDetailViewModel {
   }
 
   Future<void> openEditWorkout(PlannedSession w) async {
+    _editingLink = state.value.programLinks.firstWhereOrNull(
+      (l) => l.plannedSessionId == w.sessionId,
+    );
     state.value = state.value.copyWith(
       editingWorkout: w,
       workoutNameDraft: w.name,
       workoutNotesDraft: w.notes ?? '',
-      workoutDayOfWeekDraft: w.dayOfWeek,
-      clearWorkoutDayOfWeekDraft: w.dayOfWeek == null,
+      workoutDayOfWeekDraft: _editingLink?.dayOfWeek,
+      clearWorkoutDayOfWeekDraft: _editingLink?.dayOfWeek == null,
       workoutSetsLoading: true,
     );
     try {
@@ -679,15 +660,19 @@ class ProgramDetailViewModel {
       final sets = await _plannedSessionRepo.consolidateDuplicateExerciseGroups(
         w.sessionId,
       );
+      final exercises = await _plannedSessionRepo.fetchPlannedExercises(
+        w.sessionId,
+      );
+      _openedExercises = exercises;
       _openedSetsSnapshot = sets;
       _openedName = w.name;
       _openedNotes = w.notes;
-      _openedDayOfWeek = w.dayOfWeek;
+      _openedDayOfWeek = _editingLink?.dayOfWeek;
       _openedExisting = true;
-      final plannedSets = _setsFromSessionSets(sets);
       state.value = state.value.copyWith(
-        workoutPlannedSessionSets: plannedSets,
-        workoutExerciseSlots: _slotsFromSessionSets(sets),
+        workoutPlannedSessionExerciseSets: sets,
+        workoutPlannedExercises: exercises,
+        workoutExerciseSlots: _slotsFromExercises(exercises),
         activeSlotIndex: 0,
         workoutSetsLoading: false,
       );
@@ -706,6 +691,7 @@ class ProgramDetailViewModel {
   /// notes, and planned sets into the editor.
   Future<void> openStandaloneWorkout(String sessionId) async {
     _standaloneWorkoutId = sessionId;
+    _editingLink = null;
     await _ensureCatalog();
     final workouts = await _plannedSessionRepo.fetchPlannedSessions(_userId);
     final w = workouts.where((x) => x.sessionId == sessionId).firstOrNull;
@@ -719,17 +705,10 @@ class ProgramDetailViewModel {
       return;
     }
     state.value = state.value.copyWith(
-      editingWorkout: PlannedSession(
-        sessionId: w.sessionId,
-        programId: '',
-        userId: w.userId,
-        name: w.name,
-        notes: w.notes,
-        sequenceOrder: 0,
-        isArchived: true,
-      ),
+      editingWorkout: w,
       workoutNameDraft: w.name,
       workoutNotesDraft: w.notes ?? '',
+      clearWorkoutDayOfWeekDraft: true,
       workoutSetsLoading: true,
     );
     try {
@@ -739,14 +718,19 @@ class ProgramDetailViewModel {
       final sets = await _plannedSessionRepo.consolidateDuplicateExerciseGroups(
         sessionId,
       );
+      final exercises = await _plannedSessionRepo.fetchPlannedExercises(
+        sessionId,
+      );
+      _openedExercises = exercises;
       _openedSetsSnapshot = sets;
       _openedName = w.name;
       _openedNotes = w.notes;
-      _openedDayOfWeek = w.dayOfWeek;
+      _openedDayOfWeek = null;
       _openedExisting = true;
       state.value = state.value.copyWith(
-        workoutPlannedSessionSets: _setsFromSessionSets(sets),
-        workoutExerciseSlots: _slotsFromSessionSets(sets),
+        workoutPlannedSessionExerciseSets: sets,
+        workoutPlannedExercises: exercises,
+        workoutExerciseSlots: _slotsFromExercises(exercises),
         activeSlotIndex: 0,
         workoutSetsLoading: false,
       );
@@ -764,47 +748,29 @@ class ProgramDetailViewModel {
   /// Creates a brand-new standalone workout and opens it for editing.
   Future<void> createStandaloneWorkoutAndOpen() async {
     _standaloneWorkoutId = null;
+    _editingLink = null;
     state.value = state.value.copyWith(clearError: true);
     await _ensureCatalog();
     try {
       final created = await _plannedSessionRepo.createPlannedSession(_userId);
+      _openedExisting = false;
+      _openedExercises = const [];
+      _openedSetsSnapshot = const [];
       // Open the editor against the row we just created. Building state from
       // the returned object (rather than re-fetching) avoids a race where the
       // insert hasn't reflected into a follow-up SELECT yet — previously that
       // left editingWorkout null and the screen on an eternal spinner.
       state.value = state.value.copyWith(
-        editingWorkout: PlannedSession(
-          sessionId: created.sessionId,
-          programId: '',
-          userId: created.userId,
-          name: created.name,
-          notes: created.notes,
-          sequenceOrder: 0,
-          isArchived: true,
-        ),
+        editingWorkout: created,
         workoutNameDraft: created.name,
         workoutNotesDraft: created.notes ?? '',
-        workoutSetsLoading: true,
+        clearWorkoutDayOfWeekDraft: true,
+        workoutPlannedExercises: const [],
+        workoutPlannedSessionExerciseSets: const [],
+        workoutExerciseSlots: const [],
+        activeSlotIndex: 0,
+        workoutSetsLoading: false,
       );
-      try {
-        final sets = await _plannedSessionRepo.fetchPlannedSets(
-          created.sessionId,
-        );
-        state.value = state.value.copyWith(
-          workoutPlannedSessionSets: _setsFromSessionSets(sets),
-          workoutExerciseSlots: _slotsFromSessionSets(sets),
-          activeSlotIndex: 0,
-          workoutSetsLoading: false,
-        );
-        for (final slot in state.value.workoutExerciseSlots) {
-          loadLessonsFor(slot.exerciseId);
-        }
-      } catch (e) {
-        state.value = state.value.copyWith(
-          workoutSetsLoading: false,
-          error: e.toString(),
-        );
-      }
     } catch (e) {
       state.value = state.value.copyWith(error: e.toString());
     }
@@ -820,7 +786,8 @@ class ProgramDetailViewModel {
   }
 
   /// Copies a standalone workout into the current program as a planned
-  /// workout, including its exercise sets. Returns the new planned workout.
+  /// workout, including its exercise groups and sets. Returns the new
+  /// planned workout.
   Future<PlannedSession?> copyWorkoutIntoProgram(String sessionId) async {
     final programId = state.value.program?.programId;
     if (programId == null) return null;
@@ -829,28 +796,43 @@ class ProgramDetailViewModel {
         _userId,
       )).where((w) => w.sessionId == sessionId).firstOrNull;
       if (src == null) return null;
+      final srcExercises = await _plannedSessionRepo.fetchPlannedExercises(
+        sessionId,
+      );
       final srcSets = await _plannedSessionRepo.fetchPlannedSets(sessionId);
       final created = await _plannedSessionRepo.createPlannedSession(
         _userId,
         name: src.name,
         notes: src.notes,
+      );
+      await _plannedSessionRepo.createProgramLink(
+        _userId,
         programId: programId,
+        plannedSessionId: created.sessionId,
         sequenceOrder: state.value.plannedWorkouts.length + 1,
       );
-      for (final s in srcSets) {
-        await _plannedSessionRepo.createPlannedSet(
+      for (final exercise in srcExercises) {
+        final newExercise = await _plannedSessionRepo.createPlannedExercise(
           _userId,
           created.sessionId,
-          exerciseId: s.exerciseId,
-          exerciseName: s.exerciseName,
-          variationId: s.variationId,
-          variationName: s.variationName,
-          exerciseSequenceOrder: s.exerciseSequenceOrder,
-          setNumber: s.setNumber,
-          targetWeight: s.targetWeight,
-          targetReps: s.targetReps,
-          targetNotes: s.targetNotes,
+          exerciseId: exercise.exerciseId,
+          exerciseOrder: exercise.exerciseOrder,
         );
+        for (final s in srcSets.where(
+          (x) => x.plannedExerciseId == exercise.plannedExerciseId,
+        )) {
+          await _plannedSessionRepo.createPlannedSet(
+            _userId,
+            newExercise.plannedExerciseId,
+            plannedSessionId: created.sessionId,
+            exerciseId: s.exerciseId,
+            variationId: s.variationId,
+            setNumber: s.setNumber,
+            targetWeight: s.targetWeight,
+            targetReps: s.targetReps,
+            targetNotes: s.targetNotes,
+          );
+        }
       }
       final wps = await _plannedSessionRepo.fetchPlannedSessions(
         _userId,
@@ -878,7 +860,11 @@ class ProgramDetailViewModel {
       );
       return;
     }
-    await Future.wait([commitWorkoutName(), commitWorkoutNotes()]);
+    await Future.wait([
+      commitWorkoutName(),
+      commitWorkoutNotes(),
+      commitWorkoutDayOfWeek(s.workoutDayOfWeekDraft),
+    ]);
     // Persist any remaining draft rows as (possibly empty) planned sets —
     // empty sets are valid and an explicit Save is intent.
     final workout = s.editingWorkout;
@@ -886,11 +872,14 @@ class ProgramDetailViewModel {
       var anyDrafts = false;
       for (final entry in state.value.workoutSetDrafts.entries) {
         final slot = state.value.workoutExerciseSlots
-            .where((sl) => sl.exerciseSequenceOrder == entry.key)
+            .where((sl) => sl.plannedExerciseId == entry.key)
             .firstOrNull;
         if (slot == null) continue;
         for (final _ in entry.value) {
-          await _persistEmptyPlannedSessionSet(slot.exerciseId, entry.key);
+          await _persistEmptyPlannedSessionExerciseSet(
+            slot.exerciseId,
+            slot.plannedExerciseId!,
+          );
           anyDrafts = true;
         }
       }
@@ -899,6 +888,9 @@ class ProgramDetailViewModel {
       }
       // Refresh the rollback snapshot — a later Discard rolls back to this
       // Save, not to open.
+      _openedExercises = await _plannedSessionRepo.fetchPlannedExercises(
+        workout.sessionId,
+      );
       _openedSetsSnapshot = await _plannedSessionRepo.fetchPlannedSets(
         workout.sessionId,
       );
@@ -927,8 +919,8 @@ class ProgramDetailViewModel {
   }
 
   /// Rolls the workout back to its open-time state (or last Save) — header
-  /// fields and sets. Sets auto-commit as they're edited, so without this
-  /// pass "Discard" could never undo them. A workout created in this
+  /// fields, groups, and sets. Sets auto-commit as they're edited, so without
+  /// this pass "Discard" could never undo them. A workout created in this
   /// editing session rolls back to nonexistence.
   Future<void> discardWorkoutChanges() async {
     final w = state.value.editingWorkout;
@@ -943,36 +935,61 @@ class ProgramDetailViewModel {
         name: _openedName,
         notes: _openedNotes,
         clearNotes: _openedNotes == null,
-        dayOfWeek: _openedDayOfWeek,
-        clearDayOfWeek: _openedDayOfWeek == null,
         userId: _userId,
       );
-      final current = await _plannedSessionRepo.fetchPlannedSets(w.sessionId);
-      final snapshotIds = {for (final s in _openedSetsSnapshot) s.setId};
+      // Day-of-week lives on the link row — restore its open-time value.
+      if (_editingLink != null) {
+        await _plannedSessionRepo.updateProgramLink(
+          _editingLink!.plannedSessionProgramId,
+          dayOfWeek: _openedDayOfWeek,
+          clearDayOfWeek: _openedDayOfWeek == null,
+        );
+      }
+      // Groups added since open are discarded; snapshot groups come back.
+      final currentExercises = await _plannedSessionRepo.fetchPlannedExercises(
+        w.sessionId,
+      );
+      final snapshotIds = {
+        for (final e in _openedExercises) e.plannedExerciseId,
+      };
+      for (final e in currentExercises) {
+        if (!snapshotIds.contains(e.plannedExerciseId)) {
+          await _plannedSessionRepo.deletePlannedExercise(e.plannedExerciseId);
+        }
+      }
+      for (final e in _openedExercises) {
+        await ps.db.execute(
+          'UPDATE dim_planned_session_exercise SET is_archived = 0, exercise_order = ? WHERE planned_exercise_id = ?',
+          [e.exerciseOrder, e.plannedExerciseId],
+        );
+      }
       // Rows added since open are discarded.
+      final current = await _plannedSessionRepo.fetchPlannedSets(w.sessionId);
+      final snapshotSetIds = {
+        for (final s in _openedSetsSnapshot) s.plannedSetId,
+      };
       for (final s in current) {
-        if (!snapshotIds.contains(s.setId)) {
-          await _plannedSessionRepo.deletePlannedSet(s.setId);
+        if (!snapshotSetIds.contains(s.plannedSetId)) {
+          await _plannedSessionRepo.deletePlannedSet(s.plannedSetId);
         }
       }
       // Snapshot rows return to their open-time values (any archived during
       // editing come back).
       for (final s in _openedSetsSnapshot) {
         await _plannedSessionRepo.updatePlannedSet(
-          s.setId,
+          s.plannedSetId,
           targetWeight: s.targetWeight,
           clearWeight: s.targetWeight == null,
           targetReps: s.targetReps,
           clearReps: s.targetReps == null,
           variationId: s.variationId,
           clearVariation: s.variationId == null,
-          variationName: s.variationName,
           targetNotes: s.targetNotes,
           clearNotes: s.targetNotes == null,
         );
         await ps.db.execute(
-          'UPDATE dim_planned_session_set SET is_archived = 0, exercise_sequence_order = ?, set_number = ? WHERE set_id = ?',
-          [s.exerciseSequenceOrder, s.setNumber, s.setId],
+          'UPDATE dim_planned_session_exercise_set SET is_archived = 0, set_number = ? WHERE planned_set_id = ?',
+          [s.setNumber, s.plannedSetId],
         );
       }
     } catch (e) {
@@ -1014,15 +1031,16 @@ class ProgramDetailViewModel {
   Future<void> duplicatePlannedSession(PlannedSession source) async {
     final programId = state.value.program?.programId;
     if (programId == null) return;
-    // Duplicate via the standalone repo (which copies sets), then patch in the
-    // program linkage columns.
-    final newId = await _plannedSessionRepo.duplicatePlannedSession(
+    // Duplicate via the planned repo, which copies groups + sets and — when
+    // the source link is provided — links the copy into the same program
+    // right after the source slot.
+    final sourceLink = state.value.programLinks.firstWhereOrNull(
+      (l) => l.plannedSessionId == source.sessionId,
+    );
+    await _plannedSessionRepo.duplicatePlannedSession(
       _userId,
       source,
-    );
-    await ps.db.execute(
-      'UPDATE dim_planned_session SET program_id = ?, sequence_order = ?, day_of_week = ? WHERE session_id = ?',
-      [programId, (source.sequenceOrder ?? 0) + 1, source.dayOfWeek, newId],
+      sourceLink: sourceLink,
     );
     final wps = await _plannedSessionRepo.fetchPlannedSessions(
       _userId,
@@ -1031,9 +1049,18 @@ class ProgramDetailViewModel {
     state.value = state.value.copyWith(plannedWorkouts: wps);
   }
 
-  /// Removes a planned workout from the current program (from the detail list).
+  /// Removes a planned workout from the current program (from the detail
+  /// list). The template itself survives — only the join row goes, so the
+  /// session becomes standalone (usable from the workout library).
   Future<void> removePlannedSession(PlannedSession w) async {
-    await _plannedSessionRepo.deletePlannedSession(w.sessionId);
+    final link = state.value.programLinks.firstWhereOrNull(
+      (l) => l.plannedSessionId == w.sessionId,
+    );
+    if (link != null) {
+      await _plannedSessionRepo.deleteProgramLink(
+        link.plannedSessionProgramId,
+      );
+    }
     final updated = state.value.plannedWorkouts
         .where((pw) => pw.sessionId != w.sessionId)
         .toList();
@@ -1044,25 +1071,17 @@ class ProgramDetailViewModel {
     List<PlannedSession> reordered,
     List<String> ids,
   ) async {
-    // Update in-memory sequenceOrder so labels refresh immediately.
-    for (var i = 0; i < reordered.length; i++) {
-      reordered[i] = PlannedSession(
-        sessionId: reordered[i].sessionId,
-        programId: reordered[i].programId,
-        userId: reordered[i].userId,
-        name: reordered[i].name,
-        notes: reordered[i].notes,
-        sequenceOrder: i + 1,
-        dayOfWeek: reordered[i].dayOfWeek,
-        isArchived: reordered[i].isArchived,
-      );
-    }
+    // In-memory order updates immediately — the list IS the order.
     state.value = state.value.copyWith(plannedWorkouts: reordered);
-    // Persist sequence_order on each workout to match the new order.
+    // Persist sequence_order on each join row to match the new order.
     for (var i = 0; i < ids.length; i++) {
-      await ps.db.execute(
-        'UPDATE dim_planned_session SET sequence_order = ? WHERE session_id = ?',
-        [i + 1, ids[i]],
+      final link = state.value.programLinks.firstWhereOrNull(
+        (l) => l.plannedSessionId == ids[i],
+      );
+      if (link == null) continue;
+      await _plannedSessionRepo.updateProgramLink(
+        link.plannedSessionProgramId,
+        sequenceOrder: i + 1,
       );
     }
   }
@@ -1088,7 +1107,9 @@ class ProgramDetailViewModel {
     }
     if (state.value.workoutNameDraft.trim() != w.name) return true;
     if (state.value.workoutNotesDraft.trim() != (w.notes ?? '')) return true;
-    if (state.value.workoutDayOfWeekDraft != w.dayOfWeek) return true;
+    if (state.value.workoutDayOfWeekDraft != _editingLink?.dayOfWeek) {
+      return true;
+    }
     return false;
   }
 
@@ -1102,9 +1123,6 @@ class ProgramDetailViewModel {
     name: name ?? w.name,
     notes: notes ?? w.notes,
     isArchived: w.isArchived,
-    programId: w.programId,
-    sequenceOrder: w.sequenceOrder,
-    dayOfWeek: w.dayOfWeek,
     createdDate: w.createdDate,
   );
 
@@ -1150,16 +1168,31 @@ class ProgramDetailViewModel {
     );
   }
 
+  /// Persists the editing workout's day-of-week onto its program link row
+  /// (standalone workouts have no weekday — no link, no-op).
   Future<void> commitWorkoutDayOfWeek(int? v) async {
     final w = state.value.editingWorkout;
     if (w == null || isStandaloneMode) {
       return; // standalone workouts have no weekday
     }
+    if (_editingLink == null) {
+      // Shouldn't happen for program workouts (links exist for every
+      // program session), but create one rather than drop the assignment.
+      final programId = state.value.program?.programId;
+      if (programId == null) return;
+      final link = await _plannedSessionRepo.createProgramLink(
+        _userId,
+        programId: programId,
+        plannedSessionId: w.sessionId,
+        sequenceOrder: state.value.plannedWorkouts.length + 1,
+      );
+      _editingLink = link;
+    }
     state.value = v == null
         ? state.value.copyWith(clearWorkoutDayOfWeekDraft: true)
         : state.value.copyWith(workoutDayOfWeekDraft: v);
-    await _plannedSessionRepo.updatePlannedSession(
-      w.sessionId,
+    await _plannedSessionRepo.updateProgramLink(
+      _editingLink!.plannedSessionProgramId,
       dayOfWeek: v,
       clearDayOfWeek: v == null,
     );
@@ -1167,10 +1200,32 @@ class ProgramDetailViewModel {
 
   // ── Exercise tabs ─────────────────────────────────────────────────────────
 
+  /// Display name for an exercise tab. Falls back to the live (FK-joined)
+  /// name on the workout's planned sets when the exercise has been archived —
+  /// the catalog filters archived rows out of
+  /// [ProgramDetailState.exerciseDetailMap]. Mirrors
+  /// `SessionViewModel.exerciseDisplayName`.
+  String exerciseDisplayName(String exerciseId) {
+    final detail = state.value.exerciseDetailMap[exerciseId];
+    if (detail != null) return detail.name;
+    for (final set in state.value.workoutPlannedSessionExerciseSets) {
+      if (set.exerciseId == exerciseId && set.exerciseName != null) {
+        return set.exerciseName!;
+      }
+    }
+    return exerciseId;
+  }
+
   /// If [exerciseId] already has a tab, just switches to it — mirrors
-  /// `SessionViewModel.addExerciseSlot`'s duplicate-prevention.
-  void addPlannedExerciseGroup(String exerciseId) {
+  /// `SessionViewModel.addExerciseSlot`'s duplicate-prevention. Otherwise
+  /// persists a new exercise group immediately (like the session's
+  /// ensure-on-add) and seeds its virtual draft row — the entry row,
+  /// materialized on input or on explicit Save (never as a silent
+  /// keep-alive stub).
+  Future<void> addPlannedExerciseGroup(String exerciseId) async {
     final s = state.value;
+    final workout = s.editingWorkout;
+    if (workout == null) return;
     final existingIndex = s.workoutExerciseSlots.indexWhere(
       (slot) => slot.exerciseId == exerciseId,
     );
@@ -1180,32 +1235,43 @@ class ProgramDetailViewModel {
     }
     final nextOrder = s.workoutExerciseSlots.isEmpty
         ? 1
-        : s.workoutExerciseSlots
-                  .map((sl) => sl.exerciseSequenceOrder)
-                  .reduce((a, b) => a > b ? a : b) +
+        : s.workoutExerciseSlots.map((sl) => sl.exerciseOrder).reduce(
+              (a, b) => a > b ? a : b,
+            ) +
               1;
-    final slots = [
-      ...s.workoutExerciseSlots,
-      PlanExerciseSlot(
-        exerciseSequenceOrder: nextOrder,
+    try {
+      final group = await _plannedSessionRepo.createPlannedExercise(
+        _userId,
+        workout.sessionId,
         exerciseId: exerciseId,
-      ),
-    ];
-    // The new group gets one virtual draft row — its entry row, persisted on
-    // input or on explicit Save (never as a silent keep-alive stub).
-    final drafts = Map<int, List<int>>.from(s.workoutSetDrafts);
-    drafts.putIfAbsent(nextOrder, () => []).add(_nextDraftId++);
-    state.value = s.copyWith(
-      workoutExerciseSlots: slots,
-      workoutSetDrafts: drafts,
-      activeSlotIndex: slots.length - 1,
-      workoutUnsavedChanges: true,
-    );
-    loadLessonsFor(exerciseId);
+        exerciseOrder: nextOrder,
+      );
+      final slots = [
+        ...s.workoutExerciseSlots,
+        PlanExerciseSlot(
+          exerciseOrder: nextOrder,
+          exerciseId: exerciseId,
+          plannedExerciseId: group.plannedExerciseId,
+        ),
+      ];
+      final exercises = [...s.workoutPlannedExercises, group];
+      final drafts = Map<String, List<int>>.from(s.workoutSetDrafts);
+      drafts.putIfAbsent(group.plannedExerciseId, () => []).add(_nextDraftId++);
+      state.value = s.copyWith(
+        workoutPlannedExercises: exercises,
+        workoutExerciseSlots: slots,
+        workoutSetDrafts: drafts,
+        activeSlotIndex: slots.length - 1,
+        workoutUnsavedChanges: true,
+      );
+      loadLessonsFor(exerciseId);
+    } catch (e) {
+      state.value = state.value.copyWith(error: e.toString());
+    }
   }
 
-  /// Removes the exercise slot at [index] from the editing workout and deletes
-  /// all of its planned sets from the DB.  Active-index is clamped so the tab
+  /// Removes the exercise slot at [index] from the editing workout and
+  /// archives its group + planned sets.  Active-index is clamped so the tab
   /// bar never points past the new end.
   Future<void> removePlannedExerciseGroup(int index) async {
     final s = state.value;
@@ -1216,14 +1282,10 @@ class ProgramDetailViewModel {
       return;
     }
     final slot = s.workoutExerciseSlots[index];
-    final order = slot.exerciseSequenceOrder;
+    final plannedExerciseId = slot.plannedExerciseId;
 
-    // Delete every planned set with this exercise's sequence order
-    final setsToDelete = s.workoutPlannedSessionSets
-        .where((ps) => ps.exerciseSequenceOrder == order)
-        .toList();
-    for (final ps in setsToDelete) {
-      await _plannedSessionRepo.deletePlannedSet(ps.setId);
+    if (plannedExerciseId != null) {
+      await _plannedSessionRepo.deletePlannedExercise(plannedExerciseId);
     }
 
     // Remove the slot and clamp active index
@@ -1233,15 +1295,19 @@ class ProgramDetailViewModel {
       newActive = (slots.length - 1).clamp(0, slots.length);
     }
 
-    // Re-fetch sets so the UI reflects the deletion
-    final plannedSets = _setsFromSessionSets(
-      await _plannedSessionRepo.fetchPlannedSets(workout.sessionId),
+    // Re-fetch groups + sets so the UI reflects the deletion
+    final exercises = await _plannedSessionRepo.fetchPlannedExercises(
+      workout.sessionId,
+    );
+    final plannedSets = await _plannedSessionRepo.fetchPlannedSets(
+      workout.sessionId,
     );
 
     state.value = s.copyWith(
-      workoutExerciseSlots: slots,
+      workoutPlannedExercises: exercises,
+      workoutExerciseSlots: _slotsFromExercises(exercises),
       activeSlotIndex: newActive,
-      workoutPlannedSessionSets: plannedSets,
+      workoutPlannedSessionExerciseSets: plannedSets,
       workoutUnsavedChanges: true,
     );
   }
@@ -1263,14 +1329,15 @@ class ProgramDetailViewModel {
     } else if (oldIndex > s.activeSlotIndex && newIndex <= s.activeSlotIndex) {
       newActive = s.activeSlotIndex + 1;
     }
-    // Renumber every slot's sequence order 1..N in the new list order —
+    // Renumber every slot's order 1..N in the new list order —
     // pair-swapping only survives adjacent moves, and a non-adjacent drag
     // would otherwise persist a different order than the one shown.
     final renumbered = [
       for (var i = 0; i < slots.length; i++)
         PlanExerciseSlot(
-          exerciseSequenceOrder: i + 1,
+          exerciseOrder: i + 1,
           exerciseId: slots[i].exerciseId,
+          plannedExerciseId: slots[i].plannedExerciseId,
         ),
     ];
     state.value = s.copyWith(
@@ -1278,13 +1345,16 @@ class ProgramDetailViewModel {
       activeSlotIndex: newActive,
     );
     final wid = s.editingWorkout!.sessionId;
-    await _plannedSessionRepo.renumberSetExerciseOrders(wid, [
+    await _plannedSessionRepo.renumberExerciseOrders(wid, [
       for (var i = 0; i < slots.length; i++)
-        (slots[i].exerciseSequenceOrder, i),
+        (slots[i].exerciseOrder, i),
     ]);
+    final exercises = await _plannedSessionRepo.fetchPlannedExercises(wid);
     final sets = await _plannedSessionRepo.fetchPlannedSets(wid);
     state.value = state.value.copyWith(
-      workoutPlannedSessionSets: _setsFromSessionSets(sets),
+      workoutPlannedExercises: exercises,
+      workoutExerciseSlots: _slotsFromExercises(exercises),
+      workoutPlannedSessionExerciseSets: sets,
     );
   }
 
@@ -1292,13 +1362,13 @@ class ProgramDetailViewModel {
 
   /// Persists an empty planned set row so an exercise added to a planned
   /// workout survives a save/reopen even before any target is entered.
-  Future<void> _persistEmptyPlannedSessionSet(
+  Future<void> _persistEmptyPlannedSessionExerciseSet(
     String exerciseId,
-    int exerciseSequenceOrder,
+    String plannedExerciseId,
   ) async {
     final workout = state.value.editingWorkout;
     if (workout == null) return;
-    final existing = state.value.plannedSetsFor(exerciseSequenceOrder);
+    final existing = state.value.plannedSetsFor(plannedExerciseId);
     final setNumber = existing.isEmpty
         ? 1
         : existing.map((ps) => ps.setNumber).reduce((a, b) => a > b ? a : b) +
@@ -1306,52 +1376,50 @@ class ProgramDetailViewModel {
     try {
       await _plannedSessionRepo.createPlannedSet(
         _userId,
-        workout.sessionId,
+        plannedExerciseId,
+        plannedSessionId: workout.sessionId,
         exerciseId: exerciseId,
-        exerciseName: state.value.exerciseDetailMap[exerciseId]?.name,
-        exerciseSequenceOrder: exerciseSequenceOrder,
         setNumber: setNumber,
       );
       final sets = await _plannedSessionRepo.fetchPlannedSets(
         workout.sessionId,
       );
       state.value = state.value.copyWith(
-        workoutPlannedSessionSets: _setsFromSessionSets(sets),
+        workoutPlannedSessionExerciseSets: sets,
       );
     } catch (e) {
       state.value = state.value.copyWith(error: e.toString());
     }
   }
 
-  void addDraftPlannedSessionSet(int exerciseSequenceOrder) {
+  void addDraftPlannedSessionExerciseSet(String plannedExerciseId) {
     // "+ ADD SET" adds a virtual draft row — visible immediately and a REAL
     // change (marks the editor dirty, so the guard prompts on back and the
     // Save button appears). The draft materializes as a row on input, or as
     // an empty row on explicit Save (empty sets are valid).
-    final slot = state.value.workoutExerciseSlots
-        .where((s) => s.exerciseSequenceOrder == exerciseSequenceOrder)
-        .firstOrNull;
-    if (slot == null) return;
-    final drafts = Map<int, List<int>>.from(state.value.workoutSetDrafts);
-    drafts.putIfAbsent(exerciseSequenceOrder, () => []).add(_nextDraftId++);
+    final drafts = Map<String, List<int>>.from(state.value.workoutSetDrafts);
+    drafts.putIfAbsent(plannedExerciseId, () => []).add(_nextDraftId++);
     state.value = state.value.copyWith(
       workoutSetDrafts: drafts,
       workoutUnsavedChanges: true,
     );
   }
 
-  void removeDraftPlannedSessionSet(int exerciseSequenceOrder, int draftId) {
-    final drafts = Map<int, List<int>>.from(state.value.workoutSetDrafts);
-    drafts[exerciseSequenceOrder]?.remove(draftId);
+  void removeDraftPlannedSessionExerciseSet(
+    String plannedExerciseId,
+    int draftId,
+  ) {
+    final drafts = Map<String, List<int>>.from(state.value.workoutSetDrafts);
+    drafts[plannedExerciseId]?.remove(draftId);
     state.value = state.value.copyWith(
       workoutSetDrafts: drafts,
       workoutUnsavedChanges: true,
     );
   }
 
-  Future<bool> quickCreatePlannedSessionSet({
+  Future<bool> quickCreatePlannedSessionExerciseSet({
     required String exerciseId,
-    required int exerciseSequenceOrder,
+    required String plannedExerciseId,
     required int draftId,
     String? variationId,
     String? weight,
@@ -1363,7 +1431,7 @@ class ProgramDetailViewModel {
     // Empty planned sets are valid — a planned workout may list sets with no
     // target weight/reps yet (they show as blank rows, filled during the
     // session).
-    final existing = state.value.plannedSetsFor(exerciseSequenceOrder);
+    final existing = state.value.plannedSetsFor(plannedExerciseId);
     final setNumber = existing.isEmpty
         ? 1
         : existing.map((ps) => ps.setNumber).reduce((a, b) => a > b ? a : b) +
@@ -1371,23 +1439,21 @@ class ProgramDetailViewModel {
     try {
       await _plannedSessionRepo.createPlannedSet(
         _userId,
-        workout.sessionId,
+        plannedExerciseId,
+        plannedSessionId: workout.sessionId,
         exerciseId: exerciseId,
-        exerciseName: state.value.exerciseDetailMap[exerciseId]?.name,
         variationId: variationId,
-        variationName: _variationName(exerciseId, variationId),
-        exerciseSequenceOrder: exerciseSequenceOrder,
         setNumber: setNumber,
         targetWeight: weight,
         targetReps: reps,
         targetNotes: notes,
       );
-      removeDraftPlannedSessionSet(exerciseSequenceOrder, draftId);
+      removeDraftPlannedSessionExerciseSet(plannedExerciseId, draftId);
       final sets = await _plannedSessionRepo.fetchPlannedSets(
         workout.sessionId,
       );
       state.value = state.value.copyWith(
-        workoutPlannedSessionSets: _setsFromSessionSets(sets),
+        workoutPlannedSessionExerciseSets: sets,
       );
       return true;
     } catch (e) {
@@ -1396,8 +1462,8 @@ class ProgramDetailViewModel {
     }
   }
 
-  Future<void> quickUpdatePlannedSessionSet(
-    PlannedSessionSet ps, {
+  Future<void> quickUpdatePlannedSessionExerciseSet(
+    PlannedSessionExerciseSet ps, {
     String? weight,
     bool clearWeight = false,
     String? reps,
@@ -1410,19 +1476,14 @@ class ProgramDetailViewModel {
     final workout = state.value.editingWorkout;
     if (workout == null) return;
     try {
-      // variationId was previously accepted but never passed through —
-      // assigning a variation to a planned set silently did nothing.
       await _plannedSessionRepo.updatePlannedSet(
-        ps.setId,
+        ps.plannedSetId,
         targetWeight: weight,
         clearWeight: clearWeight,
         targetReps: reps,
         clearReps: clearReps,
         variationId: variationId,
         clearVariation: clearVariation,
-        variationName: variationId != null && !clearVariation
-            ? _variationName(ps.exerciseId, variationId)
-            : null,
         targetNotes: notes,
         clearNotes: clearNotes,
       );
@@ -1430,7 +1491,7 @@ class ProgramDetailViewModel {
         workout.sessionId,
       );
       state.value = state.value.copyWith(
-        workoutPlannedSessionSets: _setsFromSessionSets(sets),
+        workoutPlannedSessionExerciseSets: sets,
         workoutUnsavedChanges: true,
       );
     } catch (e) {
@@ -1438,24 +1499,22 @@ class ProgramDetailViewModel {
     }
   }
 
-  Future<void> duplicatePlannedSessionSet(PlannedSessionSet ps) async {
+  Future<void> duplicatePlannedSessionExerciseSet(
+    PlannedSessionExerciseSet ps,
+  ) async {
     final workout = state.value.editingWorkout;
     if (workout == null) return;
-    final existing = state.value.plannedSetsFor(ps.exerciseSequenceOrder);
+    final exerciseId = ps.exerciseId ?? '';
+    final existing = state.value.plannedSetsFor(ps.plannedExerciseId);
     final setNumber =
         existing.map((s) => s.setNumber).reduce((a, b) => a > b ? a : b) + 1;
     try {
       await _plannedSessionRepo.createPlannedSet(
         _userId,
-        workout.sessionId,
-        exerciseId: ps.exerciseId,
-        exerciseName:
-            ps.exerciseName ??
-            state.value.exerciseDetailMap[ps.exerciseId]?.name,
+        ps.plannedExerciseId,
+        plannedSessionId: workout.sessionId,
+        exerciseId: exerciseId,
         variationId: ps.variationId,
-        variationName:
-            ps.variationName ?? _variationName(ps.exerciseId, ps.variationId),
-        exerciseSequenceOrder: ps.exerciseSequenceOrder,
         setNumber: setNumber,
         targetWeight: ps.targetWeight,
         targetReps: ps.targetReps,
@@ -1465,7 +1524,7 @@ class ProgramDetailViewModel {
         workout.sessionId,
       );
       state.value = state.value.copyWith(
-        workoutPlannedSessionSets: _setsFromSessionSets(sets),
+        workoutPlannedSessionExerciseSets: sets,
         workoutUnsavedChanges: true,
       );
     } catch (e) {
@@ -1473,13 +1532,13 @@ class ProgramDetailViewModel {
     }
   }
 
-  Future<void> deletePlannedSessionSet(String setId) async {
+  Future<void> deletePlannedSessionExerciseSet(String setId) async {
     final workout = state.value.editingWorkout;
     if (workout == null) return;
     await _plannedSessionRepo.deletePlannedSet(setId);
     final sets = await _plannedSessionRepo.fetchPlannedSets(workout.sessionId);
     state.value = state.value.copyWith(
-      workoutPlannedSessionSets: _setsFromSessionSets(sets),
+      workoutPlannedSessionExerciseSets: sets,
       workoutUnsavedChanges: true,
     );
   }
@@ -1489,14 +1548,29 @@ class ProgramDetailViewModel {
   List<({String id, String name, int exerciseCount})> findSimilarVariations(
     String name,
   ) {
+    // Variations are a flat library (no exercise assignment since schema v2) —
+    // "used in N exercises" is derived from history, so make sure it's loaded
+    // (the label refreshes when the notify lands).
+    if (!state.value.pastSetsLoaded) loadHistoryIfNeeded();
+    final usedWith = <String, Set<String>>{};
+    for (final sessions in state.value.historyByExercise.values) {
+      for (final session in sessions) {
+        for (final s in session.sets) {
+          final vid = s.variationId;
+          final exId = s.exerciseId;
+          if (vid != null && exId != null) {
+            usedWith.putIfAbsent(vid, () => {}).add(exId);
+          }
+        }
+      }
+    }
     final results = <({String id, String name, int exerciseCount})>[];
     for (final v in state.value.allVariations) {
       if (isSimilarVariationName(name, v.name)) {
         results.add((
           id: v.variationId,
           name: v.name,
-          exerciseCount:
-              state.value.variationExerciseCounts[v.variationId] ?? 0,
+          exerciseCount: usedWith[v.variationId]?.length ?? 0,
         ));
       }
     }
@@ -1506,16 +1580,9 @@ class ProgramDetailViewModel {
   Future<void> _reloadCatalog() async {
     final map = await _exerciseRepo.fetchExerciseDetailMap(_userId);
     final variations = await _exerciseRepo.fetchVariations(_userId);
-    final bridges = await _exerciseRepo.fetchBridges(_userId);
-    final counts = <String, int>{};
-    for (final b in bridges) {
-      final varId = b['custom_variation_id'] as String;
-      counts[varId] = (counts[varId] ?? 0) + 1;
-    }
     state.value = state.value.copyWith(
       exerciseDetailMap: map,
       allVariations: variations,
-      variationExerciseCounts: counts,
     );
   }
 
@@ -1564,8 +1631,7 @@ class ProgramDetailViewModel {
             .where((v) => v.variationId == useExistingId)
             .firstOrNull;
         if (existing != null) {
-          // Reusing an archived variation must bring it back — the bridge
-          // alone would point at a variation nothing displays.
+          // Reusing an archived variation must bring it back.
           await _exerciseRepo.reactivateVariation(id);
         }
       } else {
@@ -1585,7 +1651,6 @@ class ProgramDetailViewModel {
           id = variation.variationId;
         }
       }
-      await _exerciseRepo.addBridge(_userId, exerciseId, id);
       await _reloadCatalog();
       state.value = state.value.copyWith(newVarCreating: false);
       return id;
@@ -1598,18 +1663,11 @@ class ProgramDetailViewModel {
     }
   }
 
-  // ── Lessons (per-exercise, cross-session — same fact_lesson data session uses) ──
-
-  String? _variationName(String exerciseId, String? variationId) {
-    if (variationId == null) return null;
-    return state.value.exerciseDetailMap[exerciseId]?.assignedVariations
-        .where((v) => v.variationId == variationId)
-        .map((v) => v.name)
-        .firstOrNull;
-  }
+  // ── Lessons (per-exercise, cross-session — same dim_lesson data session uses) ──
 
   /// All active variations, most recently used first — the set-row picker
-  /// order. Variations are shared across ALL of a user's exercises now.
+  /// order. Variations are a flat library (shared across ALL of a user's
+  /// exercises since schema v2).
   List<CustomVariation> get variationsByRecency {
     final last = <String, DateTime>{};
     for (final sessions in state.value.historyByExercise.values) {

@@ -1,4 +1,4 @@
-import '../../../data/models/session_set.dart';
+import '../../../data/models/session_exercise_set.dart';
 
 /// Personal-record computation engine.
 ///
@@ -25,7 +25,7 @@ class PrRecord {
     required this.achievedDate,
     required this.sessionId,
     required this.type,
-    this.setId,
+    this.sessionExerciseSetId,
     this.exerciseName,
     this.variationId,
     this.variationName,
@@ -45,7 +45,7 @@ class PrRecord {
 
   /// The source set that produced this record. Plain reference (no FK) so
   /// the snapshot survives the set being deleted.
-  final String? setId;
+  final String? sessionExerciseSetId;
   final PrType type;
 
   /// For [PrType.repMax]: which rep count this improves (the N in "N-rep max").
@@ -76,8 +76,8 @@ class PrRecord {
         weight: _toNum(map['weight']),
         reps: _toNum(map['reps']),
         achievedDate: _parseDate(map['achieved_date']),
-        sessionId: (map['session_id'] as String?) ?? _sessionIdFromSet(map['session_set_id'] as String?),
-        setId: map['session_set_id'] as String?,
+        sessionId: (map['session_id'] as String?) ?? _sessionIdFromSet(map['session_exercise_set_id'] as String?),
+        sessionExerciseSetId: map['session_exercise_set_id'] as String?,
         type: _typeFromString(map['pr_type'] as String? ?? 'repMax'),
         targetReps: _toInt(map['target_reps']),
         targetWeight: _toNumNullable(map['target_weight']),
@@ -91,7 +91,7 @@ class PrRecord {
   }
 
   Map<String, dynamic> toMap() => {
-        'session_set_id': setId,
+        'session_exercise_set_id': sessionExerciseSetId,
         'custom_exercise_id': exerciseId,
         'custom_variation_id': variationId,
         'weight': weight,
@@ -122,7 +122,7 @@ class PrRecord {
 
 /// The effective rep/volume value for a set — first reps entry, or duration
 /// as a proxy for timed exercises. Null if the set has neither.
-num? _effectiveReps(SessionSet s) =>
+num? _effectiveReps(SessionExerciseSet s) =>
     s.reps.isNotEmpty ? s.reps.first : null;
 
 /// The best weight ever lifted for "at least [repCount] reps" across
@@ -138,9 +138,10 @@ Map<int, num> repMaxCurve(List<PastSetRow> sets, String exerciseId,
   for (final s in sets) {
     if (s.exerciseId != exerciseId) continue;
     if (s.variationId != variationId) continue;
-    final weight = s.weight;
+    // Bodyweight is just weight 0 — it feeds the curve like any other weight.
+    final weight = s.weight ?? 0;
     final reps = _effectiveReps(s);
-    if (weight == null || reps == null) continue;
+    if (reps == null) continue;
     for (var n = 1; n <= reps; n++) {
       final current = curve[n];
       if (current == null || weight > current) curve[n] = weight;
@@ -170,29 +171,36 @@ List<PrRecord> fullPrTimeline(List<PastSetRow> sets) {
   final prs = <PrRecord>[];
 
   for (final s in ordered) {
+    // A free row with no exercise has no PR axis — skip it.
+    final exerciseId = s.exerciseId;
+    if (exerciseId == null) continue;
     // Null weight = bodyweight (0kg) — only reps are mandatory for a PR.
     final weight = s.weight ?? 0;
     final reps = _effectiveReps(s);
     if (reps == null) continue;
 
-    final exCurve = curve.putIfAbsent((s.exerciseId, s.variationId), () => {});
-    final exMaxReps = maxRepsAtWeight.putIfAbsent((s.exerciseId, s.variationId), () => {});
-
-    final actualReps = reps.toInt();
+    final exCurve = curve.putIfAbsent((exerciseId, s.variationId), () => {});
+    final exMaxReps = maxRepsAtWeight.putIfAbsent((exerciseId, s.variationId), () => {});
 
     // Rep-max curve: one record per tracked rep count N ≤ reps that this set
-    // improves.  When N < actualReps the record is propagated (implied by the
-    // actual performance); when N == actualReps it is explicit.
-    // Bodyweight (weight <= 0) never feeds this curve — a bodyweight 10-rep
-    // set is not a comparable "5RM of 0kg" against a 5kg set.
-    if (weight > 0) {
+    // improves. The EXPLICIT record goes to the highest tracked value the
+    // set covers — reps falling between tracked values (e.g. 13) claim the
+    // floor (12RM) as the achieved record, because ≥12 reps were performed;
+    // every lower tracked N stays propagated.
+    // Bodyweight (0kg) feeds the curve like any other weight — a 13-rep
+    // dips set is a 12RM at 0kg.
+    var maxTracked = 0;
+    for (final n in kTrackedRepCounts) {
+      if (n <= reps && n > maxTracked) maxTracked = n;
+    }
+    if (maxTracked > 0) {
       for (final n in kTrackedRepCounts) {
         if (n > reps) break;
         final current = exCurve[n];
         if (current == null || weight > current) {
           exCurve[n] = weight;
           prs.add(PrRecord(
-            exerciseId: s.exerciseId,
+            exerciseId: exerciseId,
             exerciseName: s.exerciseName,
             variationId: s.variationId,
             variationName: s.variationName,
@@ -200,10 +208,10 @@ List<PrRecord> fullPrTimeline(List<PastSetRow> sets) {
             reps: reps,
             achievedDate: s.sessionCreatedDate,
             sessionId: s.sessionId,
-            setId: s.sessionSetId,
+            sessionExerciseSetId: s.sessionExerciseSetId,
             type: PrType.repMax,
             targetReps: n,
-            isPropagated: n != actualReps,
+            isPropagated: n != maxTracked,
           ));
         }
       }
@@ -211,7 +219,7 @@ List<PrRecord> fullPrTimeline(List<PastSetRow> sets) {
 
     // Weight-max: most reps at a weight, monotone non-increasing.
     // If you can lift W × R you can lift any lighter weight at least R times.
-    final newReps = actualReps;
+    final newReps = reps.toInt();
     final effectiveMax = exMaxReps.entries
         .where((e) => e.key >= weight && (weight > 0 || e.key == 0))
         .fold<int>(0, (m, e) => e.value > m ? e.value : m);
@@ -219,7 +227,7 @@ List<PrRecord> fullPrTimeline(List<PastSetRow> sets) {
       exMaxReps[weight] = newReps;
       // Explicit weight-max record for the weight actually lifted.
       prs.add(PrRecord(
-        exerciseId: s.exerciseId,
+        exerciseId: exerciseId,
         exerciseName: s.exerciseName,
         variationId: s.variationId,
         variationName: s.variationName,
@@ -227,7 +235,7 @@ List<PrRecord> fullPrTimeline(List<PastSetRow> sets) {
         reps: reps,
         achievedDate: s.sessionCreatedDate,
         sessionId: s.sessionId,
-        setId: s.sessionSetId,
+        sessionExerciseSetId: s.sessionExerciseSetId,
         type: PrType.weightMax,
         targetWeight: weight,
         isPropagated: false,
@@ -241,7 +249,7 @@ List<PrRecord> fullPrTimeline(List<PastSetRow> sets) {
         if (entry.key < weight && entry.key > 0 && entry.value < newReps) {
           exMaxReps[entry.key] = newReps;
           prs.add(PrRecord(
-            exerciseId: s.exerciseId,
+            exerciseId: exerciseId,
             exerciseName: s.exerciseName,
             variationId: s.variationId,
             variationName: s.variationName,
@@ -249,7 +257,7 @@ List<PrRecord> fullPrTimeline(List<PastSetRow> sets) {
             reps: newReps,
             achievedDate: s.sessionCreatedDate,
             sessionId: s.sessionId,
-            setId: s.sessionSetId,
+            sessionExerciseSetId: s.sessionExerciseSetId,
             type: PrType.weightMax,
             targetWeight: entry.key,
             isPropagated: true,
@@ -262,12 +270,24 @@ List<PrRecord> fullPrTimeline(List<PastSetRow> sets) {
   return prs;
 }
 
+/// Achieved records — the only ones a user should ever SEE: propagated
+/// records are curve internals (a stronger set implies weaker axes), never
+/// something actually performed.
+List<PrRecord> achievedRecords(List<PrRecord> records) =>
+    records.where((p) => !p.isPropagated).toList();
+
+/// Countable records — explicit rep-max only. Weight-max (any weight,
+/// bodyweight 0kg included) is display-only trivia, never a count.
+List<PrRecord> countableRecords(List<PrRecord> records) =>
+    records.where((p) => !p.isPropagated && p.type == PrType.repMax).toList();
+
 /// Before-tracking for one session's records: maps each record belonging to
 /// [sessionId] to the previous record on its axis — history OR an earlier set
 /// in the same session. Keyed per source set so two records on the same axis
 /// in one session each keep their own before; an axis-keyed map would
 /// overwrite the first record's null before with itself and misreport a
 /// first PR as "10 reps → 10 reps" instead of "(First PR)".
+/// Callers pass achieved-only records — propagated records never chain.
 ({Map<(String, String?, int, String?), PrRecord?> repMax,
         Map<(String, String?, num, String?), PrRecord?> weightMax})
     sessionBeforeMaps(List<PrRecord> records, String sessionId) {
@@ -279,14 +299,14 @@ List<PrRecord> fullPrTimeline(List<PastSetRow> sets) {
     if (r.type == PrType.repMax && r.targetReps != null) {
       final axis = (r.exerciseId, r.variationId, r.targetReps!);
       if (r.sessionId == sessionId) {
-        repMax[(r.exerciseId, r.variationId, r.targetReps!, r.setId)] =
+        repMax[(r.exerciseId, r.variationId, r.targetReps!, r.sessionExerciseSetId)] =
             lastRepMax[axis];
       }
       lastRepMax[axis] = r;
     } else if (r.type == PrType.weightMax && r.targetWeight != null) {
       final axis = (r.exerciseId, r.variationId, r.targetWeight!);
       if (r.sessionId == sessionId) {
-        weightMax[(r.exerciseId, r.variationId, r.targetWeight!, r.setId)] =
+        weightMax[(r.exerciseId, r.variationId, r.targetWeight!, r.sessionExerciseSetId)] =
             lastWeightMax[axis];
       }
       lastWeightMax[axis] = r;

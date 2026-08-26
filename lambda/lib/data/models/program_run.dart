@@ -9,6 +9,7 @@ class ProgramRun {
     this.targetSessions,
     this.targetWeeks,
     this.endDate,
+    this.progressionMode,
   });
 
   final String programRunId;
@@ -17,6 +18,11 @@ class ProgramRun {
   final DateTime startedDate;
   final DateTime? endedDate;
   final bool isCurrent;
+
+  /// How this run progresses: 'frequency' (sessions assigned to days in the
+  /// week/fortnight) or 'order' (sessions worked through in sequence).
+  /// null (legacy runs) behaves as 'order'.
+  final String? progressionMode;
 
   /// Sequential: how many sessions (workouts) to log for this run.
   final int? targetSessions;
@@ -41,6 +47,7 @@ class ProgramRun {
         endDate: map['end_date'] != null
             ? DateTime.parse(map['end_date'] as String)
             : null,
+        progressionMode: map['progression_mode'] as String?,
       );
 
   static bool _toBool(dynamic v) {
@@ -74,5 +81,6 @@ class ProgramRun {
         'target_sessions': targetSessions,
         'target_weeks': targetWeeks,
         'end_date': endDate?.toIso8601String(),
+        'progression_mode': progressionMode,
       };
 }

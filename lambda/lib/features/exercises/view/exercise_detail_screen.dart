@@ -110,41 +110,10 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
   }
 
   Future<void> _rename() async {
-    final controller = TextEditingController(text: _name);
     final newName = await showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        title: Text('Rename exercise',
-            style: AppFonts.ui(fontWeight: FontWeight.w800, color: AppColors.primary)),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          textCapitalization: TextCapitalization.words,
-          style: AppFonts.ui(color: AppColors.primary),
-          decoration: InputDecoration(
-            hintText: 'Exercise name',
-            hintStyle: AppFonts.ui(color: AppColors.muted),
-            enabledBorder: UnderlineInputBorder(
-                borderSide: BorderSide(color: AppColors.border)),
-            focusedBorder: UnderlineInputBorder(
-                borderSide: BorderSide(color: AppColors.accent)),
-          ),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: Text('Cancel',
-                  style: AppFonts.ui(color: AppColors.muted))),
-          TextButton(
-              onPressed: () => Navigator.of(ctx).pop(controller.text),
-              child: Text('Save',
-                  style: AppFonts.ui(
-                      color: AppColors.accent, fontWeight: FontWeight.w600))),
-        ],
-      ),
+      builder: (ctx) => _RenameExerciseDialog(initialName: _name),
     );
-    controller.dispose();
     if (newName == null || newName.trim().isEmpty) return;
     await _viewModel.renameExercise(widget.exerciseId, newName);
     if (mounted) setState(() => _name = newName.trim());
@@ -190,6 +159,86 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
         compact: true,
         onPressed: _openEditMenu,
       ),
+    );
+  }
+}
+
+/// Rename prompt. Owns its [TextEditingController] so the controller is
+/// disposed when the dialog route is fully removed (after the exit
+/// animation) — disposing it right after `showDialog` returns crashes,
+/// because the TextField is still mounted and rebuilding during the pop
+/// animation.
+class _RenameExerciseDialog extends StatefulWidget {
+  const _RenameExerciseDialog({required this.initialName});
+
+  final String? initialName;
+
+  @override
+  State<_RenameExerciseDialog> createState() => _RenameExerciseDialogState();
+}
+
+class _RenameExerciseDialogState extends State<_RenameExerciseDialog> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialName);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: AppColors.surface,
+      title: Text('Rename exercise',
+          style: AppFonts.ui(
+              fontWeight: FontWeight.w800, color: AppColors.primary)),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'This updates the name everywhere — all past sessions included.',
+            style: AppFonts.ui(
+              fontSize: AppTextStyles.sm,
+              color: AppColors.muted,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          TextField(
+            controller: _controller,
+            autofocus: true,
+            textCapitalization: TextCapitalization.words,
+            style: AppFonts.ui(color: AppColors.primary),
+            decoration: InputDecoration(
+              hintText: 'Exercise name',
+              hintStyle: AppFonts.ui(color: AppColors.muted),
+              enabledBorder: UnderlineInputBorder(
+                borderSide: BorderSide(color: AppColors.border),
+              ),
+              focusedBorder: UnderlineInputBorder(
+                borderSide: BorderSide(color: AppColors.accent),
+              ),
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text('Cancel', style: AppFonts.ui(color: AppColors.muted))),
+        TextButton(
+            onPressed: () => Navigator.of(context).pop(_controller.text),
+            child: Text('Save',
+                style: AppFonts.ui(
+                    color: AppColors.accent, fontWeight: FontWeight.w600))),
+      ],
     );
   }
 }

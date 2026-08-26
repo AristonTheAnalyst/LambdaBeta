@@ -81,10 +81,11 @@ class _PrExerciseDetailScreenState extends State<PrExerciseDetailScreen> {
     } catch (_) {}
     try {
       final map = await _exerciseRepo.fetchExerciseDetailMap(_userId);
+      final variations = await _exerciseRepo.fetchVariations(_userId);
       if (mounted) {
         setState(() {
           _exerciseName = map[widget.exerciseId]?.name;
-          _variations = map[widget.exerciseId]?.assignedVariations ?? const [];
+          _variations = variations;
         });
       }
     } catch (_) {}

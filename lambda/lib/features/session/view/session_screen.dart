@@ -10,17 +10,19 @@ import '../../../core/styles/app_spacing.dart';
 import '../../../core/styles/app_text_styles.dart';
 import '../../../core/utils/session_format.dart';
 import '../../../core/powersync/database.dart' as ps;
-import '../../../data/models/planned_session_set.dart';
+import '../../../data/models/planned_session_exercise_set.dart';
 import '../../../data/models/session.dart';
-import '../../../data/models/session_set.dart';
+import '../../../data/models/session_exercise_set.dart';
 import '../../../shared/widgets/app_card.dart';
 import '../../../shared/widgets/dropdown_select.dart';
 import '../../../shared/widgets/feeling_rating.dart';
 import '../../../shared/widgets/glass_button.dart';
 import '../../../shared/widgets/lambda_input.dart';
 import '../../../shared/widgets/page_header.dart';
+import '../../../shared/widgets/planned_banner.dart';
 import '../../../shared/widgets/press_squash.dart';
 import '../../../shared/widgets/reflection_summary.dart';
+import '../../../shared/widgets/session_bookend.dart';
 import '../../../shared/widgets/session_exercise_card.dart';
 import '../../../shared/widgets/session_set_row.dart';
 import '../../../shared/widgets/slide_pages.dart';
@@ -604,7 +606,7 @@ class _LastSessionCard extends StatelessWidget {
                     child: Text(
                       session == null
                           ? ''
-                          : DateFormat('MMM d').format(session.createdDate),
+                          : DateFormat('MMM d').format(session.createdDatetime),
                       style: AppFonts.mono(
                         fontSize: 9,
                         letterSpacing: 0.8,
@@ -633,41 +635,10 @@ class _LastSessionCard extends StatelessWidget {
                   ),
                 ],
               ),
-              // The planned session (if any) this session was started from —
-              // planned-blue ghost container styling.
-              if (session?.parentSessionName != null) ...[
+              // The planned session (if any) this session was started from.
+              if (session?.plannedSessionName != null) ...[
                 const SizedBox(height: AppSpacing.sm),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.md,
-                    vertical: AppSpacing.sm,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppColors.plannedBg,
-                    borderRadius: BorderRadius.circular(AppRadius.md),
-                    border: Border.all(color: AppColors.planned, width: 1.2),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.event_outlined,
-                        size: 16,
-                        color: AppColors.planned,
-                      ),
-                      const SizedBox(width: AppSpacing.sm),
-                      Expanded(
-                        child: Text(
-                          '${session!.parentSessionName}',
-                          style: AppFonts.mono(
-                            fontSize: AppTextStyles.xs,
-                            letterSpacing: 0.6,
-                            color: AppColors.planned,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                PlannedBanner(name: session!.plannedSessionName!),
               ],
             ],
           ),
@@ -696,21 +667,21 @@ class _LastSessionCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _bookend(
-                  'PRE-WORKOUT',
-                  session.preFeeling,
-                  session.preNotes,
-                  'No pre-workout notes',
+                SessionBookend(
+                  label: 'PRE-WORKOUT',
+                  feeling: session.preFeeling,
+                  notes: session.preNotes,
+                  emptyNotes: 'No pre-workout notes',
                   question: 'How well do you think you\'re going to do',
                   notesLabel: 'Why do you feel that way',
                 ),
                 if (showPostBookend) ...[
                   const SizedBox(height: AppSpacing.lg),
-                  _bookend(
-                    'POST-WORKOUT',
-                    session.feeling,
-                    session.postNotes,
-                    'No post-workout notes',
+                  SessionBookend(
+                    label: 'POST-WORKOUT',
+                    feeling: session.feeling,
+                    notes: session.postNotes,
+                    emptyNotes: 'No post-workout notes',
                     question: 'How well did you do this session',
                     notesLabel: 'What could have made this session better',
                   ),
@@ -736,91 +707,6 @@ class _LastSessionCard extends StatelessWidget {
       child: _SessionPickerSheet(vm: vm),
     );
   }
-
-  /// Card-3 section label — the muted mono micro-label style.
-  Widget _bookendLabel(String text) => Text(
-    text,
-    style: AppFonts.mono(
-      fontSize: 9,
-      letterSpacing: 0.8,
-      color: AppColors.muted,
-    ),
-  );
-
-  /// One bookend section (feeling + notes) — the questionnaire read back
-  /// with the same wording/styling as the live form: [question] above the
-  /// rating and [notesLabel] above the notes. Rating and notes always
-  /// render: an unrated session shows empty squares, and empty notes show
-  /// [emptyNotes] in the reflection sections' empty-note style. Notes sit in
-  /// a lesson-row container and scroll inside it when long.
-  Widget _bookend(
-    String label,
-    int? feeling,
-    String? notes,
-    String emptyNotes, {
-    required String question,
-    required String notesLabel,
-  }) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      _bookendLabel(label),
-      const SizedBox(height: AppSpacing.sm),
-      Text(
-        question,
-        style: AppFonts.ui(
-          fontSize: AppTextStyles.sm,
-          fontWeight: FontWeight.w600,
-          color: AppColors.primary,
-        ),
-      ),
-      const SizedBox(height: AppSpacing.sm),
-      // Full-size squares — the usual rating size, centered like the
-      // prep page's THIS SESSION input.
-      FeelingRating(value: feeling),
-      const SizedBox(height: AppSpacing.sm),
-      Text(
-        notesLabel,
-        style: AppFonts.ui(
-          fontSize: AppTextStyles.sm,
-          fontWeight: FontWeight.w600,
-          color: AppColors.primary,
-        ),
-      ),
-      const SizedBox(height: 6),
-      if (notes != null)
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(AppSpacing.md),
-          decoration: BoxDecoration(
-            color: AppColors.surfaceHigh,
-            borderRadius: BorderRadius.circular(AppRadius.md),
-            border: Border.all(color: AppColors.border),
-          ),
-          child: ConstrainedBox(
-            // Roomier than one line so short notes still read as a box;
-            // long notes scroll inside it instead of stretching the card.
-            constraints: const BoxConstraints(minHeight: 64, maxHeight: 120),
-            child: SingleChildScrollView(
-              child: Text(
-                notes,
-                style: AppFonts.ui(
-                  fontSize: AppTextStyles.sm,
-                  color: AppColors.primary,
-                ),
-              ),
-            ),
-          ),
-        )
-      else
-        Text(
-          emptyNotes,
-          style: AppFonts.ui(
-            fontSize: AppTextStyles.xs,
-            color: AppColors.muted,
-          ),
-        ),
-    ],
-  );
 
   /// Bordered pager chevron — the neutral chip styling (surfaceHigh fill +
   /// border outline when actionable, hairline + muted when disabled) so the
@@ -1007,7 +893,7 @@ class _SessionPickerSheetState extends State<_SessionPickerSheet> {
                 child: _gridCell(
                   'DATE',
                   Text(
-                    DateFormat('MMM d, yyyy').format(s.createdDate),
+                    DateFormat('MMM d, yyyy').format(s.createdDatetime),
                     style: AppFonts.mono(
                       fontSize: AppTextStyles.sm,
                       fontWeight: FontWeight.w700,
@@ -1020,7 +906,7 @@ class _SessionPickerSheetState extends State<_SessionPickerSheet> {
               Expanded(
                 child: _gridCell(
                   'PLANNED',
-                  s.parentSessionName != null
+                  s.plannedSessionName != null
                       ? Container(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 8,
@@ -1034,7 +920,7 @@ class _SessionPickerSheetState extends State<_SessionPickerSheet> {
                             ),
                           ),
                           child: Text(
-                            s.parentSessionName!,
+                            s.plannedSessionName!,
                             style: AppFonts.ui(
                               fontSize: AppTextStyles.sm,
                               fontWeight: FontWeight.w700,
@@ -1101,16 +987,18 @@ class _SessionPickerSheetState extends State<_SessionPickerSheet> {
     ),
   );
 
-  List<Widget> _exerciseSummaries(List<SessionSet> sets) {
+  List<Widget> _exerciseSummaries(List<SessionExerciseSet> sets) {
     final order = <String>[];
     final counts = <String, int>{};
     final names = <String, String>{};
     for (final s in sets) {
-      if (!names.containsKey(s.exerciseId)) {
-        order.add(s.exerciseId);
-        names[s.exerciseId] = s.exerciseName ?? s.exerciseId;
+      final exerciseId = s.exerciseId;
+      if (exerciseId == null) continue;
+      if (!names.containsKey(exerciseId)) {
+        order.add(exerciseId);
+        names[exerciseId] = s.exerciseName ?? exerciseId;
       }
-      counts[s.exerciseId] = (counts[s.exerciseId] ?? 0) + 1;
+      counts[exerciseId] = (counts[exerciseId] ?? 0) + 1;
     }
     return order.map((exId) {
       final count = counts[exId]!;
@@ -1576,14 +1464,14 @@ class _SessionPreviewState extends State<_SessionPreview> {
         .toList();
     return [
       for (var i = 0; i < sets.length; i++)
-        _readOnlyPlannedRow(i + 1, sets[i], 'preview-${sets[i].setId}'),
+        _readOnlyPlannedRow(i + 1, sets[i], 'preview-${sets[i].plannedSetId}'),
     ];
   }
 
   /// A planned row with no target data at all (weight, reps, notes,
   /// variation) is a keep-alive stub from group creation, not a plan —
   /// never preview it.
-  static bool _hasTargetData(PlannedSessionSet s) =>
+  static bool _hasTargetData(PlannedSessionExerciseSet s) =>
       s.targetWeight != null ||
       s.targetReps != null ||
       (s.targetNotes?.isNotEmpty ?? false) ||
@@ -1591,13 +1479,13 @@ class _SessionPreviewState extends State<_SessionPreview> {
 
   Widget _readOnlyPlannedRow(
     int index,
-    PlannedSessionSet set,
+    PlannedSessionExerciseSet set,
     String keySuffix,
   ) {
     return SessionSetRow(
       key: ValueKey(keySuffix),
       mode: SetRowMode.planned,
-      exerciseId: set.exerciseId,
+      exerciseId: set.exerciseId ?? '',
       displayIndex: index,
       isDraft: false,
       initialWeightText: set.targetWeight ?? '',

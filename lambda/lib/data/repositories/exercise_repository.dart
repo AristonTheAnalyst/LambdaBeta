@@ -31,21 +31,27 @@ class ExerciseRepository {
 
     for (final s in timeline) {
       final d = s.sessionCreatedDate;
-      // Exercise
-      exSets[s.exerciseId] = (exSets[s.exerciseId] ?? 0) + 1;
-      exWorkouts.putIfAbsent(s.exerciseId, () => {}).add(s.sessionId);
-      if (s.variationId != null) {
-        exVariations.putIfAbsent(s.exerciseId, () => {}).add(s.variationId!);
-      }
-      if (d.isAfter(exLast[s.exerciseId] ?? DateTime.fromMillisecondsSinceEpoch(0))) {
-        exLast[s.exerciseId] = d;
+      // Exercise (sets with no exercise are free rows — nothing to aggregate)
+      final exerciseId = s.exerciseId;
+      if (exerciseId != null) {
+        exSets[exerciseId] = (exSets[exerciseId] ?? 0) + 1;
+        exWorkouts.putIfAbsent(exerciseId, () => {}).add(s.sessionId);
+        if (s.variationId != null) {
+          exVariations.putIfAbsent(exerciseId, () => {}).add(s.variationId!);
+        }
+        if (d.isAfter(
+            exLast[exerciseId] ?? DateTime.fromMillisecondsSinceEpoch(0))) {
+          exLast[exerciseId] = d;
+        }
       }
       // Variation
       if (s.variationId != null) {
         final vid = s.variationId!;
         varSets[vid] = (varSets[vid] ?? 0) + 1;
         varWorkouts.putIfAbsent(vid, () => {}).add(s.sessionId);
-        varExercises.putIfAbsent(vid, () => {}).add(s.exerciseId);
+        if (exerciseId != null) {
+          varExercises.putIfAbsent(vid, () => {}).add(exerciseId);
+        }
         if (d.isAfter(varLast[vid] ?? DateTime.fromMillisecondsSinceEpoch(0))) {
           varLast[vid] = d;
         }
@@ -88,42 +94,16 @@ class ExerciseRepository {
     return rows.map((r) => CustomVariation.fromMap(r)).toList();
   }
 
-  Future<List<Map<String, dynamic>>> fetchBridges(String userId) async {
-    final rows = await ps.db.getAll(
-      'SELECT custom_exercise_id, custom_variation_id FROM dim_exercise_variation_bridge WHERE user_id = ? AND (is_archived IS NULL OR is_archived = 0)',
-      [userId],
-    );
-    return rows.cast<Map<String, dynamic>>();
-  }
-
   Future<Map<String, ExerciseDetail>> fetchExerciseDetailMap(
       String userId) async {
     final exercises = await fetchExercises(userId);
-    final variations = await fetchVariations(userId);
-    final bridges = await fetchBridges(userId);
 
-    // Stamp each variation with its most-recent-use date so any surface
-    // rendering assigned variations can order them by recency.
-    final lastUsed = lastUsedByEntity(
-        await _sessionRepo.loadPastSetsTimeline(userId));
-    final varMap = {
-      for (final v in variations) v.variationId: v.copyWith(lastUsed: lastUsed[v.variationId]),
-    };
-    final assignedMap = <String, List<CustomVariation>>{};
-    for (final b in bridges) {
-      final exId = b['custom_exercise_id'] as String;
-      final varId = b['custom_variation_id'] as String;
-      final variation = varMap[varId];
-      if (variation != null) {
-        assignedMap.putIfAbsent(exId, () => []).add(variation);
-      }
-    }
-
+    // Exercises and variations are independent since schema v2 (no bridge) —
+    // variation assignment is gone, so each detail is just its exercise.
     return {
       for (final ex in exercises)
         ex.exerciseId: ExerciseDetail(
           exercise: ex,
-          assignedVariations: assignedMap[ex.exerciseId] ?? [],
         ),
     };
   }
@@ -182,33 +162,6 @@ class ExerciseRepository {
     );
   }
 
-  /// No unique index backs (custom_exercise_id, custom_variation_id) locally,
-  /// so this is a manual check-then-write instead of a real SQL upsert. The
-  /// row's id is the '-'-joined composite key — matching exactly how the
-  /// PowerSync sync-rules compute id for this table
-  /// (custom_exercise_id || '-' || custom_variation_id) — so a locally
-  /// created row and its eventual downloaded copy resolve to the same local
-  /// row instead of duplicating.
-  Future<void> addBridge(
-      String userId, String exerciseId, String variationId) async {
-    final id = '$exerciseId-$variationId';
-    final existing = await ps.db.getAll(
-      'SELECT id FROM dim_exercise_variation_bridge WHERE custom_exercise_id = ? AND custom_variation_id = ?',
-      [exerciseId, variationId],
-    );
-    if (existing.isNotEmpty) {
-      await ps.db.execute(
-        'UPDATE dim_exercise_variation_bridge SET is_archived = 0 WHERE id = ?',
-        [existing.first['id']],
-      );
-      return;
-    }
-    await ps.db.execute(
-      'INSERT INTO dim_exercise_variation_bridge (id, custom_exercise_id, custom_variation_id, user_id, is_archived) VALUES (?, ?, ?, ?, ?)',
-      [id, exerciseId, variationId, userId, 0],
-    );
-  }
-
   Future<void> deactivateExercise(String exerciseId) async {
     await ps.db.execute(
       'UPDATE dim_exercise SET is_archived = 1 WHERE custom_exercise_id = ?',
@@ -236,17 +189,4 @@ class ExerciseRepository {
       [name, variationId],
     );
   }
-
-  /// Soft-delete via is_archived rather than a hard DELETE — this table
-  /// has no single-column primary key (its real PK is the composite
-  /// (custom_exercise_id, custom_variation_id)), which the generic
-  /// id-based upload path in SupabaseConnector.uploadData() can't target
-  /// for a DELETE. PATCHing is_archived instead sidesteps that entirely.
-  Future<void> removeBridge(String exerciseId, String variationId) async {
-    await ps.db.execute(
-      'UPDATE dim_exercise_variation_bridge SET is_archived = 1 WHERE custom_exercise_id = ? AND custom_variation_id = ?',
-      [exerciseId, variationId],
-    );
-  }
-
 }

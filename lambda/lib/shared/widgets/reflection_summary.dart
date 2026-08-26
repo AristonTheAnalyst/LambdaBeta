@@ -114,7 +114,7 @@ class ReflectionSummary extends StatelessWidget {
   List<Widget> _prCardsFor(String exerciseId) {
     final bySet = <String?, List<PrRecord>>{};
     for (final p in prsByExercise[exerciseId] ?? const []) {
-      bySet.putIfAbsent(p.setId, () => []).add(p);
+      bySet.putIfAbsent(p.sessionExerciseSetId, () => []).add(p);
     }
     final cards = <Widget>[];
     for (final group in bySet.values) {

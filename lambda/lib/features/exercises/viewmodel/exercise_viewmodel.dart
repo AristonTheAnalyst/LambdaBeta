@@ -26,9 +26,6 @@ class ExerciseState {
     // Edit variation modal
     this.editVariation,
     this.editVarName = '',
-    this.editVarOriginalExIds = const {},
-    this.editVarDraftExIds = const {},
-    this.editVarLoadingExs = false,
     // Create modals
     this.createExName = '',
     this.createVarName = '',
@@ -56,9 +53,6 @@ class ExerciseState {
 
   final CustomVariation? editVariation;
   final String editVarName;
-  final Set<String> editVarOriginalExIds;
-  final Set<String> editVarDraftExIds;
-  final bool editVarLoadingExs;
 
   final String createExName;
   final String createVarName;
@@ -68,13 +62,6 @@ class ExerciseState {
   final bool isCreatingVar;
 
   static const _pageSize = 10;
-
-  static int _byRecency(DateTime? da, DateTime? db, String na, String nb) {
-    if (da != null && db != null) return db.compareTo(da);
-    if (da != null) return -1;
-    if (db != null) return 1;
-    return na.toLowerCase().compareTo(nb.toLowerCase());
-  }
 
   List<CustomExercise> get filteredExercises => exSearch.isEmpty
       ? exercises
@@ -137,25 +124,6 @@ class ExerciseState {
   int get exTotal => sortedExercises.length;
   int get varTotal => sortedVariations.length;
 
-  List<CustomExercise> get editVarAssignedExs =>
-      exercises.where((e) => editVarDraftExIds.contains(e.exerciseId)).toList();
-
-  List<CustomExercise> get editVarAvailableExs {
-    final list =
-        exercises
-            .where((e) => !editVarDraftExIds.contains(e.exerciseId))
-            .toList()
-          ..sort(
-            (a, b) => _byRecency(
-              usage[a.exerciseId]?.lastUsed,
-              usage[b.exerciseId]?.lastUsed,
-              a.name,
-              b.name,
-            ),
-          );
-    return list;
-  }
-
   ExerciseState copyWith({
     bool? isLoading,
     bool? isSaving,
@@ -176,9 +144,6 @@ class ExerciseState {
     CustomVariation? editVariation,
     bool clearEditVar = false,
     String? editVarName,
-    Set<String>? editVarOriginalExIds,
-    Set<String>? editVarDraftExIds,
-    bool? editVarLoadingExs,
     String? createExName,
     String? createVarName,
     bool? showCreateEx,
@@ -202,15 +167,6 @@ class ExerciseState {
     editExName: clearEditEx ? '' : (editExName ?? this.editExName),
     editVariation: clearEditVar ? null : (editVariation ?? this.editVariation),
     editVarName: clearEditVar ? '' : (editVarName ?? this.editVarName),
-    editVarOriginalExIds: clearEditVar
-        ? {}
-        : (editVarOriginalExIds ?? this.editVarOriginalExIds),
-    editVarDraftExIds: clearEditVar
-        ? {}
-        : (editVarDraftExIds ?? this.editVarDraftExIds),
-    editVarLoadingExs: clearEditVar
-        ? false
-        : (editVarLoadingExs ?? this.editVarLoadingExs),
     createExName: createExName ?? this.createExName,
     createVarName: createVarName ?? this.createVarName,
     showCreateEx: showCreateEx ?? this.showCreateEx,
@@ -315,26 +271,13 @@ class ExerciseViewModel {
   // ── Open edit variation ────────────────────────────────────────────────────
 
   Future<void> openEditVariation(CustomVariation v) async {
+    // Variations are a flat library since schema v2 (no exercise assignment) —
+    // editing is name-only.
     state.value = state.value.copyWith(
       editVariation: v,
       editVarName: v.name,
-      editVarLoadingExs: true,
       clearError: true,
     );
-    try {
-      final bridges = await _repo.fetchBridges(_userId);
-      final exIds = bridges
-          .where((b) => b['custom_variation_id'] == v.variationId)
-          .map((b) => b['custom_exercise_id'] as String)
-          .toSet();
-      state.value = state.value.copyWith(
-        editVarOriginalExIds: exIds,
-        editVarDraftExIds: Set.from(exIds),
-        editVarLoadingExs: false,
-      );
-    } catch (_) {
-      state.value = state.value.copyWith(editVarLoadingExs: false);
-    }
   }
 
   void closeEditVariation() =>
@@ -342,16 +285,6 @@ class ExerciseViewModel {
 
   void setEditVarName(String v) =>
       state.value = state.value.copyWith(editVarName: v);
-
-  void addEditVarExIds(List<String> ids) {
-    final next = Set<String>.from(state.value.editVarDraftExIds)..addAll(ids);
-    state.value = state.value.copyWith(editVarDraftExIds: next);
-  }
-
-  void removeEditVarExId(String id) {
-    final next = Set<String>.from(state.value.editVarDraftExIds)..remove(id);
-    state.value = state.value.copyWith(editVarDraftExIds: next);
-  }
 
   Future<void> saveEditVariation() async {
     final s = state.value;
@@ -362,15 +295,6 @@ class ExerciseViewModel {
         s.editVariation!.variationId,
         s.editVarName.trim(),
       );
-
-      final toAdd = s.editVarDraftExIds.difference(s.editVarOriginalExIds);
-      final toRemove = s.editVarOriginalExIds.difference(s.editVarDraftExIds);
-      for (final exId in toAdd) {
-        await _repo.addBridge(_userId, exId, s.editVariation!.variationId);
-      }
-      for (final exId in toRemove) {
-        await _repo.removeBridge(exId, s.editVariation!.variationId);
-      }
 
       state.value = state.value.copyWith(isSaving: false, clearEditVar: true);
       await fetchAll();

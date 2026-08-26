@@ -1,12 +1,11 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide Session;
 import '../../../data/models/custom_variation.dart';
 import '../../../data/models/exercise_detail.dart';
 import '../../../data/models/lesson.dart';
 import '../../../data/models/session.dart';
-import '../../../data/models/session_set.dart';
+import '../../../data/models/session_exercise.dart';
+import '../../../data/models/session_exercise_set.dart';
 import '../../../data/repositories/exercise_repository.dart';
 import '../../../data/repositories/lesson_repository.dart';
 import '../../../data/repositories/session_repository.dart';
@@ -15,14 +14,16 @@ import '../../session/model/session_local_state.dart'
     show ExerciseHistorySession, groupHistoryByExercise, isSimilarVariationName;
 
 /// One tab in the workout-detail screen — a single exercise that was logged
-/// in this workout.
+/// in this workout, backed by its fact_session_exercise row.
 class SessionDetailExerciseSlot {
   const SessionDetailExerciseSlot({
     required this.groupOrder,
     required this.exerciseId,
+    this.sessionExerciseId,
   });
   final int groupOrder;
   final String exerciseId;
+  final String? sessionExerciseId;
 }
 
 class SessionDetailState {
@@ -41,7 +42,6 @@ class SessionDetailState {
     this.workoutSetDrafts = const {},
     // Catalog / create-new
     this.allVariations = const [],
-    this.variationExerciseCounts = const {},
     this.newExCreating = false,
     this.newVarCreating = false,
     // Lessons and history
@@ -64,11 +64,10 @@ class SessionDetailState {
 
   final List<SessionDetailExerciseSlot> exerciseSlots;
   final int activeSlotIndex;
-  final Map<int, List<SessionSet>> setsByOrder;
+  final Map<int, List<SessionExerciseSet>> setsByOrder;
   final Map<int, List<int>> workoutSetDrafts;
 
   final List<CustomVariation> allVariations;
-  final Map<String, int> variationExerciseCounts;
   final bool newExCreating;
   final bool newVarCreating;
 
@@ -83,7 +82,7 @@ class SessionDetailState {
       ? null
       : exerciseSlots[activeSlotIndex.clamp(0, exerciseSlots.length - 1)];
 
-  List<SessionSet> setsFor(int groupOrder) => setsByOrder[groupOrder] ?? [];
+  List<SessionExerciseSet> setsFor(int groupOrder) => setsByOrder[groupOrder] ?? [];
 
   SessionDetailState copyWith({
     bool? isLoading,
@@ -97,12 +96,11 @@ class SessionDetailState {
     String? postNotesDraft,
     List<SessionDetailExerciseSlot>? exerciseSlots,
     int? activeSlotIndex,
-    Map<int, List<SessionSet>>? setsByOrder,
+    Map<int, List<SessionExerciseSet>>? setsByOrder,
     bool clearSetsByOrder = false,
     Map<int, List<int>>? workoutSetDrafts,
     bool clearSessionSetDrafts = false,
     List<CustomVariation>? allVariations,
-    Map<String, int>? variationExerciseCounts,
     bool? newExCreating,
     bool? newVarCreating,
     Map<String, List<Lesson>>? lessonsByExercise,
@@ -129,8 +127,6 @@ class SessionDetailState {
         ? const {}
         : (workoutSetDrafts ?? this.workoutSetDrafts),
     allVariations: allVariations ?? this.allVariations,
-    variationExerciseCounts:
-        variationExerciseCounts ?? this.variationExerciseCounts,
     newExCreating: newExCreating ?? this.newExCreating,
     newVarCreating: newVarCreating ?? this.newVarCreating,
     lessonsByExercise: lessonsByExercise ?? this.lessonsByExercise,
@@ -161,59 +157,34 @@ class SessionDetailViewModel {
   String get _userId => Supabase.instance.client.auth.currentUser!.id;
 
   /// Builds slots in the order the user arranged them during the session —
-  /// `fact_session.exercise_order` (a JSON blob of tab slots, possibly
-  /// superset groups). Exercises the blob doesn't name keep their
-  /// first-appearance-in-sets position (legacy sessions without a blob).
+  /// `fact_session_exercise.exercise_order` (a real column now; the old JSON
+  /// blob is gone). Exercises with no logged row (null exercise) are skipped.
   List<SessionDetailExerciseSlot> _buildSlots(
-    List<SessionSet> sets,
-    Session? session,
+    List<SessionExercise> exercises,
   ) {
-    final seen = <String>{};
+    final sorted = [...exercises]
+      ..sort((a, b) => a.exerciseOrder.compareTo(b.exerciseOrder));
     final slots = <SessionDetailExerciseSlot>[];
-
-    final order = session?.exerciseOrder;
-    if (order != null && order.isNotEmpty) {
-      try {
-        final parsed = jsonDecode(order) as List<dynamic>;
-        for (final raw in parsed) {
-          final ids =
-              ((raw as Map<String, dynamic>)['exerciseIds'] as List<dynamic>)
-                  .cast<String>();
-          for (final id in ids) {
-            // Only name exercises that actually have rows in this session.
-            if (sets.any((s) => s.exerciseId == id) && seen.add(id)) {
-              slots.add(
-                SessionDetailExerciseSlot(
-                  groupOrder: slots.length + 1,
-                  exerciseId: id,
-                ),
-              );
-            }
-          }
-        }
-      } catch (_) {
-        // Malformed blob — fall through to set order.
-      }
-    }
-
-    for (final s in sets) {
-      if (seen.add(s.exerciseId)) {
-        slots.add(
-          SessionDetailExerciseSlot(
-            groupOrder: slots.length + 1,
-            exerciseId: s.exerciseId,
-          ),
-        );
-      }
+    var order = 1;
+    for (final e in sorted) {
+      final exerciseId = e.exerciseId;
+      if (exerciseId == null) continue;
+      slots.add(
+        SessionDetailExerciseSlot(
+          groupOrder: order++,
+          exerciseId: exerciseId,
+          sessionExerciseId: e.sessionExerciseId,
+        ),
+      );
     }
     return slots;
   }
 
-  Map<int, List<SessionSet>> _groupByOrder(
-    List<SessionSet> sets,
+  Map<int, List<SessionExerciseSet>> _groupByOrder(
+    List<SessionExerciseSet> sets,
     List<SessionDetailExerciseSlot> slots,
   ) {
-    final map = <int, List<SessionSet>>{};
+    final map = <int, List<SessionExerciseSet>>{};
     for (final slot in slots) {
       map[slot.groupOrder] = [];
     }
@@ -231,17 +202,20 @@ class SessionDetailViewModel {
 
   Future<void> load(String sessionId) async {
     state.value = state.value.copyWith(isLoading: true, clearError: true);
-    // Fast path: the workout + its own sets are all the screen needs to render.
-    // The heavy queries (full past-sets timeline, exercise catalog) load in
-    // the background and populate lessons/history/PR data without blocking.
+    // Fast path: the workout + its own exercise rows and sets are all the
+    // screen needs to render. The heavy queries (full past-sets timeline,
+    // exercise catalog) load in the background and populate
+    // lessons/history/PR data without blocking.
     try {
       final results = await Future.wait([
         _sessionRepo.fetchSession(sessionId),
+        _sessionRepo.loadSessionExercises(sessionId),
         _sessionRepo.loadSetsForSession(sessionId),
       ]);
-      final sets = results[1] as List<SessionSet>;
+      final exercises = results[1] as List<SessionExercise>;
+      final sets = results[2] as List<SessionExerciseSet>;
       final session = results[0] as Session?;
-      final slots = _buildSlots(sets, session);
+      final slots = _buildSlots(exercises);
       state.value = state.value.copyWith(
         isLoading: false,
         session: session,
@@ -255,22 +229,15 @@ class SessionDetailViewModel {
   }
 
   /// Loads the heavier cross-session context in the background: full history
-  /// (for PRs + the history picker), the exercise catalog, variations, and
-  /// bridge counts. Renders whatever's ready; the screen doesn't block on it.
+  /// (for PRs + the history picker), the exercise catalog, and variations.
+  /// Renders whatever's ready; the screen doesn't block on it.
   Future<void> _loadHeavyContext() async {
     try {
       final results = await Future.wait([
         _exerciseRepo.fetchExerciseDetailMap(_userId),
         _sessionRepo.loadPastSetsTimeline(_userId),
         _exerciseRepo.fetchVariations(_userId),
-        _exerciseRepo.fetchBridges(_userId),
       ]);
-      final bridges = results[3] as List<Map<String, dynamic>>;
-      final counts = <String, int>{};
-      for (final b in bridges) {
-        final varId = b['custom_variation_id'] as String;
-        counts[varId] = (counts[varId] ?? 0) + 1;
-      }
       state.value = state.value.copyWith(
         exerciseDetailMap: results[0] as Map<String, ExerciseDetail>,
         historyByExercise: groupHistoryByExercise(
@@ -278,7 +245,6 @@ class SessionDetailViewModel {
         ),
         pastSetsLoaded: true,
         allVariations: results[2] as List<CustomVariation>,
-        variationExerciseCounts: counts,
       );
       _computePRs();
     } catch (_) {
@@ -311,34 +277,53 @@ class SessionDetailViewModel {
       for (final set in e.value) {
         combined.add(
           PastSetRow(
-            sessionSetId: set.sessionSetId,
+            sessionExerciseSetId: set.sessionExerciseSetId,
+            sessionExerciseId: set.sessionExerciseId,
             sessionId: set.sessionId,
             userId: set.userId,
             exerciseId: set.exerciseId,
             setNumber: set.setNumber,
             reps: set.reps,
-            sessionCreatedDate: s.session?.createdDate ?? DateTime.now(),
+            sessionCreatedDate: s.session?.createdDatetime ?? DateTime.now(),
             variationId: set.variationId,
             weight: set.weight,
             notes: set.notes,
             exerciseName: set.exerciseName,
             variationName: set.variationName,
-            supersetGroupNumber: set.supersetGroupNumber,
           ),
         );
       }
     }
 
-    final records = thisWorkoutId != null
-        ? prsForWorkout(combined, thisWorkoutId)
+    final allRecords = thisWorkoutId != null
+        ? fullPrTimeline(combined)
         : <PrRecord>[];
+    // Before-maps for the summary tab: each record's previous best on its
+    // axis (history OR an earlier set in this session), keyed per source
+    // set — mirrors SessionViewModel's reflection before-tracking.
+    // Achieved-only: propagated records never chain.
+    if (thisWorkoutId != null) {
+      final before = sessionBeforeMaps(achievedRecords(allRecords), thisWorkoutId);
+      _prevRepMax = before.repMax;
+      _prevWeightMax = before.weightMax;
+    }
+    // Display list: explicit records only — the summary shows what the user
+    // directly achieved, not the knock-on records the engine inferred.
+    final records = thisWorkoutId != null
+        ? achievedRecords(allRecords)
+            .where((p) => p.sessionId == thisWorkoutId)
+            .toList()
+        : <PrRecord>[];
+    // Counts: explicit rep-max only — weight-max (bodyweight included) is
+    // display-only trivia, never a count.
+    final countable = countableRecords(records);
     final prs = <String, int>{};
-    for (final pr in records) {
+    for (final pr in countable) {
       prs[pr.exerciseId] = (prs[pr.exerciseId] ?? 0) + 1;
     }
     state.value = state.value.copyWith(
       prsByExercise: prs,
-      totalPRCount: records.length,
+      totalPRCount: countable.length,
       prRecords: records,
     );
   }
@@ -346,14 +331,51 @@ class SessionDetailViewModel {
   int prCountFor(String exerciseId) =>
       state.value.prsByExercise[exerciseId] ?? 0;
 
+  /// The records the PRs pill should DISPLAY for an exercise — every
+  /// achieved record (rep-max and weight-max). The pill count stays
+  /// rep-max-only, but weight-max-only sessions still open the modal.
+  List<PrRecord> displayPrsFor(String exerciseId) =>
+      state.value.prRecords
+          .where((p) => p.exerciseId == exerciseId)
+          .toList();
+
+  /// Before-maps for the summary tab's PR rows — keyed per source set so two
+  /// records on the same axis in one session each keep their own before.
+  Map<(String, String?, int, String?), PrRecord?> _prevRepMax = {};
+  Map<(String, String?, num, String?), PrRecord?> _prevWeightMax = {};
+
+  /// The record a summary PR beat on its axis — history OR an earlier set in
+  /// this session. Null means "first PR". Mirrors
+  /// `SessionViewModel.previousForReflection`.
+  PrRecord? summaryPreviousFor(PrRecord p) {
+    if (p.type == PrType.repMax) {
+      final key = (
+        p.exerciseId,
+        p.variationId,
+        p.targetReps ?? p.reps.toInt(),
+        p.sessionExerciseSetId,
+      );
+      return _prevRepMax[key];
+    }
+    final key = (
+      p.exerciseId,
+      p.variationId,
+      p.targetWeight ?? p.weight,
+      p.sessionExerciseSetId,
+    );
+    return _prevWeightMax[key];
+  }
+
   Future<void> _reloadSets(String sessionId) async {
+    final exercises = await _sessionRepo.loadSessionExercises(sessionId);
     final sets = await _sessionRepo.loadSetsForSession(sessionId);
-    final existingSlots = state.value.exerciseSlots;
+    final slots = _buildSlots(exercises);
     // History derives from the same timeline — reload it too, otherwise the
     // History picker shows the pre-edit version of the workout being edited.
     final timeline = await _sessionRepo.loadPastSetsTimeline(_userId);
     state.value = state.value.copyWith(
-      setsByOrder: _groupByOrder(sets, existingSlots),
+      exerciseSlots: slots,
+      setsByOrder: _groupByOrder(sets, slots),
       historyByExercise: groupHistoryByExercise(timeline),
       clearSessionSetDrafts: true,
     );
@@ -389,19 +411,19 @@ class SessionDetailViewModel {
       for (final set in sets) {
         combined.add(
           PastSetRow(
-            sessionSetId: set.sessionSetId,
+            sessionExerciseSetId: set.sessionExerciseSetId,
+            sessionExerciseId: set.sessionExerciseId,
             sessionId: set.sessionId,
             userId: set.userId,
             exerciseId: set.exerciseId,
             setNumber: set.setNumber,
             reps: set.reps,
-            sessionCreatedDate: s.session?.createdDate ?? DateTime.now(),
+            sessionCreatedDate: s.session?.createdDatetime ?? DateTime.now(),
             variationId: set.variationId,
             weight: set.weight,
             notes: set.notes,
             exerciseName: set.exerciseName,
             variationName: set.variationName,
-            supersetGroupNumber: set.supersetGroupNumber,
           ),
         );
       }
@@ -472,25 +494,48 @@ class SessionDetailViewModel {
       newActive = s.activeSlotIndex + 1;
     }
     state.value = s.copyWith(exerciseSlots: slots, activeSlotIndex: newActive);
-    // Persist the arrangement back to the session's exercise_order so a
-    // reorder made here sticks for the live viewer's restore too.
+    // Persist the arrangement back to fact_session_exercise.exercise_order so
+    // a reorder made here sticks for the live viewer's restore too.
     final w = state.value.session;
     if (w != null) {
-      _sessionRepo.saveExerciseOrder(
+      _sessionRepo.reorderSessionExercises(
         w.sessionId,
-        jsonEncode([
+        [
           for (final slot in state.value.exerciseSlots)
-            {
-              'id': slot.groupOrder,
-              'type': 'single',
-              'exerciseIds': [slot.exerciseId],
-            },
-        ]),
+            if (slot.sessionExerciseId != null) slot.sessionExerciseId!,
+        ],
       );
     }
   }
 
-  void addExerciseGroup(String exerciseId) {
+  /// The session-exercise row for [exerciseId], creating one (with the next
+  /// exercise_order) when the exercise doesn't have a row yet — the
+  /// past-session editor's add-exercise path.
+  Future<String?> _ensureSessionExercise(String exerciseId) async {
+    final w = state.value.session;
+    if (w == null) return null;
+    final existing = state.value.exerciseSlots.firstWhereOrNull(
+      (sl) => sl.exerciseId == exerciseId,
+    );
+    if (existing?.sessionExerciseId != null) {
+      return existing!.sessionExerciseId;
+    }
+    final nextOrder = state.value.exerciseSlots.isEmpty
+        ? 1
+        : state.value.exerciseSlots
+                  .map((sl) => sl.groupOrder)
+                  .reduce((a, b) => a > b ? a : b) +
+              1;
+    final row = await _sessionRepo.insertSessionExercise(
+      sessionId: w.sessionId,
+      userId: _userId,
+      exerciseId: exerciseId,
+      exerciseOrder: nextOrder,
+    );
+    return row.sessionExerciseId;
+  }
+
+  Future<void> addExerciseGroup(String exerciseId) async {
     final s = state.value;
     final existingIndex = s.exerciseSlots.indexWhere(
       (sl) => sl.exerciseId == exerciseId,
@@ -499,15 +544,21 @@ class SessionDetailViewModel {
       state.value = s.copyWith(activeSlotIndex: existingIndex);
       return;
     }
+    // Persist the exercise row immediately so the tab survives a reload.
+    final sessionExerciseId = await _ensureSessionExercise(exerciseId);
     final nextOrder = s.exerciseSlots.isEmpty
         ? 1
-        : s.exerciseSlots
-                  .map((sl) => sl.groupOrder)
-                  .reduce((a, b) => a > b ? a : b) +
+        : s.exerciseSlots.map((sl) => sl.groupOrder).reduce(
+              (a, b) => a > b ? a : b,
+            ) +
               1;
     final slots = [
       ...s.exerciseSlots,
-      SessionDetailExerciseSlot(groupOrder: nextOrder, exerciseId: exerciseId),
+      SessionDetailExerciseSlot(
+        groupOrder: nextOrder,
+        exerciseId: exerciseId,
+        sessionExerciseId: sessionExerciseId,
+      ),
     ];
     final drafts = Map<int, List<int>>.from(s.workoutSetDrafts);
     drafts.putIfAbsent(nextOrder, () => []).add(_nextDraftId++);
@@ -527,9 +578,18 @@ class SessionDetailViewModel {
     final s = state.value;
     if (index < 0 || index >= s.exerciseSlots.length) return;
     final slot = s.exerciseSlots[index];
-    final sets = List<SessionSet>.of(s.setsFor(slot.groupOrder));
+    final sets = List<SessionExerciseSet>.of(s.setsFor(slot.groupOrder));
     for (final set in sets) {
-      await deleteSetCascade(set.sessionSetId, set.exerciseId);
+      await deleteSetCascade(
+        set.sessionExerciseSetId,
+        set.exerciseId ?? slot.exerciseId,
+      );
+    }
+    final rowId = slot.sessionExerciseId;
+    if (rowId != null) {
+      try {
+        await _sessionRepo.deleteSessionExercise(rowId);
+      } catch (_) {}
     }
     final slots = [...state.value.exerciseSlots]..removeAt(index);
     int newActive = state.value.activeSlotIndex;
@@ -547,27 +607,27 @@ class SessionDetailViewModel {
   /// "+ ADD SET" in edit mode pre-creates an empty set in the DB so it
   /// survives hot restarts. Empty sets are NOT purged here — they were
   /// intentionally added by the user editing a finished workout.
-  void addDraftSet(int groupOrder) {
+  Future<void> addDraftSet(int groupOrder) async {
     final w = state.value.session;
     if (w == null) return;
+    final slot = state.value.exerciseSlots.firstWhere(
+      (s) => s.groupOrder == groupOrder,
+    );
+    final sessionExerciseId = await _ensureSessionExercise(slot.exerciseId);
+    if (sessionExerciseId == null) return;
     final existing = state.value.setsFor(groupOrder);
     final nextNum = existing.isEmpty
         ? 1
         : existing.map((s) => s.setNumber).reduce((a, b) => a > b ? a : b) + 1;
-    final slot = state.value.exerciseSlots.firstWhere(
-      (s) => s.groupOrder == groupOrder,
+    await _sessionRepo.insertSet(
+      sessionExerciseId: sessionExerciseId,
+      sessionId: w.sessionId,
+      userId: _userId,
+      setNumber: nextNum,
+      weight: null,
+      reps: const [],
     );
-    _sessionRepo
-        .insertSet(
-          sessionId: w.sessionId,
-          userId: _userId,
-          exerciseId: slot.exerciseId,
-          exerciseName: _exerciseName(slot.exerciseId),
-          setNumber: nextNum,
-          weight: null,
-          reps: [],
-        )
-        .then((_) => _reloadSets(w.sessionId));
+    await _reloadSets(w.sessionId);
   }
 
   void removeDraftSet(int groupOrder, int draftId) {
@@ -592,18 +652,18 @@ class SessionDetailViewModel {
   }) async {
     final w = state.value.session;
     if (w == null) return false;
+    final sessionExerciseId = await _ensureSessionExercise(exerciseId);
+    if (sessionExerciseId == null) return false;
     final existing = state.value.setsFor(groupOrder);
     final nextNum = existing.isEmpty
         ? 1
         : existing.map((s) => s.setNumber).reduce((a, b) => a > b ? a : b) + 1;
     try {
       await _sessionRepo.insertSet(
+        sessionExerciseId: sessionExerciseId,
         sessionId: w.sessionId,
         userId: _userId,
-        exerciseId: exerciseId,
-        exerciseName: _exerciseName(exerciseId),
         variationId: variationId,
-        variationName: _variationName(exerciseId, variationId),
         setNumber: nextNum,
         weight: weight,
         reps: reps,
@@ -620,7 +680,7 @@ class SessionDetailViewModel {
   }
 
   Future<void> quickUpdateSet(
-    SessionSet set, {
+    SessionExerciseSet set, {
     double? weight,
     bool clearWeight = false,
     List<num>? reps,
@@ -633,7 +693,7 @@ class SessionDetailViewModel {
     if (w == null) return;
     try {
       await _sessionRepo.updateSet(
-        set.sessionSetId,
+        set.sessionExerciseSetId,
         weight: weight,
         clearWeight: clearWeight,
         reps: reps,
@@ -643,39 +703,38 @@ class SessionDetailViewModel {
         clearNotes: clearNotes,
       );
       await _reloadSets(w.sessionId);
-      await recomputeExercisePRs(set.exerciseId);
+      final exerciseId = set.exerciseId;
+      if (exerciseId != null) await recomputeExercisePRs(exerciseId);
     } catch (e) {
       state.value = state.value.copyWith(error: e.toString());
     }
   }
 
-  Future<void> duplicateSet(SessionSet set) async {
+  Future<void> duplicateSet(SessionExerciseSet set) async {
     final w = state.value.session;
     if (w == null) return;
+    final exerciseId = set.exerciseId;
+    if (exerciseId == null) return;
     final existing = state.value.setsFor(
       state.value.exerciseSlots
-          .firstWhere((sl) => sl.exerciseId == set.exerciseId)
+          .firstWhere((sl) => sl.exerciseId == exerciseId)
           .groupOrder,
     );
     final nextNum =
         existing.map((s) => s.setNumber).reduce((a, b) => a > b ? a : b) + 1;
     try {
       await _sessionRepo.insertSet(
+        sessionExerciseId: set.sessionExerciseId,
         sessionId: w.sessionId,
         userId: _userId,
-        exerciseId: set.exerciseId,
-        exerciseName: set.exerciseName ?? _exerciseName(set.exerciseId),
         variationId: set.variationId,
-        variationName:
-            set.variationName ??
-            _variationName(set.exerciseId, set.variationId),
         setNumber: nextNum,
         weight: set.weight,
         reps: set.reps,
         notes: set.notes,
       );
       await _reloadSets(w.sessionId);
-      await recomputeExercisePRs(set.exerciseId);
+      await recomputeExercisePRs(exerciseId);
     } catch (e) {
       state.value = state.value.copyWith(error: e.toString());
     }
@@ -686,10 +745,10 @@ class SessionDetailViewModel {
   /// deletes from the DB and reloads as the source of truth.
   Future<void> _deleteSetFromState(String setId) async {
     final s = state.value;
-    final newSetsByOrder = <int, List<SessionSet>>{};
+    final newSetsByOrder = <int, List<SessionExerciseSet>>{};
     for (final e in s.setsByOrder.entries) {
       newSetsByOrder[e.key] = e.value
-          .where((x) => x.sessionSetId != setId)
+          .where((x) => x.sessionExerciseSetId != setId)
           .toList();
     }
     state.value = s.copyWith(setsByOrder: newSetsByOrder);
@@ -717,14 +776,27 @@ class SessionDetailViewModel {
   List<({String id, String name, int exerciseCount})> findSimilarVariations(
     String name,
   ) {
+    // Variations are a flat library (no exercise assignment since schema v2) —
+    // "used in N exercises" is derived from history.
+    final usedWith = <String, Set<String>>{};
+    for (final sessions in state.value.historyByExercise.values) {
+      for (final session in sessions) {
+        for (final s in session.sets) {
+          final vid = s.variationId;
+          final exId = s.exerciseId;
+          if (vid != null && exId != null) {
+            usedWith.putIfAbsent(vid, () => {}).add(exId);
+          }
+        }
+      }
+    }
     final results = <({String id, String name, int exerciseCount})>[];
     for (final v in state.value.allVariations) {
       if (isSimilarVariationName(name, v.name)) {
         results.add((
           id: v.variationId,
           name: v.name,
-          exerciseCount:
-              state.value.variationExerciseCounts[v.variationId] ?? 0,
+          exerciseCount: usedWith[v.variationId]?.length ?? 0,
         ));
       }
     }
@@ -734,16 +806,9 @@ class SessionDetailViewModel {
   Future<void> _reloadCatalog() async {
     final map = await _exerciseRepo.fetchExerciseDetailMap(_userId);
     final variations = await _exerciseRepo.fetchVariations(_userId);
-    final bridges = await _exerciseRepo.fetchBridges(_userId);
-    final counts = <String, int>{};
-    for (final b in bridges) {
-      final varId = b['custom_variation_id'] as String;
-      counts[varId] = (counts[varId] ?? 0) + 1;
-    }
     state.value = state.value.copyWith(
       exerciseDetailMap: map,
       allVariations: variations,
-      variationExerciseCounts: counts,
     );
   }
 
@@ -792,8 +857,7 @@ class SessionDetailViewModel {
             .where((v) => v.variationId == useExistingId)
             .firstOrNull;
         if (existing != null) {
-          // Reusing an archived variation must bring it back — the bridge
-          // alone would point at a variation nothing displays.
+          // Reusing an archived variation must bring it back.
           await _exerciseRepo.reactivateVariation(id);
         }
       } else {
@@ -813,7 +877,6 @@ class SessionDetailViewModel {
           id = variation.variationId;
         }
       }
-      await _exerciseRepo.addBridge(_userId, exerciseId, id);
       await _reloadCatalog();
       state.value = state.value.copyWith(newVarCreating: false);
       return id;
@@ -829,7 +892,7 @@ class SessionDetailViewModel {
   // ── Lessons ────────────────────────────────────────────────────────────────
 
   /// All active variations, most recently used first — the set-row picker
-  /// order. Variations are shared across ALL of a user's exercises now.
+  /// order. Variations are a flat per-user library.
   List<CustomVariation> get variationsByRecency {
     final last = <String, DateTime>{};
     for (final sessions in state.value.historyByExercise.values) {
@@ -950,14 +1013,6 @@ class SessionDetailViewModel {
 
   String? _exerciseName(String exerciseId) =>
       state.value.exerciseDetailMap[exerciseId]?.name;
-
-  String? _variationName(String exerciseId, String? variationId) {
-    if (variationId == null) return null;
-    return state.value.exerciseDetailMap[exerciseId]?.assignedVariations
-        .where((v) => v.variationId == variationId)
-        .map((v) => v.name)
-        .firstOrNull;
-  }
 
   void dispose() => state.dispose();
 }

@@ -4,7 +4,7 @@ import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_fonts.dart';
 import '../../core/styles/app_radius.dart';
 import '../../core/utils/session_format.dart';
-import '../../data/models/planned_session_set.dart';
+import '../../data/models/planned_session_exercise_set.dart';
 import '../../features/session/view/notes_modal.dart';
 import '../utils/pop_dialog.dart';
 import 'dropdown_select.dart';
@@ -100,7 +100,7 @@ class SessionSetRow extends StatefulWidget {
   final String? initialNotes;
   final bool hasNotes;
 
-  final PlannedSessionSet? plannedTarget;
+  final PlannedSessionExerciseSet? plannedTarget;
   final bool isPr;
   final bool readOnly;
 

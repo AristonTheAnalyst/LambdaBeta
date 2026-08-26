@@ -13,7 +13,6 @@ import '../../../../data/models/exercise_usage.dart';
 import '../../../../shared/widgets/glass_button.dart';
 import '../../../../shared/widgets/lambda_button.dart';
 import '../../../../shared/widgets/lambda_input.dart';
-import '../../../../shared/widgets/multi_select_sheet.dart';
 import '../../../../shared/widgets/page_header.dart';
 import '../../../../shared/widgets/slide_tab_bar.dart';
 import '../../../../shared/widgets/slide_tab_view.dart';
@@ -115,50 +114,7 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
       child: _EditVariationModal(
         controller: _editVarController,
         viewModel: _viewModel,
-        onAddExercises: _openAddExercisesToVariation,
-        onCreateNewExercise: _openCreateExerciseFromEditVar,
         onDelete: _confirmDeleteVariation,
-      ),
-    );
-  }
-
-  Future<void> _openAddExercisesToVariation() async {
-    final s = _viewModel.state.value;
-    final options = s.editVarAvailableExs
-        .map(
-          (e) => MultiSelectOption(
-            label: toProperCase(e.name),
-            value: e.exerciseId,
-          ),
-        )
-        .toList();
-
-    final selected = await showMultiSelectSheet<String>(
-      context,
-      options: options,
-      selected: [],
-      title: 'Add Exercises',
-      searchable: true,
-      confirmLabel: 'Add',
-      onCreateNew: _openCreateExerciseFromEditVar,
-      createNewLabel: 'New exercise',
-    );
-    if (selected != null && selected.isNotEmpty) {
-      _viewModel.addEditVarExIds(selected);
-    }
-  }
-
-  void _openCreateExerciseFromEditVar() {
-    _createExController.clear();
-    _viewModel.openCreateExercise();
-    showLambdaModal(
-      context,
-      fitContent: true,
-      keyboardAware: true,
-      child: _CreateExerciseModal(
-        controller: _createExController,
-        viewModel: _viewModel,
-        onCreated: (id) => _viewModel.addEditVarExIds([id]),
       ),
     );
   }
@@ -700,12 +656,10 @@ class _CreateExerciseModal extends StatelessWidget {
   const _CreateExerciseModal({
     required this.controller,
     required this.viewModel,
-    this.onCreated,
   });
 
   final TextEditingController controller;
   final ExerciseViewModel viewModel;
-  final ValueChanged<String>? onCreated;
 
   @override
   Widget build(BuildContext context) {
@@ -860,15 +814,11 @@ class _EditVariationModal extends StatelessWidget {
   const _EditVariationModal({
     required this.controller,
     required this.viewModel,
-    required this.onAddExercises,
-    required this.onCreateNewExercise,
     required this.onDelete,
   });
 
   final TextEditingController controller;
   final ExerciseViewModel viewModel;
-  final VoidCallback onAddExercises;
-  final VoidCallback onCreateNewExercise;
   final void Function(String id, String name) onDelete;
 
   @override
@@ -915,76 +865,6 @@ class _EditVariationModal extends StatelessWidget {
                   onChanged: viewModel.setEditVarName,
                 ),
                 const SizedBox(height: AppSpacing.lg),
-                Divider(color: AppColors.border),
-                const SizedBox(height: AppSpacing.sm),
-                Text(
-                  'Assigned Exercises',
-                  style: AppFonts.ui(
-                    fontSize: AppTextStyles.md,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.primary,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                if (state.editVarLoadingExs)
-                  Center(
-                    child: CircularProgressIndicator(color: AppColors.accent),
-                  )
-                else if (state.editVarAssignedExs.isEmpty)
-                  Text(
-                    'No exercises assigned yet.',
-                    style: AppFonts.ui(
-                      color: AppColors.muted,
-                      fontSize: AppTextStyles.sm,
-                    ),
-                  )
-                else
-                  ...state.editVarAssignedExs.asMap().entries.map((e) {
-                    final ex = e.value;
-                    return Container(
-                      padding: const EdgeInsets.symmetric(
-                        vertical: AppSpacing.sm,
-                      ),
-                      decoration: BoxDecoration(
-                        border: Border(
-                          bottom: BorderSide(
-                            color: e.key < state.editVarAssignedExs.length - 1
-                                ? AppColors.border
-                                : Colors.transparent,
-                            width: 0.5,
-                          ),
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              toProperCase(ex.name),
-                              style: AppFonts.ui(
-                                fontSize: AppTextStyles.md,
-                                color: AppColors.primary,
-                              ),
-                            ),
-                          ),
-                          GlassButton(
-                            label: '',
-                            icon: Icons.delete_outline,
-                            color: AppColors.danger,
-                            compact: true,
-                            onPressed: () =>
-                                viewModel.removeEditVarExId(ex.exerciseId),
-                          ),
-                        ],
-                      ),
-                    );
-                  }),
-                const SizedBox(height: AppSpacing.sm),
-                GlassButton(
-                  label: 'Add Exercises',
-                  icon: Icons.add,
-                  onPressed: onAddExercises,
-                ),
-                const SizedBox(height: AppSpacing.lg),
                 Row(
                   children: [
                     Expanded(
@@ -1018,7 +898,7 @@ class _EditVariationModal extends StatelessWidget {
                                   ),
                                 ),
                                 content: Text(
-                                  'Past sets keep the name as logged; only future sets use the new name.',
+                                  'This updates the variation name everywhere — all past sessions included.',
                                   style: AppFonts.ui(color: AppColors.muted),
                                 ),
                                 actions: [
