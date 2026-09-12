@@ -241,7 +241,7 @@ Full spec: `docs/pr_methodology.md`.
 - Fonts: `AppFonts.ui` (Manrope), `AppFonts.mono` (JetBrains Mono)
 - Spacing: `AppSpacing` (xs=4, sm=8, md=12, lg=16, xl=24, xxl=32)
 - Radius: `AppRadius` (md=8, lg=12)
-- Text sizes: `AppTextStyles` (xs=11, sm=13, md=15, lg=17, xl=20, xxl=28)
+- Text sizes: `AppTextStyles` (xs=12, sm=14, md=16, lg=18, xl=22, xxl=30)
 
 ## Key Conventions
 

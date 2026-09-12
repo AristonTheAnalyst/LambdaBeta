@@ -107,7 +107,7 @@ class _DobSheetState extends State<_DobSheet> {
                       d,
                       textAlign: TextAlign.center,
                       style: AppFonts.mono(
-                        fontSize: 9,
+                        fontSize: 13,
                         color: AppColors.muted,
                       ),
                     ),
@@ -130,7 +130,7 @@ class _DobSheetState extends State<_DobSheet> {
                     : DateFormat('d MMMM yyyy').format(_picked!),
                 textAlign: TextAlign.center,
                 style: AppFonts.mono(
-                  fontSize: 11,
+                  fontSize: 13,
                   color: _picked == null ? AppColors.muted : AppColors.primary,
                 ),
               ),
@@ -169,14 +169,14 @@ class _DobSheetState extends State<_DobSheet> {
     return GestureDetector(
       onTap: enabled ? onTap : null,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: lambdaBox(
           enabled ? ContainerTone.ghost : ContainerTone.field,
           radius: AppRadius.md,
         ),
         child: Icon(
           icon,
-          size: 16,
+          size: 20,
           color: enabled ? AppColors.primary : AppColors.muted,
         ),
       ),
@@ -237,7 +237,7 @@ class _DobSheetState extends State<_DobSheet> {
             '${d.day}',
             textAlign: TextAlign.center,
             style: AppFonts.mono(
-              fontSize: 11,
+              fontSize: 13,
               fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
               color: fg,
             ),

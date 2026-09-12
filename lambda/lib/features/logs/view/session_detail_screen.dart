@@ -15,6 +15,7 @@ import '../../../shared/widgets/planned_banner.dart';
 import '../../../shared/widgets/reflection_summary.dart';
 import '../../../shared/widgets/segmented_control.dart';
 import '../../../shared/widgets/session_bookend.dart';
+import '../../../shared/widgets/session_identity_card.dart';
 import '../../../shared/widgets/container_styles.dart';
 import '../../../shared/widgets/session_exercise_card.dart';
 import '../../../shared/widgets/session_set_row.dart';
@@ -155,16 +156,21 @@ class SessionDetailView extends StatefulWidget {
 }
 
 class _SessionDetailViewState extends State<SessionDetailView> {
-  /// Which of the two surfaces is shown: the pre/PRS/lessons/post summary,
-  /// or the sets (details). Plain UI state — no VM involvement.
-  String _tab = 'summary';
+  /// Which of the three surfaces is shown: the session's PR events, the
+  /// sets (details), or the pre/lessons/post reflection. Plain UI state —
+  /// no VM involvement.
+  String _tab = 'reflection';
 
   @override
   Widget build(BuildContext context) {
     final viewModel = widget.viewModel;
     final state = widget.state;
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        // The session identity card sits at the very top — the same
+        // position as the planned-session picker on the training page,
+        // above the tab toggle.
         Padding(
           padding: const EdgeInsets.fromLTRB(
             AppSpacing.lg,
@@ -172,10 +178,22 @@ class _SessionDetailViewState extends State<SessionDetailView> {
             AppSpacing.lg,
             AppSpacing.xs,
           ),
+          child: SessionIdentityCard(
+            plannedName: state.session?.plannedSessionName,
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.lg,
+            AppSpacing.sm,
+            AppSpacing.lg,
+            AppSpacing.xs,
+          ),
           child: SegmentedControl<String>(
             options: const [
-              SegmentOption(label: 'Summary', value: 'summary'),
+              SegmentOption(label: 'PRs', value: 'prs'),
               SegmentOption(label: 'Details', value: 'details'),
+              SegmentOption(label: 'Reflection', value: 'reflection'),
             ],
             value: _tab,
             onChange: (v) => setState(() => _tab = v),
@@ -187,8 +205,11 @@ class _SessionDetailViewState extends State<SessionDetailView> {
   }
 
   Widget _body(SessionDetailViewModel viewModel, SessionDetailState state) {
-    if (_tab == 'summary') {
-      return _SessionSummaryBody(viewModel: viewModel, state: state);
+    if (_tab == 'reflection') {
+      return _SessionReflectionBody(viewModel: viewModel, state: state);
+    }
+    if (_tab == 'prs') {
+      return _SessionPrsBody(viewModel: viewModel, state: state);
     }
     if (state.exerciseSlots.isEmpty) {
       return Center(
@@ -200,6 +221,7 @@ class _SessionDetailViewState extends State<SessionDetailView> {
     }
 
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Expanded(
           child: SingleChildScrollView(
@@ -212,18 +234,6 @@ class _SessionDetailViewState extends State<SessionDetailView> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                if (state.session?.plannedSessionName != null)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 6),
-                    child: Text(
-                      state.session!.plannedSessionName!,
-                      style: AppFonts.mono(
-                        fontSize: 10,
-                        letterSpacing: 0.6,
-                        color: AppColors.planned,
-                      ),
-                    ),
-                  ),
                 if (state.activeSlot != null)
                   _DetailCardBuilder(
                     viewModel: viewModel,
@@ -283,14 +293,14 @@ class _SessionDetailViewState extends State<SessionDetailView> {
   }
 }
 
-// ── Summary tab ───────────────────────────────────────────────────────────────
+// ── Reflection tab ────────────────────────────────────────────────────────────
 
 /// The session's bookends and reflection — the same layout as the prep
 /// page's LAST SESSION card, minus its date row and session pager (this
 /// screen is a focused view of one session). Order per spec: pre-training
-/// data, then PRS + LESSONS, then post-training data.
-class _SessionSummaryBody extends StatelessWidget {
-  const _SessionSummaryBody({required this.viewModel, required this.state});
+/// data, then LESSONS, then post-training data.
+class _SessionReflectionBody extends StatelessWidget {
+  const _SessionReflectionBody({required this.viewModel, required this.state});
 
   final SessionDetailViewModel viewModel;
   final SessionDetailState state;
@@ -299,11 +309,6 @@ class _SessionSummaryBody extends StatelessWidget {
   Widget build(BuildContext context) {
     final session = state.session;
 
-    // PR events grouped by exercise.
-    final prsByExercise = <String, List<PrEvent>>{};
-    for (final p in state.prEvents) {
-      prsByExercise.putIfAbsent(p.exerciseId, () => []).add(p);
-    }
     // Session-scoped lessons only — mirrors the prep card, where only
     // lessons born in the shown session count toward its preview.
     final lessonsByExercise = <String, List<String>>{};
@@ -355,15 +360,16 @@ class _SessionSummaryBody extends StatelessWidget {
             ),
           ),
           const SizedBox(height: AppSpacing.md),
-          // The PRS and LESSONS sections — the sections carry their own
-          // empty notes.
+          // The LESSONS section — PRs moved to their own tab. The section
+          // carries its own empty note.
           AppCard(
             padding: const EdgeInsets.all(AppSpacing.md),
             child: ReflectionSummary(
               exerciseIds: exerciseIds,
-              prsByExercise: prsByExercise,
+              prsByExercise: const {},
               lessonsByExercise: lessonsByExercise,
               exerciseNameFor: viewModel.exerciseDisplayName,
+              showPrs: false,
             ),
           ),
           const SizedBox(height: AppSpacing.md),
@@ -387,6 +393,47 @@ class _SessionSummaryBody extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ── PRs tab ───────────────────────────────────────────────────────────────────
+
+/// The PRs tab — the session's PR events only, one card per event grouped
+/// under its exercise (the same ReflectionSummary section styling as the
+/// live reflection page).
+class _SessionPrsBody extends StatelessWidget {
+  const _SessionPrsBody({required this.viewModel, required this.state});
+
+  final SessionDetailViewModel viewModel;
+  final SessionDetailState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final prsByExercise = <String, List<PrEvent>>{};
+    for (final p in state.prEvents) {
+      prsByExercise.putIfAbsent(p.exerciseId, () => []).add(p);
+    }
+    final exerciseIds = [
+      for (final sl in state.exerciseSlots) sl.exerciseId,
+    ];
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.lg,
+        AppSpacing.md,
+        AppSpacing.lg,
+        AppSpacing.xxl,
+      ),
+      child: AppCard(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        child: ReflectionSummary(
+          exerciseIds: exerciseIds,
+          prsByExercise: prsByExercise,
+          lessonsByExercise: const {},
+          exerciseNameFor: viewModel.exerciseDisplayName,
+          showLessons: false,
+        ),
       ),
     );
   }
@@ -697,8 +744,10 @@ class _DetailCardBuilder extends StatelessWidget {
               prs: viewModel.displayPrsFor(exerciseId),
             )
           : null,
-      // PLANNED badge → the planned card outline, like the live screen.
-      planned: state.session?.plannedSessionId != null,
+      // The viewer no longer outlines the card in planned blue — the
+      // session's planned source lives in the identity card above the
+      // stats bar.
+      planned: false,
       rows: rows,
       onAddSet: state.isEditing ? () => viewModel.addDraftSet(order) : null,
       history: history,
@@ -730,6 +779,8 @@ class _DetailCardBuilder extends StatelessWidget {
         findSimilarVariations: viewModel.findSimilarVariations,
         submitNewVariation: viewModel.submitNewVariation,
       ),
+      // The picker tiles show each past session's PR count.
+      isPrSet: (setId) => state.prEventSetIds.contains(setId),
     );
   }
 }
@@ -930,7 +981,7 @@ class _DetailAddExerciseContentState extends State<_DetailAddExerciseContent> {
                 Text(
                   'Added',
                   style: AppFonts.mono(
-                    fontSize: 9,
+                    fontSize: 13,
                     letterSpacing: 0.4,
                     color: AppColors.success,
                   ),

@@ -203,13 +203,13 @@ class SessionStatsBar extends StatelessWidget {
         children: [
           Text('$label:',
               style: AppFonts.mono(
-                  fontSize: 11,
+                  fontSize: 13,
                   letterSpacing: 0.8,
                   color: highlighted ? color : AppColors.muted)),
           const SizedBox(width: 6),
           Text(value,
               style: AppFonts.mono(
-                  fontSize: 11,
+                  fontSize: 13,
                   fontWeight: FontWeight.w800,
                   color: highlighted ? color : AppColors.primary)),
         ],
@@ -285,14 +285,14 @@ class _BreakdownSheet extends StatelessWidget {
                           ),
                           child: Text('${r.count}',
                               style: AppFonts.mono(
-                                  fontSize: 11,
+                                  fontSize: 13,
                                   color: accent
                                       ? AppColors.accent
                                       : AppColors.primary)),
                         ),
                         const SizedBox(width: AppSpacing.sm),
                         Icon(Icons.chevron_right,
-                            size: 16, color: AppColors.muted),
+                            size: 18, color: AppColors.muted),
                       ],
                     ),
                   ),

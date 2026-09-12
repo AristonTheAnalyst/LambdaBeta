@@ -478,7 +478,7 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
         borderRadius: BorderRadius.circular(999),
         border: Border.all(color: color.withValues(alpha: 0.3)),
       ),
-      child: Text(text, style: AppFonts.mono(fontSize: 9, color: color)),
+      child: Text(text, style: AppFonts.mono(fontSize: 13, color: color)),
     );
   }
 }

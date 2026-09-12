@@ -527,7 +527,7 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
                 Text(
                   _selection.label(DateTime.now()),
                   style: AppFonts.mono(
-                    fontSize: 11,
+                    fontSize: 13,
                     color: AppColors.primary,
                   ),
                 ),
@@ -556,7 +556,7 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
         Text(
           'Per-week rates count only weeks where this exercise was trained.',
           style: AppFonts.mono(
-            fontSize: 9,
+            fontSize: 13,
             color: AppColors.muted.withValues(alpha: 0.7),
           ),
         ),
@@ -646,7 +646,7 @@ class _MetricsCard extends StatelessWidget {
                       _labels[i],
                       textAlign: TextAlign.center,
                       style: AppFonts.mono(
-                        fontSize: 8,
+                        fontSize: 14,
                         letterSpacing: 0.8,
                         color: AppColors.accent.withValues(alpha: 0.85),
                       ),
@@ -733,7 +733,7 @@ class _CurveRow extends StatelessWidget {
               child: Text(
                 label,
                 style: AppFonts.mono(
-                  fontSize: 11,
+                  fontSize: 13,
                   color: established ? AppColors.muted : AppColors.muted
                       .withValues(alpha: 0.5),
                 ),
@@ -802,7 +802,7 @@ class _CurveRow extends StatelessWidget {
                     Text(
                       '$prCount',
                       style: AppFonts.mono(
-                        fontSize: 10,
+                        fontSize: 14,
                         fontWeight: FontWeight.w700,
                         color: prCount! > 0
                             ? AppColors.accent

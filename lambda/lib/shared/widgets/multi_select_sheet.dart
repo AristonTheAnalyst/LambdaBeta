@@ -89,7 +89,7 @@ class _MultiSelectSheetState<T> extends State<_MultiSelectSheet<T>> {
           // Handle
           Container(
             margin: const EdgeInsets.symmetric(vertical: 10),
-            width: 36,
+            width: 44,
             height: 4,
             decoration: BoxDecoration(
               color: AppColors.border,

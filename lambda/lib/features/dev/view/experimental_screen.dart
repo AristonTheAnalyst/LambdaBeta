@@ -168,7 +168,7 @@ class _ThemeOption extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Container(
-                    width: 28,
+                    width: 40,
                     height: 6,
                     decoration: BoxDecoration(
                       color: preview.primary,
@@ -432,7 +432,7 @@ class _PagerExerciseSelectorState extends State<_PagerExerciseSelector> {
               Text(
                 '${i + 1}',
                 style: AppFonts.mono(
-                  fontSize: 11,
+                  fontSize: 13,
                   color: selected ? c.primary : c.muted,
                 ),
               ),
@@ -528,8 +528,8 @@ class _PagerExerciseSelectorState extends State<_PagerExerciseSelector> {
       // Disabled chevrons still claim the tap with a no-op handler.
       onTap: enabled ? onTap : () {},
       child: Container(
-        width: 28,
-        height: 28,
+        width: 40,
+        height: 40,
         alignment: Alignment.center,
         decoration: BoxDecoration(
           color: enabled ? c.surfaceHigh : Colors.transparent,

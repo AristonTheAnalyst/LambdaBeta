@@ -182,7 +182,7 @@ class _ArchivedSheetState extends State<ArchivedSheet> {
                         // Cumulative: everything shown up to this page.
                         '${((_page + 1) * _pageSize).clamp(0, _filtered.length)} of ${_filtered.length}',
                         style: AppFonts.mono(
-                          fontSize: 11,
+                          fontSize: 13,
                           color: AppColors.muted,
                         ),
                       ),
@@ -219,14 +219,14 @@ class _PagerButton extends StatelessWidget {
     return GestureDetector(
       onTap: enabled ? onTap : null,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         // The glass recipe — enabled in accent, disabled stays muted.
         decoration: enabled
             ? glassBox(AppColors.accent)
             : lambdaBox(ContainerTone.ghost, radius: AppRadius.md),
         child: Icon(
           icon,
-          size: 16,
+          size: 20,
           color: enabled ? AppColors.accent : AppColors.muted,
         ),
       ),

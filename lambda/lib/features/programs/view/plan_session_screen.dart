@@ -448,7 +448,7 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
                         child: Text(
                           'Save',
                           style: AppFonts.ui(
-                            fontSize: 12,
+                            fontSize: 14,
                             fontWeight: FontWeight.w700,
                             color: AppColors.success,
                           ),
@@ -941,7 +941,7 @@ class _AddExerciseContentState extends State<_AddExerciseContent> {
                 Text(
                   'Added',
                   style: AppFonts.mono(
-                    fontSize: 9,
+                    fontSize: 13,
                     letterSpacing: 0.4,
                     color: AppColors.success,
                   ),

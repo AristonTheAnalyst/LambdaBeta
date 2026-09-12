@@ -283,6 +283,8 @@ class LiveExerciseCard extends StatelessWidget {
           ),
           // A fresh history session must re-earn the edit confirm gate.
           onHistorySessionSelected: (_) => vm.historyEditConfirmed = false,
+          // The picker tiles show each past session's PR count.
+          isPrSet: (setId) => vm.prEventsBySetId.containsKey(setId),
         );
       },
     );

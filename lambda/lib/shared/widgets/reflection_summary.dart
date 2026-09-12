@@ -21,6 +21,8 @@ class ReflectionSummary extends StatelessWidget {
     required this.prsByExercise,
     required this.lessonsByExercise,
     required this.exerciseNameFor,
+    this.showPrs = true,
+    this.showLessons = true,
   });
 
   /// Exercises in display order (slots for the live session, first-appearance
@@ -38,6 +40,12 @@ class ReflectionSummary extends StatelessWidget {
   /// both contexts render identically.
   final String Function(String exerciseId) exerciseNameFor;
 
+  /// Which sections render — the past-session viewer's Summary tab is
+  /// lessons-only and its PRs tab is PRs-only; the live reflection page and
+  /// the prep card keep both.
+  final bool showPrs;
+  final bool showLessons;
+
   static String _fmt(num n) =>
       n == n.roundToDouble() ? n.toInt().toString() : n.toString();
 
@@ -53,19 +61,24 @@ class ReflectionSummary extends StatelessWidget {
     // Vertical rhythm, all gaps explicit here (content widgets carry only
     // their trailing 8): 8 label→first block, 8 name→content and card→card,
     // 16 between exercises, 24 between sections.
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
+    final sections = <Widget>[
+      if (showPrs) ...[
         _sectionLabel(Icons.emoji_events_outlined, 'PRS'),
         const SizedBox(height: AppSpacing.sm),
         ..._sectionContent(prExercises, 'No PRs this session', _prCardsFor),
-        const SizedBox(height: AppSpacing.xl),
+      ],
+      if (showPrs && showLessons) const SizedBox(height: AppSpacing.xl),
+      if (showLessons) ...[
         _sectionLabel(Icons.menu_book_outlined, 'LESSONS'),
         const SizedBox(height: AppSpacing.sm),
         ..._sectionContent(
             lessonExercises, 'No lessons this session', _lessonRowsFor),
       ],
+    ];
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: sections,
     );
   }
 
@@ -89,7 +102,7 @@ class ReflectionSummary extends StatelessWidget {
           const SizedBox(width: 6),
           Text(text,
               style: AppFonts.mono(
-                  fontSize: 9, letterSpacing: 0.8, color: AppColors.primary)),
+                  fontSize: 13, letterSpacing: 0.8, color: AppColors.primary)),
         ],
       );
 
@@ -168,17 +181,17 @@ class ReflectionSummary extends StatelessWidget {
                 if (e.variationName != null)
                   Text(toProperCase(e.variationName!),
                       style: AppFonts.mono(
-                          fontSize: 9,
+                          fontSize: 13,
                           letterSpacing: 0.6,
                           color: AppColors.accent)),
                 Text('${_fmt(e.weight)}kg × ${_fmt(e.reps)}',
                     style: AppFonts.mono(
-                        fontSize: 12,
+                        fontSize: 14,
                         fontWeight: FontWeight.w700,
                         color: AppColors.accent)),
                 Text(before,
                     style: AppFonts.mono(
-                        fontSize: 10,
+                        fontSize: 14,
                         color: AppColors.accent)),
               ],
             ),

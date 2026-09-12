@@ -3,11 +3,13 @@ import 'package:intl/intl.dart';
 import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_fonts.dart';
 import '../../core/styles/app_radius.dart';
+import '../../core/styles/app_spacing.dart';
 import './container_styles.dart';
 import '../../data/models/session_exercise_set.dart';
 import '../../features/session/model/session_local_state.dart';
 import 'card_pill_button.dart';
 import 'exercise_selector.dart';
+import 'slide_up_modal.dart';
 
 /// Minimal, VM-free pinned-lesson data for the card's lesson bar.
 class PinnedLessonData {
@@ -51,6 +53,7 @@ class SessionExerciseCard extends StatefulWidget {
     this.history,
     this.historyRowBuilder,
     this.onHistorySessionSelected,
+    this.isPrSet,
   });
 
   /// Display names, in slot order.
@@ -100,16 +103,18 @@ class SessionExerciseCard extends StatefulWidget {
   /// history-edit confirm gate here.
   final void Function(ExerciseHistorySession session)? onHistorySessionSelected;
 
+  /// PR membership per set id — the picker tiles show each past session's
+  /// PR count. Null hides the PR line.
+  final bool Function(String setId)? isPrSet;
+
   @override
   State<SessionExerciseCard> createState() => _SessionExerciseCardState();
 }
 
 class _SessionExerciseCardState extends State<SessionExerciseCard> {
-  bool _historyOpen = false;
   ExerciseHistorySession? _viewingSession;
 
   void _exitHistory() => setState(() {
-    _historyOpen = false;
     _viewingSession = null;
   });
 
@@ -177,7 +182,7 @@ class _SessionExerciseCardState extends State<SessionExerciseCard> {
                         child: CardPillButton(
                           icon: Icons.history,
                           label: 'History',
-                          active: _historyOpen || viewingHistory,
+                          active: viewingHistory,
                           enabled: widget.history != null &&
                               widget.history!.isNotEmpty,
                           onTap: widget.history == null ||
@@ -187,8 +192,8 @@ class _SessionExerciseCardState extends State<SessionExerciseCard> {
                                   if (viewingHistory) {
                                     _exitHistory();
                                   } else {
-                                    setState(
-                                      () => _historyOpen = !_historyOpen,
+                                    _openHistorySheet(
+                                      widget.history ?? const [],
                                     );
                                   }
                                 },
@@ -223,10 +228,6 @@ class _SessionExerciseCardState extends State<SessionExerciseCard> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // The picker stays visible while viewing a session — the
-                // user can hop between past sessions without going back.
-                if (_historyOpen || viewingHistory)
-                  _historyPicker(widget.history ?? const []),
                 Padding(
                   // Top spacing above the column headers (the history picker
                   // sits above when open).
@@ -259,7 +260,7 @@ class _SessionExerciseCardState extends State<SessionExerciseCard> {
           Text(
             'LESSON',
             style: AppFonts.mono(
-              fontSize: 9,
+              fontSize: 13,
               letterSpacing: 0.8,
               color: AppColors.primary,
             ),
@@ -270,12 +271,12 @@ class _SessionExerciseCardState extends State<SessionExerciseCard> {
               lesson.text,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: AppFonts.ui(fontSize: 11, color: AppColors.muted),
+              style: AppFonts.ui(fontSize: 13, color: AppColors.muted),
             ),
           ),
           Text(
             DateFormat('MMM d').format(lesson.date),
-            style: AppFonts.mono(fontSize: 9, color: AppColors.muted),
+            style: AppFonts.mono(fontSize: 13, color: AppColors.muted),
           ),
         ],
       ),
@@ -285,75 +286,22 @@ class _SessionExerciseCardState extends State<SessionExerciseCard> {
     return GestureDetector(onTap: onTap, child: bar);
   }
 
-  Widget _historyPicker(List<ExerciseHistorySession> history) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Divider(color: AppColors.border, height: 1),
-          const SizedBox(height: 10),
-          Text(
-            'PAST SESSIONS',
-            style: AppFonts.mono(
-              fontSize: 8,
-              letterSpacing: 0.8,
-              color: AppColors.muted,
-            ),
-          ),
-          const SizedBox(height: 8),
-          SizedBox(
-            height: 68,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: history.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 8),
-              itemBuilder: (context, i) {
-                final session = history[i];
-                // The viewed chip gets the neutral glass highlight — the
-                // same translucent tint + hairline as the active exercise
-                // pill (a light lift, not the accent's colored fill).
-                final selected = identical(session, _viewingSession);
-                return GestureDetector(
-                  onTap: () => setState(() {
-                    _viewingSession = session;
-                    _historyOpen = false;
-                    widget.onHistorySessionSelected?.call(session);
-                  }),
-                  child: Container(
-                    width: 84,
-                    padding: const EdgeInsets.all(10),
-                    decoration: glassBox(AppColors.primary),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          DateFormat('MMM d').format(session.date),
-                          style: AppFonts.mono(
-                            fontSize: 10,
-                            color: selected
-                                ? AppColors.primary
-                                : AppColors.muted,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          '${session.sets.length} sets',
-                          style: AppFonts.mono(
-                            fontSize: 10,
-                            color: selected
-                                ? AppColors.primary
-                                : AppColors.muted,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
+  /// Opens the past-sessions bottom sheet — sessions listed top to bottom,
+  /// like the all-sessions sheet on the prep page. Selecting one closes the
+  /// sheet and shows that session in the card's history detail.
+  void _openHistorySheet(List<ExerciseHistorySession> history) {
+    showLambdaModal<void>(
+      context,
+      fitContent: true,
+      backgroundColor: AppColors.bg,
+      child: _HistorySheet(
+        history: history,
+        selected: _viewingSession,
+        isPrSet: widget.isPrSet,
+        onSelect: (session) {
+          setState(() => _viewingSession = session);
+          widget.onHistorySessionSelected?.call(session);
+        },
       ),
     );
   }
@@ -393,7 +341,7 @@ class _SessionExerciseCardState extends State<SessionExerciseCard> {
                 child: Text(
                   '+ ADD SET',
                   style: AppFonts.ui(
-                    fontSize: 11,
+                    fontSize: 13,
                     fontWeight: FontWeight.w700,
                     letterSpacing: 0.5,
                     color: AppColors.muted,
@@ -407,9 +355,10 @@ class _SessionExerciseCardState extends State<SessionExerciseCard> {
     );
   }
 
-  /// The REPS/KG/VARIATION/NOTE column labels shared by the sets grid and
-  /// the history viewer — the history rows are [SessionSetRow]s too, so the
-  /// columns must line up exactly.
+  /// The REPS/KG/VARIATION column labels shared by the sets grid and the
+  /// history viewer — the history rows are [SessionSetRow]s too, so the
+  /// columns must line up exactly. The note button carries no header — the
+  /// sticky-note icon is self-explanatory.
   Widget _gridHeaders() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -422,8 +371,6 @@ class _SessionExerciseCardState extends State<SessionExerciseCard> {
           Expanded(child: _colLabel('KG')),
           const SizedBox(width: 6),
           Expanded(flex: 2, child: _colLabel('VARIATION')),
-          const SizedBox(width: 6),
-          SizedBox(width: 32, child: _colLabel('NOTE')),
         ],
       ),
     );
@@ -433,9 +380,138 @@ class _SessionExerciseCardState extends State<SessionExerciseCard> {
     text,
     textAlign: TextAlign.center,
     style: AppFonts.mono(
-      fontSize: 8,
+      fontSize: 14,
       letterSpacing: 0.6,
       color: AppColors.muted,
     ),
   );
+}
+
+/// The past-sessions bottom sheet — sessions top to bottom, newest first,
+/// in the all-sessions sheet's row style (recessed surface cards). Each row
+/// shows the date, its set count, and the session's PR count in accent.
+class _HistorySheet extends StatelessWidget {
+  const _HistorySheet({
+    required this.history,
+    required this.selected,
+    required this.isPrSet,
+    required this.onSelect,
+  });
+
+  final List<ExerciseHistorySession> history;
+  final ExerciseHistorySession? selected;
+  final bool Function(String setId)? isPrSet;
+  final void Function(ExerciseHistorySession) onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.7,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.xl,
+                AppSpacing.lg,
+                AppSpacing.xl,
+                AppSpacing.sm,
+              ),
+              child: Text(
+                'PAST SESSIONS',
+                style: AppFonts.mono(
+                  fontSize: 11,
+                  letterSpacing: 0.8,
+                  color: AppColors.muted,
+                ),
+              ),
+            ),
+            Flexible(
+              child: ListView.builder(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.lg,
+                  AppSpacing.xs,
+                  AppSpacing.lg,
+                  AppSpacing.xl,
+                ),
+                itemCount: history.length,
+                itemBuilder: (context, i) => _row(context, history[i]),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _row(BuildContext context, ExerciseHistorySession session) {
+    final isSelected = identical(session, selected);
+    final prCount = isPrSet == null
+        ? 0
+        : session.sets
+              .where((s) => isPrSet!(s.sessionExerciseSetId))
+              .length;
+    return GestureDetector(
+      onTap: () {
+        Navigator.of(context, rootNavigator: true).pop();
+        onSelect(session);
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: AppSpacing.md),
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        decoration: BoxDecoration(
+          // The all-sessions sheet's row recipe: recessed surface, hairline,
+          // soft-highlight border on the viewed session.
+          color: AppColors.surfaceLow,
+          borderRadius: BorderRadius.circular(AppRadius.lg),
+          border: Border.all(
+            color: isSelected
+                ? AppColors.accent.withValues(alpha: 0.35)
+                : AppColors.border,
+          ),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    DateFormat('MMM d, yyyy').format(session.date),
+                    style: AppFonts.mono(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.accent,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    '${session.sets.length} sets',
+                    style: AppFonts.mono(
+                      fontSize: 13,
+                      color: AppColors.muted,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // The PR count — the only accent on the right, orange when the
+            // session has PR sets.
+            Text(
+              '$prCount ${prCount == 1 ? 'PR' : 'PRs'}',
+              style: AppFonts.mono(
+                fontSize: 14,
+                fontWeight: prCount > 0 ? FontWeight.w700 : FontWeight.w500,
+                color: prCount > 0 ? AppColors.accent : AppColors.muted,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

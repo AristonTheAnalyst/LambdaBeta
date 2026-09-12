@@ -129,7 +129,7 @@ class _DateRangeSheetState extends State<_DateRangeSheet> {
               'OR CUSTOM',
               textAlign: TextAlign.center,
               style: AppFonts.mono(
-                fontSize: 9,
+                fontSize: 13,
                 letterSpacing: 1.2,
                 color: AppColors.muted,
               ),
@@ -168,7 +168,7 @@ class _DateRangeSheetState extends State<_DateRangeSheet> {
                       d,
                       textAlign: TextAlign.center,
                       style: AppFonts.mono(
-                        fontSize: 9,
+                        fontSize: 13,
                         color: AppColors.muted,
                       ),
                     ),
@@ -192,7 +192,7 @@ class _DateRangeSheetState extends State<_DateRangeSheet> {
                 _selection.label(_today),
                 textAlign: TextAlign.center,
                 style: AppFonts.mono(
-                  fontSize: 11,
+                  fontSize: 13,
                   color: AppColors.primary,
                 ),
               ),
@@ -262,14 +262,14 @@ class _DateRangeSheetState extends State<_DateRangeSheet> {
     return GestureDetector(
       onTap: enabled ? onTap : null,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: lambdaBox(
           enabled ? ContainerTone.ghost : ContainerTone.field,
           radius: AppRadius.md,
         ),
         child: Icon(
           icon,
-          size: 16,
+          size: 20,
           color: enabled ? AppColors.primary : AppColors.muted,
         ),
       ),
@@ -344,7 +344,7 @@ class _DateRangeSheetState extends State<_DateRangeSheet> {
             '${d.day}',
             textAlign: TextAlign.center,
             style: AppFonts.mono(
-              fontSize: 11,
+              fontSize: 13,
               fontWeight: isEdge ? FontWeight.w700 : FontWeight.w500,
               color: fg,
             ),

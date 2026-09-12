@@ -85,27 +85,27 @@ class _LessonDebugScreenState extends State<LessonDebugScreen> {
                     padding: const EdgeInsets.all(AppSpacing.lg),
                     children: [
                       Text('dim_lesson: ${_rows.length} row(s) for this user',
-                          style: AppFonts.mono(fontSize: 12, color: AppColors.accent)),
+                          style: AppFonts.mono(fontSize: 14, color: AppColors.accent)),
                       const SizedBox(height: AppSpacing.sm),
                       if (_error != null)
                         Text('ERROR: $_error',
-                            style: AppFonts.mono(fontSize: 11, color: AppColors.danger)),
+                            style: AppFonts.mono(fontSize: 13, color: AppColors.danger)),
                       for (final r in _rows) ...[
                         const SizedBox(height: AppSpacing.sm),
                         _row(r),
                       ],
                       const SizedBox(height: AppSpacing.xl),
                       Text('ps_crud (upload queue): ${_crud.length} entr(ies)',
-                          style: AppFonts.mono(fontSize: 12, color: AppColors.accent)),
+                          style: AppFonts.mono(fontSize: 14, color: AppColors.accent)),
                       const SizedBox(height: AppSpacing.sm),
                       if (_crud.isEmpty)
                         Text('(empty — nothing pending upload)',
-                            style: AppFonts.ui(fontSize: 12, color: AppColors.muted)),
+                            style: AppFonts.ui(fontSize: 14, color: AppColors.muted)),
                       for (final c in _crud)
                         Padding(
                           padding: const EdgeInsets.only(bottom: 4),
                           child: Text('id=${c['id']} ${(c['data'] ?? '').toString().substring(0, 120)}',
-                              style: AppFonts.mono(fontSize: 10, color: AppColors.muted)),
+                              style: AppFonts.mono(fontSize: 14, color: AppColors.muted)),
                         ),
                     ],
                   ),
@@ -130,13 +130,13 @@ class _LessonDebugScreenState extends State<LessonDebugScreen> {
         children: [
           Text('${r['exercise_name'] ?? r['custom_exercise_id']}'
               '${pinned ? '  [PINNED]' : ''}${!active ? '  [INACTIVE]' : ''}',
-              style: AppFonts.mono(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.primary)),
+              style: AppFonts.mono(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.primary)),
           const SizedBox(height: 2),
           Text('${r['lesson_text']}',
-              style: AppFonts.ui(fontSize: 12, color: AppColors.primary)),
+              style: AppFonts.ui(fontSize: 14, color: AppColors.primary)),
           const SizedBox(height: 2),
           Text('id=${r['lesson_id']}  created=${r['lesson_created_date']}',
-              style: AppFonts.mono(fontSize: 9, color: AppColors.muted)),
+              style: AppFonts.mono(fontSize: 13, color: AppColors.muted)),
         ],
       ),
     );

@@ -209,7 +209,7 @@ class _PrSheetState extends State<_PrSheet> {
                 if (e.variationName != null)
                   Text(toProperCase(e.variationName!),
                       style: AppFonts.mono(
-                          fontSize: 9,
+                          fontSize: 13,
                           letterSpacing: 0.6,
                           color: AppColors.accent)),
                 Text('${_fmt(e.weight)}kg × ${_fmt(e.reps)}',
@@ -218,7 +218,7 @@ class _PrSheetState extends State<_PrSheet> {
                         fontWeight: FontWeight.w700,
                         color: AppColors.accent)),
                 Text(_before(e),
-                    style: AppFonts.mono(fontSize: 10, color: AppColors.accent)),
+                    style: AppFonts.mono(fontSize: 14, color: AppColors.accent)),
               ],
             ),
           ),
@@ -266,7 +266,7 @@ class _FilterDropdown extends StatelessWidget {
             Expanded(
               child: Text(_label,
                   style: AppFonts.ui(
-                      fontSize: 12,
+                      fontSize: 14,
                       fontWeight: FontWeight.w600,
                       color: AppColors.primary),
                   maxLines: 1,

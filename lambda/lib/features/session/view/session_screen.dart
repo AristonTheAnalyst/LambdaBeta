@@ -525,7 +525,7 @@ class _HomePage extends StatelessWidget {
                         Text(
                           '${stats.sets} sets · ${stats.exercises} exercises · ${stats.prs} PRs',
                           style: AppFonts.mono(
-                            fontSize: 10,
+                            fontSize: 14,
                             color: AppColors.success,
                           ),
                         ),
@@ -629,7 +629,7 @@ class _HomeSessionHeader extends StatelessWidget {
                       ? ''
                       : DateFormat('MMM d').format(session.createdDatetime),
                   style: AppFonts.mono(
-                    fontSize: 9,
+                    fontSize: 13,
                     letterSpacing: 0.8,
                     color: AppColors.muted,
                   ),
@@ -792,7 +792,7 @@ class _PreEvaluationPageState extends State<_PreEvaluationPage> {
               Text(
                 'FROM LAST SESSION',
                 style: AppFonts.mono(
-                  fontSize: 8,
+                  fontSize: 14,
                   letterSpacing: 0.8,
                   color: AppColors.muted,
                 ),
@@ -925,7 +925,7 @@ class _LastSessionCard extends StatelessWidget {
                             ? ''
                             : DateFormat('MMM d').format(session.createdDatetime),
                         style: AppFonts.mono(
-                          fontSize: 9,
+                          fontSize: 13,
                           letterSpacing: 0.8,
                           color: AppColors.muted,
                         ),
@@ -1035,8 +1035,8 @@ Widget _pagerButton(IconData icon, bool enabled, VoidCallback onTap) {
     onTap: enabled ? onTap : () {},
     behavior: HitTestBehavior.opaque,
     child: Container(
-      width: 28,
-      height: 28,
+      width: 40,
+      height: 40,
       alignment: Alignment.center,
       // The glass recipe — the same chrome as every other pressable.
       decoration: enabled
@@ -1048,7 +1048,7 @@ Widget _pagerButton(IconData icon, bool enabled, VoidCallback onTap) {
             ),
       child: Icon(
         icon,
-        size: 16,
+        size: 20,
         color: enabled ? AppColors.primary : AppColors.muted,
       ),
     ),
@@ -1093,7 +1093,7 @@ class _SessionPickerSheetState extends State<_SessionPickerSheet> {
               child: Text(
                 'ALL SESSIONS',
                 style: AppFonts.mono(
-                  fontSize: 9,
+                  fontSize: 13,
                   letterSpacing: 0.8,
                   color: AppColors.muted,
                 ),
@@ -1201,7 +1201,7 @@ class _SessionTemplateCard extends StatelessWidget {
                     Text(
                       'Week ${vm.programProgress!.weekNumber} · ${vm.programProgress!.program.name}',
                       style: AppFonts.mono(
-                        fontSize: 9,
+                        fontSize: 13,
                         letterSpacing: 0.6,
                         color: AppColors.planned,
                       ),
@@ -1219,7 +1219,7 @@ class _SessionTemplateCard extends StatelessWidget {
                     Text(
                       'Standalone session',
                       style: AppFonts.mono(
-                        fontSize: 9,
+                        fontSize: 13,
                         letterSpacing: 0.6,
                         color: AppColors.planned,
                       ),
@@ -1249,7 +1249,7 @@ class _SessionTemplateCard extends StatelessWidget {
                         Text(
                           'No planned session — add exercises as you train',
                           style: AppFonts.mono(
-                            fontSize: 9,
+                            fontSize: 13,
                             letterSpacing: 0.6,
                             color: AppColors.muted,
                           ),
@@ -1446,7 +1446,7 @@ Future<void> _showWorkoutPickerSheet(
               child: Text(
                 'Workouts',
                 style: AppFonts.mono(
-                  fontSize: 9,
+                  fontSize: 13,
                   letterSpacing: 0.8,
                   color: AppColors.muted,
                 ),
@@ -1508,7 +1508,7 @@ Future<void> _showWorkoutPickerSheet(
               child: Text(
                 'Program',
                 style: AppFonts.mono(
-                  fontSize: 9,
+                  fontSize: 13,
                   letterSpacing: 0.8,
                   color: AppColors.muted,
                 ),
@@ -1939,7 +1939,7 @@ class _PostQuestionnairePageState extends State<_PostQuestionnairePage> {
               Text(
                 'FROM LAST SESSION',
                 style: AppFonts.mono(
-                  fontSize: 8,
+                  fontSize: 14,
                   letterSpacing: 0.8,
                   color: AppColors.muted,
                 ),

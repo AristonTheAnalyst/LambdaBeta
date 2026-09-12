@@ -116,7 +116,7 @@ class _NotesModalContentState extends State<_NotesModalContent> {
                     Text(
                       'PLANNED  ',
                       style: AppFonts.mono(
-                        fontSize: 9,
+                        fontSize: 13,
                         fontWeight: FontWeight.w700,
                         color: AppColors.planned,
                       ),

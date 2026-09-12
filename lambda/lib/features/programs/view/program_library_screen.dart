@@ -432,7 +432,7 @@ class _ProgramCard extends StatelessWidget {
                             ),
                             child: Text('Active',
                                 style: AppFonts.ui(
-                                    fontSize: 10,
+                                    fontSize: 14,
                                     letterSpacing: 0.5,
                                     fontWeight: FontWeight.w800,
                                     color: AppColors.accent)),
@@ -472,7 +472,7 @@ class _ProgramCard extends StatelessWidget {
                   : progress!.run.progressionMode == 'frequency'
                       ? 'Week ${progress!.weekNumber} of ${progress!.totalWeeks ?? '?'} · ${progress!.remainingLabel}'
                       : '${progress!.workoutsCompletedInCycle}/${progress!.totalWorkoutsInCycle} sessions · ${progress!.remainingLabel}',
-              style: AppFonts.mono(fontSize: 9, color: AppColors.muted),
+              style: AppFonts.mono(fontSize: 13, color: AppColors.muted),
             ),
           ],
           const SizedBox(height: AppSpacing.sm),

@@ -663,14 +663,14 @@ class _PaginationBar extends StatelessWidget {
           GestureDetector(
             onTap: canPrev ? onPrev : null,
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               // The glass recipe — enabled in accent, disabled stays muted.
               decoration: canPrev
                   ? glassBox(AppColors.accent)
                   : lambdaBox(ContainerTone.ghost, radius: AppRadius.md),
               child: Icon(
                 Icons.chevron_left,
-                size: 16,
+                size: 20,
                 color: canPrev ? AppColors.accent : AppColors.muted,
               ),
             ),
@@ -680,20 +680,20 @@ class _PaginationBar extends StatelessWidget {
             // Cumulative: everything shown up to this page, not just the
             // rows on the current one.
             '${((page + 1) * _pageSize).clamp(0, total)} of $total',
-            style: AppFonts.mono(fontSize: 11, color: AppColors.muted),
+            style: AppFonts.mono(fontSize: 13, color: AppColors.muted),
           ),
           const SizedBox(width: AppSpacing.md),
           GestureDetector(
             onTap: canNext ? onNext : null,
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               // The glass recipe — enabled in accent, disabled stays muted.
               decoration: canNext
                   ? glassBox(AppColors.accent)
                   : lambdaBox(ContainerTone.ghost, radius: AppRadius.md),
               child: Icon(
                 Icons.chevron_right,
-                size: 16,
+                size: 20,
                 color: canNext ? AppColors.accent : AppColors.muted,
               ),
             ),

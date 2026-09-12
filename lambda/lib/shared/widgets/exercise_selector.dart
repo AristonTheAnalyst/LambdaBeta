@@ -400,8 +400,8 @@ class _HoldToDeleteXState extends State<_HoldToDeleteX>
         onPointerUp: (_) => _cancel(),
         onPointerCancel: (_) => _cancel(),
         child: SizedBox(
-          width: 28,
-          height: 28,
+          width: 40,
+          height: 40,
           child: AnimatedBuilder(
             animation: _progress,
             builder: (context, _) {

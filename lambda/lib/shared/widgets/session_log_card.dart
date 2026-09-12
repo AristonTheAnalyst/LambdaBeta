@@ -170,7 +170,7 @@ class SessionLogCard extends StatelessWidget {
         Text(
           label,
           style: AppFonts.mono(
-            fontSize: 9,
+            fontSize: 13,
             letterSpacing: 0.8,
             color: AppColors.muted,
           ),

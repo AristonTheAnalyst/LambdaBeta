@@ -497,7 +497,7 @@ class _SessionSetRowState extends State<SessionSetRow> {
                           '${s.exerciseCount} exercise${s.exerciseCount == 1 ? '' : 's'}',
                           style: TextStyle(
                             color: AppColors.muted,
-                            fontSize: 12,
+                            fontSize: 14,
                           ),
                         ),
                       ],
@@ -597,7 +597,7 @@ class _SessionSetRowState extends State<SessionSetRow> {
                   Text(
                     'PR',
                     style: AppFonts.mono(
-                      fontSize: 8,
+                      fontSize: 14,
                       fontWeight: FontWeight.w800,
                       color: AppColors.accent,
                     ),
@@ -606,7 +606,7 @@ class _SessionSetRowState extends State<SessionSetRow> {
                   Text(
                     '${widget.displayIndex}',
                     style: AppFonts.mono(
-                      fontSize: 11,
+                      fontSize: 13,
                       color: AppColors.muted,
                     ),
                   ),
@@ -673,7 +673,7 @@ class _SessionSetRowState extends State<SessionSetRow> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: AppFonts.ui(
-                          fontSize: 11,
+                          fontSize: 13,
                           fontWeight: FontWeight.w600,
                           color: AppColors.muted,
                         ),
@@ -683,7 +683,7 @@ class _SessionSetRowState extends State<SessionSetRow> {
                 : Tooltip(
                     message: variationLabel,
                     child: Container(
-                      height: 34,
+                      height: 38,
                       alignment: Alignment.center,
                       // Neutral chrome — planned-ness lives on the row
                       // container, never inside the fields.
@@ -714,45 +714,51 @@ class _SessionSetRowState extends State<SessionSetRow> {
                     ),
                   ),
           ),
-          const SizedBox(width: 6),
-          GestureDetector(
-            onTap: _effectiveReadOnly
-                ? (_gated
-                    ? () => _requestGateEdit(after: _openNotes)
-                    : (hasNotes ? _openNotes : null))
-                : _openNotes,
-            child: Container(
-              width: 32,
-              height: 32,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                // A noted set gets the neutral glass treatment — the same
-                // translucent tint + soft hairline as GlassButton (never the
-                // PR accent).
-                color: hasNotes
-                    ? AppColors.primary.withAlpha(26)
-                    : Colors.transparent,
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(
-                  color: hasNotes
-                      ? AppColors.primary.withAlpha(77)
-                      : AppColors.border,
-                ),
-              ),
-              child: Icon(
-                Icons.sticky_note_2_outlined,
-                size: 15,
-                color: hasNotes ? AppColors.primary : AppColors.muted,
-              ),
-            ),
-          ),
         ],
       ),
     );
 
-    // Gate-mode rows never expose swipe actions, even after the confirm —
-    // the history viewer edits values, it doesn't delete/duplicate past sets.
-    if (!_effectiveReadOnly && widget.onEditConfirm == null) {
+    // The note indicator — a white vertical line at the right edge of the
+    // row's background. The note itself opens from the swipe actions.
+    if (hasNotes) {
+      row = Stack(
+        children: [
+          row,
+          Positioned(
+            right: 2,
+            top: 7,
+            bottom: 7,
+            child: Container(
+              width: 3,
+              decoration: BoxDecoration(
+                color: AppColors.primary,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    if (widget.onEditConfirm != null) {
+      // The history viewer's rows: swipe reveals ONLY Note — past data can't
+      // be duplicated or deleted, but notes stay editable through the same
+      // one-time confirm gate as the field edits.
+      row = SwipeActions(
+        borderRadius: AppRadius.md,
+        actions: [
+          SwipeAction(
+            icon: Icons.sticky_note_2_outlined,
+            label: 'Note',
+            color: AppColors.primary,
+            onTap: _gated
+                ? () => _requestGateEdit(after: _openNotes)
+                : _openNotes,
+          ),
+        ],
+        child: row,
+      );
+    } else if (!_effectiveReadOnly) {
       row = SwipeActions(
         borderRadius: AppRadius.md,
         actions: [
@@ -764,10 +770,32 @@ class _SessionSetRowState extends State<SessionSetRow> {
               onTap: _duplicate,
             ),
           SwipeAction(
+            icon: Icons.sticky_note_2_outlined,
+            label: 'Note',
+            color: AppColors.primary,
+            onTap: _openNotes,
+          ),
+          SwipeAction(
             icon: Icons.delete_outline,
             label: 'Delete',
             color: AppColors.danger,
             onTap: _delete,
+          ),
+        ],
+        child: row,
+      );
+    } else {
+      // Plain read-only rows (the past-session viewer's view mode, the
+      // training-page preview): swipe reveals ONLY Note, every row — the
+      // modal renders read-only too.
+      row = SwipeActions(
+        borderRadius: AppRadius.md,
+        actions: [
+          SwipeAction(
+            icon: Icons.sticky_note_2_outlined,
+            label: 'Note',
+            color: AppColors.primary,
+            onTap: _openNotes,
           ),
         ],
         child: row,
@@ -791,7 +819,7 @@ class _SessionSetRowState extends State<SessionSetRow> {
     ValueChanged<String>? onChanged,
   }) {
     return SizedBox(
-      height: 34,
+      height: 38,
       child: TextField(
         key: key,
         controller: controller,

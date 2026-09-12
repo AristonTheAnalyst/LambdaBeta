@@ -767,7 +767,7 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
                             Text(
                               _runConfigLabel(state.activeRun!),
                               style: AppFonts.mono(
-                                fontSize: 10,
+                                fontSize: 14,
                                 color: AppColors.muted,
                               ),
                             ),
@@ -776,7 +776,7 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
                               Text(
                                 state.currentProgress!.remainingLabel,
                                 style: AppFonts.mono(
-                                  fontSize: 10,
+                                  fontSize: 14,
                                   fontWeight: FontWeight.w600,
                                   color: AppColors.accent,
                                 ),

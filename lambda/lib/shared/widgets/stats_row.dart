@@ -57,7 +57,7 @@ class StatsRow extends StatelessWidget {
           Text(tile.label,
               textAlign: TextAlign.center,
               style: AppFonts.mono(
-                  fontSize: 8, letterSpacing: 0.8, color: tile.accent ? AppColors.accent : AppColors.muted)),
+                  fontSize: 14, letterSpacing: 0.8, color: tile.accent ? AppColors.accent : AppColors.muted)),
           const SizedBox(height: 3),
           Text(tile.value,
               style: AppFonts.mono(

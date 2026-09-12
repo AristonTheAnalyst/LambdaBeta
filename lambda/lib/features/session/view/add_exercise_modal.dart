@@ -173,7 +173,7 @@ class _AddExerciseModalContentState extends State<_AddExerciseModalContent> {
                 const SizedBox(width: 4),
                 Text('Added',
                     style: AppFonts.mono(
-                        fontSize: 9,
+                        fontSize: 13,
                         letterSpacing: 0.4,
                         color: AppColors.success)),
               ],

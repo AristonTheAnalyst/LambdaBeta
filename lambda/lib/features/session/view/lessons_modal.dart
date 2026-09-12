@@ -136,7 +136,7 @@ class _LessonsModalContentState extends State<_LessonsModalContent> {
                         children: [
                           Text(widget.exerciseName.toUpperCase(),
                               style: AppFonts.mono(
-                                  fontSize: 9, color: AppColors.muted, letterSpacing: 0.8)),
+                                  fontSize: 13, color: AppColors.muted, letterSpacing: 0.8)),
                           Text('Lessons',
                               style: AppFonts.ui(
                                   fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.primary)),
@@ -310,8 +310,8 @@ class _LessonRowState extends State<_LessonRow> {
         GestureDetector(
           onTap: widget.onTogglePin,
           child: Container(
-            width: 28,
-            height: 28,
+            width: 40,
+            height: 40,
             margin: const EdgeInsets.only(right: AppSpacing.sm, top: 1),
             alignment: Alignment.center,
             decoration: lesson.pinned
@@ -341,7 +341,7 @@ class _LessonRowState extends State<_LessonRow> {
                   children: [
                     Text(DateFormat('MMM d · h:mm a').format(lesson.createdDate),
                         style: AppFonts.mono(
-                            fontSize: 9, color: AppColors.muted)),
+                            fontSize: 13, color: AppColors.muted)),
                     if (widget.isNew) ...[
                       const SizedBox(width: 6),
                       Container(
@@ -356,7 +356,7 @@ class _LessonRowState extends State<_LessonRow> {
                         ),
                         child: Text('NEW',
                             style: AppFonts.mono(
-                                fontSize: 8,
+                                fontSize: 14,
                                 letterSpacing: 0.6,
                                 color: AppColors.accent)),
                       ),

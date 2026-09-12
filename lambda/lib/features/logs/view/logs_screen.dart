@@ -370,7 +370,7 @@ class _FilterChip extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        height: 36,
+        height: 44,
         padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
         // The glass recipe — active in accent, inactive in primary.
         decoration: glassBox(isActive ? AppColors.accent : AppColors.primary),

@@ -170,7 +170,7 @@ class _SwipeActionsState extends State<SwipeActions>
               Text(
                 action.label,
                 style: AppFonts.ui(
-                  fontSize: 9,
+                  fontSize: 13,
                   fontWeight: FontWeight.w700,
                   color: Colors.white,
                 ),

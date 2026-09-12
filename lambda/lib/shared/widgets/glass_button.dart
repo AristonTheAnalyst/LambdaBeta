@@ -46,8 +46,8 @@ class GlassButton extends StatelessWidget {
         onTap: isDisabled ? null : onPressed,
         child: Container(
           padding: EdgeInsets.symmetric(
-            horizontal: compact ? 12 : 16,
-            vertical: compact ? 8 : 10,
+            horizontal: compact ? 14 : 16,
+            vertical: compact ? 10 : 12,
           ),
           decoration: BoxDecoration(
             color: solid ? effectiveColor : effectiveColor.withAlpha(26),
