@@ -23,24 +23,30 @@ class SlideTabBar extends StatelessWidget {
       child: Row(
         children: List.generate(tabs.length, (i) {
           final isActive = i == activeIndex;
-          return GestureDetector(
-            onTap: () => onTap(i),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              decoration: BoxDecoration(
-                border: Border(
-                  bottom: BorderSide(
-                    color: isActive ? AppColors.primary : Colors.transparent,
-                    width: 2,
+          // Each tab takes an even share of the width — any tab count fits
+          // without overflow, and the bar reads as one divided strip.
+          return Expanded(
+            child: GestureDetector(
+              onTap: () => onTap(i),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  border: Border(
+                    bottom: BorderSide(
+                      color: isActive ? AppColors.primary : Colors.transparent,
+                      width: 2,
+                    ),
                   ),
                 ),
-              ),
-              child: Text(
-                tabs[i],
-                style: TextStyle(
-                  fontSize: AppTextStyles.sm,
-                  fontWeight: FontWeight.w600,
-                  color: isActive ? AppColors.primary : AppColors.muted,
+                child: Text(
+                  tabs[i],
+                  maxLines: 1,
+                  style: TextStyle(
+                    fontSize: AppTextStyles.sm,
+                    fontWeight: FontWeight.w600,
+                    color: isActive ? AppColors.primary : AppColors.muted,
+                  ),
                 ),
               ),
             ),

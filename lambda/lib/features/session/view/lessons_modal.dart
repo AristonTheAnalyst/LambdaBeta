@@ -6,6 +6,7 @@ import '../../../core/styles/app_radius.dart';
 import '../../../core/styles/app_spacing.dart';
 import '../../../data/models/lesson.dart';
 import '../../../shared/widgets/glass_button.dart';
+import '../../../shared/widgets/container_styles.dart';
 import '../../../shared/widgets/slide_up_modal.dart';
 import '../../../shared/widgets/swipe_actions.dart';
 
@@ -286,11 +287,10 @@ class _LessonRowState extends State<_LessonRow> {
       ],
       child: Container(
         padding: const EdgeInsets.all(AppSpacing.sm),
-        decoration: BoxDecoration(
+        decoration: lambdaBox(
           // The row itself stays neutral — pinning accents only the pin box.
-          color: AppColors.surfaceHigh,
-          borderRadius: BorderRadius.circular(AppRadius.md),
-          border: Border.all(color: AppColors.border),
+          ContainerTone.ghost,
+          radius: AppRadius.md,
         ),
         child: _editing ? _editor() : _view(),
       ),
@@ -306,8 +306,7 @@ class _LessonRowState extends State<_LessonRow> {
         // Pin sits at the leading edge, far from the trailing Delete
         // drawer — a tap on the pin can never land on Delete, and the pin
         // never gets covered when the row slides open. When pinned, the
-        // box alone takes the PR-container styling (accentBg fill +
-        // accent outline).
+        // box takes the glass recipe in accent — the pressable chrome.
         GestureDetector(
           onTap: widget.onTogglePin,
           child: Container(
@@ -315,13 +314,13 @@ class _LessonRowState extends State<_LessonRow> {
             height: 28,
             margin: const EdgeInsets.only(right: AppSpacing.sm, top: 1),
             alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: lesson.pinned ? AppColors.accentBg : Colors.transparent,
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(
-                  color: lesson.pinned ? AppColors.accent : AppColors.border,
-                  width: lesson.pinned ? 1.2 : 0.5),
-            ),
+            decoration: lesson.pinned
+                ? glassBox(AppColors.accent, radius: 6)
+                : BoxDecoration(
+                    color: Colors.transparent,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: AppColors.border, width: 0.5),
+                  ),
             child: Icon(Icons.push_pin,
                 size: 14, color: lesson.pinned ? AppColors.accent : AppColors.muted),
           ),
@@ -351,7 +350,9 @@ class _LessonRowState extends State<_LessonRow> {
                         decoration: BoxDecoration(
                           color: AppColors.accentBg,
                           borderRadius: BorderRadius.circular(4),
-                          border: Border.all(color: AppColors.accent),
+                          border: Border.all(
+                            color: AppColors.accent.withValues(alpha: 0.35),
+                          ),
                         ),
                         child: Text('NEW',
                             style: AppFonts.mono(

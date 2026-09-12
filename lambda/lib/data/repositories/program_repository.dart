@@ -32,7 +32,7 @@ class ProgramRepository {
   /// Program names for [userId], used to bump auto-generated defaults.
   Future<Set<String>> _programNames(String userId) async {
     final rows = await ps.db.getAll(
-      'SELECT program_name FROM dim_program WHERE user_id = ? AND is_archived = 0',
+      'SELECT program_name FROM dim_program WHERE user_id = ? AND date_archived IS NULL',
       [userId],
     );
     return rows.map((r) => r['program_name'] as String).toSet();
@@ -45,7 +45,7 @@ class ProgramRepository {
     final rows = await ps.db.getAll(
       '''
       SELECT 1 FROM dim_program
-      WHERE user_id = ? AND is_archived = 0 AND LOWER(program_name) = LOWER(?)
+      WHERE user_id = ? AND date_archived IS NULL AND LOWER(program_name) = LOWER(?)
         ${excludeProgramId != null ? 'AND program_id != ?' : ''}
       LIMIT 1
       ''',
@@ -71,7 +71,7 @@ class ProgramRepository {
     // 1. Try the local PowerSync mirror.
     try {
       final rows = await ps.db.getAll(
-        'SELECT * FROM dim_program WHERE user_id = ? AND is_archived = 0 ORDER BY program_created_date DESC',
+        'SELECT * FROM dim_program WHERE user_id = ? AND date_archived IS NULL ORDER BY program_created_date DESC',
         [userId],
       ).timeout(const Duration(seconds: 3));
       if (rows.isNotEmpty) return rows.map((r) => Program.fromMap(r)).toList();
@@ -85,13 +85,31 @@ class ProgramRepository {
           .from('dim_program')
           .select('*')
           .eq('user_id', userId)
-          .eq('is_archived', false)
+          .isFilter('date_archived', null)
           .order('program_created_date', ascending: false)
           .timeout(const Duration(seconds: 5));
       return remote.map((r) => Program.fromMap(r)).toList();
     } catch (_) {
       return [];
     }
+  }
+
+  /// Archived programs, latest archived first — the programs tab's
+  /// archived sheet.
+  Future<List<Program>> fetchArchivedPrograms(String userId) async {
+    final rows = await ps.db.getAll(
+      'SELECT * FROM dim_program WHERE user_id = ? AND date_archived IS NOT NULL ORDER BY date_archived DESC',
+      [userId],
+    );
+    return rows.map((r) => Program.fromMap(r)).toList();
+  }
+
+  /// Re-enables an archived program (clears its archive date).
+  Future<void> reactivateProgram(String programId) async {
+    await ps.db.execute(
+      'UPDATE dim_program SET date_archived = NULL WHERE program_id = ?',
+      [programId],
+    );
   }
 
   Future<Program?> fetchProgram(String programId) async {
@@ -152,7 +170,7 @@ class ProgramRepository {
       'user_id': userId,
       'program_name': finalName,
       'program_description': description,
-      'is_archived': false,
+      'date_archived': null,
       'program_created_date': createdDate.toIso8601String(),
       'program_updated_date': createdDate.toIso8601String(),
     }).timeout(const Duration(seconds: 8));
@@ -165,7 +183,6 @@ class ProgramRepository {
       userId: userId,
       name: finalName,
       description: description,
-      isArchived: false,
       createdDate: createdDate,
       updatedDate: createdDate,
     );
@@ -204,8 +221,8 @@ class ProgramRepository {
       );
       // Archive the program.
       await tx.execute(
-        'UPDATE dim_program SET is_archived = 1 WHERE program_id = ?',
-        [programId],
+        'UPDATE dim_program SET date_archived = ? WHERE program_id = ?',
+        [DateTime.now().toUtc().toIso8601String(), programId],
       );
     });
   }
@@ -279,7 +296,7 @@ class ProgramRepository {
         '''
         INSERT INTO dim_program
           (id, program_id, user_id, program_name, program_description,
-           is_archived, program_created_date, program_updated_date)
+           date_archived, program_created_date, program_updated_date)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ''',
         [
@@ -288,7 +305,7 @@ class ProgramRepository {
           userId,
           name,
           source.program.description,
-          0,
+          null,
           now,
           now,
         ],

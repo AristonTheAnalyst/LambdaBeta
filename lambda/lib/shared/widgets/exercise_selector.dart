@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_fonts.dart';
 import '../../core/styles/app_radius.dart';
+import './container_styles.dart';
 import '../../core/styles/app_spacing.dart';
 import '../../core/styles/app_text_styles.dart';
 
@@ -182,11 +183,7 @@ class _ExerciseSelectorState extends State<ExerciseSelector> {
                       child: Container(
                         width: _fieldWidth,
                         constraints: const BoxConstraints(maxHeight: 260),
-                        decoration: BoxDecoration(
-                          color: AppColors.surface,
-                          borderRadius: BorderRadius.circular(AppRadius.md),
-                          border: Border.all(color: AppColors.border),
-                        ),
+                        decoration: lambdaBox(ContainerTone.surface, radius: AppRadius.md),
                         clipBehavior: Clip.antiAlias,
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
@@ -260,12 +257,16 @@ class _ExerciseSelectorState extends State<ExerciseSelector> {
               Icons.keyboard_arrow_up,
               widget.onMove != null && i > 0,
               () => widget.onMove!(i, -1),
+              size: 28,
+              iconSize: 15,
             ),
             const SizedBox(width: 2),
             _arrow(
               Icons.keyboard_arrow_down,
               widget.onMove != null && i < widget.exercises.length - 1,
               () => widget.onMove!(i, 1),
+              size: 28,
+              iconSize: 15,
             ),
           ],
         ),
@@ -273,25 +274,34 @@ class _ExerciseSelectorState extends State<ExerciseSelector> {
     );
   }
 
-  Widget _arrow(IconData icon, bool enabled, VoidCallback onTap, {Key? key}) {
+  /// Arrow button — [size] is the full tap target (icon-button 32×32 for the
+  /// flanking field arrows, chevron 28×28 inside the popover rows).
+  Widget _arrow(
+    IconData icon,
+    bool enabled,
+    VoidCallback onTap, {
+    Key? key,
+    double size = 32,
+    double iconSize = 18,
+  }) {
     return GestureDetector(
       key: key,
       onTap: enabled ? onTap : () {},
       child: Container(
-        width: 24,
-        height: 24,
+        width: size,
+        height: size,
         alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: enabled ? AppColors.surfaceHigh : Colors.transparent,
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(
-            color: AppColors.border,
-            width: enabled ? 1.0 : 0.5,
-          ),
-        ),
+        // The glass recipe — the same chrome as every other pressable.
+        decoration: enabled
+            ? glassBox(AppColors.primary, radius: 6)
+            : BoxDecoration(
+                color: Colors.transparent,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: AppColors.border, width: 0.5),
+              ),
         child: Icon(
           icon,
-          size: 14,
+          size: iconSize,
           color: enabled ? AppColors.primary : AppColors.muted,
         ),
       ),
@@ -313,8 +323,9 @@ class _ExerciseSelectorState extends State<ExerciseSelector> {
             }
           : () {},
       child: Container(
+        margin: const EdgeInsets.fromLTRB(8, 8, 8, 0),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        color: AppColors.surfaceHigh,
+        decoration: enabled ? glassBox(AppColors.primary) : null,
         child: Row(
           children: [
             Icon(Icons.add, size: 16, color: color),

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/styles/app_colors.dart';
 import '../../../../core/styles/app_radius.dart';
+import '../../../shared/widgets/container_styles.dart';
 import '../../../../core/styles/app_fonts.dart';
 import '../../../../core/styles/app_spacing.dart';
 import '../../../../core/styles/app_text_styles.dart';
@@ -149,11 +150,7 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
                       horizontal: 16,
                       vertical: 14,
                     ),
-                    decoration: BoxDecoration(
-                      color: AppColors.surface,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: AppColors.border),
-                    ),
+                    decoration: glassBox(AppColors.primary, radius: 8),
                     child: Text(
                       endDate != null
                           ? '${endDate!.day}/${endDate!.month}/${endDate!.year}'
@@ -347,11 +344,7 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
                       horizontal: 16,
                       vertical: 14,
                     ),
-                    decoration: BoxDecoration(
-                      color: AppColors.surface,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: AppColors.border),
-                    ),
+                    decoration: glassBox(AppColors.primary, radius: 8),
                     child: Text(
                       endDate != null
                           ? '${endDate!.day}/${endDate!.month}/${endDate!.year}'
@@ -929,11 +922,7 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(AppSpacing.md),
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(AppRadius.md),
-              border: Border.all(color: AppColors.border),
-            ),
+            decoration: lambdaBox(ContainerTone.surface, radius: AppRadius.md),
             child: Row(
               children: [
                 Expanded(child: _goalLabel(g, state)),
@@ -1137,11 +1126,8 @@ class _GoalPickerState extends State<_GoalPicker> {
                             horizontal: 12,
                             vertical: 10,
                           ),
-                          decoration: BoxDecoration(
-                            color: AppColors.surfaceHigh,
-                            borderRadius: BorderRadius.circular(AppRadius.md),
-                            border: Border.all(color: AppColors.border),
-                          ),
+                          // Pressable picker rows — the glass recipe.
+                          decoration: glassBox(AppColors.primary),
                           child: Text(
                             e.value,
                             style: AppFonts.ui(

@@ -86,6 +86,14 @@ class ProgramLibraryViewModel {
 
   String get _userId => Supabase.instance.client.auth.currentUser!.id;
 
+  Future<List<Program>> fetchArchivedPrograms() =>
+      _repo.fetchArchivedPrograms(_userId);
+
+  Future<void> reactivateProgram(String programId) async {
+    await _repo.reactivateProgram(programId);
+    await fetchAll();
+  }
+
   Future<void> fetchAll() async {
     state.value = state.value.copyWith(isLoading: true, clearError: true);
     try {

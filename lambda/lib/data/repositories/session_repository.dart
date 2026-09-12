@@ -40,35 +40,59 @@ class SessionRepository {
     return sessionId;
   }
 
-  Future<void> endSession(
-    String sessionId, {
-    String? postNotes,
-    int? feeling,
-  }) async {
+  /// Stamps the end time only — the post-session questionnaire lands
+  /// separately via [updatePostQuestionnaire] after the session ends.
+  Future<void> endSession(String sessionId) async {
     await ps.db.execute(
-      'UPDATE fact_session SET end_datetime = ?, post_notes = ?, post_feeling = ? WHERE session_id = ?',
+      'UPDATE fact_session SET end_datetime = ? WHERE session_id = ?',
       [
         DateTime.now().toUtc().toIso8601String(),
-        postNotes?.isNotEmpty == true ? postNotes : null,
+        sessionId,
+      ],
+    );
+  }
+
+  /// Writes the post-session questionnaire AFTER [endSession] (wizard
+  /// page 4) — the two steps are separate so the post answers never have
+  /// to be present at the moment the session ends.
+  Future<void> updatePostQuestionnaire(
+    String sessionId, {
+    int? feeling,
+    String? notes,
+  }) async {
+    await ps.db.execute(
+      'UPDATE fact_session SET post_notes = ?, post_feeling = ? WHERE session_id = ?',
+      [
+        notes?.isNotEmpty == true ? notes : null,
         feeling,
         sessionId,
       ],
     );
   }
 
-  /// Updates a completed session's pre/post notes without touching
-  /// end_datetime — the past-session editor's save path (distinct from the
-  /// live [endSession] flow). Empty strings clear the note.
+  /// Updates a completed session's pre/post notes and feeling ratings
+  /// without touching end_datetime — the past-session editor's save path
+  /// (distinct from the live [endSession] flow). Empty strings clear the
+  /// note; null feelings clear the rating (the editor always sends the full
+  /// draft state).
   Future<void> updateSessionNotes(
     String sessionId, {
     String? preNotes,
     String? postNotes,
+    int? preFeeling,
+    int? postFeeling,
   }) async {
     await ps.db.execute(
-      'UPDATE fact_session SET pre_notes = ?, post_notes = ? WHERE session_id = ?',
+      '''
+      UPDATE fact_session
+      SET pre_notes = ?, post_notes = ?, pre_feeling = ?, post_feeling = ?
+      WHERE session_id = ?
+      ''',
       [
         preNotes?.isNotEmpty == true ? preNotes : null,
         postNotes?.isNotEmpty == true ? postNotes : null,
+        preFeeling,
+        postFeeling,
         sessionId,
       ],
     );

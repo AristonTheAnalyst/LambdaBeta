@@ -38,7 +38,7 @@ class GuideScreen extends StatelessWidget {
                   _Section('Logging a workout',
                       '1. Go to the Session tab.\n2. Optionally choose a template and rate how you expect to feel.\n3. Tap "Start Workout".\n4. Tap "Log Set" to record each set. Select the exercise, optionally a variation, enter weight and reps.\n5. When finished, tap "End" in the header and add any post-workout notes.'),
                   _Section('Volume formula',
-                      'Total volume = weight × sum of all reps across sets. For duration exercises, volume = sum of all seconds. This is shown in the Statistics tab.'),
+                      'Total volume = weight × sum of all reps across sets. For duration exercises, volume = sum of all seconds.'),
                   _Section('Last updated', 'March 2026'),
                 ],
               ),

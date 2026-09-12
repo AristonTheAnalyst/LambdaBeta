@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
 import '../../../core/styles/app_radius.dart';
+import '../../../shared/widgets/container_styles.dart';
 import '../../../core/styles/app_spacing.dart';
 import '../../../core/styles/app_text_styles.dart';
 import '../../../core/utils/session_format.dart';
@@ -299,13 +300,9 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
                               padding: const EdgeInsets.symmetric(
                                 vertical: AppSpacing.xxl,
                               ),
-                              decoration: BoxDecoration(
-                                color: AppColors.surface,
-                                borderRadius: BorderRadius.circular(
+                              decoration: lambdaBox(ContainerTone.surface, radius: 
                                   AppRadius.lg,
                                 ),
-                                border: Border.all(color: AppColors.border),
-                              ),
                               child: Column(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
@@ -446,11 +443,8 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
                           horizontal: 8,
                           vertical: 4,
                         ),
-                        decoration: BoxDecoration(
-                          color: AppColors.successBg,
-                          borderRadius: BorderRadius.circular(AppRadius.md),
-                          border: Border.all(color: AppColors.success),
-                        ),
+                        // The glass recipe in success — the pressable chrome.
+                        decoration: glassBox(AppColors.success),
                         child: Text(
                           'Save',
                           style: AppFonts.ui(
@@ -926,15 +920,8 @@ class _AddExerciseContentState extends State<_AddExerciseContent> {
         onTap: onTap,
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          decoration: BoxDecoration(
-            color: AppColors.surfaceHigh,
-            borderRadius: BorderRadius.circular(AppRadius.md),
-            border: Border.all(
-              color: accent
-                  ? AppColors.accent.withValues(alpha: 0.35)
-                  : AppColors.border,
-            ),
-          ),
+          // Pressable rows — the glass recipe in their semantic color.
+          decoration: glassBox(accent ? AppColors.accent : AppColors.primary),
           child: Row(
             children: [
               Expanded(

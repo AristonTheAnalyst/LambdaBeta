@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_fonts.dart';
-import '../../core/styles/app_radius.dart';
+import 'container_styles.dart';
 
 /// One tile within a [StatsRow].
 class StatsTile {
@@ -35,10 +35,7 @@ class StatsRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(AppRadius.lg),
-        border: Border.all(color: AppColors.border),
-      ),
+      decoration: lambdaBox(ContainerTone.surface),
       clipBehavior: Clip.antiAlias,
       child: Row(
         children: [

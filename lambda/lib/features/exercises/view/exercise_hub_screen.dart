@@ -1,17 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/styles/app_colors.dart';
-import '../../../../core/styles/app_fonts.dart';
-import '../../../../core/styles/app_spacing.dart';
-import '../../../../core/styles/app_text_styles.dart';
-import '../../../../shared/widgets/app_card.dart';
 import '../../../../shared/widgets/page_header.dart';
 import '../../../../shared/widgets/slide_tab_bar.dart';
 import '../../programs/view/program_library_screen.dart';
 import '../../programs/view/workout_library_screen.dart';
+import 'exercise_library_screen.dart';
 
-/// Exercises hub: two tabs — Workouts (standalone planned sessions) and
-/// Programs — plus quick links to the exercise library and guide.
+/// Exercises hub: four tabs — Exercises, Variations, Workouts (standalone
+/// planned sessions), Programs — plus an ⓘ guide icon in the header.
+/// The library's Exercises/Variations tabs are embedded first; the guide is
+/// no longer a quick link, just the header information icon.
 class ExerciseHubScreen extends StatefulWidget {
   const ExerciseHubScreen({super.key});
 
@@ -28,49 +27,34 @@ class _ExerciseHubScreenState extends State<ExerciseHubScreen> {
       backgroundColor: AppColors.bg,
       body: Column(
         children: [
-          const PageHeader(title: 'Exercise Configuration'),
-          Padding(
-            padding: const EdgeInsets.all(AppSpacing.lg),
-            child: Row(
-              children: [
-                _quickLink('Library', Icons.fitness_center, '/exercises/library'),
-                const SizedBox(width: AppSpacing.md),
-                _quickLink('Guide', Icons.menu_book_outlined, '/exercises/guide'),
-              ],
+          PageHeader(
+            title: 'Library',
+            right: GestureDetector(
+              onTap: () => context.push('/exercises/guide'),
+              child: Icon(
+                Icons.info_outline,
+                size: 22,
+                color: AppColors.accent,
+              ),
             ),
           ),
           SlideTabBar(
-            tabs: const ['Workouts', 'Programs'],
+            tabs: const ['Exercises', 'Variations', 'Workouts', 'Programs'],
             activeIndex: _tab,
             onTap: (i) => setState(() => _tab = i),
           ),
           Expanded(
-            child: _tab == 0
-                ? const WorkoutLibraryScreen(showHeader: false)
-                : const ProgramLibraryScreen(showHeader: false),
+            child: IndexedStack(
+              index: _tab,
+              children: const [
+                ExerciseLibraryScreen(embedded: true, initialTab: 0),
+                ExerciseLibraryScreen(embedded: true, initialTab: 1),
+                WorkoutLibraryScreen(showHeader: false),
+                ProgramLibraryScreen(showHeader: false),
+              ],
+            ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _quickLink(String label, IconData icon, String route) {
-    return Expanded(
-      child: AppCard(
-        onTap: () => context.push(route),
-        padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.md, vertical: AppSpacing.sm),
-        child: Row(
-          children: [
-            Icon(icon, size: 16, color: AppColors.accent),
-            const SizedBox(width: AppSpacing.sm),
-            Text(label,
-                style: AppFonts.ui(
-                    fontSize: AppTextStyles.sm,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.primary)),
-          ],
-        ),
       ),
     );
   }

@@ -253,9 +253,26 @@ class ExerciseViewModel {
     }
   }
 
+  /// Deletes a never-used exercise outright; archives a used one so history
+  /// keeps it. Screens use [exerciseUsageCount] to pick their dialog copy.
   Future<void> deleteExercise(String exerciseId) async {
     state.value = state.value.copyWith(clearEditEx: true);
-    await _repo.deactivateExercise(exerciseId);
+    if (await _repo.exerciseUsageCount(exerciseId) > 0) {
+      await _repo.deactivateExercise(exerciseId);
+    } else {
+      await _repo.hardDeleteExercise(exerciseId);
+    }
+    await fetchAll();
+  }
+
+  Future<int> exerciseUsageCount(String exerciseId) =>
+      _repo.exerciseUsageCount(exerciseId);
+
+  Future<List<CustomExercise>> fetchArchivedExercises() =>
+      _repo.fetchArchivedExercises(_userId);
+
+  Future<void> reactivateExercise(String exerciseId) async {
+    await _repo.reactivateExercise(exerciseId);
     await fetchAll();
   }
 
@@ -303,9 +320,26 @@ class ExerciseViewModel {
     }
   }
 
+  /// Deletes a never-used variation outright; archives a used one so history
+  /// keeps it. Screens use [variationUsageCount] to pick their dialog copy.
   Future<void> deleteVariation(String variationId) async {
     state.value = state.value.copyWith(clearEditVar: true);
-    await _repo.deactivateVariation(variationId);
+    if (await _repo.variationUsageCount(variationId) > 0) {
+      await _repo.deactivateVariation(variationId);
+    } else {
+      await _repo.hardDeleteVariation(variationId);
+    }
+    await fetchAll();
+  }
+
+  Future<int> variationUsageCount(String variationId) =>
+      _repo.variationUsageCount(variationId);
+
+  Future<List<CustomVariation>> fetchArchivedVariations() =>
+      _repo.fetchArchivedVariations(_userId);
+
+  Future<void> reactivateVariation(String variationId) async {
+    await _repo.reactivateVariation(variationId);
     await fetchAll();
   }
 

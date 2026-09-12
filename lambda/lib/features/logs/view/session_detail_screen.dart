@@ -15,6 +15,7 @@ import '../../../shared/widgets/planned_banner.dart';
 import '../../../shared/widgets/reflection_summary.dart';
 import '../../../shared/widgets/segmented_control.dart';
 import '../../../shared/widgets/session_bookend.dart';
+import '../../../shared/widgets/container_styles.dart';
 import '../../../shared/widgets/session_exercise_card.dart';
 import '../../../shared/widgets/session_set_row.dart';
 import '../../../shared/widgets/slide_up_modal.dart';
@@ -35,10 +36,6 @@ class SessionDetailScreen extends StatefulWidget {
 class _SessionDetailScreenState extends State<SessionDetailScreen>
     with UnsavedChangesGuard<SessionDetailScreen> {
   late final SessionDetailViewModel _vm;
-
-  /// Which of the two surfaces is shown: the sets (details) or the
-  /// pre/PRS/lessons/post summary. Plain UI state — no VM involvement.
-  String _tab = 'details';
 
   @override
   void initState() {
@@ -125,24 +122,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
                             onPressed: _vm.startEditing,
                           ),
                   ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(
-                      AppSpacing.lg,
-                      AppSpacing.md,
-                      AppSpacing.lg,
-                      AppSpacing.xs,
-                    ),
-                    child: SegmentedControl<String>(
-                      options: const [
-                        SegmentOption(label: 'Details', value: 'details'),
-                        SegmentOption(label: 'Summary', value: 'summary'),
-                      ],
-                      value: _tab,
-                      onChange: (v) => setState(() => _tab = v),
-                    ),
-                  ),
                   Expanded(
-                    child: _SessionBody(viewModel: _vm, state: state, tab: _tab),
+                    child: SessionDetailView(viewModel: _vm, state: state),
                   ),
                 ],
               ),
@@ -156,22 +137,57 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
 
 // ── Body ─────────────────────────────────────────────────────────────────────
 
-class _SessionBody extends StatelessWidget {
-  const _SessionBody({
+/// The past-session viewer's tabbed content — the Details/Summary toggle
+/// plus the selected surface. Shared between the /logs route (with its
+/// Edit header) and the Session tab's Home embed (read-only view mode).
+class SessionDetailView extends StatefulWidget {
+  const SessionDetailView({
+    super.key,
     required this.viewModel,
     required this.state,
-    required this.tab,
   });
 
   final SessionDetailViewModel viewModel;
   final SessionDetailState state;
 
-  /// 'details' (the sets surface) or 'summary' (pre → PRS/LESSONS → post).
-  final String tab;
+  @override
+  State<SessionDetailView> createState() => _SessionDetailViewState();
+}
+
+class _SessionDetailViewState extends State<SessionDetailView> {
+  /// Which of the two surfaces is shown: the pre/PRS/lessons/post summary,
+  /// or the sets (details). Plain UI state — no VM involvement.
+  String _tab = 'summary';
 
   @override
   Widget build(BuildContext context) {
-    if (tab == 'summary') {
+    final viewModel = widget.viewModel;
+    final state = widget.state;
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.lg,
+            AppSpacing.md,
+            AppSpacing.lg,
+            AppSpacing.xs,
+          ),
+          child: SegmentedControl<String>(
+            options: const [
+              SegmentOption(label: 'Summary', value: 'summary'),
+              SegmentOption(label: 'Details', value: 'details'),
+            ],
+            value: _tab,
+            onChange: (v) => setState(() => _tab = v),
+          ),
+        ),
+        Expanded(child: _body(viewModel, state)),
+      ],
+    );
+  }
+
+  Widget _body(SessionDetailViewModel viewModel, SessionDetailState state) {
+    if (_tab == 'summary') {
       return _SessionSummaryBody(viewModel: viewModel, state: state);
     }
     if (state.exerciseSlots.isEmpty) {
@@ -243,7 +259,7 @@ class _SessionBody extends StatelessWidget {
                 value: '${state.totalPRCount}',
                 accent: state.totalPRCount > 0,
                 onTap: state.totalPRCount > 0
-                    ? () => showPrModal(context, prs: state.prRecords)
+                    ? () => showPrModal(context, prs: state.prEvents)
                     : null,
               ),
               StatsTile(
@@ -262,7 +278,7 @@ class _SessionBody extends StatelessWidget {
       context,
       fitContent: true,
       keyboardAware: true,
-      child: _DetailAddExerciseContent(viewModel: viewModel),
+      child: _DetailAddExerciseContent(viewModel: widget.viewModel),
     );
   }
 }
@@ -283,10 +299,9 @@ class _SessionSummaryBody extends StatelessWidget {
   Widget build(BuildContext context) {
     final session = state.session;
 
-    // Explicit (non-propagated) PRs grouped by exercise — the VM already
-    // filters propagated records out of state.prRecords.
-    final prsByExercise = <String, List<PrRecord>>{};
-    for (final p in state.prRecords) {
+    // PR events grouped by exercise.
+    final prsByExercise = <String, List<PrEvent>>{};
+    for (final p in state.prEvents) {
       prsByExercise.putIfAbsent(p.exerciseId, () => []).add(p);
     }
     // Session-scoped lessons only — mirrors the prep card, where only
@@ -324,11 +339,17 @@ class _SessionSummaryBody extends StatelessWidget {
                 ],
                 SessionBookend(
                   label: 'PRE-WORKOUT',
-                  feeling: session?.preFeeling,
-                  notes: session?.preNotes,
+                  feeling: state.isEditing
+                      ? state.preFeelingDraft
+                      : session?.preFeeling,
+                  notes: state.isEditing ? state.preNotesDraft : session?.preNotes,
                   emptyNotes: 'No pre-workout notes',
                   question: 'How well do you think you\'re going to do',
                   notesLabel: 'Why do you feel that way',
+                  onFeelingChanged:
+                      state.isEditing ? viewModel.setPreFeelingDraft : null,
+                  onNotesChanged:
+                      state.isEditing ? viewModel.setPreNotesDraft : null,
                 ),
               ],
             ),
@@ -343,7 +364,6 @@ class _SessionSummaryBody extends StatelessWidget {
               prsByExercise: prsByExercise,
               lessonsByExercise: lessonsByExercise,
               exerciseNameFor: viewModel.exerciseDisplayName,
-              previousFor: viewModel.summaryPreviousFor,
             ),
           ),
           const SizedBox(height: AppSpacing.md),
@@ -352,11 +372,18 @@ class _SessionSummaryBody extends StatelessWidget {
             padding: const EdgeInsets.all(AppSpacing.md),
             child: SessionBookend(
               label: 'POST-WORKOUT',
-              feeling: session?.feeling,
-              notes: session?.postNotes,
+              feeling: state.isEditing
+                  ? state.postFeelingDraft
+                  : session?.feeling,
+              notes:
+                  state.isEditing ? state.postNotesDraft : session?.postNotes,
               emptyNotes: 'No post-workout notes',
               question: 'How well did you do this session',
               notesLabel: 'What could have made this session better',
+              onFeelingChanged:
+                  state.isEditing ? viewModel.setPostFeelingDraft : null,
+              onNotesChanged:
+                  state.isEditing ? viewModel.setPostNotesDraft : null,
             ),
           ),
         ],
@@ -442,12 +469,9 @@ class _DetailCardBuilder extends StatelessWidget {
 
   /// Delete with the PR-count warning — cascade so PRs recompute.
   Future<void> _confirmDeleteSet(SessionExerciseSet set, BuildContext context) async {
-    // In-memory PR count from the already-computed workout PR records —
-    // countable (explicit rep-max) only, matching every other count.
-    final prCount = state.prRecords
-        .where((r) =>
-            r.sessionExerciseSetId == set.sessionExerciseSetId &&
-            r.type == PrType.repMax)
+    // In-memory PR count from the already-computed workout PR events.
+    final prCount = state.prEvents
+        .where((r) => r.sessionExerciseSetId == set.sessionExerciseSetId)
         .length;
 
     final ok = await showDialog<bool>(
@@ -510,15 +534,12 @@ class _DetailCardBuilder extends StatelessWidget {
     final history = viewModel.historyFor(exerciseId);
     final sets = state.setsFor(order);
     final draftIds = state.workoutSetDrafts[order] ?? const <int>[];
-    // The orange PR accent is a COUNT surface — explicit rep-max only,
-    // matching the stats tile and every other count. Weight-max records
-    // (bodyweight included) stay visible in the PRs modal, never highlighted.
-    final prSetIds = state.prRecords
-        .where(
-          (r) => r.type == PrType.repMax && r.sessionExerciseSetId != null,
-        )
-        .map((r) => r.sessionExerciseSetId!)
-        .toSet();
+    // The orange PR accent = this session's PR events — the same sets the
+    // stats tile, pills, and modal count.
+    final prSetIds = {
+      for (final r in state.prEvents)
+        if (r.sessionExerciseSetId != null) r.sessionExerciseSetId!,
+    };
 
     // The pinned lesson shows right under the exercise — pinning is what
     // decides whether a note appears there.
@@ -681,8 +702,34 @@ class _DetailCardBuilder extends StatelessWidget {
       rows: rows,
       onAddSet: state.isEditing ? () => viewModel.addDraftSet(order) : null,
       history: history,
-      historyDetailSubtitle: 'Past performance for reference.',
-      historyRowBuilder: (s) => HistorySetRow(set: s),
+      // The history viewer is the regular sets grid — read-only here (the
+      // screen's own edit mode is the logs' editing surface), so the rows
+      // are inert shared SessionSetRows with no edit gate.
+      historyRowBuilder: (s) => SessionSetRow(
+        key: ValueKey('history-${s.sessionExerciseSetId}'),
+        mode: SetRowMode.history,
+        exerciseId: s.exerciseId ?? '',
+        displayIndex: s.setNumber,
+        isDraft: false,
+        initialWeightText: s.weight != null ? _fmtNum(s.weight!) : '',
+        initialRepsText: s.reps.isNotEmpty ? _fmtNum(s.reps.first) : '',
+        initialVariationId: s.variationId,
+        initialVariationName: s.variationName,
+        initialNotes: s.notes,
+        hasNotes: s.notes?.isNotEmpty ?? false,
+        // Past PR sets badge like the grid — events are keyed by set id.
+        isPr: state.prEventSetIds.contains(s.sessionExerciseSetId),
+        readOnly: true,
+        onCommit: (_, _) async {},
+        onVariationChanged: (_) {},
+        onNotesSave: (_) {},
+        onDelete: () async {},
+        onDuplicate: () {},
+        variationOptions: variationOptions,
+        allVariations: allVariations,
+        findSimilarVariations: viewModel.findSimilarVariations,
+        submitNewVariation: viewModel.submitNewVariation,
+      ),
     );
   }
 }
@@ -862,15 +909,8 @@ class _DetailAddExerciseContentState extends State<_DetailAddExerciseContent> {
         onTap: onTap,
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          decoration: BoxDecoration(
-            color: AppColors.surfaceHigh,
-            borderRadius: BorderRadius.circular(AppRadius.md),
-            border: Border.all(
-              color: accent
-                  ? AppColors.accent.withValues(alpha: 0.35)
-                  : AppColors.border,
-            ),
-          ),
+          // Pressable rows — the glass recipe in their semantic color.
+          decoration: glassBox(accent ? AppColors.accent : AppColors.primary),
           child: Row(
             children: [
               Expanded(

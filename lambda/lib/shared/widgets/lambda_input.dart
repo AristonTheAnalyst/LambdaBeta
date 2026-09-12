@@ -7,6 +7,7 @@ class LambdaInput extends StatelessWidget {
   const LambdaInput({
     super.key,
     required this.controller,
+    this.focusNode,
     this.label,
     this.placeholder,
     this.error,
@@ -18,9 +19,12 @@ class LambdaInput extends StatelessWidget {
     this.onChanged,
     this.onSubmitted,
     this.required = false,
+    this.minLines,
+    this.maxLines,
   });
 
   final TextEditingController controller;
+  final FocusNode? focusNode;
   final String? label;
   final String? placeholder;
   final String? error;
@@ -34,6 +38,10 @@ class LambdaInput extends StatelessWidget {
 
   /// Renders a small accent `*` after the label to mark the field required.
   final bool required;
+
+  /// Multiline sizing — pass both (e.g. 2 and 6) for a notes-style field.
+  final int? minLines;
+  final int? maxLines;
 
   @override
   Widget build(BuildContext context) {
@@ -66,11 +74,14 @@ class LambdaInput extends StatelessWidget {
         ],
         TextField(
           controller: controller,
+          focusNode: focusNode,
           obscureText: obscureText,
           enabled: enabled,
           keyboardType: keyboardType,
           textCapitalization: textCapitalization,
           textInputAction: textInputAction,
+          minLines: minLines,
+          maxLines: maxLines,
           onChanged: onChanged,
           onSubmitted: onSubmitted,
           autocorrect: false,

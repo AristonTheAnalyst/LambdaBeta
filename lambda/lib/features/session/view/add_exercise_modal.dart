@@ -5,6 +5,7 @@ import '../../../core/styles/app_radius.dart';
 import '../../../core/styles/app_spacing.dart';
 import '../../../core/utils/session_format.dart';
 import '../../../shared/widgets/slide_up_modal.dart';
+import '../../../shared/widgets/container_styles.dart';
 import '../viewmodel/session_viewmodel.dart';
 
 void showAddExerciseModal(BuildContext context, {required SessionViewModel vm}) {
@@ -155,13 +156,8 @@ class _AddExerciseModalContentState extends State<_AddExerciseModalContent> {
         onTap: onTap,
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          decoration: BoxDecoration(
-            color: AppColors.surfaceHigh,
-            borderRadius: BorderRadius.circular(AppRadius.md),
-            border: Border.all(
-                color: accent ? AppColors.primary.withValues(alpha: 0.35) : AppColors.border,
-                style: accent ? BorderStyle.solid : BorderStyle.solid),
-          ),
+          // Pressable rows — the glass recipe in their semantic color.
+          decoration: glassBox(accent ? AppColors.accent : AppColors.primary),
           child: Row(
             children: [
               Expanded(

@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_text_styles.dart';
 import '../../../core/utils/validators.dart';
+import '../../../shared/widgets/container_styles.dart';
 import '../../../shared/widgets/lambda_button.dart';
 import '../../../shared/widgets/lambda_input.dart';
 import '../viewmodel/auth_viewmodel.dart';
@@ -279,11 +280,8 @@ class _SocialButton extends StatelessWidget {
         child: Container(
           width: 56,
           height: 56,
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            border: Border.all(color: AppColors.border),
-            borderRadius: BorderRadius.circular(8),
-          ),
+          // The glass recipe — the same pressable chrome as every button.
+          decoration: glassBox(AppColors.primary, radius: 8),
           alignment: Alignment.center,
           child: loading
               ? SizedBox(

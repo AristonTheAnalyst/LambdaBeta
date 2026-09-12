@@ -6,6 +6,8 @@ import '../../../../core/styles/app_radius.dart';
 import '../../../../core/styles/app_spacing.dart';
 import '../../../../core/styles/app_text_styles.dart';
 import '../../../../shared/widgets/app_card.dart';
+import '../../../../shared/widgets/archived_sheet.dart';
+import '../../../../shared/widgets/container_styles.dart';
 import '../../../../core/utils/session_format.dart';
 import '../../../../data/models/custom_exercise.dart';
 import '../../../../data/models/custom_variation.dart';
@@ -20,7 +22,18 @@ import '../../../../shared/widgets/slide_up_modal.dart';
 import '../viewmodel/exercise_viewmodel.dart';
 
 class ExerciseLibraryScreen extends StatefulWidget {
-  const ExerciseLibraryScreen({super.key});
+  const ExerciseLibraryScreen({
+    super.key,
+    this.embedded = false,
+    this.initialTab = 0,
+  });
+
+  /// When embedded in a hub tab, render one panel only — the hub owns the
+  /// header and its own tab bar, so the nested header/tabs are hidden.
+  final bool embedded;
+
+  /// Which panel to show when [embedded]: 0 = Exercises, 1 = Variations.
+  final int initialTab;
 
   @override
   State<ExerciseLibraryScreen> createState() => _ExerciseLibraryScreenState();
@@ -39,6 +52,9 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
   void initState() {
     super.initState();
     _viewModel.fetchAll();
+    if (widget.embedded && widget.initialTab == 1) {
+      _viewModel.setTab(1);
+    }
     _exSearchController.addListener(
       () => _viewModel.setExSearch(_exSearchController.text),
     );
@@ -91,6 +107,40 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
     );
   }
 
+  // ── Archived dims ────────────────────────────────────────────────────────────
+
+  void _openArchivedExercises() {
+    showLambdaModal(
+      context,
+      fitContent: true,
+      child: ArchivedSheet(
+        title: 'Archived Exercises',
+        emptyText: 'No archived exercises.',
+        fetch: () async => [
+          for (final e in await _viewModel.fetchArchivedExercises())
+            (id: e.exerciseId, name: e.name),
+        ],
+        onRestore: (id) => _viewModel.reactivateExercise(id),
+      ),
+    );
+  }
+
+  void _openArchivedVariations() {
+    showLambdaModal(
+      context,
+      fitContent: true,
+      child: ArchivedSheet(
+        title: 'Archived Variations',
+        emptyText: 'No archived variations.',
+        fetch: () async => [
+          for (final v in await _viewModel.fetchArchivedVariations())
+            (id: v.variationId, name: v.name),
+        ],
+        onRestore: (id) => _viewModel.reactivateVariation(id),
+      ),
+    );
+  }
+
   // ── Edit Exercise ────────────────────────────────────────────────────────────
 
   void _openEditExercise(CustomExercise ex) async {
@@ -119,20 +169,28 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
     );
   }
 
-  void _confirmDeleteVariation(String variationId, String name) {
-    showDialog<void>(
+  /// Deletes a never-used variation outright; archives a used one. The dialog
+  /// copy follows the usage state so the user always knows which happened.
+  Future<void> _confirmDeleteVariation(String variationId, String name) async {
+    final used = await _viewModel.variationUsageCount(variationId) > 0;
+    if (!mounted) return;
+    await showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
         title: Text(
-          'Delete Variation',
+          used ? 'Archive Variation' : 'Delete Variation',
           style: AppFonts.ui(
             fontWeight: FontWeight.w800,
             color: AppColors.danger,
           ),
         ),
         content: Text(
-          'Remove "$name"?',
+          used
+              ? 'Archive "$name"? It has been used, so it can\'t be fully '
+                'deleted — it will disappear from pickers, but your logged '
+                'history keeps it.'
+              : 'Delete "$name"? This can\'t be undone.',
           style: AppFonts.ui(color: AppColors.muted),
         ),
         actions: [
@@ -147,7 +205,7 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
               _viewModel.deleteVariation(variationId);
             },
             child: Text(
-              'Delete',
+              used ? 'Archive' : 'Delete',
               style: AppFonts.ui(
                 color: AppColors.danger,
                 fontWeight: FontWeight.w600,
@@ -166,27 +224,47 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
       body: ValueListenableBuilder<ExerciseState>(
         valueListenable: _viewModel.state,
         builder: (context, state, _) {
+          final exercisesPanel = _ExercisesPanel(
+            state: state,
+            searchController: _exSearchController,
+            onAdd: _openCreateExercise,
+            onShowArchived: _openArchivedExercises,
+            onEdit: _openEditExercise,
+            onPrev: _viewModel.prevExPage,
+            onNext: _viewModel.nextExPage,
+          );
+          final variationsPanel = _VariationsPanel(
+            state: state,
+            searchController: _varSearchController,
+            onAdd: _openCreateVariation,
+            onShowArchived: _openArchivedVariations,
+            onEdit: _openEditVariation,
+            onPrev: _viewModel.prevVarPage,
+            onNext: _viewModel.nextVarPage,
+          );
           return Column(
             children: [
-              PageHeader(
-                title: 'Exercises & Variations',
-                left: GestureDetector(
-                  onTap: () => context.pop(),
-                  child: Icon(
-                    Icons.arrow_back_ios_new,
-                    size: 18,
-                    color: AppColors.accent,
+              if (!widget.embedded) ...[
+                PageHeader(
+                  title: 'Exercises & Variations',
+                  left: GestureDetector(
+                    onTap: () => context.pop(),
+                    child: Icon(
+                      Icons.arrow_back_ios_new,
+                      size: 18,
+                      color: AppColors.accent,
+                    ),
                   ),
                 ),
-              ),
-              SlideTabBar(
-                tabs: ['Exercises', 'Variations'],
-                activeIndex: state.activeTab,
-                onTap: (i) {
-                  _viewModel.setTab(i);
-                  _tabController.jumpTo(i);
-                },
-              ),
+                SlideTabBar(
+                  tabs: ['Exercises', 'Variations'],
+                  activeIndex: state.activeTab,
+                  onTap: (i) {
+                    _viewModel.setTab(i);
+                    _tabController.jumpTo(i);
+                  },
+                ),
+              ],
               if (state.error != null)
                 Container(
                   width: double.infinity,
@@ -203,28 +281,18 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
                     ),
                   ),
                 ),
-              SlideTabView(
-                tabs: [
-                  _ExercisesPanel(
-                    state: state,
-                    searchController: _exSearchController,
-                    onAdd: _openCreateExercise,
-                    onEdit: _openEditExercise,
-                    onPrev: _viewModel.prevExPage,
-                    onNext: _viewModel.nextExPage,
-                  ),
-                  _VariationsPanel(
-                    state: state,
-                    searchController: _varSearchController,
-                    onAdd: _openCreateVariation,
-                    onEdit: _openEditVariation,
-                    onPrev: _viewModel.prevVarPage,
-                    onNext: _viewModel.nextVarPage,
-                  ),
-                ],
-                controller: _tabController,
-                onPageChanged: _viewModel.setTab,
-              ),
+              if (widget.embedded)
+                Expanded(
+                  child: widget.initialTab == 0
+                      ? exercisesPanel
+                      : variationsPanel,
+                )
+              else
+                SlideTabView(
+                  tabs: [exercisesPanel, variationsPanel],
+                  controller: _tabController,
+                  onPageChanged: _viewModel.setTab,
+                ),
             ],
           );
         },
@@ -240,6 +308,7 @@ class _ExercisesPanel extends StatelessWidget {
     required this.state,
     required this.searchController,
     required this.onAdd,
+    required this.onShowArchived,
     required this.onEdit,
     required this.onPrev,
     required this.onNext,
@@ -248,6 +317,7 @@ class _ExercisesPanel extends StatelessWidget {
   final ExerciseState state;
   final TextEditingController searchController;
   final VoidCallback onAdd;
+  final VoidCallback onShowArchived;
   final ValueChanged<CustomExercise> onEdit;
   final VoidCallback onPrev;
   final VoidCallback onNext;
@@ -261,16 +331,6 @@ class _ExercisesPanel extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  Expanded(
-                    child: Text(
-                      'All Exercises',
-                      style: AppFonts.ui(
-                        fontSize: AppTextStyles.lg,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.primary,
-                      ),
-                    ),
-                  ),
                   if (state.exercises.isNotEmpty)
                     Expanded(
                       child: TextField(
@@ -301,6 +361,13 @@ class _ExercisesPanel extends StatelessWidget {
                     label: '',
                     icon: Icons.add,
                     onPressed: onAdd,
+                    compact: true,
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  GlassButton(
+                    label: '',
+                    icon: Icons.archive_outlined,
+                    onPressed: onShowArchived,
                     compact: true,
                   ),
                 ],
@@ -385,7 +452,6 @@ class _ExercisesPanel extends StatelessWidget {
                 ),
                 if (state.exTotal > _pageSize)
                   _PaginationBar(
-                    shown: state.pagedExercises.length,
                     total: state.exTotal,
                     page: state.exPage,
                     canPrev: state.canPrevEx,
@@ -404,6 +470,7 @@ class _VariationsPanel extends StatelessWidget {
     required this.state,
     required this.searchController,
     required this.onAdd,
+    required this.onShowArchived,
     required this.onEdit,
     required this.onPrev,
     required this.onNext,
@@ -412,6 +479,7 @@ class _VariationsPanel extends StatelessWidget {
   final ExerciseState state;
   final TextEditingController searchController;
   final VoidCallback onAdd;
+  final VoidCallback onShowArchived;
   final ValueChanged<CustomVariation> onEdit;
   final VoidCallback onPrev;
   final VoidCallback onNext;
@@ -425,16 +493,6 @@ class _VariationsPanel extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  Expanded(
-                    child: Text(
-                      'All Variations',
-                      style: AppFonts.ui(
-                        fontSize: AppTextStyles.lg,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.primary,
-                      ),
-                    ),
-                  ),
                   if (state.variations.isNotEmpty)
                     Expanded(
                       child: TextField(
@@ -465,6 +523,13 @@ class _VariationsPanel extends StatelessWidget {
                     label: '',
                     icon: Icons.add,
                     onPressed: onAdd,
+                    compact: true,
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  GlassButton(
+                    label: '',
+                    icon: Icons.archive_outlined,
+                    onPressed: onShowArchived,
                     compact: true,
                   ),
                 ],
@@ -549,7 +614,6 @@ class _VariationsPanel extends StatelessWidget {
                 ),
                 if (state.varTotal > _pageSize)
                   _PaginationBar(
-                    shown: state.pagedVariations.length,
                     total: state.varTotal,
                     page: state.varPage,
                     canPrev: state.canPrevVar,
@@ -574,7 +638,6 @@ String _usageLine(ExerciseUsage u, {required bool isExercise}) =>
 
 class _PaginationBar extends StatelessWidget {
   const _PaginationBar({
-    required this.shown,
     required this.total,
     required this.page,
     required this.canPrev,
@@ -583,7 +646,6 @@ class _PaginationBar extends StatelessWidget {
     required this.onNext,
   });
 
-  final int shown;
   final int total;
   final int page;
   final bool canPrev;
@@ -602,15 +664,10 @@ class _PaginationBar extends StatelessWidget {
             onTap: canPrev ? onPrev : null,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: canPrev ? AppColors.accentBg : AppColors.surfaceHigh,
-                borderRadius: BorderRadius.circular(AppRadius.md),
-                border: Border.all(
-                  color: canPrev
-                      ? AppColors.accent.withValues(alpha: 0.35)
-                      : AppColors.border,
-                ),
-              ),
+              // The glass recipe — enabled in accent, disabled stays muted.
+              decoration: canPrev
+                  ? glassBox(AppColors.accent)
+                  : lambdaBox(ContainerTone.ghost, radius: AppRadius.md),
               child: Icon(
                 Icons.chevron_left,
                 size: 16,
@@ -620,7 +677,9 @@ class _PaginationBar extends StatelessWidget {
           ),
           const SizedBox(width: AppSpacing.md),
           Text(
-            '$shown of $total',
+            // Cumulative: everything shown up to this page, not just the
+            // rows on the current one.
+            '${((page + 1) * _pageSize).clamp(0, total)} of $total',
             style: AppFonts.mono(fontSize: 11, color: AppColors.muted),
           ),
           const SizedBox(width: AppSpacing.md),
@@ -628,15 +687,10 @@ class _PaginationBar extends StatelessWidget {
             onTap: canNext ? onNext : null,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: canNext ? AppColors.accentBg : AppColors.surfaceHigh,
-                borderRadius: BorderRadius.circular(AppRadius.md),
-                border: Border.all(
-                  color: canNext
-                      ? AppColors.accent.withValues(alpha: 0.35)
-                      : AppColors.border,
-                ),
-              ),
+              // The glass recipe — enabled in accent, disabled stays muted.
+              decoration: canNext
+                  ? glassBox(AppColors.accent)
+                  : lambdaBox(ContainerTone.ghost, radius: AppRadius.md),
               child: Icon(
                 Icons.chevron_right,
                 size: 16,

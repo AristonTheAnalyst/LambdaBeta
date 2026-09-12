@@ -1,84 +1,96 @@
 # PR Methodology
 
-How personal records are computed, persisted, and cleaned up in Lambda.
+How personal records are computed in Lambda. PRs are **fully derived on
+read** — there is no PR table; every surface recomputes from the set
+history (`fact_session_exercise_set` joined through
+`fact_session_exercise`), so editing or deleting a set changes every PR
+view on the next read with nothing to clean up.
 
-## The core insight: a set is a PR on multiple axes at once
+## The definition: a set is a PR iff it extends the best-ever frontier
 
-A single set of `105kg × 3` can be a PR for **several rep-max records at the
-same time**. If your previous best at 3 reps was 100kg, then 105×3 also beats
-your previous 1RM and 2RM (if you can lift 105 for 3, you can lift it for 1
-or 2). One set → several PR records. A PR isn't a set — it's an **axis
-improvement**: one set can be the reason several PRs exist.
+Per **(exercise × variation)** pair (null variation is its own distinct
+key), a set `(w, r)` is a PR iff **no prior set did at least r reps at at
+least w weight**:
 
-The engine (`lib/features/session/model/pr_engine.dart`) walks the full set
-history chronologically, maintaining a **rep-max curve** per exercise
-(`curve[N]` = best weight ever lifted for ≥ N reps). Every set is checked
-against the curve at each rep count N from 1 to the set's reps; any N the set
-improves generates a record.
+```
+PR(set) ⇔ ¬∃ prior (w' ≥ w ∧ r' ≥ r)
+```
 
-## The PR axes
+That single dominance check covers both directions of the weight/reps
+relation at once — they are the same thing viewed from opposite sides.
+Consequences, all intended:
 
-| Axis | Definition | Example |
-|---|---|---|
-| **Rep-max (N-rep max)** | For each rep count N, the highest weight lifted for ≥ N reps. One set improves 1RM…N RM simultaneously. | "New 3RM: 105kg" |
-| **Weight-max** | Most reps ever done at a given weight for an exercise. Kept distinct in the DB from rep-max so querying per axis is simple. | "Most reps at 100kg: 8" |
-| **Per-exercise** | Any of the above filtered to a single exercise. | Squat's 5RM |
-| **Exercise × variation** | Any of the above filtered to one exercise + variation pair. | Best incline bench vs flat bench |
+| Case | Verdict |
+|---|---|
+| 105×3 after 100×3 | PR (more weight, same reps) |
+| 100×5 after 110×1 | PR (110 doesn't cover 5 reps) |
+| 110×1 after 110×2 | not a PR (dominated) |
+| 100×4 after 100×5 | not a PR (dominated) |
+| identical repeat | not a PR |
+| first-ever set on a pair | PR ("First PR") |
 
-There is **no "absolute" PR** — the axes above are the complete set.
+Bodyweight is just weight 0. One set = **one `PrEvent`**, even when it
+beats prior records on both dimensions at once — a single 100×10 after
+6×10 and 100×3 is ONE PR, not two.
 
-## Persistence: fact_pr snapshots
+## Before-facts
 
-PRs are **persisted** in `fact_pr` as snapshots. Each row copies its values
-(exercise, variation, weight, reps, type, date, `workout_set_id`) at write time.
+Each event carries the previous frontier values it beat, one per
+dimension:
 
-`workout_set_id` is a **plain column, not a foreign key** — it records *which
-set caused the PR*, but the row is self-contained.
+- `beforeWeight` — previous best weight at ≥ r reps ("was 6 × 10")
+- `beforeReps` — previous best reps at exactly w ("was 100 × 3")
 
-### Write paths
+Both null = first PR. The end screen renders both facts when both exist
+(`was 6 × 10 · 100 × 3`): one PR can beat two previous PRs, and both are
+real achievements. A set can beat at most two — the frontier is a
+monotone staircase.
 
-1. **Session ends** (`SessionViewModel.endWorkout`): the session's PRs are
-   computed against prior history and inserted into `fact_pr`. Nothing is
-   committed until the workout is actually done — while the user is logging
-   sets they just get live PR highlights, not fact_pr writes.
-2. **Past-session edit** (`WorkoutDetailViewModel`): editing/adding/duplicating
-   a set recomputes that exercise's `fact_pr` records from current data. The
-   recompute is in-memory and scoped to one exercise (microseconds) — it only
-   regenerates that exercise's rows, not the whole table. This is why editing
-   a set up makes it a PR and a set edited down stops being one, with instant
-   row highlighting in the past-session viewer.
-3. **Backfill** (`PrRepository.loadAllWithBackfill`): if `fact_pr` is empty,
-   the first visit to the PR library or Dev catalog derives the full timeline
-   once from set history and persists it.
+Dominated sets still update the frontier maps: 90×6 after 100×6 is not a
+PR, but a later 90×8 must report "was 90 × 6", never a first.
 
-## Deleting a set: cascade + recompute
+## Counts and accents
 
-Deleting a source set **always deletes its PRs** — the set was the reason they
-existed. There is no "keep the achievement" option. The app shows a warning:
-"This set holds N PR records, which will be deleted too."
+Every count, badge, accent, and modal uses **events**: the live stats
+bar, the logs summary, the pills, and the insights totals all count the
+same thing, so they can never disagree. (The pre-2026-08-29 engine
+counted per-axis records — one 105×3 set was 3 PRs in the logs summary
+and 1 in the live stats bar. The frontier model makes the honest single
+number the only number.)
 
-After deletion, the exercise is **recomputed from the remaining valid data**,
-which promotes the next-best record. Example: you did 150kg 1RM, then 170kg,
-then 160kg (160 was never a PR while 170 existed). Delete the 170 set → its PRs
-go → recompute from {150, 160} → **160 becomes the 1RM**, because it beat 150
-when it was done. The recompute-from-remaining is the correct semantics, not
-"jump to the previous PR."
+## Lenses — projections live in insights, never in detection
 
-A mid-session PR that is later beaten within the same session does not persist —
-only the day's best matters.
+Everything axis-shaped is a pure projection over raw set history, not
+over events, and never gates what IS a PR:
 
-## Live-session detection vs fact_pr
+- `repMaxCurve(sets)` — `curve[N]` = highest weight with ≥ N reps, for
+  ANY N (the `kTrackedRepCounts` list is a display config for the
+  insights curves only). 110×2 feeds the 3-rep lens through any later
+  ≥3-rep set even though it was never a "3RM PR".
+- `weightMaxCurve(sets)` — most reps at each exact weight. No
+  propagation: 100×10 does not invent a 10-rep entry at 5kg (the exact
+  weight lens is exact; the ≥-direction is the rep-max lens's job).
+- `repAxisHistory(sets, n)` / `weightAxisHistory(sets, w)` — the
+  chronological progression of one axis ("5RM history"), powering the
+  insights axis-history sheets.
 
-During a live session, per-row PR highlighting uses the in-memory derived
-baseline (`prevBestByExercise` from `_pastSets`) for speed. This stays
-consistent with `fact_pr` because `fact_pr` is written at `endWorkout` from
-the same history. Keep these two in agreement — don't change one without the
-other.
+These lenses replaced the old per-axis record types (`PrType.repMax` /
+`weightMax`), propagation records (`isPropagated`), and the
+`achievedRecords` / `countableRecords` filters — all deleted 2026-08-29.
 
-## Source
+## Engine
 
-- Engine: `lib/features/session/model/pr_engine.dart`
-- Persistence: `lib/data/repositories/pr_repository.dart`
-- Table: `fact_pr` (migration `20260731100001_create_fact_pr.sql`; redesign
-  `20260731110001_pr_redesign.sql`)
-- Library UI: `lib/features/session/view/pr_library_screen.dart`
+- `lib/features/session/model/pr_engine.dart` — `prEvents` (frontier
+  walk) + the lenses.
+- `lib/features/session/model/pr_service.dart` — memoized derivation
+  over the set timeline; `invalidate()` after any set write.
+- Live sessions fold their in-memory sets into the walk in
+  `_recomputePRs`; the logs viewer does the same over history + the
+  viewed session.
+
+## Historical note
+
+The pre-2026-08-29 engine created one record per improved axis (rep-max
+at tracked N values, weight-max), tagged propagated records, and the
+`fact_pr` table persisted snapshots until it was dropped 2026-08-14 in
+favor of derivation on read.

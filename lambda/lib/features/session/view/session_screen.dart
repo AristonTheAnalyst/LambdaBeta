@@ -12,7 +12,6 @@ import '../../../core/utils/session_format.dart';
 import '../../../core/powersync/database.dart' as ps;
 import '../../../data/models/planned_session_exercise_set.dart';
 import '../../../data/models/session.dart';
-import '../../../data/models/session_exercise_set.dart';
 import '../../../shared/widgets/app_card.dart';
 import '../../../shared/widgets/dropdown_select.dart';
 import '../../../shared/widgets/feeling_rating.dart';
@@ -20,13 +19,17 @@ import '../../../shared/widgets/glass_button.dart';
 import '../../../shared/widgets/lambda_input.dart';
 import '../../../shared/widgets/page_header.dart';
 import '../../../shared/widgets/planned_banner.dart';
-import '../../../shared/widgets/press_squash.dart';
+import '../../../shared/widgets/session_log_card.dart';
 import '../../../shared/widgets/reflection_summary.dart';
 import '../../../shared/widgets/session_bookend.dart';
 import '../../../shared/widgets/session_exercise_card.dart';
 import '../../../shared/widgets/session_set_row.dart';
 import '../../../shared/widgets/slide_pages.dart';
 import '../../../shared/widgets/slide_up_modal.dart';
+import '../../../shared/widgets/container_styles.dart';
+import '../../../shared/widgets/section_divider.dart';
+import '../../logs/view/session_detail_screen.dart';
+import '../../logs/viewmodel/session_detail_viewmodel.dart';
 import '../viewmodel/session_viewmodel.dart';
 import 'add_exercise_modal.dart';
 import 'live_exercise_card.dart';
@@ -120,8 +123,8 @@ class _SessionScreenState extends State<SessionScreen>
 
   // ── Modals ─────────────────────────────────────────────────────────────────
 
-  /// Wizard step: training → reflection recap. Shows THIS SESSION first.
-  void _goToReflection() {
+  /// Wizard step: training → summary recap. Shows THIS SESSION first.
+  void _goToSummary() {
     // Blur any focused set cell first — its typed value commits on focus
     // loss, and navigating away must not swallow it.
     FocusManager.instance.primaryFocus?.unfocus();
@@ -134,24 +137,32 @@ class _SessionScreenState extends State<SessionScreen>
       return;
     }
     _vm.showCurrentReflection();
-    _vm.slidePagesController.slideToPage(2);
+    _vm.slidePagesController.slideToPage(SessionViewModel.kSummaryPage);
   }
 
-  Future<void> _endFromReflection() async {
+  /// Summary's Finish Session — ends the session and slides to the
+  /// post-questionnaire page.
+  Future<void> _finishFromSummary() async {
     FocusManager.instance.primaryFocus?.unfocus();
-    // Same as _goToReflection — commit any draft rows being typed before
+    // Same as _goToSummary — commit any draft rows being typed before
     // the end flow prunes and finalizes.
     _vm.flushPendingCommits();
     if (_vm.sets.isEmpty) {
       _showNoSetsDialog();
       return;
     }
-    // Wizard step: end → Prep greets with "Session complete, rest well and
-    // see you soon" (rendered from vm.sessionJustCompleted).
-    await _vm.endSession();
+    await _vm.finishSession();
     // The VM resets endNotes but the controller would keep the old text —
-    // clear it so the next workout's post-notes field starts empty.
+    // clear it so this session's post-notes field starts empty.
     _endNotesCtrl.clear();
+  }
+
+  /// Post-questionnaire Done — writes the post answers, lands Home with the
+  /// congrats banner, and clears the pre answers so the next session's
+  /// questionnaire starts blank.
+  Future<void> _completePost() async {
+    await _vm.completePostQuestionnaire();
+    _startNotesCtrl.clear();
   }
 
   void _showNoSetsDialog() {
@@ -284,78 +295,116 @@ class _SessionScreenState extends State<SessionScreen>
                         // Once started, Training's title is the bound template's
                         // name (freestyle keeps the generic title).
                         final title = switch (page) {
-                          0 => 'Session Prep',
-                          1 =>
+                          SessionViewModel.kTrainingPage =>
                             _vm.hasActiveWorkout
                                 ? (_vm.selectedPlannedSession?.name ??
                                       _vm.selectedStandaloneWorkout?.name ??
                                       'Freestyle Session')
                                 : 'Training Session',
+                          SessionViewModel.kPreQuestionnairePage =>
+                            'Pre-Evaluation',
+                          SessionViewModel.kSessionHomePage => 'Session Prep',
                           _ => 'Session Reflection',
                         };
                         return PageHeader(
                           title: title,
-                          // Active: Cancel on Training; on Reflection 'Back'
-                          // resumes training (the reflection back-door).
-                          // Idle: 'Back' returns to Prep from Training.
-                          left: _vm.hasActiveWorkout
-                              ? (page == 2
-                                    ? GlassButton(
-                                        label: 'Back',
-                                        color: AppColors.primary,
-                                        compact: true,
-                                        onPressed: () => _vm
-                                            .slidePagesController
-                                            .slideToPage(1),
-                                      )
-                                    : GlassButton(
-                                        label: 'Cancel',
-                                        color: AppColors.danger,
-                                        compact: true,
-                                        onPressed: _confirmCancelWorkout,
-                                      ))
-                              : page != 0
-                              ? GlassButton(
-                                  label: 'Back',
-                                  color: AppColors.primary,
-                                  compact: true,
-                                  onPressed: () {
-                                    // Prep always shows the latest completed
-                                    // session — a THIS SESSION position from
-                                    // the reflection page can't leak onto it.
-                                    _vm.showLatestReflection();
-                                    _vm.slidePagesController.slideToPage(0);
-                                  },
-                                )
-                              : null,
-                          // Wizard path: START (Prep) → choose workout →
-                          // START (Training) → FINISH → reflection → END.
-                          // On Reflection the button itself ends the session.
-                          right: _vm.hasActiveWorkout
-                              ? GlassButton(
-                                  label: page == 2 ? 'End' : 'Finish',
-                                  color: AppColors.success,
-                                  compact: true,
-                                  onPressed: page == 2
-                                      ? _endFromReflection
-                                      : _goToReflection,
-                                )
-                              : page == 0
-                              ? GlassButton(
-                                  label: 'Start',
-                                  color: AppColors.success,
-                                  compact: true,
-                                  onPressed: () =>
-                                      _vm.slidePagesController.slideToPage(1),
-                                )
-                              : page == 1
-                              ? GlassButton(
-                                  label: 'Start',
-                                  color: AppColors.success,
-                                  compact: true,
-                                  onPressed: _vm.startWorkout,
-                                )
-                              : null,
+                          left: switch (page) {
+                            // Home has nothing to go back to; the
+                            // post-questionnaire is a one-way door (the
+                            // session has already ended).
+                            SessionViewModel.kSessionHomePage ||
+                            SessionViewModel.kPostQuestionnairePage =>
+                              null,
+                            // Pre-questionnaire: plain back — nothing was
+                            // created yet.
+                            SessionViewModel.kPreQuestionnairePage =>
+                              GlassButton(
+                                label: 'Back',
+                                color: AppColors.primary,
+                                compact: true,
+                                onPressed: () => _vm.slidePagesController
+                                    .slideToPage(SessionViewModel.kSessionHomePage),
+                              ),
+                            // Training: Cancel when active; Back to the
+                            // questionnaire when idle.
+                            SessionViewModel.kTrainingPage =>
+                              _vm.hasActiveWorkout
+                                  ? GlassButton(
+                                      label: 'Cancel',
+                                      color: AppColors.danger,
+                                      compact: true,
+                                      onPressed: _confirmCancelWorkout,
+                                    )
+                                  : GlassButton(
+                                      label: 'Back',
+                                      color: AppColors.primary,
+                                      compact: true,
+                                      onPressed: () {
+                                        // Home/pre-Q always shows the latest
+                                        // completed session — a THIS SESSION
+                                        // position from the summary page can't
+                                        // leak onto it.
+                                        _vm.showLatestReflection();
+                                        _vm.slidePagesController.slideToPage(
+                                          SessionViewModel.kPreQuestionnairePage,
+                                        );
+                                      },
+                                    ),
+                            // Summary: resume training (the back-door).
+                            _ => GlassButton(
+                              label: 'Back',
+                              color: AppColors.primary,
+                              compact: true,
+                              onPressed: () => _vm.slidePagesController
+                                  .slideToPage(SessionViewModel.kTrainingPage),
+                            ),
+                          },
+                          // Wizard path: START (Home) → questionnaire →
+                          // CONTINUE → choose workout → START (Training) →
+                          // FINISH → summary → FINISH SESSION → post
+                          // questionnaire → DONE → Home.
+                          right: switch (page) {
+                            SessionViewModel.kSessionHomePage =>
+                              GlassButton(
+                                label: 'Start',
+                                color: AppColors.success,
+                                compact: true,
+                                onPressed: () => _vm.slidePagesController
+                                    .slideToPage(SessionViewModel.kPreQuestionnairePage),
+                              ),
+                            SessionViewModel.kPreQuestionnairePage =>
+                              GlassButton(
+                                label: 'Continue',
+                                color: AppColors.success,
+                                compact: true,
+                                onPressed: () => _vm.slidePagesController
+                                    .slideToPage(SessionViewModel.kTrainingPage),
+                              ),
+                            SessionViewModel.kTrainingPage =>
+                              GlassButton(
+                                label: _vm.hasActiveWorkout ? 'Summary' : 'Start',
+                                color: AppColors.success,
+                                compact: true,
+                                onPressed: _vm.hasActiveWorkout
+                                    ? _goToSummary
+                                    : _vm.startWorkout,
+                              ),
+                            SessionViewModel.kSummaryPage =>
+                              _vm.hasActiveWorkout
+                                  ? GlassButton(
+                                      label: 'End',
+                                      color: AppColors.success,
+                                      compact: true,
+                                      onPressed: _finishFromSummary,
+                                    )
+                                  : null,
+                            _ => GlassButton(
+                              label: 'Done',
+                              color: AppColors.success,
+                              compact: true,
+                              onPressed: _completePost,
+                            ),
+                          },
                         );
                       },
                     ),
@@ -389,12 +438,20 @@ class _SessionScreenState extends State<SessionScreen>
                         // (unlocked) tabs only — no swipe navigation.
                         physics: const NeverScrollableScrollPhysics(),
                         children: [
-                          _PrepPage(vm: _vm, startNotesCtrl: _startNotesCtrl),
+                          _HomePage(vm: _vm),
+                          _PreEvaluationPage(
+                            vm: _vm,
+                            startNotesCtrl: _startNotesCtrl,
+                          ),
                           _TrainingPage(
                             vm: _vm,
                             onRemoveExercise: _confirmRemoveExercise,
                           ),
-                          _ReflectionPage(vm: _vm, notesCtrl: _endNotesCtrl),
+                          _SummaryPage(vm: _vm),
+                          _PostQuestionnairePage(
+                            vm: _vm,
+                            notesCtrl: _endNotesCtrl,
+                          ),
                         ],
                       ),
                     ),
@@ -406,26 +463,33 @@ class _SessionScreenState extends State<SessionScreen>
   }
 }
 
-// ── Page 0: Prep ──────────────────────────────────────────────────────────────
+// ── Page 0: Home ──────────────────────────────────────────────────────────────
 
-class _PrepPage extends StatelessWidget {
-  const _PrepPage({required this.vm, required this.startNotesCtrl});
+/// The wizard's landing page: the congrats banner after a finished session
+/// and the read-only last-session recap. The fillable pre-questionnaire
+/// lives on the next page, after Start.
+class _HomePage extends StatelessWidget {
+  const _HomePage({required this.vm});
 
   final SessionViewModel vm;
-  final TextEditingController startNotesCtrl;
 
   @override
   Widget build(BuildContext context) {
     // Any completed history shows the card — sessions without planned names,
     // feelings, PRs or lessons still appear, with explicit empty states.
     final hasLastSession = vm.reflectionSession != null;
-    return ListView(
-      padding: const EdgeInsets.all(AppSpacing.lg),
+    final stats = vm.lastCompletedStats;
+    return Column(
       children: [
         // The wizard's closing step — shown until the next session starts.
         if (vm.sessionJustCompleted)
           Container(
-            margin: const EdgeInsets.only(bottom: AppSpacing.lg),
+            margin: const EdgeInsets.fromLTRB(
+              AppSpacing.lg,
+              AppSpacing.lg,
+              AppSpacing.lg,
+              0,
+            ),
             padding: const EdgeInsets.symmetric(
               horizontal: AppSpacing.lg,
               vertical: AppSpacing.md,
@@ -436,6 +500,7 @@ class _PrepPage extends StatelessWidget {
               border: Border.all(color: AppColors.success),
             ),
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Icon(
                   Icons.check_circle_outline,
@@ -444,36 +509,316 @@ class _PrepPage extends StatelessWidget {
                 ),
                 const SizedBox(width: AppSpacing.sm),
                 Expanded(
-                  child: Text(
-                    'Session complete, rest well and see you soon',
-                    style: AppFonts.ui(
-                      fontSize: AppTextStyles.sm,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.success,
-                    ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Session complete, rest well and see you soon',
+                        style: AppFonts.ui(
+                          fontSize: AppTextStyles.sm,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.success,
+                        ),
+                      ),
+                      if (stats != null) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          '${stats.sets} sets · ${stats.exercises} exercises · ${stats.prs} PRs',
+                          style: AppFonts.mono(
+                            fontSize: 10,
+                            color: AppColors.success,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
               ],
             ),
           ),
-        _FeelingForm(
-          rating: vm.sessionFeeling,
-          onRatingChanged: vm.setSessionFeeling,
-          notesCtrl: startNotesCtrl,
-          onNotesChanged: (v) => vm.startNotes = v,
-          placeholder: 'Sleep and eat well?\nHydrated?\nGoals today?',
-          question: 'How well do you think you\'re going to do',
-          notesLabel: 'Why do you feel that way',
+        // The header always shows — the picker/pager degrade to disabled
+        // when there is no completed history yet.
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.lg,
+            AppSpacing.lg,
+            AppSpacing.lg,
+            AppSpacing.md,
+          ),
+          child: _HomeSessionHeader(vm: vm),
         ),
-        // The previous-session viewer sits below this session's prep so the
-        // current-session inputs come first.
-        if (hasLastSession) ...[
-          const SizedBox(height: AppSpacing.xl),
-          _SectionDivider('PREVIOUS SESSION'),
-          const SizedBox(height: AppSpacing.sm),
-          _LastSessionCard(vm: vm),
-        ],
+        if (hasLastSession)
+          Expanded(
+            // Keyed by session so paging to another session remounts a
+            // fresh viewer (fresh VM + load).
+            child: _HomeSessionViewer(
+              key: ValueKey(vm.reflectionSession!.sessionId),
+              sessionId: vm.reflectionSession!.sessionId,
+            ),
+          ),
       ],
+    );
+  }
+}
+
+/// The embedded past-session viewer — the same Details/Summary toggle and
+/// surfaces as the /logs route, rendered inline under the Home header.
+class _HomeSessionViewer extends StatefulWidget {
+  const _HomeSessionViewer({super.key, required this.sessionId});
+
+  final String sessionId;
+
+  @override
+  State<_HomeSessionViewer> createState() => _HomeSessionViewerState();
+}
+
+class _HomeSessionViewerState extends State<_HomeSessionViewer> {
+  final _vm = SessionDetailViewModel();
+
+  @override
+  void initState() {
+    super.initState();
+    _vm.load(widget.sessionId);
+  }
+
+  @override
+  void dispose() {
+    _vm.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<SessionDetailState>(
+      valueListenable: _vm.state,
+      builder: (context, state, _) {
+        if (state.isLoading) {
+          return Center(
+            child: CircularProgressIndicator(color: AppColors.accent),
+          );
+        }
+        return SessionDetailView(viewModel: _vm, state: state);
+      },
+    );
+  }
+}
+
+/// The Home page's session header — the previous-session picker and pager,
+/// with the shown session's date and planned source (planned name, or
+/// "Freestyle Session") next to it.
+class _HomeSessionHeader extends StatelessWidget {
+  const _HomeSessionHeader({required this.vm});
+
+  final SessionViewModel vm;
+
+  @override
+  Widget build(BuildContext context) {
+    final session = vm.reflectionSession;
+    final plannedName = session?.plannedSessionName;
+    return AppCard(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // The shown session's date anchors the pager.
+                Text(
+                  session == null
+                      ? ''
+                      : DateFormat('MMM d').format(session.createdDatetime),
+                  style: AppFonts.mono(
+                    fontSize: 9,
+                    letterSpacing: 0.8,
+                    color: AppColors.muted,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  session == null
+                      ? ''
+                      : (plannedName ?? 'Freestyle Session'),
+                  style: AppFonts.ui(
+                    fontSize: AppTextStyles.sm,
+                    fontWeight: FontWeight.w700,
+                    color: plannedName != null
+                        ? AppColors.planned
+                        : AppColors.muted,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          // All-sessions picker — jumps to any completed session instead of
+          // paging one step at a time.
+          _pagerButton(
+            Icons.list_alt,
+            vm.completedSessionCount > 0,
+            () => _openSessionPicker(context, vm),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          _pagerButton(
+            Icons.chevron_left,
+            vm.reflectionCanGoOlder,
+            vm.showOlderReflectionSession,
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          _pagerButton(
+            Icons.chevron_right,
+            vm.reflectionCanGoNewer,
+            vm.showNewerReflectionSession,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Page 1: Pre-Evaluation ───────────────────────────────────────────────────
+
+/// The fillable pre-workout questionnaire — rating + notes, centered
+/// vertically. Nothing here writes to the DB; the answers are captured at
+/// session creation (Training's Start). A small toggle right under the
+/// notes question swaps the CENTERED content in place for the previous
+/// session's answers (marked as coming from the last session) — the layout
+/// frame never changes.
+class _PreEvaluationPage extends StatefulWidget {
+  const _PreEvaluationPage({required this.vm, required this.startNotesCtrl});
+
+  final SessionViewModel vm;
+  final TextEditingController startNotesCtrl;
+
+  @override
+  State<_PreEvaluationPage> createState() => _PreEvaluationPageState();
+}
+
+class _PreEvaluationPageState extends State<_PreEvaluationPage> {
+  bool _showLastSession = false;
+
+  SessionViewModel get vm => widget.vm;
+
+  @override
+  Widget build(BuildContext context) {
+    final lastSession = vm.reflectionSession;
+    return Column(
+      children: [
+        Expanded(
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(AppSpacing.lg),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // One of the two fills the SAME slot — previewing the
+                  // last session hides the fillable form entirely.
+                  if (!_showLastSession)
+                    _FeelingForm(
+                      rating: vm.sessionFeeling,
+                      onRatingChanged: vm.setSessionFeeling,
+                      notesCtrl: widget.startNotesCtrl,
+                      onNotesChanged: (v) => vm.startNotes = v,
+                      placeholder:
+                          'Sleep and eat well?\nHydrated?\nGoals today?',
+                      question: 'How well do you think you\'re going to do',
+                      notesLabel: 'Why do you feel that way',
+                    )
+                  else if (lastSession != null)
+                    _lastSessionPreview(lastSession),
+                  if (lastSession != null) ...[
+                    const SizedBox(height: AppSpacing.md),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: GestureDetector(
+                        onTap: () => setState(
+                          () => _showLastSession = !_showLastSession,
+                        ),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
+                          decoration: glassBox(AppColors.primary),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                _showLastSession
+                                    ? Icons.arrow_back
+                                    : Icons.history,
+                                size: 13,
+                                color: AppColors.primary,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                _showLastSession ? 'Back' : 'Last Session',
+                                style: AppFonts.ui(
+                                  fontSize: AppTextStyles.xs,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.primary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// The previous session's answers, read back with the same
+  /// wording/styling as the live form — clearly marked as not this
+  /// session's.
+  Widget _lastSessionPreview(Session session) {
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: lambdaBox(ContainerTone.ghost, radius: AppRadius.md),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.history, size: 11, color: AppColors.muted),
+              const SizedBox(width: 4),
+              Text(
+                'FROM LAST SESSION',
+                style: AppFonts.mono(
+                  fontSize: 8,
+                  letterSpacing: 0.8,
+                  color: AppColors.muted,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          SessionBookend(
+            label: 'PRE-WORKOUT',
+            feeling: session.preFeeling,
+            notes: session.preNotes,
+            emptyNotes: 'No pre-workout notes',
+            question: 'How well do you think you\'re going to do',
+            notesLabel: 'Why do you feel that way',
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          SessionBookend(
+            label: 'POST-WORKOUT',
+            feeling: session.feeling,
+            notes: session.postNotes,
+            emptyNotes: 'No post-workout notes',
+            question: 'How well did you do this session',
+            notesLabel: 'What could have made this session better',
+          ),
+        ],
+      ),
     );
   }
 }
@@ -483,34 +828,6 @@ class _PrepPage extends StatelessWidget {
 // components spanning the three screens) ──────────────────────────────────
 
 /// Centered section label with a hairline rule on both sides — the
-/// PREVIOUS SESSION / THIS SESSION dividers. Larger and primary-toned,
-/// unlike the muted mono micro-labels, so the section reads as a headline.
-class _SectionDivider extends StatelessWidget {
-  const _SectionDivider(this.text);
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) => Row(
-    children: [
-      Expanded(child: Container(height: 1, color: AppColors.border)),
-      Padding(
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-        child: Text(
-          text,
-          style: AppFonts.mono(
-            fontSize: 12,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 1.2,
-            color: AppColors.primary,
-          ),
-        ),
-      ),
-      Expanded(child: Container(height: 1, color: AppColors.border)),
-    ],
-  );
-}
-
 /// The questionnaire form — rating question, rating, notes question + input.
 /// The exact prep-page block; the reflection page reuses it for POST-WORKOUT
 /// so the two pages can never drift apart. Pre and post pass their own
@@ -581,69 +898,69 @@ class _LastSessionCard extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // Card 1: session identity — pager, planned source, feeling.
-        // Tapping opens the shown session in the past-session viewer.
-        AppCard(
-          // The still-active session must not open the past-session viewer —
-          // its edit mode would let the user change sets the live VM doesn't
-          // know about mid-workout.
-          onTap: session == null || vm.reflectionIsCurrent
-              ? null
-              : () async {
-                  await context.push('/logs/${session.sessionId}');
-                  // Note/feeling edits made in the past-session viewer show
-                  // immediately when the viewer card recomputes on return.
-                  vm.refreshShownReflection();
-                },
-          padding: const EdgeInsets.all(AppSpacing.md),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    // The shown session's date anchors the pager.
-                    child: Text(
-                      session == null
-                          ? ''
-                          : DateFormat('MMM d').format(session.createdDatetime),
-                      style: AppFonts.mono(
-                        fontSize: 9,
-                        letterSpacing: 0.8,
-                        color: AppColors.muted,
+          // Card 1: session identity — pager, planned source, feeling.
+          // Tapping opens the shown session in the past-session viewer.
+          AppCard(
+            // The still-active session must not open the past-session viewer —
+            // its edit mode would let the user change sets the live VM doesn't
+            // know about mid-workout.
+            onTap: session == null || vm.reflectionIsCurrent
+                ? null
+                : () async {
+                    await context.push('/logs/${session.sessionId}');
+                    // Note/feeling edits made in the past-session viewer show
+                    // immediately when the viewer card recomputes on return.
+                    vm.refreshShownReflection();
+                  },
+            padding: const EdgeInsets.all(AppSpacing.md),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      // The shown session's date anchors the pager.
+                      child: Text(
+                        session == null
+                            ? ''
+                            : DateFormat('MMM d').format(session.createdDatetime),
+                        style: AppFonts.mono(
+                          fontSize: 9,
+                          letterSpacing: 0.8,
+                          color: AppColors.muted,
+                        ),
                       ),
                     ),
-                  ),
-                  // All-sessions picker — jumps the card to any completed
-                  // session instead of paging one step at a time.
-                  _pagerButton(
-                    Icons.list_alt,
-                    vm.completedSessionCount > 0,
-                    () => _openSessionPicker(context),
-                  ),
-                  const SizedBox(width: AppSpacing.sm),
-                  _pagerButton(
-                    Icons.chevron_left,
-                    vm.reflectionCanGoOlder,
-                    vm.showOlderReflectionSession,
-                  ),
-                  const SizedBox(width: AppSpacing.sm),
-                  _pagerButton(
-                    Icons.chevron_right,
-                    vm.reflectionCanGoNewer,
-                    vm.showNewerReflectionSession,
-                  ),
+                    // All-sessions picker — jumps the card to any completed
+                    // session instead of paging one step at a time.
+                    _pagerButton(
+                      Icons.list_alt,
+                      vm.completedSessionCount > 0,
+                      () => _openSessionPicker(context, vm),
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    _pagerButton(
+                      Icons.chevron_left,
+                      vm.reflectionCanGoOlder,
+                      vm.showOlderReflectionSession,
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    _pagerButton(
+                      Icons.chevron_right,
+                      vm.reflectionCanGoNewer,
+                      vm.showNewerReflectionSession,
+                    ),
+                  ],
+                ),
+                // The planned session (if any) this session was started from.
+                if (session?.plannedSessionName != null) ...[
+                  const SizedBox(height: AppSpacing.sm),
+                  PlannedBanner(name: session!.plannedSessionName!),
                 ],
-              ),
-              // The planned session (if any) this session was started from.
-              if (session?.plannedSessionName != null) ...[
-                const SizedBox(height: AppSpacing.sm),
-                PlannedBanner(name: session!.plannedSessionName!),
               ],
-            ],
+            ),
           ),
-        ),
-        const SizedBox(height: AppSpacing.md),
+          const SizedBox(height: AppSpacing.md),
         // Card 2: the PRS and LESSONS sections — a separate container; the
         // sections carry their own empty notes.
         AppCard(
@@ -653,7 +970,6 @@ class _LastSessionCard extends StatelessWidget {
             prsByExercise: vm.reflectionPrsByExercise,
             lessonsByExercise: vm.reflectionLessonsByExercise,
             exerciseNameFor: (id) => vm.reflectionExerciseNames[id] ?? '',
-            previousFor: vm.previousForReflection,
           ),
         ),
         if (session != null) ...[
@@ -693,51 +1009,50 @@ class _LastSessionCard extends StatelessWidget {
       ],
     );
   }
+}
 
-  /// The all-sessions sheet — training-logs-style rows (date, planned name,
-  /// exercises × sets, pre/post ratings) that jump the card to the tapped
-  /// session.
-  void _openSessionPicker(BuildContext context) {
-    showLambdaModal<void>(
-      context,
-      fitContent: true,
-      // Page background under the rows so the surface cards separate from
-      // the sheet itself.
-      backgroundColor: AppColors.bg,
-      child: _SessionPickerSheet(vm: vm),
-    );
-  }
+/// The all-sessions sheet — training-logs-style rows (date, planned name,
+/// exercises × sets, pre/post ratings) that jump the card to the tapped
+/// session. Shared by the last-session card and the Home header.
+void _openSessionPicker(BuildContext context, SessionViewModel vm) {
+  showLambdaModal<void>(
+    context,
+    fitContent: true,
+    // Page background under the rows so the surface cards separate from
+    // the sheet itself.
+    backgroundColor: AppColors.bg,
+    child: _SessionPickerSheet(vm: vm),
+  );
+}
 
-  /// Bordered pager chevron — the neutral chip styling (surfaceHigh fill +
-  /// border outline when actionable, hairline + muted when disabled) so the
-  /// enabled state reads as a real button.
-  Widget _pagerButton(IconData icon, bool enabled, VoidCallback onTap) {
-    return GestureDetector(
-      // Disabled chevrons still claim the tap with a no-op handler — a
-      // GestureDetector with no recognizers lets the tap fall through to the
-      // card's PressSquash, which would navigate into the session.
-      onTap: enabled ? onTap : () {},
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        width: 28,
-        height: 28,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: enabled ? AppColors.surfaceHigh : Colors.transparent,
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(
-            color: AppColors.border,
-            width: enabled ? 1.0 : 0.5,
-          ),
-        ),
-        child: Icon(
-          icon,
-          size: 16,
-          color: enabled ? AppColors.primary : AppColors.muted,
-        ),
+/// Bordered pager chevron — the glass recipe when actionable, hairline +
+/// muted when disabled — so the enabled state reads as a real button.
+Widget _pagerButton(IconData icon, bool enabled, VoidCallback onTap) {
+  return GestureDetector(
+    // Disabled chevrons still claim the tap with a no-op handler — a
+    // GestureDetector with no recognizers lets the tap fall through to the
+    // card's PressSquash, which would navigate into the session.
+    onTap: enabled ? onTap : () {},
+    behavior: HitTestBehavior.opaque,
+    child: Container(
+      width: 28,
+      height: 28,
+      alignment: Alignment.center,
+      // The glass recipe — the same chrome as every other pressable.
+      decoration: enabled
+          ? glassBox(AppColors.primary, radius: 6)
+          : BoxDecoration(
+              color: Colors.transparent,
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: AppColors.border, width: 0.5),
+            ),
+      child: Icon(
+        icon,
+        size: 16,
+        color: enabled ? AppColors.primary : AppColors.muted,
       ),
-    );
-  }
+    ),
+  );
 }
 
 /// The all-sessions picker sheet — completed sessions newest-first in
@@ -833,203 +1148,14 @@ class _SessionPickerSheetState extends State<_SessionPickerSheet> {
   }
 
   Widget _pickerRow(BuildContext context, SessionWithSets w) {
-    final s = w.session;
-    final selected = s.sessionId == widget.vm.reflectionSession?.sessionId;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AppSpacing.md),
-      child: PressSquash(
-        onTap: () {
-          Navigator.of(context, rootNavigator: true).pop();
-          widget.vm.selectReflectionSession(s.sessionId);
-        },
-        child: Container(
-          padding: const EdgeInsets.all(AppSpacing.lg),
-          decoration: BoxDecoration(
-            // Recessed — darker than the sheet's bg so the row cards
-            // separate from the page ground.
-            color: AppColors.surfaceLow,
-            borderRadius: BorderRadius.circular(AppRadius.lg),
-            // The soft-highlight recipe marks the session the card shows.
-            border: Border.all(
-              color: selected
-                  ? AppColors.accent.withValues(alpha: 0.35)
-                  : AppColors.border,
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _pickerGrid(s),
-              if (w.sets.isNotEmpty) ...[
-                const SizedBox(height: AppSpacing.md),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: _exerciseSummaries(w.sets),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
+    return SessionLogCard(
+      workout: w,
+      selected: w.session.sessionId == widget.vm.reflectionSession?.sessionId,
+      onTap: () {
+        Navigator.of(context, rootNavigator: true).pop();
+        widget.vm.selectReflectionSession(w.session.sessionId);
+      },
     );
-  }
-
-  /// The row's 2×2 identity grid — date, planned source, pre and post
-  /// ratings — hairline-separated cells in the StatsRow style. Exercises
-  /// live below it, centered.
-  Widget _pickerGrid(Session s) {
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(color: AppColors.border),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: _gridCell(
-                  'DATE',
-                  Text(
-                    DateFormat('MMM d, yyyy').format(s.createdDatetime),
-                    style: AppFonts.mono(
-                      fontSize: AppTextStyles.sm,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.accent,
-                    ),
-                  ),
-                ),
-              ),
-              Container(width: 1, color: AppColors.border),
-              Expanded(
-                child: _gridCell(
-                  'PLANNED',
-                  s.plannedSessionName != null
-                      ? Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: AppColors.plannedBg,
-                            borderRadius: BorderRadius.circular(999),
-                            border: Border.all(
-                              color: AppColors.planned.withValues(alpha: 0.35),
-                            ),
-                          ),
-                          child: Text(
-                            s.plannedSessionName!,
-                            style: AppFonts.ui(
-                              fontSize: AppTextStyles.sm,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.planned,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        )
-                      : Text(
-                          '—',
-                          style: AppFonts.ui(
-                            fontSize: AppTextStyles.sm,
-                            color: AppColors.muted,
-                          ),
-                        ),
-                ),
-              ),
-            ],
-          ),
-          Container(height: 1, color: AppColors.border),
-          Row(
-            children: [
-              Expanded(
-                child: _gridCell(
-                  'PRE',
-                  FeelingRating(value: s.preFeeling, size: 14, spacing: 3),
-                ),
-              ),
-              Container(width: 1, color: AppColors.border),
-              Expanded(
-                child: _gridCell(
-                  'POST',
-                  FeelingRating(value: s.feeling, size: 14, spacing: 3),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _gridCell(String label, Widget content) => Padding(
-    padding: const EdgeInsets.symmetric(
-      horizontal: AppSpacing.sm,
-      vertical: AppSpacing.sm,
-    ),
-    child: Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Text(
-          label,
-          style: AppFonts.mono(
-            fontSize: 9,
-            letterSpacing: 0.8,
-            color: AppColors.muted,
-          ),
-        ),
-        const SizedBox(height: 3),
-        content,
-      ],
-    ),
-  );
-
-  List<Widget> _exerciseSummaries(List<SessionExerciseSet> sets) {
-    final order = <String>[];
-    final counts = <String, int>{};
-    final names = <String, String>{};
-    for (final s in sets) {
-      final exerciseId = s.exerciseId;
-      if (exerciseId == null) continue;
-      if (!names.containsKey(exerciseId)) {
-        order.add(exerciseId);
-        names[exerciseId] = s.exerciseName ?? exerciseId;
-      }
-      counts[exerciseId] = (counts[exerciseId] ?? 0) + 1;
-    }
-    return order.map((exId) {
-      final count = counts[exId]!;
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 2),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Flexible(
-              child: Text(
-                toProperCase(names[exId]!),
-                style: AppFonts.ui(
-                  fontSize: AppTextStyles.sm,
-                  color: AppColors.primary,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            const SizedBox(width: AppSpacing.sm),
-            Text(
-              '$count ${count == 1 ? 'set' : 'sets'}',
-              style: AppFonts.mono(
-                fontSize: AppTextStyles.sm,
-                color: AppColors.muted,
-              ),
-            ),
-          ],
-        ),
-      );
-    }).toList();
   }
 }
 
@@ -1174,7 +1300,7 @@ class _TrainingPage extends StatelessWidget {
         // identity card (icon + sub-line), not an empty shell.
         _SessionTemplateCard(
           vm: vm,
-          onTap: () => _showWorkoutPicker(context, vm),
+          onTap: () => _showWorkoutPickerSheet(context, vm),
         ),
         const SizedBox(height: AppSpacing.sm),
         _SessionPreview(vm: vm),
@@ -1229,184 +1355,213 @@ class _TrainingPage extends StatelessWidget {
     );
   }
 
-  /// Lets the user pick which session template to log — a standalone
-  /// template, a program planned session, or none (free-form).
-  Future<void> _showWorkoutPicker(
-    BuildContext context,
-    SessionViewModel vm,
-  ) async {
-    await showModalBottomSheet<String>(
-      context: context,
-      useRootNavigator: true,
-      backgroundColor: AppColors.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.lg)),
-      ),
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(AppSpacing.lg),
-              child: Text(
-                'Select session',
-                style: AppFonts.ui(
-                  fontSize: AppTextStyles.lg,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.primary,
-                ),
+}
+
+/// Lets the user pick which session template to log — a standalone
+/// template, a program planned session, or none (free-form).
+Future<void> _showWorkoutPickerSheet(
+  BuildContext context,
+  SessionViewModel vm,
+) async {
+  await showModalBottomSheet<String>(
+    context: context,
+    useRootNavigator: true,
+    backgroundColor: AppColors.surface,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.lg)),
+    ),
+    builder: (ctx) => SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(AppSpacing.lg),
+            child: Text(
+              'Select session',
+              style: AppFonts.ui(
+                fontSize: AppTextStyles.lg,
+                fontWeight: FontWeight.w800,
+                color: AppColors.primary,
               ),
             ),
-            InkWell(
-              onTap: () {
-                vm.clearTemplateSelection();
-                Navigator.of(ctx).pop();
-              },
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.lg,
-                  vertical: AppSpacing.md,
-                ),
-                color:
-                    vm.selectedPlannedSession == null &&
+          ),
+          InkWell(
+            onTap: () {
+              vm.clearTemplateSelection();
+              Navigator.of(ctx).pop();
+            },
+            child: Container(
+              margin: const EdgeInsets.fromLTRB(
+                AppSpacing.lg,
+                0,
+                AppSpacing.lg,
+                AppSpacing.xs,
+              ),
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.lg,
+                vertical: AppSpacing.md,
+              ),
+              // Pressable picker rows — the glass recipe, accent when
+              // selected.
+              decoration: glassBox(
+                vm.selectedPlannedSession == null &&
                         vm.selectedStandaloneWorkout == null
-                    ? AppColors.accentBg
-                    : Colors.transparent,
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.edit_off_outlined,
-                      size: 18,
-                      color: AppColors.muted,
-                    ),
-                    const SizedBox(width: AppSpacing.sm),
-                    Expanded(
-                      child: Text(
-                        'No planned session',
-                        style: AppFonts.ui(
-                          fontSize: AppTextStyles.md,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.primary,
-                        ),
+                    ? AppColors.accent
+                    : AppColors.primary,
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.edit_off_outlined,
+                    size: 18,
+                    color: AppColors.muted,
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  Expanded(
+                    child: Text(
+                      'No planned session',
+                      style: AppFonts.ui(
+                        fontSize: AppTextStyles.md,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.primary,
                       ),
                     ),
-                    if (vm.selectedPlannedSession == null &&
-                        vm.selectedStandaloneWorkout == null)
-                      Icon(Icons.check, size: 18, color: AppColors.primary),
-                  ],
+                  ),
+                  if (vm.selectedPlannedSession == null &&
+                      vm.selectedStandaloneWorkout == null)
+                    Icon(Icons.check, size: 18, color: AppColors.primary),
+                ],
+              ),
+            ),
+          ),
+          if (vm.standaloneWorkouts.isNotEmpty) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.lg,
+                0,
+                AppSpacing.lg,
+                AppSpacing.xs,
+              ),
+              child: Text(
+                'Workouts',
+                style: AppFonts.mono(
+                  fontSize: 9,
+                  letterSpacing: 0.8,
+                  color: AppColors.muted,
                 ),
               ),
             ),
-            if (vm.standaloneWorkouts.isNotEmpty) ...[
-              Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.lg,
-                  0,
-                  AppSpacing.lg,
-                  AppSpacing.xs,
-                ),
-                child: Text(
-                  'Workouts',
-                  style: AppFonts.mono(
-                    fontSize: 9,
-                    letterSpacing: 0.8,
-                    color: AppColors.muted,
+            for (final w in vm.standaloneWorkouts)
+              InkWell(
+                onTap: () {
+                  vm.selectStandaloneWorkout(w);
+                  Navigator.of(ctx).pop();
+                },
+                child: Container(
+                  margin: const EdgeInsets.fromLTRB(
+                    AppSpacing.lg,
+                    0,
+                    AppSpacing.lg,
+                    AppSpacing.xs,
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.lg,
+                    vertical: AppSpacing.md,
+                  ),
+                  // Pressable picker rows — the glass recipe, accent when
+                  // selected.
+                  decoration: glassBox(
+                    w.sessionId == vm.selectedStandaloneWorkout?.sessionId
+                        ? AppColors.accent
+                        : AppColors.primary,
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          toProperCase(w.name),
+                          style: AppFonts.ui(
+                            fontSize: AppTextStyles.md,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                      ),
+                      if (w.sessionId ==
+                          vm.selectedStandaloneWorkout?.sessionId)
+                        Icon(Icons.check, size: 18, color: AppColors.primary),
+                    ],
                   ),
                 ),
               ),
-              for (final w in vm.standaloneWorkouts)
-                InkWell(
-                  onTap: () {
-                    vm.selectStandaloneWorkout(w);
-                    Navigator.of(ctx).pop();
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.lg,
-                      vertical: AppSpacing.md,
-                    ),
-                    color:
-                        w.sessionId == vm.selectedStandaloneWorkout?.sessionId
-                        ? AppColors.accentBg
-                        : Colors.transparent,
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            toProperCase(w.name),
-                            style: AppFonts.ui(
-                              fontSize: AppTextStyles.md,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.primary,
-                            ),
-                          ),
-                        ),
-                        if (w.sessionId ==
-                            vm.selectedStandaloneWorkout?.sessionId)
-                          Icon(Icons.check, size: 18, color: AppColors.primary),
-                      ],
-                    ),
-                  ),
-                ),
-              const SizedBox(height: AppSpacing.xs),
-            ],
-            if (vm.availableWorkouts.isNotEmpty) ...[
-              Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.lg,
-                  0,
-                  AppSpacing.lg,
-                  AppSpacing.xs,
-                ),
-                child: Text(
-                  'Program',
-                  style: AppFonts.mono(
-                    fontSize: 9,
-                    letterSpacing: 0.8,
-                    color: AppColors.muted,
-                  ),
-                ),
-              ),
-              for (final w in vm.availableWorkouts)
-                InkWell(
-                  onTap: () {
-                    vm.selectPlannedSession(w);
-                    Navigator.of(ctx).pop();
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.lg,
-                      vertical: AppSpacing.md,
-                    ),
-                    color: w.sessionId == vm.selectedPlannedSession?.sessionId
-                        ? AppColors.accentBg
-                        : Colors.transparent,
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            toProperCase(w.name),
-                            style: AppFonts.ui(
-                              fontSize: AppTextStyles.md,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.primary,
-                            ),
-                          ),
-                        ),
-                        if (w.sessionId == vm.selectedPlannedSession?.sessionId)
-                          Icon(Icons.check, size: 18, color: AppColors.primary),
-                      ],
-                    ),
-                  ),
-                ),
-            ],
-            const SizedBox(height: AppSpacing.md),
+            const SizedBox(height: AppSpacing.xs),
           ],
-        ),
+          if (vm.availableWorkouts.isNotEmpty) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.lg,
+                0,
+                AppSpacing.lg,
+                AppSpacing.xs,
+              ),
+              child: Text(
+                'Program',
+                style: AppFonts.mono(
+                  fontSize: 9,
+                  letterSpacing: 0.8,
+                  color: AppColors.muted,
+                ),
+              ),
+            ),
+            for (final w in vm.availableWorkouts)
+              InkWell(
+                onTap: () {
+                  vm.selectPlannedSession(w);
+                  Navigator.of(ctx).pop();
+                },
+                child: Container(
+                  margin: const EdgeInsets.fromLTRB(
+                    AppSpacing.lg,
+                    0,
+                    AppSpacing.lg,
+                    AppSpacing.xs,
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.lg,
+                    vertical: AppSpacing.md,
+                  ),
+                  // Pressable picker rows — the glass recipe, accent when
+                  // selected.
+                  decoration: glassBox(
+                    w.sessionId == vm.selectedPlannedSession?.sessionId
+                        ? AppColors.accent
+                        : AppColors.primary,
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          toProperCase(w.name),
+                          style: AppFonts.ui(
+                            fontSize: AppTextStyles.md,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                      ),
+                      if (w.sessionId == vm.selectedPlannedSession?.sessionId)
+                        Icon(Icons.check, size: 18, color: AppColors.primary),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+          const SizedBox(height: AppSpacing.md),
+        ],
+      ),
       ),
     );
-  }
 }
 
 /// The Training page's pre-start preview, rendered like the live session:
@@ -1610,13 +1765,15 @@ Future<String?> _inertSubmitVariation(
   String? useExistingId,
 }) async => null;
 
-// ── Page 2: Reflection ───────────────────────────────────────────────────────
+// ── Page 3: Summary ──────────────────────────────────────────────────────────
 
-class _ReflectionPage extends StatelessWidget {
-  const _ReflectionPage({required this.vm, required this.notesCtrl});
+/// The THIS SESSION recap shown before finishing — the shared viewer card
+/// (PRS/LESSONS + PRE-WORKOUT bookend; no POST bookend for the still-active
+/// session). The Finish Session action is the header's right button.
+class _SummaryPage extends StatelessWidget {
+  const _SummaryPage({required this.vm});
 
   final SessionViewModel vm;
-  final TextEditingController notesCtrl;
 
   @override
   Widget build(BuildContext context) {
@@ -1642,26 +1799,13 @@ class _ReflectionPage extends StatelessWidget {
             ],
           );
         }
-        // The exact prep-page layout: the POST-WORKOUT form on top, then the
-        // THIS SESSION divider, then the shared session-viewer card (which
-        // hides its own POST-WORKOUT bookend for the still-active session).
+        // The divider names what the viewer shows — THIS SESSION while the
+        // still-active workout is selected, PREVIOUS SESSION once the
+        // chevrons page into completed history.
         return ListView(
           padding: const EdgeInsets.all(AppSpacing.lg),
           children: [
-            _FeelingForm(
-              rating: vm.endFeeling,
-              onRatingChanged: vm.setEndFeeling,
-              notesCtrl: notesCtrl,
-              onNotesChanged: (v) => vm.endNotes = v,
-              placeholder: 'How did it go?\nStrong sets?\nAnything to fix?',
-              question: 'How well did you do this session',
-              notesLabel: 'What could have made this session better',
-            ),
-            const SizedBox(height: AppSpacing.xl),
-            // The divider names what the viewer shows — THIS SESSION while
-            // the still-active workout is selected, PREVIOUS SESSION once
-            // the chevrons page into completed history.
-            _SectionDivider(
+            SectionDivider(
               vm.reflectionIsCurrent ? 'THIS SESSION' : 'PREVIOUS SESSION',
             ),
             const SizedBox(height: AppSpacing.sm),
@@ -1669,6 +1813,159 @@ class _ReflectionPage extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+}
+
+// ── Page 4: Post-questionnaire ───────────────────────────────────────────────
+
+/// The fillable post-workout questionnaire after the session ends — the
+/// same swap-in-place treatment as Pre-Evaluation: rating + notes centered
+/// vertically, and a toggle under the notes question that swaps the content
+/// for the previous session's answers (marked as coming from that session).
+/// Done (header right) writes the answers and lands Home.
+class _PostQuestionnairePage extends StatefulWidget {
+  const _PostQuestionnairePage({required this.vm, required this.notesCtrl});
+
+  final SessionViewModel vm;
+  final TextEditingController notesCtrl;
+
+  @override
+  State<_PostQuestionnairePage> createState() => _PostQuestionnairePageState();
+}
+
+class _PostQuestionnairePageState extends State<_PostQuestionnairePage> {
+  bool _showPreviousSession = false;
+
+  SessionViewModel get vm => widget.vm;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: vm,
+      builder: (context, _) {
+        final previous = vm.previousCompletedSession;
+        return Column(
+          children: [
+            Expanded(
+              child: Center(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(AppSpacing.lg),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // One of the two fills the SAME slot — previewing the
+                      // previous session hides the fillable form entirely.
+                      if (!_showPreviousSession)
+                        _FeelingForm(
+                          rating: vm.endFeeling,
+                          onRatingChanged: vm.setEndFeeling,
+                          notesCtrl: widget.notesCtrl,
+                          onNotesChanged: (v) => vm.endNotes = v,
+                          placeholder:
+                              'How did it go?\nStrong sets?\nAnything to fix?',
+                          question: 'How well did you do this session',
+                          notesLabel:
+                              'What could have made this session better',
+                        )
+                      else if (previous != null)
+                        _previousSessionPreview(previous),
+                      if (previous != null) ...[
+                        const SizedBox(height: AppSpacing.md),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: GestureDetector(
+                            onTap: () => setState(
+                              () => _showPreviousSession = !_showPreviousSession,
+                            ),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 6,
+                              ),
+                              decoration: glassBox(AppColors.primary),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    _showPreviousSession
+                                        ? Icons.arrow_back
+                                        : Icons.history,
+                                    size: 13,
+                                    color: AppColors.primary,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    _showPreviousSession
+                                        ? 'Back'
+                                        : 'Last Session',
+                                    style: AppFonts.ui(
+                                      fontSize: AppTextStyles.xs,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppColors.primary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// The previous session's answers, read back with the same
+  /// wording/styling as the live form — clearly marked as not this
+  /// session's.
+  Widget _previousSessionPreview(Session session) {
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: lambdaBox(ContainerTone.ghost, radius: AppRadius.md),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.history, size: 11, color: AppColors.muted),
+              const SizedBox(width: 4),
+              Text(
+                'FROM LAST SESSION',
+                style: AppFonts.mono(
+                  fontSize: 8,
+                  letterSpacing: 0.8,
+                  color: AppColors.muted,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          SessionBookend(
+            label: 'PRE-WORKOUT',
+            feeling: session.preFeeling,
+            notes: session.preNotes,
+            emptyNotes: 'No pre-workout notes',
+            question: 'How well do you think you\'re going to do',
+            notesLabel: 'Why do you feel that way',
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          SessionBookend(
+            label: 'POST-WORKOUT',
+            feeling: session.feeling,
+            notes: session.postNotes,
+            emptyNotes: 'No post-workout notes',
+            question: 'How well did you do this session',
+            notesLabel: 'What could have made this session better',
+          ),
+        ],
+      ),
     );
   }
 }

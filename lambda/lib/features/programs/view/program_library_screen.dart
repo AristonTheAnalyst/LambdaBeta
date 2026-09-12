@@ -2,16 +2,20 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/styles/app_colors.dart';
 import '../../../../core/styles/app_fonts.dart';
+import '../../../../core/styles/app_radius.dart';
+import '../../../shared/widgets/container_styles.dart';
 import '../../../../core/styles/app_spacing.dart';
 import '../../../../core/styles/app_text_styles.dart';
 import '../../../../core/utils/session_format.dart';
 import '../../../../data/models/program.dart';
 import '../../../../data/models/program_progress.dart';
 import '../../../../shared/widgets/app_card.dart';
+import '../../../../shared/widgets/archived_sheet.dart';
 import '../../../../shared/widgets/glass_button.dart';
 import '../../../../shared/widgets/lambda_input.dart';
 import '../../../../shared/widgets/segmented_control.dart';
 import '../../../../shared/widgets/page_header.dart';
+import '../../../../shared/widgets/slide_up_modal.dart';
 import '../../../../shared/widgets/swipe_actions.dart';
 import 'program_wizard_screen.dart';
 import '../viewmodel/program_library_viewmodel.dart';
@@ -31,7 +35,9 @@ class ProgramLibraryScreen extends StatefulWidget {
 class _ProgramLibraryScreenState extends State<ProgramLibraryScreen> {
   final _viewModel = ProgramLibraryViewModel();
   final _createController = TextEditingController();
+  final _searchController = TextEditingController();
   bool _needsRefresh = false;
+  String _query = '';
   late final GoRouter _router;
 
   @override
@@ -40,6 +46,9 @@ class _ProgramLibraryScreenState extends State<ProgramLibraryScreen> {
     // Capture the router once — dispose() can't look up ancestors.
     _router = GoRouter.of(context);
     _router.routerDelegate.addListener(_onRouteChange);
+    _searchController.addListener(
+      () => setState(() => _query = _searchController.text),
+    );
     _viewModel.fetchAll();
   }
 
@@ -57,6 +66,7 @@ class _ProgramLibraryScreenState extends State<ProgramLibraryScreen> {
     _router.routerDelegate.removeListener(_onRouteChange);
     _viewModel.dispose();
     _createController.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -68,20 +78,39 @@ class _ProgramLibraryScreenState extends State<ProgramLibraryScreen> {
     );
   }
 
+  void _openArchived() {
+    showLambdaModal(
+      context,
+      fitContent: true,
+      child: ArchivedSheet(
+        title: 'Archived Programs',
+        emptyText: 'No archived programs.',
+        fetch: () async => [
+          for (final pr in await _viewModel.fetchArchivedPrograms())
+            (id: pr.programId, name: pr.name),
+        ],
+        onRestore: (id) => _viewModel.reactivateProgram(id),
+      ),
+    );
+  }
+
+  /// Programs can never be fully deleted — runs FK-reference them — so the
+  /// dialog says "Archive" and the copy explains it.
   void _confirmDelete(Program p) {
     final isCurrent = _viewModel.state.value.currentProgramId == p.programId;
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
-        title: Text('Delete Program',
+        title: Text('Archive Program',
             style: AppFonts.ui(fontWeight: FontWeight.w800, color: AppColors.danger)),
         content: Text(
             isCurrent
                 ? '${toProperCase(p.name)} is your active program. '
-                    'Deleting it will also delete your current run and its progress. '
-                    'Past workouts logged from it stay intact.'
-                : 'Delete "${toProperCase(p.name)}"? Past workouts logged from it stay intact.',
+                    'Archiving it will also end your current run. '
+                    'Sessions logged from it stay intact.'
+                : 'Archive "${toProperCase(p.name)}"? It will disappear from '
+                    'this list, but the sessions logged from it stay intact.',
             style: AppFonts.ui(color: AppColors.muted)),
         actions: [
           TextButton(
@@ -93,7 +122,7 @@ class _ProgramLibraryScreenState extends State<ProgramLibraryScreen> {
                 Navigator.of(ctx).pop();
                 _viewModel.deleteProgram(p.programId);
               },
-              child: Text('Delete',
+              child: Text('Archive',
                   style: AppFonts.ui(
                       color: AppColors.danger, fontWeight: FontWeight.w600))),
         ],
@@ -186,6 +215,9 @@ class _ProgramLibraryScreenState extends State<ProgramLibraryScreen> {
       body: ValueListenableBuilder<ProgramLibraryState>(
         valueListenable: _viewModel.state,
         builder: (context, state, _) {
+          final programs = state.sortedPrograms
+              .where((p) => p.name.toLowerCase().contains(_query.toLowerCase()))
+              .toList();
           return Column(
             children: [
               if (widget.showHeader)
@@ -202,15 +234,47 @@ class _ProgramLibraryScreenState extends State<ProgramLibraryScreen> {
               if (!widget.showHeader)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(
-                      AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, 0),
+                      AppSpacing.lg, AppSpacing.lg, AppSpacing.lg, 0),
                   child: Row(
                     children: [
                       Expanded(
-                        child: GlassButton(
-                          label: 'New Program',
-                          icon: Icons.add,
-                          onPressed: _openCreate,
+                        child: TextField(
+                          controller: _searchController,
+                          style: AppFonts.ui(
+                            fontSize: AppTextStyles.sm,
+                            color: AppColors.primary,
+                          ),
+                          decoration: InputDecoration(
+                            hintText: 'Search…',
+                            hintStyle: AppFonts.ui(color: AppColors.muted),
+                            filled: true,
+                            fillColor: AppColors.surface,
+                            border: OutlineInputBorder(
+                              borderRadius:
+                                  BorderRadius.circular(AppRadius.md),
+                              borderSide: BorderSide.none,
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 8,
+                            ),
+                            isDense: true,
+                          ),
                         ),
+                      ),
+                      const SizedBox(width: AppSpacing.sm),
+                      GlassButton(
+                        label: '',
+                        icon: Icons.add,
+                        onPressed: _openCreate,
+                        compact: true,
+                      ),
+                      const SizedBox(width: AppSpacing.sm),
+                      GlassButton(
+                        label: '',
+                        icon: Icons.archive_outlined,
+                        onPressed: _openArchived,
+                        compact: true,
                       ),
                     ],
                   ),
@@ -247,13 +311,23 @@ class _ProgramLibraryScreenState extends State<ProgramLibraryScreen> {
                               ],
                             ),
                           )
-                        : ListView.separated(
+                        : programs.isEmpty
+                            ? Center(
+                                child: Text(
+                                  'No matches for "$_query".',
+                                  style: AppFonts.ui(
+                                    fontSize: AppTextStyles.sm,
+                                    color: AppColors.muted,
+                                  ),
+                                ),
+                              )
+                            : ListView.separated(
                             padding: const EdgeInsets.all(AppSpacing.lg),
-                            itemCount: state.sortedPrograms.length,
+                            itemCount: programs.length,
                             separatorBuilder: (_, _) =>
                                 const SizedBox(height: AppSpacing.md),
                             itemBuilder: (context, i) {
-                              final p = state.sortedPrograms[i];
+                              final p = programs[i];
                               final isCurrent = p.programId == state.currentProgramId;
                               final settingCurrent =
                                   state.settingCurrentId == p.programId;
@@ -350,7 +424,11 @@ class _ProgramCard extends StatelessWidget {
                             decoration: BoxDecoration(
                               color: AppColors.accentBg,
                               borderRadius: BorderRadius.circular(999),
-                              border: Border.all(color: AppColors.accent),
+                              border: Border.all(
+                                color: AppColors.accent.withValues(
+                                  alpha: 0.35,
+                                ),
+                              ),
                             ),
                             child: Text('Active',
                                 style: AppFonts.ui(
@@ -540,11 +618,7 @@ class _BeginConfigDialogState extends State<_BeginConfigDialog> {
               },
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                decoration: BoxDecoration(
-                  color: AppColors.surface,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: AppColors.border),
-                ),
+                decoration: glassBox(AppColors.primary, radius: 8),
                 child: Text(_endDate != null
                     ? '${_endDate!.day}/${_endDate!.month}/${_endDate!.year}'
                     : 'Pick a date…',

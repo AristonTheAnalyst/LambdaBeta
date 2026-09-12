@@ -3,14 +3,18 @@ class CustomVariation {
     required this.variationId,
     required this.userId,
     required this.name,
-    required this.isArchived,
+    this.archivedDate,
     this.lastUsed,
   });
 
   final String variationId;
   final String userId;
   final String name;
-  final bool isArchived;
+
+  /// NULL = active; a timestamp = archived (sortable, latest first).
+  final DateTime? archivedDate;
+
+  bool get isArchived => archivedDate != null;
 
   /// Most recent workout date this variation appeared in, if any — used to
   /// order variation lists/pickers by "most recently used".
@@ -20,14 +24,10 @@ class CustomVariation {
     variationId: map['custom_variation_id'] as String,
     userId: map['user_id'] as String,
     name: map['variation_name'] as String,
-    isArchived: _toBool(map['is_archived']),
+    archivedDate: map['date_archived'] != null
+        ? DateTime.tryParse(map['date_archived'] as String)
+        : null,
   );
-
-  static bool _toBool(dynamic v) {
-    if (v is bool) return v;
-    if (v is int) return v != 0;
-    return true;
-  }
 
   /// Comparator: most recently used first (nulls last, then name).
   static int byRecency(CustomVariation a, CustomVariation b) {
@@ -61,7 +61,7 @@ class CustomVariation {
     variationId: variationId,
     userId: userId,
     name: name,
-    isArchived: isArchived,
+    archivedDate: archivedDate,
     lastUsed: lastUsed ?? this.lastUsed,
   );
 
@@ -69,6 +69,6 @@ class CustomVariation {
     'custom_variation_id': variationId,
     'user_id': userId,
     'variation_name': name,
-    'is_archived': isArchived,
+    'date_archived': archivedDate?.toIso8601String(),
   };
 }

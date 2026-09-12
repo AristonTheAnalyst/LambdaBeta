@@ -6,6 +6,7 @@ import '../../../core/styles/app_radius.dart';
 import '../../../core/styles/app_spacing.dart';
 import '../../../core/styles/app_text_styles.dart';
 import '../../../shared/router/app_router.dart';
+import '../../../shared/widgets/glass_button.dart';
 import '../../../shared/widgets/lambda_button.dart';
 import '../viewmodel/onboarding_viewmodel.dart';
 
@@ -81,10 +82,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 if (_page < _slides.length - 1)
                   Align(
                     alignment: Alignment.topRight,
-                    child: TextButton(
+                    child: GlassButton(
+                      label: 'Skip',
+                      color: AppColors.accent,
+                      compact: true,
                       onPressed: _finish,
-                      child: Text('Skip',
-                          style: AppFonts.ui(fontSize: AppTextStyles.sm, color: AppColors.accent)),
                     ),
                   ),
                 if (state.error != null)

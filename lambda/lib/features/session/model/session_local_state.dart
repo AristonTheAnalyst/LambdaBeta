@@ -35,35 +35,6 @@ Map<String, List<ExerciseHistorySession>> groupHistoryByExercise(
   });
 }
 
-/// The best-ever weight/reps pair for an exercise, used as the PR baseline —
-/// mirrors the Figma prototype's `prevBest`. Picks the set with the highest
-/// weight (ties broken by higher reps) across the user's full history.
-({num weight, num reps})? bestEverForExercise(List<PastSetRow> pastSets,
-    {String? variationId}) {
-  ({num weight, num reps})? best;
-  for (final s in pastSets) {
-    if (variationId != null && s.variationId != variationId) continue;
-    final weight = s.weight ?? 0; // bodyweight sets count as 0kg
-    final reps = s.reps.isNotEmpty ? s.reps.first : null;
-    if (reps == null) continue;
-    if (best == null || weight > best.weight || (weight == best.weight && reps > best.reps)) {
-      best = (weight: weight, reps: reps);
-    }
-  }
-  return best;
-}
-
-/// Whether [set] beats the PR baseline — a PR when the weight exceeds the
-/// baseline, or ties it with more reps. A null/absent baseline means "no
-/// history yet," and the first-ever lift is by definition a PR.
-bool isPr(SessionExerciseSet set, ({num weight, num reps})? bestEver) {
-  final weight = set.weight ?? 0; // bodyweight sets count as 0kg
-  final reps = set.reps.isNotEmpty ? set.reps.first : null;
-  if (reps == null) return false;
-  if (bestEver == null || (bestEver.weight == 0 && bestEver.reps == 0)) return true;
-  return weight > bestEver.weight || (weight >= bestEver.weight && reps > bestEver.reps);
-}
-
 /// Classic edit-distance — used to flag "did you mean?" near-duplicate
 /// variation names (e.g. "Paused" vs "Pause") without a fuzzy-matching
 /// dependency.

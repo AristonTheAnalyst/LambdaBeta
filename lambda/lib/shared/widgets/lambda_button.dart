@@ -1,6 +1,7 @@
 ﻿import 'package:flutter/material.dart';
 import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_fonts.dart';
+import '../../core/styles/app_radius.dart';
 import '../../core/styles/app_text_styles.dart';
 
 enum ButtonVariant { primary, ghost, danger, success }
@@ -23,23 +24,14 @@ class LambdaButton extends StatelessWidget {
   final bool disabled;
   final bool fullWidth;
 
-  Color get _bg => switch (variant) {
+  /// The variant's semantic color — every button renders the glass recipe
+  /// (translucent tint + soft hairline in this color), the same chrome as
+  /// GlassButton and every other pressable.
+  Color get _color => switch (variant) {
         ButtonVariant.primary => AppColors.primary,
-        ButtonVariant.ghost   => Colors.transparent,
+        ButtonVariant.ghost   => AppColors.primary,
         ButtonVariant.danger  => AppColors.danger,
         ButtonVariant.success => AppColors.success,
-      };
-
-  Color get _fg => switch (variant) {
-        ButtonVariant.primary => AppColors.bg,
-        ButtonVariant.ghost   => AppColors.primary,
-        ButtonVariant.danger  => AppColors.accentText,
-        ButtonVariant.success => AppColors.bg,
-      };
-
-  BorderSide get _border => switch (variant) {
-        ButtonVariant.ghost => BorderSide(color: AppColors.primary),
-        _                   => BorderSide.none,
       };
 
   @override
@@ -54,12 +46,12 @@ class LambdaButton extends StatelessWidget {
         child: TextButton(
           onPressed: isDisabled ? null : onPressed,
           style: TextButton.styleFrom(
-            backgroundColor: _bg,
-            foregroundColor: _fg,
+            backgroundColor: _color.withAlpha(26),
+            foregroundColor: _color,
             padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(999),
-              side: _border,
+              borderRadius: BorderRadius.circular(AppRadius.md),
+              side: BorderSide(color: _color.withAlpha(77)),
             ),
           ),
           child: loading
@@ -68,7 +60,7 @@ class LambdaButton extends StatelessWidget {
                   height: 20,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
-                    color: _fg,
+                    color: _color,
                   ),
                 )
               : Text(
@@ -76,7 +68,7 @@ class LambdaButton extends StatelessWidget {
                   style: AppFonts.ui(
                     fontSize: AppTextStyles.md,
                     fontWeight: FontWeight.w600,
-                    color: _fg,
+                    color: _color,
                   ),
                 ),
         ),

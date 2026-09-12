@@ -6,8 +6,8 @@ class PlannedSession {
     required this.sessionId,
     required this.userId,
     required this.name,
-    required this.isArchived,
     this.notes,
+    this.archivedDate,
     this.createdDate,
   });
 
@@ -15,7 +15,12 @@ class PlannedSession {
   final String userId;
   final String name;
   final String? notes;
-  final bool isArchived;
+
+  /// NULL = active; a timestamp = archived (sortable, latest first).
+  final DateTime? archivedDate;
+
+  bool get isArchived => archivedDate != null;
+
   final DateTime? createdDate;
 
   factory PlannedSession.fromMap(Map<String, dynamic> map) => PlannedSession(
@@ -23,24 +28,20 @@ class PlannedSession {
         userId: map['user_id'] as String,
         name: map['name'] as String,
         notes: map['notes'] as String?,
-        isArchived: _toBool(map['is_archived']),
+        archivedDate: map['date_archived'] != null
+            ? DateTime.tryParse(map['date_archived'] as String)
+            : null,
         createdDate: map['created_date'] != null
             ? DateTime.tryParse(map['created_date'] as String)
             : null,
       );
-
-  static bool _toBool(dynamic v) {
-    if (v is bool) return v;
-    if (v is int) return v != 0;
-    return false;
-  }
 
   Map<String, dynamic> toMap() => {
         'session_id': sessionId,
         'user_id': userId,
         'name': name,
         'notes': notes,
-        'is_archived': isArchived,
+        'date_archived': archivedDate?.toIso8601String(),
         'created_date': createdDate?.toIso8601String(),
       };
 }

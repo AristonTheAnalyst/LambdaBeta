@@ -10,6 +10,7 @@ import '../../../../core/utils/session_format.dart';
 import '../../../../data/models/planned_session.dart';
 import '../../../../data/repositories/planned_session_repository.dart';
 import '../../../../shared/widgets/app_card.dart';
+import '../../../../shared/widgets/container_styles.dart';
 import '../../../../shared/widgets/glass_button.dart';
 import '../../../../shared/widgets/lambda_input.dart';
 import '../../../../shared/widgets/page_header.dart';
@@ -149,11 +150,19 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
             for (final w in workouts)
               InkWell(
                 onTap: () => Navigator.of(ctx).pop(w.sessionId),
-                child: Padding(
+                child: Container(
+                  margin: const EdgeInsets.fromLTRB(
+                    AppSpacing.lg,
+                    0,
+                    AppSpacing.lg,
+                    AppSpacing.xs,
+                  ),
                   padding: const EdgeInsets.symmetric(
                     horizontal: AppSpacing.lg,
                     vertical: AppSpacing.md,
                   ),
+                  // Pressable rows — the glass recipe.
+                  decoration: glassBox(AppColors.primary),
                   child: Text(
                     toProperCase(w.name),
                     style: AppFonts.ui(

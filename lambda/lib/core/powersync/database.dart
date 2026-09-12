@@ -31,6 +31,7 @@ const _pkColumns = {
   'dim_planned_session_exercise_set': 'planned_set_id',
   'dim_planned_session_exercise': 'planned_exercise_id',
   'dim_planned_session_program': 'planned_session_program_id',
+  'dim_pr_view_setting': 'pr_view_setting_id',
   'fact_goal': 'goal_id',
 };
 

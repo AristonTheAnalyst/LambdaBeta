@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_fonts.dart';
 import '../../core/styles/app_radius.dart';
+import './container_styles.dart';
 
 /// A pill-chip tab for the exercise tab bar. Used by both the session screen
 /// and the planned-workout screen.
@@ -94,12 +95,8 @@ class AddExerciseButton extends StatelessWidget {
         width: 30,
         height: 30,
         alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(AppRadius.md),
-          border: Border.all(color: AppColors.border),
-        ),
-        child: Icon(Icons.add, size: 16, color: AppColors.muted),
+        decoration: glassBox(AppColors.primary),
+        child: Icon(Icons.add, size: 16, color: AppColors.primary),
       ),
     );
   }

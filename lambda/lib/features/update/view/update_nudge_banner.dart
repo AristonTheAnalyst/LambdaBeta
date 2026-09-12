@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_radius.dart';
+import '../../../shared/widgets/container_styles.dart';
 import '../../../core/styles/app_spacing.dart';
 import '../../../core/styles/app_text_styles.dart';
 
@@ -38,11 +39,7 @@ class UpdateNudgeBanner extends StatelessWidget {
           child: Container(
             padding: const EdgeInsets.symmetric(
                 horizontal: AppSpacing.md, vertical: AppSpacing.sm),
-            decoration: BoxDecoration(
-              color: AppColors.surfaceHigh,
-              borderRadius: BorderRadius.circular(AppRadius.md),
-              border: Border.all(color: AppColors.border),
-            ),
+            decoration: lambdaBox(ContainerTone.ghost, radius: AppRadius.md),
             child: Row(
               children: [
                 Icon(Icons.system_update_alt,

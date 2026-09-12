@@ -25,7 +25,7 @@ lib/
 └── main.dart
 ```
 
-Naming rules (2026-08-13 redesign): `dim_*` = reference data (soft-deleted via `is_archived`); `fact_*` = events. "Workout" language is banned in the DB — templates are **planned sessions**, logged workouts are **sessions**. See the `app-features` skill for the complete table inventory, RLS matrix, and sync wiring; the `sync-contract` skill for schema/sync changes.
+Naming rules (2026-08-13 redesign, 2026-08-26 amendment): `dim_*` = reference data. Top-level dims (exercises, variations, planned sessions, programs) soft-delete via `date_archived` timestamptz (NULL = active — sortable, latest archived first); their child tables and `dim_lesson` keep the boolean `is_archived` (internal lifecycle only). `fact_*` = events. "Workout" language is banned in the DB — templates are **planned sessions**, logged workouts are **sessions**. See the `app-features` skill for the complete table inventory, RLS matrix, and sync wiring; the `sync-contract` skill for schema/sync changes.
 
 ## Core Architecture: The Three Session Screens
 
@@ -36,7 +36,7 @@ The app has three session surfaces that share one UX. **The live session screen 
 **Purpose:** Log a live workout in real-time. The most feature-rich screen.
 
 **Structure:**
-- `view/session_screen.dart` — `SlidePages` wizard: page 0 = Prep (feeling/notes/start + last-session reflection), page 1 = Training (active workout), page 2 = Reflection (before/after recap). Training page idle state shows `_SessionTemplateCard` (template picker) + `_SessionPreview` (read-only planned preview).
+- `view/session_screen.dart` — `SlidePages` wizard, 5 pages (indices are `SessionViewModel.k*Page` constants): 0 = Home (congrats banner + last-session recap, Start), 1 = Pre-Questionnaire (feeling/notes + last-session recap, Continue), 2 = Training (active workout; idle state shows `_SessionTemplateCard` template picker + `_SessionPreview` read-only preview), 3 = Summary (THIS SESSION recap, Finish Session), 4 = Post-Questionnaire (feeling/notes + completed-session recap, Done → Home). Pre answers are written at session creation (Training's Start); post answers via `updatePostQuestionnaire` on Done, after `endSession` stamps only `end_datetime`.
 - `viewmodel/session_viewmodel.dart` — `SessionViewModel`, a `ChangeNotifier` with mutable fields (NOT an immutable state class).
 - `view/live_exercise_card.dart` — `LiveExerciseCard`, a thin adapter over the shared `SessionExerciseCard`/`SessionSetRow`.
 - Renders: `SessionExerciseCard` (with `ExerciseSelector` pills, pinned lesson, Lessons/History/PRs pills) → `SessionSetRow` grid + rest timer + stats bar.
@@ -54,8 +54,9 @@ The app has three session surfaces that share one UX. **The live session screen 
   - Notes icon modal
 - Stats bar: SETS / PRS (tappable → PR modal) / EXERCISES / AVG REST
 - Rest timer bar + hold-to-finish End Workout
-- Prep page: planned banner, feeling picker (1-5), pre-notes, Start button
-- End Workout modal: feeling picker, post-notes
+- Home page: congrats banner (with the finished session's stats), last-session recap card, Start
+- Pre-questionnaire page (after Start): feeling picker (1-5), pre-notes, last-session recap card — nothing persisted until the workout starts
+- Post-questionnaire page (after Finish Session): feeling picker, post-notes, completed-session recap card — Done writes the answers and lands Home
 
 ### 2. Planner Screen (`lib/features/programs/view/plan_session_screen.dart`) — Planned Session Editor
 
@@ -223,15 +224,16 @@ Each repository wraps PowerSync SQLite CRUD.
 
 ## PR Methodology
 
-PRs are **fully derived on read** — there is no PR table. On every relevant read, the engine (`lib/features/session/model/pr_engine.dart`, used via `pr_service.dart` / `_recomputePRs`) walks logged `fact_session_set` history chronologically:
+PRs are **fully derived on read** — there is no PR table. On every relevant read, the engine (`lib/features/session/model/pr_engine.dart`, used via `pr_service.dart` / `_recomputePRs`) walks logged `fact_session_exercise_set` history chronologically (2026-08-29 frontier redesign):
 
-- **Axes**: rep-max (`curve[N]` = best weight for ≥ N reps, N ∈ 1–10, 12, 15, 20, 25, 30) and weight-max (most reps at an exact weight). One set can be a PR on many axes at once (105 × 3 improves 1RM, 2RM, 3RM).
-- **Scope**: per (exercise × variation) — null variation is its own key. Bodyweight is just weight 0 — it feeds the curve like any other weight (a 13-rep dips set is a 12RM at 0kg). Reps that fall between tracked values claim the highest tracked value below them as the explicit record (13 reps → explicit 12RM); lower tracked Ns stay propagated.
-- **Propagation**: heavier lifts bump implied records on lighter axes, but only for weights the user has actually lifted — nothing is fabricated.
-- **Edit-past-data self-heals**: correcting a set removes its derived PRs on the next read; no stale rows to clean up.
-- **Display & counting rules (2026-08-26)**: propagated records appear nowhere (`achievedRecords`); weight-max records (bodyweight 0kg included) are display-only — counts, badges, session totals, and insights charts use explicit rep-max only (`countableRecords`).
+- **The definition**: a set (w, r) is a PR iff it extends its pair's best-ever frontier — no prior set did ≥ r reps at ≥ w weight (Pareto dominance). 100 × 5 after 110 × 1 IS a PR; 100 × 4 after 100 × 5 is not; an identical repeat is not. One set = **one `PrEvent`**, even when it beats prior records on both dimensions at once.
+- **Scope**: per (exercise × variation) — null variation is its own key. Bodyweight is weight 0.
+- **Before-facts**: each event carries the two previous frontier values it beat — `beforeWeight` (previous best weight at ≥ this many reps) and `beforeReps` (previous best reps at exactly this weight). A 100 × 10 after 6 × 10 and 100 × 3 renders "was 6 × 10 · 100 × 3". Both null = "First PR".
+- **Counts, accents, badges, and modals** all use events (one number everywhere — the live stats bar and the logs summary can never disagree).
+- **Lenses (insights only)**: rep-max curves, weight-max curves, and per-axis progressions (`repMaxCurve` / `weightMaxCurve` / `repAxisHistory` / `weightAxisHistory`) are pure projections over raw history — they never gate detection. `kTrackedRepCounts` is a display config for the insights curves, nothing more.
+- **Edit-past-data self-heals**: correcting a set changes every PR view on the next read; no stale rows to clean up.
 
-Full spec: `docs/pr_methodology.md` (note: its "snapshot rows in fact_pr" sections are historical — the table was dropped 2026-08-14).
+Full spec: `docs/pr_methodology.md`.
 
 ## Design Tokens
 

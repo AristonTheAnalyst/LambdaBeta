@@ -2,12 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/styles/app_colors.dart';
 import '../../../../core/styles/app_fonts.dart';
+import '../../../../core/styles/app_radius.dart';
 import '../../../../core/styles/app_spacing.dart';
 import '../../../../core/styles/app_text_styles.dart';
 import '../../../../core/utils/session_format.dart';
 import '../../../../data/models/planned_session.dart';
 import '../../../../data/repositories/planned_session_repository.dart';
 import '../../../../shared/widgets/app_card.dart';
+import '../../../../shared/widgets/archived_sheet.dart';
+import '../../../../shared/widgets/slide_up_modal.dart';
 import '../../../../shared/widgets/swipe_actions.dart';
 import '../../../../shared/widgets/glass_button.dart';
 import '../../../../shared/widgets/page_header.dart';
@@ -29,16 +32,34 @@ class WorkoutLibraryScreen extends StatefulWidget {
 
 class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
   final _repo = PlannedSessionRepository();
+  final _searchController = TextEditingController();
   List<PlannedSession> _workouts = const [];
   bool _loading = true;
   String? _error;
+  String _query = '';
 
   String get _userId => Supabase.instance.client.auth.currentUser!.id;
+
+  /// Search-filtered view of the loaded workouts.
+  List<PlannedSession> get _filtered => _query.isEmpty
+      ? _workouts
+      : _workouts
+            .where((w) => w.name.toLowerCase().contains(_query.toLowerCase()))
+            .toList();
 
   @override
   void initState() {
     super.initState();
+    _searchController.addListener(
+      () => setState(() => _query = _searchController.text),
+    );
     _load();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -90,14 +111,43 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
     await _load();
   }
 
+  void _openArchived() {
+    showLambdaModal(
+      context,
+      fitContent: true,
+      child: ArchivedSheet(
+        title: 'Archived Sessions',
+        emptyText: 'No archived sessions.',
+        fetch: () async => [
+          for (final s in await _repo.fetchArchivedPlannedSessions(_userId))
+            (id: s.sessionId, name: s.name),
+        ],
+        onRestore: (id) async {
+          await _repo.reactivatePlannedSession(id);
+          await _load();
+        },
+      ),
+    );
+  }
+
+  /// Deletes a never-used template outright; archives a used one. The dialog
+  /// copy follows the usage state so the user always knows which happened.
   Future<void> _delete(PlannedSession w) async {
+    final used = await _repo.plannedSessionUsageCount(w.sessionId) > 0;
+    if (!mounted) return;
+    final name = toProperCase(w.name);
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
-        title: Text('Delete Session',
+        title: Text(used ? 'Archive Session' : 'Delete Session',
             style: AppFonts.ui(fontWeight: FontWeight.w800, color: AppColors.danger)),
-        content: Text('Delete "${toProperCase(w.name)}"?',
+        content: Text(
+            used
+                ? 'Archive "$name"? It has been used, so it can\'t be fully '
+                  'deleted — it will disappear from this list, but the '
+                  'sessions logged from it stay intact.'
+                : 'Delete "$name"? This can\'t be undone.',
             style: AppFonts.ui(color: AppColors.muted)),
         actions: [
           TextButton(
@@ -105,14 +155,18 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
               child: Text('Cancel', style: AppFonts.ui(color: AppColors.muted))),
           TextButton(
               onPressed: () => Navigator.of(ctx).pop(true),
-              child: Text('Delete',
+              child: Text(used ? 'Archive' : 'Delete',
                   style: AppFonts.ui(
                       color: AppColors.danger, fontWeight: FontWeight.w600))),
         ],
       ),
     );
     if (ok == true) {
-      await _repo.deletePlannedSession(w.sessionId);
+      if (used) {
+        await _repo.deletePlannedSession(w.sessionId);
+      } else {
+        await _repo.hardDeletePlannedSession(w.sessionId);
+      }
       await _load();
     }
   }
@@ -167,15 +221,49 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
                       if (!widget.showHeader)
                         Padding(
                           padding: const EdgeInsets.fromLTRB(
-                              AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, 0),
+                              AppSpacing.lg, AppSpacing.lg, AppSpacing.lg, 0),
                           child: Row(
                             children: [
                               Expanded(
-                                child: GlassButton(
-                                  label: 'New Session',
-                                  icon: Icons.add,
-                                  onPressed: _create,
+                                child: TextField(
+                                  controller: _searchController,
+                                  style: AppFonts.ui(
+                                    fontSize: AppTextStyles.sm,
+                                    color: AppColors.primary,
+                                  ),
+                                  decoration: InputDecoration(
+                                    hintText: 'Search…',
+                                    hintStyle:
+                                        AppFonts.ui(color: AppColors.muted),
+                                    filled: true,
+                                    fillColor: AppColors.surface,
+                                    border: OutlineInputBorder(
+                                      borderRadius:
+                                          BorderRadius.circular(AppRadius.md),
+                                      borderSide: BorderSide.none,
+                                    ),
+                                    contentPadding:
+                                        const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 8,
+                                    ),
+                                    isDense: true,
+                                  ),
                                 ),
+                              ),
+                              const SizedBox(width: AppSpacing.sm),
+                              GlassButton(
+                                label: '',
+                                icon: Icons.add,
+                                onPressed: _create,
+                                compact: true,
+                              ),
+                              const SizedBox(width: AppSpacing.sm),
+                              GlassButton(
+                                label: '',
+                                icon: Icons.archive_outlined,
+                                onPressed: _openArchived,
+                                compact: true,
                               ),
                             ],
                           ),
@@ -187,12 +275,22 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
                                     style: AppFonts.ui(
                                         fontSize: AppTextStyles.md, color: AppColors.muted)),
                               )
-                            : ListView.separated(
+                            : _filtered.isEmpty
+                                ? Center(
+                                    child: Text(
+                                      'No matches for "$_query".',
+                                      style: AppFonts.ui(
+                                        fontSize: AppTextStyles.sm,
+                                        color: AppColors.muted,
+                                      ),
+                                    ),
+                                  )
+                                : ListView.separated(
                         padding: const EdgeInsets.all(AppSpacing.lg),
-                        itemCount: _workouts.length,
+                        itemCount: _filtered.length,
                         separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.md),
                         itemBuilder: (context, i) {
-                          final w = _workouts[i];
+                          final w = _filtered[i];
                           return SwipeActions(
                             actions: [
                               SwipeAction(
@@ -210,6 +308,9 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
                             ],
                             child: AppCard(
                             onTap: () => _edit(w),
+                            background: AppColors.plannedBg,
+                            borderColor:
+                                AppColors.planned.withValues(alpha: 0.35),
                             child: Row(
                               children: [
                                 Expanded(

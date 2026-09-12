@@ -4,6 +4,7 @@ import '../../core/styles/app_fonts.dart';
 import '../../core/styles/app_radius.dart';
 import '../../core/styles/app_spacing.dart';
 import '../../core/styles/app_text_styles.dart';
+import 'glass_button.dart';
 import 'slide_up_modal.dart';
 
 class MultiSelectOption<T> {
@@ -199,25 +200,14 @@ class _MultiSelectSheetState<T> extends State<_MultiSelectSheet<T>> {
           ),
           Padding(
             padding: const EdgeInsets.all(AppSpacing.lg),
-            child: GestureDetector(
-              onTap: () => Navigator.of(context, rootNavigator: true)
-                  .pop(_selected.toList()),
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
-                decoration: BoxDecoration(
-                  color: AppColors.accent,
-                  borderRadius: BorderRadius.circular(AppRadius.md),
-                ),
-                child: Center(
-                  child: Text(
-                    effectiveLabel,
-                    style: AppFonts.ui(
-                        fontSize: AppTextStyles.md,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.accentText),
-                  ),
-                ),
+            child: SizedBox(
+              width: double.infinity,
+              child: GlassButton(
+                label: effectiveLabel,
+                color: AppColors.accent,
+                solid: true,
+                onPressed: () => Navigator.of(context, rootNavigator: true)
+                    .pop(_selected.toList()),
               ),
             ),
           ),

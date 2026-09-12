@@ -13,7 +13,6 @@ import '../../features/dev/view/gallery_screen.dart';
 import '../../features/dev/view/lesson_debug_screen.dart';
 import '../../features/exercises/view/exercise_hub_screen.dart';
 import '../../features/exercises/view/exercise_detail_screen.dart';
-import '../../features/exercises/view/exercise_library_screen.dart';
 import '../../features/exercises/view/guide_screen.dart';
 import '../../features/logs/view/logs_screen.dart';
 import '../../features/logs/view/session_detail_screen.dart';
@@ -23,10 +22,6 @@ import '../../features/programs/view/program_library_screen.dart';
 import '../../features/profile/view/profile_detail_screen.dart';
 import '../../features/profile/view/profile_hub_screen.dart';
 import '../../features/session/view/session_screen.dart';
-import '../../features/statistics/view/insights_screen.dart';
-import '../../features/statistics/view/pr_catalog_screen.dart';
-import '../../features/statistics/view/pr_exercise_detail_screen.dart';
-import '../../features/statistics/view/statistics_screen.dart';
 import '../widgets/bottom_nav_bar.dart';
 import 'auth_notifier.dart';
 
@@ -115,7 +110,6 @@ abstract final class AppRouter {
             path: '/exercises',
             builder: (_, _) => ExerciseHubScreen(),
             routes: [
-              GoRoute(path: 'library',  builder: (_, _) => ExerciseLibraryScreen()),
               GoRoute(path: 'guide',    builder: (_, _) => GuideScreen()),
               GoRoute(
                 path: 'exercise/:id',
@@ -145,25 +139,6 @@ abstract final class AppRouter {
               GoRoute(path: 'detail', builder: (_, _) => ProfileDetailScreen()),
             ],
           ),
-          GoRoute(
-            path: '/statistics',
-            builder: (_, _) => const StatisticsScreen(),
-            routes: [
-              GoRoute(path: 'insights', builder: (_, _) => const InsightsScreen()),
-              GoRoute(
-                path: 'prs',
-                builder: (_, _) => const PrCatalogScreen(),
-                routes: [
-                  GoRoute(
-                    path: ':id',
-                    builder: (_, state) => PrExerciseDetailScreen(
-                      exerciseId: state.pathParameters['id']!,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
           // Dev routes exist only in debug/profile builds — never ship them.
           if (!kReleaseMode)
             GoRoute(
@@ -188,7 +163,7 @@ class _TabShell extends StatelessWidget {
   final Widget child;
 
   static const _tabRoots = [
-    '/session', '/logs', '/exercises', '/profile', '/statistics', '/dev',
+    '/session', '/logs', '/exercises', '/profile', '/dev',
   ];
 
   bool get _showBottomNav => _tabRoots.contains(currentRoute);

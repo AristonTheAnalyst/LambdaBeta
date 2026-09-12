@@ -26,6 +26,10 @@ class SessionDetailExerciseSlot {
   final String? sessionExerciseId;
 }
 
+/// Sentinel distinguishing "not provided" from "explicitly null" in
+/// [SessionDetailState.copyWith] — a feeling toggles OFF by writing null.
+const Object _feelingUnset = Object();
+
 class SessionDetailState {
   const SessionDetailState({
     this.isLoading = false,
@@ -36,6 +40,8 @@ class SessionDetailState {
     this.isEditing = false,
     this.preNotesDraft = '',
     this.postNotesDraft = '',
+    this.preFeelingDraft,
+    this.postFeelingDraft,
     this.exerciseSlots = const [],
     this.activeSlotIndex = 0,
     this.setsByOrder = const {},
@@ -50,7 +56,8 @@ class SessionDetailState {
     this.pastSetsLoaded = false,
     this.prsByExercise = const {},
     this.totalPRCount = 0,
-    this.prRecords = const [],
+    this.prEvents = const [],
+    this.prEventSetIds = const {},
   });
 
   final bool isLoading;
@@ -61,6 +68,8 @@ class SessionDetailState {
   final bool isEditing;
   final String preNotesDraft;
   final String postNotesDraft;
+  final int? preFeelingDraft;
+  final int? postFeelingDraft;
 
   final List<SessionDetailExerciseSlot> exerciseSlots;
   final int activeSlotIndex;
@@ -76,7 +85,8 @@ class SessionDetailState {
   final bool pastSetsLoaded;
   final Map<String, int> prsByExercise;
   final int totalPRCount;
-  final List<PrRecord> prRecords;
+  final List<PrEvent> prEvents;
+  final Set<String> prEventSetIds;
 
   SessionDetailExerciseSlot? get activeSlot => exerciseSlots.isEmpty
       ? null
@@ -94,6 +104,8 @@ class SessionDetailState {
     bool? isEditing,
     String? preNotesDraft,
     String? postNotesDraft,
+    Object? preFeelingDraft = _feelingUnset,
+    Object? postFeelingDraft = _feelingUnset,
     List<SessionDetailExerciseSlot>? exerciseSlots,
     int? activeSlotIndex,
     Map<int, List<SessionExerciseSet>>? setsByOrder,
@@ -108,7 +120,8 @@ class SessionDetailState {
     bool? pastSetsLoaded,
     Map<String, int>? prsByExercise,
     int? totalPRCount,
-    List<PrRecord>? prRecords,
+    List<PrEvent>? prEvents,
+    Set<String>? prEventSetIds,
   }) => SessionDetailState(
     isLoading: isLoading ?? this.isLoading,
     isSaving: isSaving ?? this.isSaving,
@@ -118,6 +131,12 @@ class SessionDetailState {
     isEditing: isEditing ?? this.isEditing,
     preNotesDraft: preNotesDraft ?? this.preNotesDraft,
     postNotesDraft: postNotesDraft ?? this.postNotesDraft,
+    preFeelingDraft: identical(preFeelingDraft, _feelingUnset)
+        ? this.preFeelingDraft
+        : preFeelingDraft as int?,
+    postFeelingDraft: identical(postFeelingDraft, _feelingUnset)
+        ? this.postFeelingDraft
+        : postFeelingDraft as int?,
     exerciseSlots: exerciseSlots ?? this.exerciseSlots,
     activeSlotIndex: activeSlotIndex ?? this.activeSlotIndex,
     setsByOrder: clearSetsByOrder
@@ -134,7 +153,8 @@ class SessionDetailState {
     pastSetsLoaded: pastSetsLoaded ?? this.pastSetsLoaded,
     prsByExercise: prsByExercise ?? this.prsByExercise,
     totalPRCount: totalPRCount ?? this.totalPRCount,
-    prRecords: prRecords ?? this.prRecords,
+    prEvents: prEvents ?? this.prEvents,
+    prEventSetIds: prEventSetIds ?? this.prEventSetIds,
   );
 }
 
@@ -295,76 +315,38 @@ class SessionDetailViewModel {
       }
     }
 
-    final allRecords = thisWorkoutId != null
-        ? fullPrTimeline(combined)
-        : <PrRecord>[];
-    // Before-maps for the summary tab: each record's previous best on its
-    // axis (history OR an earlier set in this session), keyed per source
-    // set — mirrors SessionViewModel's reflection before-tracking.
-    // Achieved-only: propagated records never chain.
-    if (thisWorkoutId != null) {
-      final before = sessionBeforeMaps(achievedRecords(allRecords), thisWorkoutId);
-      _prevRepMax = before.repMax;
-      _prevWeightMax = before.weightMax;
-    }
-    // Display list: explicit records only — the summary shows what the user
-    // directly achieved, not the knock-on records the engine inferred.
-    final records = thisWorkoutId != null
-        ? achievedRecords(allRecords)
-            .where((p) => p.sessionId == thisWorkoutId)
-            .toList()
-        : <PrRecord>[];
-    // Counts: explicit rep-max only — weight-max (bodyweight included) is
-    // display-only trivia, never a count.
-    final countable = countableRecords(records);
+    final allEvents =
+        thisWorkoutId != null ? prEvents(combined) : <PrEvent>[];
+    // This session's events — one per frontier-extending set; each event
+    // carries its own before-facts.
+    final events = allEvents
+        .where((e) => e.sessionId == thisWorkoutId)
+        .toList();
     final prs = <String, int>{};
-    for (final pr in countable) {
+    for (final pr in events) {
       prs[pr.exerciseId] = (prs[pr.exerciseId] ?? 0) + 1;
     }
     state.value = state.value.copyWith(
       prsByExercise: prs,
-      totalPRCount: countable.length,
-      prRecords: records,
+      totalPRCount: events.length,
+      prEvents: events,
+      // Full-timeline event set ids — accents use the session events; the
+      // history viewer's rows badge past sets via this map.
+      prEventSetIds: {
+        for (final e in allEvents)
+          if (e.sessionExerciseSetId != null) e.sessionExerciseSetId!,
+      },
     );
   }
 
   int prCountFor(String exerciseId) =>
       state.value.prsByExercise[exerciseId] ?? 0;
 
-  /// The records the PRs pill should DISPLAY for an exercise — every
-  /// achieved record (rep-max and weight-max). The pill count stays
-  /// rep-max-only, but weight-max-only sessions still open the modal.
-  List<PrRecord> displayPrsFor(String exerciseId) =>
-      state.value.prRecords
+  /// The events the PRs pill should DISPLAY for an exercise.
+  List<PrEvent> displayPrsFor(String exerciseId) =>
+      state.value.prEvents
           .where((p) => p.exerciseId == exerciseId)
           .toList();
-
-  /// Before-maps for the summary tab's PR rows — keyed per source set so two
-  /// records on the same axis in one session each keep their own before.
-  Map<(String, String?, int, String?), PrRecord?> _prevRepMax = {};
-  Map<(String, String?, num, String?), PrRecord?> _prevWeightMax = {};
-
-  /// The record a summary PR beat on its axis — history OR an earlier set in
-  /// this session. Null means "first PR". Mirrors
-  /// `SessionViewModel.previousForReflection`.
-  PrRecord? summaryPreviousFor(PrRecord p) {
-    if (p.type == PrType.repMax) {
-      final key = (
-        p.exerciseId,
-        p.variationId,
-        p.targetReps ?? p.reps.toInt(),
-        p.sessionExerciseSetId,
-      );
-      return _prevRepMax[key];
-    }
-    final key = (
-      p.exerciseId,
-      p.variationId,
-      p.targetWeight ?? p.weight,
-      p.sessionExerciseSetId,
-    );
-    return _prevWeightMax[key];
-  }
 
   Future<void> _reloadSets(String sessionId) async {
     final exercises = await _sessionRepo.loadSessionExercises(sessionId);
@@ -442,6 +424,8 @@ class SessionDetailViewModel {
       isEditing: true,
       preNotesDraft: w?.preNotes ?? '',
       postNotesDraft: w?.postNotes ?? '',
+      preFeelingDraft: w?.preFeeling,
+      postFeelingDraft: w?.feeling,
     );
   }
 
@@ -453,15 +437,23 @@ class SessionDetailViewModel {
   void setPostNotesDraft(String v) =>
       state.value = state.value.copyWith(postNotesDraft: v);
 
+  void setPreFeelingDraft(int? v) =>
+      state.value = state.value.copyWith(preFeelingDraft: v);
+
+  void setPostFeelingDraft(int? v) =>
+      state.value = state.value.copyWith(postFeelingDraft: v);
+
   Future<void> saveNotes(String sessionId) async {
     state.value = state.value.copyWith(isSaving: true);
     try {
-      // Both drafts persist — pre-notes were silently dropped before
-      // (the old path only wrote postNotes).
+      // The full bookend state persists — drafts, plus the feeling ratings
+      // (pre-notes were silently dropped before; feelings were read-only).
       await _sessionRepo.updateSessionNotes(
         sessionId,
         preNotes: state.value.preNotesDraft,
         postNotes: state.value.postNotesDraft,
+        preFeeling: state.value.preFeelingDraft,
+        postFeeling: state.value.postFeelingDraft,
       );
       final updated = await _sessionRepo.fetchSession(sessionId);
       state.value = state.value.copyWith(

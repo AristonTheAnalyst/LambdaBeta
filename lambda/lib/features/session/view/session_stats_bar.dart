@@ -5,6 +5,7 @@ import '../../../core/styles/app_radius.dart';
 import '../../../core/styles/app_spacing.dart';
 import '../../../core/styles/app_text_styles.dart';
 import '../../../core/utils/session_format.dart';
+import '../../../shared/widgets/container_styles.dart';
 import '../../../shared/widgets/slide_up_modal.dart';
 import '../viewmodel/session_viewmodel.dart';
 import 'lessons_modal.dart';
@@ -19,16 +20,22 @@ class SessionStatsBar extends StatelessWidget {
 
   final SessionViewModel vm;
 
-  /// Explicit PR records grouped by (exerciseId, variationId) — one entry
-  /// per row of the PR breakdown.
+  /// PR sets grouped by (exerciseId, variationId) — one entry per row of
+  /// the PR breakdown. Derived from the same distinct-set ids the tile and
+  /// the row highlights use (explicit rep-max only), so the group counts
+  /// sum exactly to the tile.
   List<({String exerciseId, String? variationId, String label, int count})>
       _prBreakdown() {
-    final groups = <(String, String?), List<dynamic>>{};
+    final groups = <(String, String?), Set<String>>{};
     final varNames = <(String, String?), String>{};
-    for (final p in vm.prsThisSession) {
-      groups.putIfAbsent((p.exerciseId, p.variationId), () => []).add(p);
-      if (p.variationName != null && p.variationName!.isNotEmpty) {
-        varNames.putIfAbsent((p.exerciseId, p.variationId), () => p.variationName!);
+    for (final s in vm.sets) {
+      final exerciseId = s.exerciseId;
+      if (exerciseId == null) continue;
+      if (!vm.prSetIds.contains(s.sessionExerciseSetId)) continue;
+      final key = (exerciseId, s.variationId);
+      groups.putIfAbsent(key, () => {}).add(s.sessionExerciseSetId);
+      if (s.variationName != null && s.variationName!.isNotEmpty) {
+        varNames.putIfAbsent(key, () => s.variationName!);
       }
     }
     final out = <({String exerciseId, String? variationId, String label, int count})>[];
@@ -132,7 +139,7 @@ class SessionStatsBar extends StatelessWidget {
     return ListenableBuilder(
       listenable: vm,
       builder: (context, _) {
-        final prs = vm.prsThisSession.length;
+        final prs = vm.totalPRsThisSession;
         final lessons =
             vm.exerciseSlots.fold<int>(0, (sum, slot) {
               var s = sum;
@@ -180,17 +187,17 @@ class SessionStatsBar extends StatelessWidget {
     VoidCallback? onTap,
   }) {
     final color = highlightColor ?? AppColors.accent;
-    final bg = highlightBg ?? AppColors.accentBg;
     final tile = Container(
       padding: const EdgeInsets.all(AppSpacing.md),
-      decoration: BoxDecoration(
-        color: highlighted ? bg : AppColors.surface,
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(
-          color: highlighted ? color : AppColors.border,
-          width: highlighted ? 1.2 : 0.5,
-        ),
-      ),
+      // Highlighted tiles are pressables — the glass recipe in the tile's
+      // semantic color, like every other control.
+      decoration: highlighted
+          ? glassBox(color)
+          : BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(AppRadius.md),
+              border: Border.all(color: AppColors.border, width: 0.5),
+            ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [

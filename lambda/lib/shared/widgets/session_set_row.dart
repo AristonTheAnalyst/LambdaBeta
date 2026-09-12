@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_fonts.dart';
 import '../../core/styles/app_radius.dart';
+import './container_styles.dart';
 import '../../core/utils/session_format.dart';
 import '../../data/models/planned_session_exercise_set.dart';
 import '../../features/session/view/notes_modal.dart';
@@ -68,6 +69,14 @@ class SessionSetRow extends StatefulWidget {
     // Orthogonal state:
     this.isPr = false,
     this.readOnly = false,
+    // ── History-edit gate (the history viewer's tap-to-edit confirm) ──
+    // A non-null [onEditConfirm] puts the row in gate mode: it renders
+    // read-only until [editConfirmed] turns true, and any tap on a field
+    // (reps/kg/variation/notes) first shows the one-time "you're about to
+    // edit past data" dialog. Gate-mode rows never expose swipe actions —
+    // the history viewer edits values, it doesn't delete past sets.
+    this.editConfirmed = false,
+    this.onEditConfirm,
     // ── Pending-edit flush (live only) ──
     // The row registers its commit closure so the screen's VM can flush
     // in-flight edits on lifecycle pause / tab switch / session end —
@@ -103,6 +112,11 @@ class SessionSetRow extends StatefulWidget {
   final PlannedSessionExerciseSet? plannedTarget;
   final bool isPr;
   final bool readOnly;
+
+  /// See the constructor doc — gate mode is the history viewer's
+  /// tap-to-edit confirm; a non-null [onEditConfirm] enables it.
+  final VoidCallback? onEditConfirm;
+  final bool editConfirmed;
 
   final void Function(Future<void> Function())? onRegisterCommit;
   final void Function(Future<void> Function())? onUnregisterCommit;
@@ -155,18 +169,47 @@ class _SessionSetRowState extends State<SessionSetRow> {
 
   bool get _isDraft => widget.isDraft;
 
+  /// Gate mode (the history viewer): the row renders read-only until the
+  /// screen's one-time "you're about to edit past data" confirm flips
+  /// [SessionSetRow.editConfirmed].
+  bool get _gated => widget.onEditConfirm != null && !widget.editConfirmed;
+
+  bool get _effectiveReadOnly => widget.readOnly || _gated;
+
   /// Real (non-draft) rows commit on every keystroke — the value is
   /// recognized as it's being typed, so navigating away (back, switching
   /// exercises, ending) can never lose it. Drafts stay blur/ flush
   /// committed: a keystroke must not materialize a draft mid-typing
   /// (that would replace the row and drop the field's focus).
-  bool get _commitOnChange => !widget.readOnly && !_isDraft;
+  bool get _commitOnChange => !_effectiveReadOnly && !_isDraft;
 
-  /// Planned styling applies to planner rows always, and to live rows when
-  /// they carry a ghost target.
-  bool get _isPlannedRow =>
-      widget.mode == SetRowMode.planned ||
-      (widget.mode == SetRowMode.live && widget.plannedTarget != null);
+  /// Planned styling applies to planner rows always (the fields ARE the
+  /// targets), and to live rows only while the row is still untouched —
+  /// blue means "planned value pending", so any actual value (weight,
+  /// reps, or note) retires the tint. Variation is planned when it's
+  /// "No Variation" or matches the plan's variation. Controllers are read
+  /// because they track keystrokes before the commit reload lands. (Only
+  /// evaluated inside build(), so the late controllers are initialized.)
+  bool get _isPlannedRow {
+    if (widget.mode == SetRowMode.planned) return true;
+    if (widget.mode != SetRowMode.live || widget.plannedTarget == null) {
+      return false;
+    }
+    final weightEmpty = _weightCtrl.text.trim().isEmpty;
+    final repsEmpty = _repsCtrl.text.trim().isEmpty;
+    // Variation counts as still-planned when it's "No Variation" (null) or
+    // when it matches the plan's variation — the plan is satisfied, not
+    // deviated from. A different pick retires the tint like any other
+    // entered value.
+    final variationPlanned = _isDraft
+        ? _draftVariationId == null
+        : (widget.initialVariationId == null ||
+            widget.initialVariationId == widget.plannedTarget?.variationId);
+    final notesEmpty = _isDraft
+        ? (_draftNotes?.trim().isEmpty ?? true)
+        : !widget.hasNotes;
+    return weightEmpty && repsEmpty && variationPlanned && notesEmpty;
+  }
 
   @override
   void initState() {
@@ -195,7 +238,7 @@ class _SessionSetRowState extends State<SessionSetRow> {
     // The element can be reused across VM reloads (same ValueKey). When the
     // seeds change externally — a commit reload, a re-paired ghost — re-seed
     // non-focused cells so stale controller text can't re-commit old values
-    // into the row. Mirrors HistorySetRow's re-seed.
+    // into the row.
     if (!_weightFocus.hasFocus &&
         widget.initialWeightText != oldWidget.initialWeightText) {
       _weightCtrl.text = widget.initialWeightText;
@@ -222,6 +265,9 @@ class _SessionSetRowState extends State<SessionSetRow> {
   }
 
   Future<void> _commit() async {
+    // A gated row's fields are read-only until the confirm flips — nothing
+    // can be pending, so never write.
+    if (_effectiveReadOnly) return;
     final weightText = _weightCtrl.text.trim();
     final repsText = _repsCtrl.text.trim();
 
@@ -279,15 +325,75 @@ class _SessionSetRowState extends State<SessionSetRow> {
     );
   }
 
+  /// The history viewer's tap-to-edit gate: while gated, any field tap
+  /// shows the one-time "you're about to edit past data" confirm. On
+  /// continue the screen's [SessionSetRow.onEditConfirm] flips the gate,
+  /// the row rebuilds editable, and [focus] receives focus — or [after]
+  /// runs post-frame (once the row has rebuilt editable — e.g. the notes
+  /// modal, which must open in editable mode).
+  Future<void> _requestGateEdit({FocusNode? focus, VoidCallback? after}) async {
+    if (!_gated) {
+      focus?.requestFocus();
+      after?.call();
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: Text(
+          'Edit past data?',
+          style: TextStyle(color: AppColors.primary),
+        ),
+        content: Text(
+          "You're about to update past data — this changes your historical record for this workout, including any PRs based on it.",
+          style: TextStyle(color: AppColors.muted),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text('Cancel', style: TextStyle(color: AppColors.muted)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(
+              'Continue',
+              style: TextStyle(
+                color: AppColors.primary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    widget.onEditConfirm!();
+    if (focus != null) {
+      focus.requestFocus();
+    } else if (after != null) {
+      // Wait for the confirm rebuild so the row (and any modal it opens)
+      // is in editable mode.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) after();
+      });
+    }
+  }
+
   void _openNotes() {
+    // The planned note is a pending hint — show it only while no actual
+    // note exists (drafts track their note row-locally).
+    final hasActualNote = _isDraft
+        ? (_draftNotes?.trim().isNotEmpty ?? false)
+        : widget.hasNotes;
     showNotesModal(
       context,
       setIndex: widget.displayIndex,
       initialValue: (_isDraft ? _draftNotes : widget.initialNotes) ?? '',
-      plannedNote: widget.mode == SetRowMode.live
+      plannedNote: widget.mode == SetRowMode.live && !hasActualNote
           ? widget.plannedTarget?.targetNotes
           : null,
-      readOnly: widget.readOnly,
+      readOnly: _effectiveReadOnly,
       onSave: (value) {
         if (_isDraft) {
           setState(() => _draftNotes = value);
@@ -375,11 +481,7 @@ class _SessionSetRowState extends State<SessionSetRow> {
                       horizontal: 12,
                       vertical: 10,
                     ),
-                    decoration: BoxDecoration(
-                      color: AppColors.surfaceHigh,
-                      borderRadius: BorderRadius.circular(AppRadius.md),
-                      border: Border.all(color: AppColors.border),
-                    ),
+                    decoration: lambdaBox(ContainerTone.ghost, radius: AppRadius.md),
                     child: Row(
                       children: [
                         Expanded(
@@ -449,10 +551,19 @@ class _SessionSetRowState extends State<SessionSetRow> {
         )
         .label;
 
+    // Live rows ghost the planned variation the way the kg/reps cells ghost
+    // their targets — the planned name in planned color until the row has
+    // an actual variation of its own.
+    final ghostVariationName = !_isDraft &&
+            widget.mode == SetRowMode.live &&
+            variationId == null &&
+            widget.plannedTarget?.variationName != null
+        ? widget.plannedTarget!.variationName
+        : null;
+
     // Planned targets are raw text — ranges ("8-15", "60-70") show as-is.
     final plannedWeight = widget.plannedTarget?.targetWeight;
     final plannedReps = widget.plannedTarget?.targetReps;
-    final plannedVariationId = widget.plannedTarget?.variationId;
 
     // The container's edge styling — PR rows get the accent treatment, and
     // planned rows the planned tint.
@@ -513,8 +624,12 @@ class _SessionSetRowState extends State<SessionSetRow> {
               ),
               controller: _repsCtrl,
               focusNode: _repsFocus,
-              ghost: widget.mode == SetRowMode.live && plannedReps != null,
+              ghost:
+                  widget.mode == SetRowMode.live &&
+                  plannedReps != null &&
+                  _repsCtrl.text.trim().isEmpty,
               hint: plannedReps ?? '—',
+              onTap: _gated ? () => _requestGateEdit(focus: _repsFocus) : null,
               onChanged: _commitOnChange ? (_) => _commit() : null,
             ),
           ),
@@ -531,6 +646,7 @@ class _SessionSetRowState extends State<SessionSetRow> {
                   plannedWeight != null &&
                   _weightCtrl.text.trim().isEmpty,
               hint: plannedWeight ?? '—',
+              onTap: _gated ? () => _requestGateEdit(focus: _weightFocus) : null,
               onChanged: _commitOnChange ? (_) => _commit() : null,
             ),
           ),
@@ -540,22 +656,27 @@ class _SessionSetRowState extends State<SessionSetRow> {
           // only need ~4 digits, variation names need the room.
           Expanded(
             flex: 2,
-            child: widget.readOnly
-                ? Tooltip(
-                    message: variationId != null
-                        ? (widget.initialVariationName ?? '')
-                        : '',
-                    child: Text(
-                      variationId != null
-                          ? truncateName(widget.initialVariationName ?? '')
-                          : '—',
-                      textAlign: TextAlign.center,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppFonts.ui(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.muted,
+            child: _effectiveReadOnly
+                ? GestureDetector(
+                    // Gated rows gate on tap — the variation field is a
+                    // field like any other in the history viewer.
+                    onTap: _gated ? () => _requestGateEdit() : null,
+                    child: Tooltip(
+                      message: variationId != null
+                          ? (widget.initialVariationName ?? '')
+                          : '',
+                      child: Text(
+                        variationId != null
+                            ? truncateName(widget.initialVariationName ?? '')
+                            : '—',
+                        textAlign: TextAlign.center,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppFonts.ui(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.muted,
+                        ),
                       ),
                     ),
                   )
@@ -564,30 +685,22 @@ class _SessionSetRowState extends State<SessionSetRow> {
                     child: Container(
                       height: 34,
                       alignment: Alignment.center,
+                      // Neutral chrome — planned-ness lives on the row
+                      // container, never inside the fields.
                       decoration: BoxDecoration(
-                        color: widget.mode == SetRowMode.planned &&
-                                variationId != null
-                            ? AppColors.plannedBg
-                            : AppColors.bg,
+                        color: AppColors.bg,
                         borderRadius: BorderRadius.circular(6),
-                        border: Border.all(
-                          color: widget.mode == SetRowMode.planned &&
-                                  variationId != null
-                              ? AppColors.planned.withValues(alpha: 0.35)
-                              : AppColors.border,
-                          width: 0.5,
-                        ),
+                        border: Border.all(color: AppColors.border, width: 0.5),
                       ),
                       child: DropdownSelect<String?>(
                         options: widget.variationOptions,
                         value: variationId,
-                        placeholder: 'No Variation',
-                        compact: true,
-                        valueColor:
-                            widget.mode == SetRowMode.planned ||
-                                plannedVariationId != null
+                        placeholder: ghostVariationName ?? 'No Variation',
+                        placeholderColor: ghostVariationName != null
                             ? AppColors.planned
-                            : AppColors.primary,
+                            : null,
+                        compact: true,
+                        valueColor: AppColors.primary,
                         createNewLabel: 'New Variation',
                         onCreateNew: _handleCreateVariation,
                         onChange: (id) {
@@ -603,7 +716,11 @@ class _SessionSetRowState extends State<SessionSetRow> {
           ),
           const SizedBox(width: 6),
           GestureDetector(
-            onTap: (widget.readOnly && !hasNotes) ? null : _openNotes,
+            onTap: _effectiveReadOnly
+                ? (_gated
+                    ? () => _requestGateEdit(after: _openNotes)
+                    : (hasNotes ? _openNotes : null))
+                : _openNotes,
             child: Container(
               width: 32,
               height: 32,
@@ -633,7 +750,9 @@ class _SessionSetRowState extends State<SessionSetRow> {
       ),
     );
 
-    if (!widget.readOnly) {
+    // Gate-mode rows never expose swipe actions, even after the confirm —
+    // the history viewer edits values, it doesn't delete/duplicate past sets.
+    if (!_effectiveReadOnly && widget.onEditConfirm == null) {
       row = SwipeActions(
         borderRadius: AppRadius.md,
         actions: [
@@ -658,20 +777,19 @@ class _SessionSetRowState extends State<SessionSetRow> {
     return Padding(padding: const EdgeInsets.only(bottom: 6), child: row);
   }
 
-  /// The reps/kg cell. Ghost = live's planned-target overlay (planned tint);
-  /// planned rows highlight when filled; history view mode is a transparent
-  /// read-only TextField.
+  /// The reps/kg cell. Ghost = live's planned-target overlay — the planned
+  /// hint TEXT in planned color; the cell chrome itself stays neutral
+  /// (planned-ness lives on the row container, never inside the fields).
+  /// History view mode is a transparent read-only TextField.
   Widget _cell({
     Key? key,
     required TextEditingController controller,
     required FocusNode focusNode,
     required bool ghost,
     required String hint,
+    VoidCallback? onTap,
     ValueChanged<String>? onChanged,
   }) {
-    final highlighted =
-        widget.mode == SetRowMode.planned && controller.text.trim().isNotEmpty;
-    final tinted = ghost || highlighted;
     return SizedBox(
       height: 34,
       child: TextField(
@@ -679,7 +797,8 @@ class _SessionSetRowState extends State<SessionSetRow> {
         controller: controller,
         onChanged: onChanged,
         focusNode: focusNode,
-        readOnly: widget.readOnly,
+        readOnly: _effectiveReadOnly,
+        onTap: onTap,
         textAlign: TextAlign.center,
         keyboardType: widget.mode == SetRowMode.planned
             // Free text — planned targets can be ranges ("8-15", "60-70").
@@ -710,23 +829,17 @@ class _SessionSetRowState extends State<SessionSetRow> {
             fontSize: 14,
             color: ghost
                 ? AppColors.planned
-                : highlighted
-                ? AppColors.planned.withValues(alpha: 0.7)
                 : AppColors.muted.withValues(alpha: 0.6),
           ),
           filled: true,
-          fillColor: widget.readOnly
+          fillColor: _effectiveReadOnly
               ? Colors.transparent
-              : tinted
-              ? AppColors.plannedBg
               : AppColors.bg,
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(6),
             borderSide: BorderSide(
-              color: widget.readOnly
+              color: _effectiveReadOnly
                   ? Colors.transparent
-                  : tinted
-                  ? AppColors.planned.withValues(alpha: 0.35)
                   : AppColors.border,
               width: 0.5,
             ),

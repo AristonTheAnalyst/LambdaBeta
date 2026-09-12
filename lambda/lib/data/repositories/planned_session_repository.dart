@@ -16,7 +16,7 @@ class PlannedSessionRepository {
   /// Planned session names for [userId], used to bump auto-generated defaults.
   Future<Set<String>> _sessionNames(String userId) async {
     final rows = await ps.db.getAll(
-      'SELECT name FROM dim_planned_session WHERE user_id = ? AND is_archived = 0',
+      'SELECT name FROM dim_planned_session WHERE user_id = ? AND date_archived IS NULL',
       [userId],
     );
     return rows.map((r) => r['name'] as String).toSet();
@@ -30,7 +30,7 @@ class PlannedSessionRepository {
     final rows = await ps.db.getAll(
       '''
       SELECT 1 FROM dim_planned_session
-      WHERE user_id = ? AND is_archived = 0 AND LOWER(name) = LOWER(?)
+      WHERE user_id = ? AND date_archived IS NULL AND LOWER(name) = LOWER(?)
         ${excludeSessionId != null ? 'AND session_id != ?' : ''}
       LIMIT 1
       ''',
@@ -62,12 +62,12 @@ class PlannedSessionRepository {
             FROM dim_planned_session dps
             JOIN dim_planned_session_program psp
               ON psp.planned_session_id = dps.session_id
-            WHERE dps.user_id = ? AND psp.program_id = ? AND dps.is_archived = 0
+            WHERE dps.user_id = ? AND psp.program_id = ? AND dps.date_archived IS NULL
             ORDER BY psp.sequence_order NULLS LAST, dps.created_date
             '''
           : '''
             SELECT * FROM dim_planned_session dps
-            WHERE dps.user_id = ? AND dps.is_archived = 0
+            WHERE dps.user_id = ? AND dps.date_archived IS NULL
               AND NOT EXISTS (
                 SELECT 1 FROM dim_planned_session_program psp
                 WHERE psp.planned_session_id = dps.session_id
@@ -105,7 +105,7 @@ class PlannedSessionRepository {
     await ps.db.execute(
       '''
       INSERT INTO dim_planned_session
-        (id, session_id, user_id, name, notes, is_archived, created_date)
+        (id, session_id, user_id, name, notes, date_archived, created_date)
       VALUES (?, ?, ?, ?, ?, ?, ?)
       ''',
       [
@@ -114,7 +114,7 @@ class PlannedSessionRepository {
         userId,
         finalName,
         notes,
-        0,
+        null,
         createdDate.toIso8601String(),
       ],
     );
@@ -123,7 +123,6 @@ class PlannedSessionRepository {
       userId: userId,
       name: finalName,
       notes: notes,
-      isArchived: false,
       createdDate: createdDate,
     );
   }
@@ -171,11 +170,72 @@ class PlannedSessionRepository {
       [sessionId],
     );
     await ps.db.execute(
-      'UPDATE dim_planned_session SET is_archived = 1 WHERE session_id = ?',
+      'UPDATE dim_planned_session SET date_archived = ? WHERE session_id = ?',
+      [DateTime.now().toUtc().toIso8601String(), sessionId],
+    );
+    await ps.db.execute(
+      'DELETE FROM dim_planned_session_program WHERE planned_session_id = ?',
+      [sessionId],
+    );
+  }
+
+  /// Archived templates, latest archived first — the workouts tab's
+  /// archived sheet.
+  Future<List<PlannedSession>> fetchArchivedPlannedSessions(
+    String userId,
+  ) async {
+    final rows = await ps.db.getAll(
+      'SELECT * FROM dim_planned_session WHERE user_id = ? AND date_archived IS NOT NULL ORDER BY date_archived DESC',
+      [userId],
+    );
+    return rows.map((r) => PlannedSession.fromMap(r)).toList();
+  }
+
+  /// Re-enables an archived template (clears its archive date).
+  Future<void> reactivatePlannedSession(String sessionId) async {
+    await ps.db.execute(
+      'UPDATE dim_planned_session SET date_archived = NULL WHERE session_id = ?',
+      [sessionId],
+    );
+  }
+
+  /// How many logged sessions were started from this template — > 0 means it
+  /// can only be archived (fact rows FK it).
+  Future<int> plannedSessionUsageCount(String sessionId) async {
+    final rows = await ps.db.getAll(
+      'SELECT COUNT(*) c FROM fact_session WHERE planned_session_id = ?',
+      [sessionId],
+    );
+    if (rows.isEmpty) return 0;
+    final v = rows.first['c'];
+    if (v is int) return v;
+    return int.tryParse('$v') ?? 0;
+  }
+
+  /// Hard-deletes a never-used template and everything under it (groups,
+  /// sets, program links). Callers MUST check [plannedSessionUsageCount]
+  /// first — the fact FK is the server backstop.
+  Future<void> hardDeletePlannedSession(String sessionId) async {
+    await ps.db.execute(
+      '''
+      DELETE FROM dim_planned_session_exercise_set
+      WHERE planned_exercise_id IN (
+        SELECT planned_exercise_id FROM dim_planned_session_exercise
+        WHERE planned_session_id = ?
+      )
+      ''',
+      [sessionId],
+    );
+    await ps.db.execute(
+      'DELETE FROM dim_planned_session_exercise WHERE planned_session_id = ?',
       [sessionId],
     );
     await ps.db.execute(
       'DELETE FROM dim_planned_session_program WHERE planned_session_id = ?',
+      [sessionId],
+    );
+    await ps.db.execute(
+      'DELETE FROM dim_planned_session WHERE session_id = ?',
       [sessionId],
     );
   }
@@ -185,7 +245,7 @@ class PlannedSessionRepository {
   /// program-attached; both live in the same table).
   Future<PlannedSession?> fetchPlannedSessionById(String sessionId) async {
     final rows = await ps.db.getAll(
-      'SELECT * FROM dim_planned_session WHERE session_id = ? AND is_archived = 0',
+      'SELECT * FROM dim_planned_session WHERE session_id = ? AND date_archived IS NULL',
       [sessionId],
     );
     if (rows.isEmpty) return null;
@@ -452,7 +512,7 @@ class PlannedSessionRepository {
       await tx.execute(
         '''
         INSERT INTO dim_planned_session
-          (id, session_id, user_id, name, notes, is_archived, created_date)
+          (id, session_id, user_id, name, notes, date_archived, created_date)
         VALUES (?, ?, ?, ?, ?, ?, ?)
         ''',
         [
@@ -461,7 +521,7 @@ class PlannedSessionRepository {
           userId,
           copyName,
           source.notes,
-          0,
+          null,
           createdDate.toIso8601String(),
         ],
       );

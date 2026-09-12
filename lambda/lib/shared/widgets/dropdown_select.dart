@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_fonts.dart';
 import '../../core/styles/app_radius.dart';
+import './container_styles.dart';
 import '../../core/styles/app_spacing.dart';
 import '../../core/styles/app_text_styles.dart';
 import '../../core/utils/session_format.dart';
@@ -60,6 +61,7 @@ class DropdownSelect<T> extends StatelessWidget {
     required this.value,
     required this.onChange,
     this.placeholder = 'Select…',
+    this.placeholderColor,
     this.searchable = false,
     this.onCreateNew,
     this.createNewLabel = 'Create new',
@@ -72,6 +74,10 @@ class DropdownSelect<T> extends StatelessWidget {
   final T? value;
   final ValueChanged<T?> onChange;
   final String placeholder;
+
+  /// Color for the placeholder text when [value] is null — the set row's
+  /// variation cell passes planned color to ghost the planned variation.
+  final Color? placeholderColor;
   final bool searchable;
   // Called with whatever the user had typed in the search box (empty string
   // if nothing was typed), so callers can create-and-select in one step
@@ -155,7 +161,7 @@ class DropdownSelect<T> extends StatelessWidget {
                     fontWeight: FontWeight.w500,
                     color: hasValue
                         ? (valueColor ?? AppColors.primary)
-                        : AppColors.muted,
+                        : (placeholderColor ?? AppColors.muted),
                   ),
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -168,11 +174,7 @@ class DropdownSelect<T> extends StatelessWidget {
             )
           : Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(AppRadius.md),
-                border: Border.all(color: AppColors.border),
-              ),
+              decoration: lambdaBox(ContainerTone.surface, radius: AppRadius.md),
               child: Row(
                 children: [
                   Expanded(
@@ -180,7 +182,9 @@ class DropdownSelect<T> extends StatelessWidget {
                       _displayLabel,
                       style: AppFonts.ui(
                         fontSize: AppTextStyles.md,
-                        color: hasValue ? AppColors.primary : AppColors.muted,
+                        color: hasValue
+                            ? AppColors.primary
+                            : (placeholderColor ?? AppColors.muted),
                       ),
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -501,11 +505,7 @@ class DropdownLoadingField extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(color: AppColors.border),
-      ),
+      decoration: lambdaBox(ContainerTone.surface, radius: AppRadius.md),
       child: Row(
         children: [
           SizedBox(

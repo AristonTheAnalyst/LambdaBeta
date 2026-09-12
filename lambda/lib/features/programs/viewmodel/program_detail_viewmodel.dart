@@ -747,12 +747,15 @@ class ProgramDetailViewModel {
 
   /// Creates a brand-new standalone workout and opens it for editing.
   Future<void> createStandaloneWorkoutAndOpen() async {
-    _standaloneWorkoutId = null;
     _editingLink = null;
     state.value = state.value.copyWith(clearError: true);
     await _ensureCatalog();
     try {
       final created = await _plannedSessionRepo.createPlannedSession(_userId);
+      // The new row IS the standalone workout being edited — leaving this
+      // null made isStandaloneMode false, which showed the program-only
+      // day-of-week picker (and could link the workout into the program).
+      _standaloneWorkoutId = created.sessionId;
       _openedExisting = false;
       _openedExercises = const [];
       _openedSetsSnapshot = const [];
@@ -1122,7 +1125,7 @@ class ProgramDetailViewModel {
     userId: w.userId,
     name: name ?? w.name,
     notes: notes ?? w.notes,
-    isArchived: w.isArchived,
+    archivedDate: w.archivedDate,
     createdDate: w.createdDate,
   );
 

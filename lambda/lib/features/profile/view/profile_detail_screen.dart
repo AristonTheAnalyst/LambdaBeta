@@ -1,9 +1,12 @@
 ﻿import 'package:flutter/material.dart';
+import '../../../shared/widgets/container_styles.dart';
+
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/styles/app_colors.dart';
 import '../../../../core/styles/app_fonts.dart';
 import '../../../../core/styles/app_spacing.dart';
 import '../../../../core/styles/app_text_styles.dart';
+import '../../../../shared/widgets/dob_picker.dart';
 import '../../../../shared/widgets/dropdown_select.dart';
 import '../../../../shared/widgets/glass_button.dart';
 import '../../../../shared/mixins/unsaved_changes_guard.dart';
@@ -64,23 +67,9 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> with UnsavedC
   }
 
   Future<void> _pickDate() async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _editDob ?? DateTime.now().subtract(const Duration(days: 365 * 25)),
-      firstDate: DateTime(1900),
-      lastDate: DateTime.now(),
-      builder: (ctx, child) => Theme(
-        data: Theme.of(ctx).copyWith(
-          colorScheme: ColorScheme.dark(
-            primary: AppColors.accent,
-            onPrimary: AppColors.accentText,
-            surface: AppColors.surface,
-            onSurface: AppColors.primary,
-          ),
-        ),
-        child: child!,
-      ),
-    );
+    // The custom calendar sheet — same language as the logs date filter,
+    // instead of the stock Material date picker.
+    final picked = await showDateOfBirthPicker(context, initial: _editDob);
     if (picked != null) setState(() => _editDob = picked);
   }
 
@@ -299,11 +288,7 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> with UnsavedC
                                   child: Container(
                                     padding: const EdgeInsets.symmetric(
                                         horizontal: 16, vertical: 14),
-                                    decoration: BoxDecoration(
-                                      color: AppColors.surface,
-                                      borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(color: AppColors.border),
-                                    ),
+                                    decoration: glassBox(AppColors.primary, radius: 8),
                                     child: Row(children: [
                                       Expanded(
                                         child: Text(
@@ -515,7 +500,12 @@ class KeyboardDismissOnScroll extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return NotificationListener<ScrollStartNotification>(
-      onNotification: (_) {
+      onNotification: (notification) {
+        // Only user drags dismiss the keyboard — the framework's own
+        // ensureVisible scroll (revealing a focused field above the
+        // keyboard) is programmatic, has null dragDetails, and must not
+        // steal focus from the field being edited.
+        if (notification.dragDetails == null) return false;
         FocusScope.of(context).unfocus();
         return false;
       },

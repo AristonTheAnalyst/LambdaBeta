@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_fonts.dart';
+import './container_styles.dart';
 
 /// The card-header pill button shared by the three session surfaces — the
 /// Lessons / History / PRs chrome. Greyed (`enabled` false) renders the
@@ -30,13 +31,15 @@ class CardPillButton extends StatelessWidget {
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: active ? c.withValues(alpha: 0.1) : Colors.transparent,
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(
-            color: active ? c.withValues(alpha: 0.3) : AppColors.border,
-          ),
-        ),
+        // Active pills get the glass recipe in their semantic color —
+        // the same chrome as GlassButton and every other pressable.
+        decoration: active
+            ? glassBox(c, radius: 6)
+            : BoxDecoration(
+                color: Colors.transparent,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: AppColors.border),
+              ),
         child: Row(
           // Fill the expanded button and center its content.
           mainAxisSize: MainAxisSize.max,

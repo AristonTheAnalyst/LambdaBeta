@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_fonts.dart';
+import 'container_styles.dart';
 import '../../core/styles/app_radius.dart';
 import '../../core/styles/app_spacing.dart';
 import '../../core/styles/app_text_styles.dart';
@@ -20,7 +21,6 @@ class ReflectionSummary extends StatelessWidget {
     required this.prsByExercise,
     required this.lessonsByExercise,
     required this.exerciseNameFor,
-    required this.previousFor,
   });
 
   /// Exercises in display order (slots for the live session, first-appearance
@@ -28,8 +28,8 @@ class ReflectionSummary extends StatelessWidget {
   /// skipped; when none remain, the sections render their empty notes.
   final List<String> exerciseIds;
 
-  /// exerciseId → that session's explicit (non-propagated) PRs.
-  final Map<String, List<PrRecord>> prsByExercise;
+  /// exerciseId → that session's PR events (one per frontier-extending set).
+  final Map<String, List<PrEvent>> prsByExercise;
 
   /// exerciseId → lesson texts.
   final Map<String, List<String>> lessonsByExercise;
@@ -37,10 +37,6 @@ class ReflectionSummary extends StatelessWidget {
   /// Raw display name for an exercise — [toProperCase] is applied here so
   /// both contexts render identically.
   final String Function(String exerciseId) exerciseNameFor;
-
-  /// The record a PR beat on its axis — history OR an earlier set in the
-  /// same session. Null means "first PR" (rendered without a before value).
-  final PrRecord? Function(PrRecord p) previousFor;
 
   static String _fmt(num n) =>
       n == n.roundToDouble() ? n.toInt().toString() : n.toString();
@@ -109,32 +105,11 @@ class ReflectionSummary extends StatelessWidget {
                 color: AppColors.primary)),
       );
 
-  /// PR cards for one exercise — grouped by source set; a set that fired
-  /// both axes shows its RM only.
-  List<Widget> _prCardsFor(String exerciseId) {
-    final bySet = <String?, List<PrRecord>>{};
-    for (final p in prsByExercise[exerciseId] ?? const []) {
-      bySet.putIfAbsent(p.sessionExerciseSetId, () => []).add(p);
-    }
-    final cards = <Widget>[];
-    for (final group in bySet.values) {
-      final rm = group.where((p) => p.type == PrType.repMax).firstOrNull;
-      final wm = group.where((p) => p.type == PrType.weightMax).firstOrNull;
-      if (rm != null && wm != null) {
-        // Both axes fired: prefer the one with a meaningful "before"
-        // (5kg x 9 after 5kg x 7 reads as a weight-max progression,
-        // not another first RM). Both or neither -> RM.
-        final rmHasPrev = previousFor(rm) != null;
-        final wmHasPrev = previousFor(wm) != null;
-        cards.add(rmHasPrev || !wmHasPrev ? _prCard(rm) : _prCard(wm));
-      } else if (rm != null) {
-        cards.add(_prCard(rm));
-      } else if (wm != null) {
-        cards.add(_prCard(wm));
-      }
-    }
-    return cards;
-  }
+  /// PR cards for one exercise — one card per event (one per PR set).
+  List<Widget> _prCardsFor(String exerciseId) => [
+        for (final e in prsByExercise[exerciseId] ?? const <PrEvent>[])
+          _prCard(e),
+      ];
 
   List<Widget> _lessonRowsFor(String exerciseId) => [
         for (final lesson in lessonsByExercise[exerciseId] ?? const [])
@@ -142,11 +117,7 @@ class ReflectionSummary extends StatelessWidget {
             padding: const EdgeInsets.only(bottom: AppSpacing.sm),
             child: Container(
               padding: const EdgeInsets.all(AppSpacing.sm),
-              decoration: BoxDecoration(
-                color: AppColors.surfaceHigh,
-                borderRadius: BorderRadius.circular(AppRadius.md),
-                border: Border.all(color: AppColors.border),
-              ),
+              decoration: lambdaBox(ContainerTone.ghost, radius: AppRadius.md),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -165,32 +136,26 @@ class ReflectionSummary extends StatelessWidget {
           ),
       ];
 
-  /// One PR row: the axis beaten this session with its before/after.
-  /// rep-max: "5RM: 100kg → 105kg"; weight-max: "100kg: 3 → 5 reps".
-  /// PR-set style: accentBg fill with the accent outline.
-  Widget _prCard(PrRecord p) {
-    final String? before;
-    final String after;
-    final String axisLabel;
-    if (p.type == PrType.repMax) {
-      final prev = previousFor(p);
-      before = prev != null ? '${_fmt(prev.weight)}kg' : null;
-      after = '${_fmt(p.weight)}kg';
-      axisLabel = '${p.targetReps ?? ''}RM';
-    } else {
-      final prev = previousFor(p);
-      before = prev != null ? '${_fmt(prev.reps)} reps' : null;
-      after = '${_fmt(p.reps)} reps';
-      axisLabel = '${_fmt(p.targetWeight ?? p.weight)}kg';
-    }
+  /// One PR row — the set, plus the previous frontier values it beat. Both
+  /// dimensions can be beaten at once ("was 6 × 10 · 100 × 3"): one PR, two
+  /// facts. PR-set style: accentBg fill with the accent outline.
+  Widget _prCard(PrEvent e) {
+    final facts = <String>[
+      // Previous best weight at ≥ this many reps.
+      if (e.beforeWeight != null)
+        'was ${_fmt(e.beforeWeight!)}kg × ${_fmt(e.reps)}',
+      // Previous best reps at exactly this weight.
+      if (e.beforeReps != null)
+        'was ${_fmt(e.weight)}kg × ${_fmt(e.beforeReps!)}',
+    ];
+    final before = facts.isEmpty ? 'First PR' : facts.join(' · ');
     return Container(
       margin: const EdgeInsets.only(bottom: AppSpacing.sm),
       padding: const EdgeInsets.symmetric(
           horizontal: AppSpacing.md, vertical: AppSpacing.sm),
-      decoration: BoxDecoration(
-        color: AppColors.accentBg,
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(color: AppColors.accent, width: 1.2),
+      decoration: lambdaBox(
+        ContainerTone.accent,
+        radius: AppRadius.md,
       ),
       child: Row(
         children: [
@@ -200,18 +165,20 @@ class ReflectionSummary extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (p.variationName != null)
-                  Text(toProperCase(p.variationName!),
+                if (e.variationName != null)
+                  Text(toProperCase(e.variationName!),
                       style: AppFonts.mono(
                           fontSize: 9,
                           letterSpacing: 0.6,
                           color: AppColors.accent)),
-                Text(before != null
-                    ? '$axisLabel: $before  →  $after'
-                    : '$axisLabel: $after (First PR)',
+                Text('${_fmt(e.weight)}kg × ${_fmt(e.reps)}',
                     style: AppFonts.mono(
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
+                        color: AppColors.accent)),
+                Text(before,
+                    style: AppFonts.mono(
+                        fontSize: 10,
                         color: AppColors.accent)),
               ],
             ),

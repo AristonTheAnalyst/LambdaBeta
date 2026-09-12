@@ -125,6 +125,13 @@ class LiveExerciseCard extends StatelessWidget {
                     weight: _parseWeight(v.weight),
                     clearWeight: v.weight == null,
                     reps: _parseReps(v.reps),
+                    // First real commit adopts the planned variation — the
+                    // draft path does the same, so a logged row keeps its
+                    // template's variation instead of silently losing it.
+                    variationId: set.variationId == null &&
+                            planned?.variationId != null
+                        ? planned!.variationId
+                        : null,
                   );
                 }
               },
@@ -137,6 +144,10 @@ class LiveExerciseCard extends StatelessWidget {
                 set,
                 notes: v.trim().isEmpty ? null : v.trim(),
                 clearNotes: v.trim().isEmpty,
+                variationId: set.variationId == null &&
+                        planned?.variationId != null
+                    ? planned!.variationId
+                    : null,
               ),
               onDelete: () => vm.deleteSetById(set.sessionExerciseSetId),
               onDuplicate: () => vm.duplicateSet(set),
@@ -220,21 +231,55 @@ class LiveExerciseCard extends StatelessWidget {
           rows: rows,
           onAddSet: () => vm.addDraftSet(exerciseId),
           history: history,
-          historyRowBuilder: (s) => HistorySetRow(
-            set: s,
-            editable: true,
+          // The history viewer is the regular sets grid — shared
+          // SessionSetRow rows in history mode, gated by the one-time
+          // "you're about to edit past data" confirm: tapping any field
+          // while gated shows the dialog, and after Continue the rows
+          // behave like the live grid (keystroke-committed edits).
+          historyRowBuilder: (s) => SessionSetRow(
+            key: ValueKey('history-${s.sessionExerciseSetId}'),
+            mode: SetRowMode.history,
+            exerciseId: exerciseId,
+            displayIndex: s.setNumber,
+            isDraft: false,
+            initialWeightText: s.weight != null ? _fmtNum(s.weight!) : '',
+            initialRepsText: s.reps.isNotEmpty ? _fmtNum(s.reps.first) : '',
+            initialVariationId: s.variationId,
+            initialVariationName: s.variationName,
+            initialNotes: s.notes,
+            hasNotes: s.notes?.isNotEmpty ?? false,
+            // Past PR sets badge like the live grid — events keyed by set id.
+            isPr: vm.prEventsBySetId.containsKey(s.sessionExerciseSetId),
             editConfirmed: vm.historyEditConfirmed,
-            onEditConfirmed: vm.confirmHistoryEdit,
-            onCommit: (w, r) async {
-              final weight = w == null || w.isEmpty ? null : double.tryParse(w);
-              final reps = r == null || r.isEmpty ? null : num.tryParse(r);
-              await vm.updateHistoricalSetField(
-                s,
-                weight: weight,
-                clearWeight: weight == null,
-                reps: reps != null ? [reps] : null,
-              );
+            onEditConfirm: vm.confirmHistoryEdit,
+            onCommit: (isDraft, v) async {
+              if (!isDraft) {
+                await vm.updateHistoricalSetField(
+                  s,
+                  weight: _parseWeight(v.weight),
+                  clearWeight: v.weight == null,
+                  reps: _parseReps(v.reps),
+                );
+              }
             },
+            onVariationChanged: (id) => vm.updateHistoricalSetField(
+              s,
+              variationId: id,
+              clearVariation: id == null,
+            ),
+            onNotesSave: (v) => vm.updateHistoricalSetField(
+              s,
+              notes: v.trim().isEmpty ? null : v.trim(),
+              clearNotes: v.trim().isEmpty,
+            ),
+            // Gate-mode rows never expose swipe actions, so these two can
+            // never fire.
+            onDelete: () async {},
+            onDuplicate: () {},
+            variationOptions: variationOptions,
+            allVariations: allVariations,
+            findSimilarVariations: vm.findSimilarVariations,
+            submitNewVariation: vm.submitNewVariation,
           ),
           // A fresh history session must re-earn the edit confirm gate.
           onHistorySessionSelected: (_) => vm.historyEditConfirmed = false,

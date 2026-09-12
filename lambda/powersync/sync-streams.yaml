@@ -35,6 +35,7 @@ streams:
       - SELECT *, user_weight_id as id FROM fact_bodyweight WHERE user_id = auth.user_id()
       - SELECT *, session_exercise_set_id as id FROM fact_session_exercise_set WHERE user_id = auth.user_id()
       - SELECT *, session_exercise_id as id FROM fact_session_exercise WHERE user_id = auth.user_id()
+      - SELECT *, pr_view_setting_id as id FROM dim_pr_view_setting WHERE user_id = auth.user_id()
       - SELECT *, program_id as id FROM dim_program WHERE user_id = auth.user_id()
       - SELECT *, program_run_id as id FROM fact_program_run WHERE user_id = auth.user_id()
       - SELECT *, lesson_id as id FROM dim_lesson WHERE user_id = auth.user_id()

@@ -9,14 +9,16 @@ PastSetRow _set(
   required double weight,
   required int reps,
   DateTime? date,
+  int setNumber = 1,
+  String sessionId = 'w1',
 }) =>
     PastSetRow(
       sessionExerciseSetId: id,
       sessionExerciseId: id,
-      sessionId: 'w1',
+      sessionId: sessionId,
       userId: 'u1',
       exerciseId: exerciseId,
-      setNumber: 1,
+      setNumber: setNumber,
       reps: [reps],
       sessionCreatedDate: date ?? DateTime(2024, 1, 1),
       variationId: variationId,
@@ -24,276 +26,220 @@ PastSetRow _set(
     );
 
 void main() {
-  group('variation-scoped PR curves', () {
+  group('frontier semantics', () {
+    test('a set is a PR iff no prior set did ≥ these reps at ≥ this weight', () {
+      // 110x1 does not dominate 100x5 (1 < 5) — lighter weight, more reps
+      // is still new territory.
+      final lighter = prEvents([
+        _set('s1', exerciseId: 'bench', weight: 110, reps: 1),
+        _set('s2', exerciseId: 'bench', weight: 100, reps: 5),
+      ]);
+      expect(lighter.length, 2);
+      expect(lighter.last.weight, 100);
+
+      // 100x5 dominates 100x4 — same weight, fewer reps is not a PR.
+      final fewer = prEvents([
+        _set('s1', exerciseId: 'bench', weight: 100, reps: 5),
+        _set('s2', exerciseId: 'bench', weight: 100, reps: 4),
+      ]);
+      expect(fewer.length, 1);
+      expect(fewer.single.weight, 100);
+      expect(fewer.single.reps, 5);
+    });
+
+    test('one PR can beat two previous PRs — both befores survive', () {
+      // 6x10, then 100x3 — two frontier points. 100x10 dominates BOTH:
+      // beforeWeight 6 (best at ≥10 reps) and beforeReps 3 (best at 100kg).
+      final events = prEvents([
+        _set('s1', exerciseId: 'ex', weight: 6, reps: 10,
+            date: DateTime(2024, 1, 1)),
+        _set('s2', exerciseId: 'ex', weight: 100, reps: 3,
+            date: DateTime(2024, 1, 2)),
+        _set('s3', exerciseId: 'ex', weight: 100, reps: 10,
+            date: DateTime(2024, 1, 3)),
+      ]);
+      expect(events.length, 3);
+      final third = events[2];
+      expect(third.weight, 100);
+      expect(third.reps, 10);
+      expect(third.beforeWeight, 6);
+      expect(third.beforeReps, 3);
+    });
+
+    test('an identical repeat is not a PR', () {
+      final events = prEvents([
+        _set('s1', exerciseId: 'bench', weight: 100, reps: 5),
+        _set('s2', exerciseId: 'bench', weight: 100, reps: 5,
+            date: DateTime(2024, 1, 2)),
+      ]);
+      expect(events.length, 1);
+    });
+
+    test('a dominated set still feeds later before-values', () {
+      // 90x6 after 100x6 is NOT a PR, but a later 90x8 must report
+      // "was 90 x 6", never a first.
+      final events = prEvents([
+        _set('s1', exerciseId: 'bench', weight: 100, reps: 6),
+        _set('s2', exerciseId: 'bench', weight: 90, reps: 6,
+            date: DateTime(2024, 1, 2)),
+        _set('s3', exerciseId: 'bench', weight: 90, reps: 8,
+            date: DateTime(2024, 1, 3)),
+      ]);
+      expect(events.length, 2);
+      expect(events.last.beforeReps, 6);
+    });
+  });
+
+  group('variation scoping', () {
     test('Pause Bench PR does not affect regular Bench', () {
-      final sets = [
+      final events = prEvents([
         _set('s1',
-            exerciseId: 'bench',
-            variationId: 'pause',
-            weight: 100,
-            reps: 5),
+            exerciseId: 'bench', variationId: 'pause', weight: 100, reps: 5),
         _set('s2', exerciseId: 'bench', weight: 60, reps: 5),
-      ];
-      final prs = fullPrTimeline(sets);
+      ]);
 
-      // Pause Bench 100x5: explicit 5RM at 100 (pause) + propagated 1-4RM.
-      final pause5 = prs.where((p) =>
-          p.variationId == 'pause' &&
-          p.type == PrType.repMax &&
-          p.targetReps == 5);
-      expect(pause5.length, 1);
-      expect(pause5.first.isPropagated, isFalse);
-      expect(pause5.first.weight, 100);
+      final pause = events.singleWhere((e) => e.variationId == 'pause');
+      expect(pause.weight, 100);
+      expect(pause.beforeWeight, isNull);
 
-      // Regular Bench 60x5 gets its OWN 5RM at 60 — it must not see the
-      // pause-bench 100kg curve.
-      final regular5 = prs.where((p) =>
-          p.variationId == null &&
-          p.type == PrType.repMax &&
-          p.targetReps == 5);
-      expect(regular5.length, 1);
-      expect(regular5.first.weight, 60);
-      expect(regular5.first.isPropagated, isFalse);
+      // Regular Bench gets its OWN frontier — it must not see the
+      // pause-bench 100kg.
+      final regular = events.singleWhere((e) => e.variationId == null);
+      expect(regular.weight, 60);
+      expect(regular.beforeWeight, isNull);
     });
 
     test('null variation is a distinct key from a named variation', () {
-      final sets = [
+      final events = prEvents([
         _set('s1', exerciseId: 'squat', weight: 100, reps: 5),
         _set('s2',
-            exerciseId: 'squat',
-            variationId: 'paused',
-            weight: 120,
-            reps: 5),
-      ];
-      final prs = fullPrTimeline(sets);
-
-      // Both curves get their own 5RM — neither cancels the other.
-      final regular = prs.where((p) =>
-          p.variationId == null &&
-          p.type == PrType.repMax &&
-          p.targetReps == 5);
-      final paused = prs.where((p) =>
-          p.variationId == 'paused' &&
-          p.type == PrType.repMax &&
-          p.targetReps == 5);
-      expect(regular.first.weight, 100);
-      expect(paused.first.weight, 120);
+            exerciseId: 'squat', variationId: 'paused', weight: 120, reps: 5),
+      ]);
+      // Both curves get their own frontier — neither cancels the other.
+      expect(events.length, 2);
+      expect(
+        events.singleWhere((e) => e.variationId == null).weight,
+        100,
+      );
+      expect(
+        events.singleWhere((e) => e.variationId == 'paused').weight,
+        120,
+      );
     });
+  });
 
-    test('weight-max is also scoped per variation', () {
-      final sets = [
-        _set('s1',
-            exerciseId: 'bench',
-            variationId: 'pause',
-            weight: 100,
-            reps: 5),
-        _set('s2', exerciseId: 'bench', weight: 100, reps: 3),
-      ];
-      final prs = fullPrTimeline(sets);
-
-      // Pause: most reps at 100 = 5. Regular: most reps at 100 = 3 —
-      // independent curves.
-      final pauseMax = prs.where((p) =>
-          p.variationId == 'pause' &&
-          p.type == PrType.weightMax &&
-          p.targetWeight == 100);
-      final regularMax = prs.where((p) =>
-          p.variationId == null &&
-          p.type == PrType.weightMax &&
-          p.targetWeight == 100);
-      expect(pauseMax.first.reps, 5);
-      expect(regularMax.first.reps, 3);
-    });
-
-    test('bodyweight feeds the 0kg curve; weighted lifts chain past it', () {
-      // 10 bodyweight reps, then 5kg x 5. Bodyweight is just weight 0:
-      // it produces 0kg rep-max records like any other weight, and the
-      // 5kg set improves the curve past 0kg. The bodyweight 10-rep
-      // weight-max (at 0kg) is still not beaten by 5 weighted reps.
-      final sets = [
+  group('bodyweight', () {
+    test('bodyweight is weight 0; weighted lifts chain past it', () {
+      // 10 bodyweight reps, then 5kg x 5 — two frontier extensions.
+      final events = prEvents([
         _set('s1', exerciseId: 'pushup', weight: 0, reps: 10,
             date: DateTime(2024, 1, 1)),
         _set('s2', exerciseId: 'pushup', weight: 5, reps: 5,
             date: DateTime(2024, 1, 2)),
-      ];
-      final prs = fullPrTimeline(sets);
-
-      // The bodyweight 10-rep set gets rep-max records at 0kg — explicit
-      // 10RM (a tracked value), propagated 1-9RM.
-      final repMaxFromBodyweight = prs.where((p) =>
-          p.type == PrType.repMax && p.weight == 0).toList();
-      expect(repMaxFromBodyweight, isNotEmpty);
-      expect(repMaxFromBodyweight.length, 10);
-      expect(
-        repMaxFromBodyweight
-            .where((p) => !p.isPropagated)
-            .map((p) => p.targetReps),
-        [10],
-      );
-
-      // The 5kg set gets its own rep-max records (1-5RM at 5kg) — explicit
-      // 5RM, propagated 1-4RM. Under achieved-only chains the 5RM's "before"
-      // is absent, because the 0kg 5RM was propagated and never chains.
-      final repMax5 = prs.where((p) =>
-          p.type == PrType.repMax && p.weight == 5 && p.targetReps == 5);
-      expect(repMax5.length, 1);
-      expect(repMax5.first.isPropagated, isFalse);
-
-      // The bodyweight 10-rep weight-max (at 0kg) is not beaten by 5 reps.
-      final zeroWeightMax = prs.where((p) =>
-          p.type == PrType.weightMax && p.targetWeight == 0);
-      expect(zeroWeightMax.length, 1);
-      expect(zeroWeightMax.first.reps, 10);
-
-      // The 5kg lift creates its own weight-max record (5 reps at 5kg).
-      final fiveWeightMax = prs.where((p) =>
-          p.type == PrType.weightMax && p.targetWeight == 5);
-      expect(fiveWeightMax.length, 1);
-      expect(fiveWeightMax.first.reps, 5);
-    });
-
-    test('reps between tracked values claim the floor RM as explicit', () {
-      // 13 reps at 100kg: 13 is not a tracked value, so the explicit record
-      // is the 12RM — the highest tracked value the set covers.
-      final prs = fullPrTimeline([
-        _set('s1', exerciseId: 'bench', weight: 100, reps: 13,
-            date: DateTime(2024, 1, 1)),
       ]);
-      final explicit = prs.where((p) => !p.isPropagated && p.type == PrType.repMax);
-      expect(explicit.length, 1);
-      expect(explicit.first.targetReps, 12);
-      // 1-10RM at 100 remain propagated.
-      final propagated = prs.where((p) => p.isPropagated && p.type == PrType.repMax);
-      expect(propagated.length, 10);
+      expect(events.length, 2);
+      expect(events.first.weight, 0);
+      expect(events.first.reps, 10);
+      // The 5kg set's rep-dimension before is the 0kg curve (0 ≤ 5 reps
+      // done at 0kg implies the 5-rep best was 0).
+      expect(events.last.beforeWeight, 0);
     });
 
-    test('same variation curve evolves chronologically', () {
-      final sets = [
+    test('0x13 then 0x15 — the reps dimension advances at 0kg', () {
+      final events = prEvents([
+        _set('s1', exerciseId: 'dips', weight: 0, reps: 13,
+            date: DateTime(2024, 1, 1)),
+        _set('s2', exerciseId: 'dips', weight: 0, reps: 15,
+            date: DateTime(2024, 1, 2)),
+      ]);
+      expect(events.length, 2);
+      expect(events.last.beforeReps, 13);
+    });
+  });
+
+  group('chronological evolution', () {
+    test('same variation frontier evolves — each extension is an event', () {
+      final events = prEvents([
         _set('s1',
-            exerciseId: 'bench',
-            variationId: 'pause',
-            weight: 80,
-            reps: 5,
+            exerciseId: 'bench', variationId: 'pause', weight: 80, reps: 5,
             date: DateTime(2024, 1, 1)),
         _set('s2',
-            exerciseId: 'bench',
-            variationId: 'pause',
-            weight: 100,
-            reps: 5,
+            exerciseId: 'bench', variationId: 'pause', weight: 100, reps: 5,
             date: DateTime(2024, 2, 1)),
-      ];
-      final prs = fullPrTimeline(sets);
+      ]);
+      expect(events.length, 2);
+      expect(events.first.beforeWeight, isNull);
+      expect(events.last.weight, 100);
+      expect(events.last.beforeWeight, 80);
+    });
 
-      final pause5 = prs
-          .where((p) =>
-              p.variationId == 'pause' &&
-              p.type == PrType.repMax &&
-              p.targetReps == 5)
-          .toList();
-      // Both sets improved the 5RM (80 then 100) — two records, last wins.
-      expect(pause5.length, 2);
-      expect(pause5.last.weight, 100);
+    test('sets in the same session order by set number', () {
+      final events = prEvents([
+        _set('s1', exerciseId: 'ex', weight: 0, reps: 10, setNumber: 1,
+            date: DateTime(2024, 1, 2), sessionId: 'wB'),
+        _set('s2', exerciseId: 'ex', weight: 0, reps: 12, setNumber: 2,
+            date: DateTime(2024, 1, 2), sessionId: 'wB'),
+      ]);
+      expect(events.length, 2);
+      expect(events.first.beforeReps, isNull); // First PR
+      expect(events.last.beforeReps, 10);
     });
   });
 
-  group('weight-max propagation', () {
-    test('only bumps weights that were explicitly lifted', () {
-      // 5kg x 8, then 100kg x 10: the heavier set implies more reps at 5kg,
-      // but weights the user never lifted (7.5, 10, 12.5, ...) get nothing.
-      final sets = [
-        _set('s1', exerciseId: 'ex', weight: 5, reps: 8,
-            date: DateTime(2024, 1, 1)),
+  group('lenses', () {
+    test('repMaxCurve is a pure projection — the N list never gates it', () {
+      // 13 reps at 100kg: curve[13] = 100 even though 13 is not a
+      // kTrackedRepCounts value; every n ≤ 13 inherits it.
+      final curve = repMaxCurve([
+        _set('s1', exerciseId: 'bench', weight: 100, reps: 13),
+      ]);
+      expect(curve[13], 100);
+      expect(curve[12], 100);
+      expect(curve[1], 100);
+    });
+
+    test('weightMaxCurve tracks exact weights — no fabricated entries', () {
+      final curve = weightMaxCurve([
+        _set('s1', exerciseId: 'ex', weight: 5, reps: 8),
         _set('s2', exerciseId: 'ex', weight: 100, reps: 10,
             date: DateTime(2024, 1, 2)),
-      ];
-      final prs = fullPrTimeline(sets);
+      ]);
+      // 100x10 implies the ≥8-rep max (the rep-max lens), but the EXACT
+      // weight lens never invents a 10-rep set at 5kg.
+      expect(curve, {5: 8, 100: 10});
 
-      final weightMax = prs.where((p) => p.type == PrType.weightMax).toList();
-      final targets = weightMax.map((p) => p.targetWeight).toSet();
-      expect(targets, {5, 100},
-          reason: 'propagation must never fabricate weights never lifted');
-
-      // 5kg: explicit 8 first, then bumped to 10 by the 100kg set.
-      final five = weightMax.where((p) => p.targetWeight == 5).toList();
-      expect(five.length, 2);
-      expect(five.last.reps, 10);
-      expect(five.last.isPropagated, isTrue);
-
-      // 100kg: the explicit record only.
-      final hundred = weightMax.where((p) => p.targetWeight == 100).toList();
-      expect(hundred.length, 1);
-      expect(hundred.first.reps, 10);
-      expect(hundred.first.isPropagated, isFalse);
-    });
-  });
-
-  group('session before-tracking', () {
-    PastSetRow row(String setId, int setNumber, double weight, int reps) =>
-        PastSetRow(
-          sessionExerciseSetId: setId,
-          sessionExerciseId: setId,
-          sessionId: 'wB',
-          userId: 'u1',
-          exerciseId: 'pushup',
-          setNumber: setNumber,
-          reps: [reps],
-          sessionCreatedDate: DateTime(2024, 1, 2),
-          weight: weight,
-        );
-
-    test('first record on an axis keeps a null before when a later set '
-        're-hits the axis', () {
-      // Two bodyweight sets in one session: 0kg x 10, then 0kg x 12. The
-      // 0x10 record must keep before = null — an axis-keyed map would get
-      // overwritten by the 0x12 record's before (the 0x10 record itself) and
-      // render "0kg: 10 reps → 10 reps" instead of "(First PR)".
-      final records =
-          fullPrTimeline([row('b1', 1, 0, 10), row('b2', 2, 0, 12)]);
-      final before = sessionBeforeMaps(records, 'wB');
-
-      final first0 = records.firstWhere((r) =>
-          r.type == PrType.weightMax &&
-          r.targetWeight == 0 &&
-          r.reps == 10 &&
-          !r.isPropagated);
-      expect(
-          before.weightMax[
-              (first0.exerciseId, first0.variationId, 0, first0.sessionExerciseSetId)],
-          isNull,
-          reason: 'the first 0kg PR must render as First PR, not against itself');
-
-      final second0 = records.firstWhere((r) =>
-          r.type == PrType.weightMax &&
-          r.targetWeight == 0 &&
-          r.reps == 12 &&
-          !r.isPropagated);
-      expect(
-          before.weightMax[(second0.exerciseId, second0.variationId, 0, second0.sessionExerciseSetId)]
-              ?.reps,
-          10);
+      // The rep-max lens DOES inherit the heavier lift for n ≤ 10.
+      final repCurve = repMaxCurve([
+        _set('s1', exerciseId: 'ex', weight: 5, reps: 8),
+        _set('s2', exerciseId: 'ex', weight: 100, reps: 10,
+            date: DateTime(2024, 1, 2)),
+      ]);
+      expect(repCurve[8], 100);
     });
 
-    test('two rep-max records on one axis keep their own befores', () {
-      // 100 x 5 then 120 x 5: the first 5RM's before stays null, the
-      // second's is the 100kg record.
-      final records =
-          fullPrTimeline([row('b1', 1, 100, 5), row('b2', 2, 120, 5)]);
-      final before = sessionBeforeMaps(records, 'wB');
+    test('repAxisHistory lists every set that raised the axis', () {
+      final history = repAxisHistory([
+        _set('s1', exerciseId: 'bench', weight: 80, reps: 5,
+            date: DateTime(2024, 1, 1)),
+        _set('s2', exerciseId: 'bench', weight: 100, reps: 5,
+            date: DateTime(2024, 2, 1)),
+        _set('s3', exerciseId: 'bench', weight: 90, reps: 5,
+            date: DateTime(2024, 3, 1)), // no raise — 100 already stands
+      ], 5);
+      expect(history.length, 2);
+      expect(history.last.weight, 100);
+    });
 
-      final first5 = records.firstWhere((r) =>
-          r.type == PrType.repMax && r.targetReps == 5 && r.weight == 100);
-      expect(
-          before.repMax[(first5.exerciseId, first5.variationId, 5, first5.sessionExerciseSetId)],
-          isNull,
-          reason: 'the first 5RM must render as First PR, not "100kg → 100kg"');
-
-      final second5 = records.firstWhere((r) =>
-          r.type == PrType.repMax && r.targetReps == 5 && r.weight == 120);
-      expect(
-          before
-              .repMax[(second5.exerciseId, second5.variationId, 5, second5.sessionExerciseSetId)]
-              ?.weight,
-          100);
+    test('weightAxisHistory lists every set that raised the max reps', () {
+      final history = weightAxisHistory([
+        _set('s1', exerciseId: 'ex', weight: 100, reps: 5),
+        _set('s2', exerciseId: 'ex', weight: 100, reps: 8,
+            date: DateTime(2024, 2, 1)),
+        _set('s3', exerciseId: 'ex', weight: 100, reps: 6,
+            date: DateTime(2024, 3, 1)), // no raise
+      ], 100);
+      expect(history.length, 2);
+      expect(history.last.reps.first, 8);
     });
   });
 }

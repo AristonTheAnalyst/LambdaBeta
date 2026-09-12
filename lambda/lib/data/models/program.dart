@@ -7,17 +7,22 @@ class Program {
     required this.programId,
     required this.userId,
     required this.name,
-    required this.isArchived,
     required this.createdDate,
     required this.updatedDate,
     this.description,
+    this.archivedDate,
   });
 
   final String programId;
   final String userId;
   final String name;
   final String? description;
-  final bool isArchived;
+
+  /// NULL = active; a timestamp = archived (sortable, latest first).
+  final DateTime? archivedDate;
+
+  bool get isArchived => archivedDate != null;
+
   final DateTime createdDate;
   final DateTime updatedDate;
 
@@ -28,7 +33,9 @@ class Program {
       userId: map['user_id'] as String,
       name: map['program_name'] as String,
       description: map['program_description'] as String?,
-      isArchived: _toBool(map['is_archived']),
+      archivedDate: map['date_archived'] != null
+          ? DateTime.tryParse(map['date_archived'] as String)
+          : null,
       createdDate: created,
       updatedDate: map['program_updated_date'] != null
           ? DateTime.parse(map['program_updated_date'] as String)
@@ -36,18 +43,12 @@ class Program {
     );
   }
 
-  static bool _toBool(dynamic v) {
-    if (v is bool) return v;
-    if (v is int) return v != 0;
-    return true;
-  }
-
   Map<String, dynamic> toMap() => {
         'program_id': programId,
         'user_id': userId,
         'program_name': name,
         'program_description': description,
-        'is_archived': isArchived,
+        'date_archived': archivedDate?.toIso8601String(),
         'program_created_date': createdDate.toIso8601String(),
         'program_updated_date': updatedDate.toIso8601String(),
       };

@@ -30,12 +30,6 @@ class SlidePagesController extends ChangeNotifier {
     }
   }
 
-  /// Slides to page 1 (the second page).
-  void slideIn() => slideToPage(1);
-
-  /// Slides back to page 0.
-  void slideOut() => slideToPage(0);
-
   /// Cuts instantly to [page] and notifies listeners — no slide animation,
   /// per the session-flow design.
   void slideToPage(int page) {
