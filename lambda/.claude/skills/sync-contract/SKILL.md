@@ -55,6 +55,63 @@ columns (schema v2, from migrations):
 `coaching_relationship→(coach_user_id,athlete_user_id)` (composite — the
 only table with no server-side `id`).
 
+## Migration history hygiene
+
+**Never hand-apply a migration under a version you invented.** `supabase db
+push` does not diff the schema — it compares the version prefix of each local
+filename against `supabase_migrations.schema_migrations.version`. A file
+renumbered to `20260814000000_my_change.sql` when the cloud recorded it as
+`20260813043831` looks *unapplied*, so the next `db push` re-runs it. Postgres
+has no `ADD CONSTRAINT IF NOT EXISTS`, so migrations using bare `ADD CONSTRAINT`
+fail partway and leave the database half-migrated. Use the real applied version,
+not a placeholder.
+
+### Checking for drift
+
+`schema_migrations` is the authority — compare it against the directory:
+
+```sql
+select version, name from supabase_migrations.schema_migrations order by version;
+```
+
+`supabase migration list --linked` does this for you, but the CLI needs
+`supabase login` first: `supabase/.temp/pooler-url` stores no password, so it
+cannot connect on its own.
+
+### Reconciling a drifted history
+
+- **Same migration, different version** → rename the local file to the cloud
+  version.
+- **Applied on the cloud, no local file** → backfill from the stored SQL:
+  `select statements[1] from supabase_migrations.schema_migrations where
+  version = '...'` is the exact SQL that ran.
+- **Local file, no cloud row** → never applied. Delete it, unless a later
+  migration folded in its intent.
+
+### Comparing content (the part that bites)
+
+`statements` is a `text[]` whose shape is **not consistent**: sometimes one
+element holding the whole file verbatim (comments and semicolons included),
+sometimes one element per statement with the trailing `;` stripped. So
+comparing `statements[1]` against a whole file reports false differences, and
+re-joining the array with `;` breaks the single-element case. Both mistakes
+produce confident wrong answers — 2026-09-30 concluded "22 files drifted" that
+way, when in fact 49 of 51 matched.
+
+Normalize the ambiguity away — strip `--` comments, whitespace, **and
+semicolons** — then hash both sides:
+
+```sql
+md5(lower(regexp_replace(regexp_replace(regexp_replace(
+  array_to_string(statements, chr(10)), '--[^\n]*', '', 'g'),
+  '[[:space:]]', '', 'g'), ';', '', 'g')))
+```
+
+Locally: `perl -pe 's/--.*$//' f.sql | tr -d '[:space:];' | tr '[:upper:]'
+'[:lower:]' | md5 -q`. Matching hashes prove the local file is the migration
+that actually ran. A file that differs *on purpose* (an added `if exists`
+guard, say) should say so in a comment — otherwise the next person "fixes" it.
+
 ## Workflow to add or change a table
 
 1. **Migration** — `supabase/migrations/<ts>_<name>.sql`:
