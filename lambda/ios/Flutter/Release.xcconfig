@@ -1,2 +1,8 @@
 #include? "Pods/Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"
 #include "Generated.xcconfig"
+
+// Xcode 26+ explicit module builds fail to resolve the Flutter engine framework while
+// verifying plugin modules (see ios/Podfile). Applies to the Runner app target; the pods
+// get the same setting from the Podfile post_install hook.
+CLANG_ENABLE_EXPLICIT_MODULES = NO
+SWIFT_ENABLE_EXPLICIT_MODULES = NO

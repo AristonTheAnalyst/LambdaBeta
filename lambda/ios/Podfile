@@ -36,8 +36,40 @@ target 'Runner' do
   end
 end
 
+# Xcode 27's iOS SDK only supports deployment targets 15.0+. Podspecs still declare
+# older ones (9.0–13.0), which Xcode rejects at build time, so force every target up to
+# the app's minimum. Must run AFTER flutter_additional_ios_build_settings, which deletes
+# the setting on targets below 13.0.
+IOS_DEPLOYMENT_TARGET = '15.0'
+
+# Xcode 26+ enables "explicit modules" for Clang and Swift. Before using a module, the
+# build system verifies it standalone, and that verification runs each pod's module with
+# only the pod's own framework search paths -- the Flutter engine directories that
+# flutter_additional_ios_build_settings adds are not passed. Every plugin pod that does
+# `#import <Flutter/Flutter.h>` therefore fails with:
+#
+#   'Flutter/Flutter.h' file not found -> could not build module '<plugin>'
+#   (fatal) could not build module 'Test'
+#
+# which aborts device builds (Release in particular). With explicit modules off, clang
+# resolves the engine framework through FRAMEWORK_SEARCH_PATHS as it always has.
+# Remove this once the toolchain passes engine search paths to module verification.
+EXPLICIT_MODULES_OFF = {
+  'CLANG_ENABLE_EXPLICIT_MODULES' => 'NO',
+  'SWIFT_ENABLE_EXPLICIT_MODULES' => 'NO',
+}
+
 post_install do |installer|
+  installer.pods_project.build_configurations.each do |config|
+    config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = IOS_DEPLOYMENT_TARGET
+    EXPLICIT_MODULES_OFF.each { |key, value| config.build_settings[key] = value }
+  end
+
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
+    target.build_configurations.each do |config|
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = IOS_DEPLOYMENT_TARGET
+      EXPLICIT_MODULES_OFF.each { |key, value| config.build_settings[key] = value }
+    end
   end
 end
