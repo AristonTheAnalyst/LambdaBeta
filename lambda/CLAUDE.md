@@ -42,7 +42,7 @@ The app has three session surfaces that share one UX. **The live session screen 
 - Renders: `SessionExerciseCard` (with `ExerciseSelector` pills, pinned lesson, Lessons/History/PRs pills) → `SessionSetRow` grid + rest timer + stats bar.
 
 **Key features (priority order):**
-- Exercise selector (pill popover: switch, arrows reorder, add, hold-to-delete X)
+- Exercise selector (pill popover: switch, arrows reorder, add — removal is un-ticking a row in the add-exercise modal)
 - Exercise card: planned outline, PR count badge, pinned lesson bar, history picker
 - Inline editable set grid: REPS/KG/VARIATION/NOTE columns, `SessionSetRow` (mode `live`):
   - `FilteringTextInputFormatter` numeric-only weight/reps
@@ -192,7 +192,8 @@ Rule of thumb: complex state needing selective rebuilds → immutable state; tig
 |---|---|---|
 | `session_exercise_card.dart` | All three screens | THE exercise card (selector + pinned lesson + pills + sets grid). Null callbacks grey/hide controls. |
 | `session_set_row.dart` | All three screens | THE set row — `SetRowMode { live, planned, history }` + flags (`isPr`, `readOnly`, `plannedTarget`); registers a commit handle for lifecycle flushes. |
-| `exercise_selector.dart` | All three screens | Pill popover: switch / arrows reorder / add / hold-to-delete X. |
+| `exercise_selector.dart` | All three screens | Pill popover: switch / arrows reorder / add. Null callbacks grey the arrows and the Add row. |
+| `add_exercise_modal.dart` | All three screens | THE add-exercise modal (`showAddExerciseModal`). Stays open: tap to add (green tick), tap a ticked row to remove (caller confirms). |
 | `exercise_tab_chip.dart` | `ExerciseSelector` | The pill itself. Active color is accent everywhere. |
 | `card_pill_button.dart` | `SessionExerciseCard` | Lessons/History/PRs pill chrome. |
 | `swipe_actions.dart` | Set rows | Swipe-to-reveal Duplicate/Delete. |
@@ -216,7 +217,7 @@ Rule of thumb: complex state needing selective rebuilds → immutable state; tig
 Each repository wraps PowerSync SQLite CRUD.
 
 - `SessionRepository`: createSession, endSession, updateSessionNotes, reorderSessionExercises, cancelSession, getActiveSessionId, insertSessionExercise, updateSessionExercise, loadSessionExercises, deleteSessionExercise, insertSet, updateSet, deleteSet, loadSetsForSession, reorderSets, loadSessionsWithSets, loadPastSetsTimeline, fetchSession, findLastSetForExercise(Variation)
-- `PlannedSessionRepository`: fetchPlannedSessions (standalone or via program links), fetchPlannedSessionById, fetchPlannedExercises, fetchPlannedSets, createPlannedSession, updatePlannedSession, deletePlannedSession (archives + its groups/sets, hard-deletes links), createPlannedExercise, deletePlannedExercise, createPlannedSet, updatePlannedSet, deletePlannedSet, consolidateDuplicateExerciseGroups, duplicatePlannedSession, swapExerciseOrders, renumberExerciseOrders, fetchProgramLinks, createProgramLink, updateProgramLink, deleteProgramLink
+- `PlannedSessionRepository`: fetchPlannedSessions (standalone or via program links), fetchPlannedSessionById, fetchPlannedExercises, fetchPlannedSets, createPlannedSession, updatePlannedSession, deletePlannedSession (archives + its groups/sets, hard-deletes links), createPlannedExercise, deletePlannedExercise, createPlannedSet, updatePlannedSet, deletePlannedSet, fetchNormalizedPlannedSets, duplicatePlannedSession, swapExerciseOrders, renumberExerciseOrders, fetchProgramLinks, createProgramLink, updateProgramLink, deleteProgramLink
 - `ProgramRepository`: fetchPrograms, fetchProgram, createProgram, updateProgram, deleteProgram (archives + hard-deletes links), fetchPlannedSessions(programId), fetchPlannedSessionSets, duplicatePlannedSession, fetchProgramWithSessions, duplicateProgram, fetchGoals, createGoal, deleteGoal
 - `ProgramRunRepository`: getCurrentRun, startProgramRun (takes progressionMode), updateRunConfig, endCurrentRun, fetchProgramHistory, getNextPlannedSession (from run mode + join rows), getProgress
 - `ExerciseRepository`: fetchExerciseDetailMap, fetchVariations, findExerciseByName, createExercise, reactivateExercise, findVariationByName, createVariation, reactivateVariation, deactivate/update variants
@@ -255,3 +256,10 @@ Full spec: `docs/pr_methodology.md`.
 8. **initState defer** — VM methods that mutate `ValueNotifier` state synchronously must run post-frame via `WidgetsBinding.instance.addPostFrameCallback`.
 9. **Supersets retired (2026-08-14, column dropped 2026-08-24)** — no UI creates or emphasizes supersets, and `superset_group_number` no longer exists (schema v2). Dormant slot support in the live session VM remains; a restored multi-exercise slot renders as its first exercise.
 10. **Preview mirrors the session UI** — `_SessionPreview` is a read-only adapter over the shared card/row, not a hand-rolled layout.
+
+## Toolchain & Diagnostics
+
+- **If a release build on device misbehaves but debug works, start from `docs/release_only_crashes.md`** — not from app code. Release/AOT and Debug/JIT are different compilers, so those bugs are usually in the build, not the feature. The `release-crash-triage` skill (`.claude/skills/`) carries the step-by-step checklist.
+- **Watch for `+eol` packages** (`grep eol pubspec.lock`). A `+eol` version means a retired mechanism the current toolchain has moved past — that is what broke the 2026-09-30 release build (fixed by `powersync ^1.8.0 → ^2.4.0`, no Dart changes needed).
+- **iOS/Xcode 27 build constraints** (pod module verification, deployment-target floor, simulator lipo) are documented in the `ios-toolchain-xcode27` memory.
+- **Installing a build on a device via `devicectl` wipes its local database** — flag that to the user before doing it, since unsynced writes are lost.
