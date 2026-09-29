@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../core/styles/app_colors.dart';
+import '../../core/utils/name_limit.dart';
+import 'name_limit_counter.dart';
 
 /// "New Variation" name prompt. Owns its [TextEditingController] so the
 /// controller is disposed when the dialog route is fully removed (after the
@@ -29,15 +31,32 @@ class _VariationNameDialogState extends State<VariationNameDialog> {
     return AlertDialog(
       backgroundColor: AppColors.surface,
       title: Text('New Variation', style: TextStyle(color: AppColors.primary)),
-      content: TextField(
-        controller: _controller,
-        autofocus: true,
-        textCapitalization: TextCapitalization.words,
-        style: TextStyle(color: AppColors.primary),
-        decoration: InputDecoration(
-            hintText: 'Variation name',
-            hintStyle: TextStyle(color: AppColors.muted)),
-        onSubmitted: (_) => _submit(),
+      // The controller is a `ValueListenable<TextEditingValue>`, so the counter
+      // tracks the text without this dialog holding a second copy of it.
+      content: ValueListenableBuilder<TextEditingValue>(
+        valueListenable: _controller,
+        builder: (context, value, _) => Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextField(
+              controller: _controller,
+              autofocus: true,
+              textCapitalization: TextCapitalization.words,
+              maxLength: kMaxExerciseNameLength,
+              style: TextStyle(color: AppColors.primary),
+              decoration: InputDecoration(
+                  hintText: 'Variation name',
+                  counterText: '',
+                  hintStyle: TextStyle(color: AppColors.muted)),
+              onSubmitted: (_) => _submit(),
+            ),
+            if (value.text.trim().isNotEmpty) ...[
+              const SizedBox(height: 4),
+              NameLimitCounter(length: value.text.trim().length),
+            ],
+          ],
+        ),
       ),
       actions: [
         TextButton(

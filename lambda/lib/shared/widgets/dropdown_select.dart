@@ -5,7 +5,6 @@ import '../../core/styles/app_radius.dart';
 import './container_styles.dart';
 import '../../core/styles/app_spacing.dart';
 import '../../core/styles/app_text_styles.dart';
-import '../../core/utils/session_format.dart';
 import 'slide_up_modal.dart';
 
 class DropdownOption<T> {
@@ -153,9 +152,10 @@ class DropdownSelect<T> extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  // Truncated to fit the cell — the picker and the cell's
+                  // Ellipsized to fit the cell — the picker and the cell's
                   // tooltip show the full name.
-                  truncateName(_displayLabel),
+                  _displayLabel,
+                  maxLines: 1,
                   style: AppFonts.ui(
                     fontSize: AppTextStyles.sm,
                     fontWeight: FontWeight.w500,

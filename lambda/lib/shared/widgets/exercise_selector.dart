@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_fonts.dart';
@@ -10,9 +8,9 @@ import '../../core/styles/app_text_styles.dart';
 
 /// The workout exercise selector — a field that opens an anchored popover
 /// over the screen: the selected exercise shows highlighted, up/down arrows
-/// reorder, Add Exercise is pinned at the bottom, and holding the X for one
-/// second requests deletion (the caller shows the warning). The caller owns
-/// the list; every action reports back through callbacks.
+/// reorder, and Add Exercise is pinned at the bottom, where the caller's
+/// exercise picker both adds and removes. The caller owns the list; every
+/// action reports back through callbacks.
 class ExerciseSelector extends StatefulWidget {
   const ExerciseSelector({
     super.key,
@@ -21,7 +19,6 @@ class ExerciseSelector extends StatefulWidget {
     required this.onSelect,
     required this.onMove,
     required this.onAdd,
-    required this.onDeleteRequest,
   });
 
   /// Display names, in order.
@@ -36,11 +33,6 @@ class ExerciseSelector extends StatefulWidget {
   /// Null greys the Add Exercise row (kept visible but inert so the popover
   /// still reads complete in read-only contexts).
   final VoidCallback? onAdd;
-
-  /// Fired after the 1-second hold on the X — the caller shows the warning
-  /// dialog and performs the delete. Null hides the X entirely — a dead
-  /// hold-to-delete ring would be worse than absent.
-  final VoidCallback? onDeleteRequest;
 
   @override
   State<ExerciseSelector> createState() => _ExerciseSelectorState();
@@ -116,6 +108,9 @@ class _ExerciseSelectorState extends State<ExerciseSelector> {
                             widget.exercises.isEmpty
                                 ? ''
                                 : widget.exercises[widget.activeIndex],
+                            // Single line: without it the name wraps and grows
+                            // the field taller instead of shortening.
+                            maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: AppFonts.ui(
                               fontSize: AppTextStyles.sm,
@@ -137,10 +132,6 @@ class _ExerciseSelectorState extends State<ExerciseSelector> {
                             color: AppColors.primary,
                           ),
                         ),
-                        if (widget.onDeleteRequest != null) ...[
-                          const SizedBox(width: AppSpacing.xs),
-                          _HoldToDeleteX(onComplete: widget.onDeleteRequest!),
-                        ],
                       ],
                     ),
                   ),
@@ -245,6 +236,7 @@ class _ExerciseSelectorState extends State<ExerciseSelector> {
             Expanded(
               child: Text(
                 widget.exercises[i],
+                maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: AppFonts.ui(
                   fontSize: AppTextStyles.sm,
@@ -309,9 +301,10 @@ class _ExerciseSelectorState extends State<ExerciseSelector> {
   }
 
   /// Pinned at the bottom of the popover — the caller opens its own
-  /// add-exercise flow. When [widget.onAdd] is null the row stays visible
-  /// but renders greyed and inert, so read-only contexts keep the popover's
-  /// shape without a dead action.
+  /// exercise picker, which is where exercises are both added and removed.
+  /// When [widget.onAdd] is null the row stays visible but renders greyed and
+  /// inert, so read-only contexts keep the popover's shape without a dead
+  /// action.
   Widget _addRow() {
     final enabled = widget.onAdd != null;
     final color = enabled ? AppColors.primary : AppColors.muted.withValues(alpha: 0.4);
@@ -345,95 +338,3 @@ class _ExerciseSelectorState extends State<ExerciseSelector> {
   }
 }
 
-/// Hold-to-delete X — the container's background and outline fill with
-/// danger red over one second; once complete, fires [onComplete].
-class _HoldToDeleteX extends StatefulWidget {
-  const _HoldToDeleteX({required this.onComplete});
-
-  final VoidCallback onComplete;
-
-  @override
-  State<_HoldToDeleteX> createState() => _HoldToDeleteXState();
-}
-
-class _HoldToDeleteXState extends State<_HoldToDeleteX>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _progress = AnimationController(
-    vsync: this,
-    duration: const Duration(seconds: 1),
-  );
-  Timer? _timer;
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    _progress.dispose();
-    super.dispose();
-  }
-
-  void _start() {
-    _timer?.cancel();
-    _progress.forward(from: 0);
-    _timer = Timer(const Duration(seconds: 1), () {
-      if (mounted) {
-        _progress.reset();
-        widget.onComplete();
-      }
-    });
-  }
-
-  void _cancel() {
-    _timer?.cancel();
-    if (mounted) _progress.stop();
-    if (mounted) _progress.value = 0;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      key: const ValueKey('exercise-selector-delete'),
-      // Claims the tap arena so holding the X never triggers the field's
-      // own tap (which would open the menu on release).
-      onTap: () {},
-      child: Listener(
-        onPointerDown: (_) => _start(),
-        onPointerUp: (_) => _cancel(),
-        onPointerCancel: (_) => _cancel(),
-        child: SizedBox(
-          width: 40,
-          height: 40,
-          child: AnimatedBuilder(
-            animation: _progress,
-            builder: (context, _) {
-              // The hold fills the container — background and outline
-              // graduate from neutral to danger as the progress advances.
-              final t = _progress.value;
-              return Container(
-                width: 24,
-                height: 24,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: Color.lerp(Colors.transparent, AppColors.dangerBg, t),
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(
-                    color: Color.lerp(
-                      AppColors.border,
-                      AppColors.danger,
-                      t,
-                    )!,
-                    width: 0.5,
-                  ),
-                ),
-                child: Icon(
-                  Icons.close,
-                  size: 14,
-                  color: Color.lerp(AppColors.muted, AppColors.primary, t),
-                ),
-              );
-            },
-          ),
-        ),
-      ),
-    );
-  }
-}

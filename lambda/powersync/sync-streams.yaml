@@ -11,6 +11,14 @@
 # dim_planned_session_set → dim_planned_session_exercise (+_set), new
 # dim_planned_session_program join table; dim_exercise_variation_bridge removed.
 #
+# 2026-09-27 (program versions): + fact_program_revision. Deploying this
+# triggers a full reprocessing/resync, so ship the app build that reads the
+# table together with it.
+#
+# 2026-09-27 (program reviews): + fact_program_review. Second line on the same
+# program-history work; deploying this reprocesses again, so ship the build
+# that reads the table together with it.
+#
 # Deploy steps (PowerSync Dashboard → Sync Streams):
 #   1. Replace the current YAML with this file.
 #   2. Bump the app version BEFORE deploying — sync streams attach to app
@@ -44,4 +52,7 @@ streams:
       - SELECT *, planned_set_id as id FROM dim_planned_session_exercise_set WHERE user_id = auth.user_id()
       - SELECT *, planned_session_program_id as id FROM dim_planned_session_program WHERE user_id = auth.user_id()
       - SELECT *, goal_id as id FROM fact_goal WHERE user_id = auth.user_id()
+      - SELECT *, revision_id as id FROM fact_program_revision WHERE user_id = auth.user_id()
+      - SELECT *, review_id as id FROM fact_program_review WHERE user_id = auth.user_id()
+      - SELECT *, block_id as id FROM dim_program_block WHERE user_id = auth.user_id()
       - SELECT *, (coach_user_id || '-' || athlete_user_id) as id FROM coaching_relationship WHERE coach_user_id = auth.user_id() OR athlete_user_id = auth.user_id()

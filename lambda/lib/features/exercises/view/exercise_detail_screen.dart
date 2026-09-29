@@ -7,11 +7,13 @@ import '../../../core/styles/app_radius.dart';
 import '../../../core/styles/app_spacing.dart';
 import '../../../core/styles/app_text_styles.dart';
 import '../../../core/utils/date_range.dart';
+import '../../../core/utils/name_limit.dart';
 import '../../../data/models/session_exercise_set.dart';
 import '../../../data/repositories/lesson_repository.dart';
 import '../../../data/repositories/pr_view_setting_repository.dart';
 import '../../../data/repositories/session_repository.dart';
 import '../../../shared/widgets/glass_button.dart';
+import '../../../shared/widgets/name_limit_counter.dart';
 import '../../../shared/widgets/page_header.dart';
 import '../../../shared/widgets/container_styles.dart';
 import '../../../shared/widgets/date_range_selector.dart';
@@ -1041,9 +1043,15 @@ class _RenameExerciseDialogState extends State<_RenameExerciseDialog> {
             controller: _controller,
             autofocus: true,
             textCapitalization: TextCapitalization.words,
+            // The field pre-fills the current name, and a limit does not
+            // truncate text that is already there — so an over-long name (all
+            // of them were renamed by the 2026-09-29 backfill) shows its real
+            // length and Save refuses until it fits.
+            maxLength: kMaxExerciseNameLength,
             style: AppFonts.ui(color: AppColors.primary),
             decoration: InputDecoration(
               hintText: 'Exercise name',
+              counterText: '',
               hintStyle: AppFonts.ui(color: AppColors.muted),
               enabledBorder: UnderlineInputBorder(
                 borderSide: BorderSide(color: AppColors.border),
@@ -1052,6 +1060,15 @@ class _RenameExerciseDialogState extends State<_RenameExerciseDialog> {
                 borderSide: BorderSide(color: AppColors.accent),
               ),
             ),
+          ),
+          ValueListenableBuilder<TextEditingValue>(
+            valueListenable: _controller,
+            builder: (context, value, _) => value.text.trim().isEmpty
+                ? const SizedBox.shrink()
+                : Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: NameLimitCounter(length: value.text.trim().length),
+                  ),
           ),
         ],
       ),

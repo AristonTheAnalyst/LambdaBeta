@@ -14,7 +14,7 @@ import '../../../../shared/widgets/slide_up_modal.dart';
 import '../../../../shared/widgets/swipe_actions.dart';
 import '../../../../shared/widgets/glass_button.dart';
 import '../../../../shared/widgets/page_header.dart';
-import '../viewmodel/program_detail_viewmodel.dart';
+import '../viewmodel/workout_editor_viewmodel.dart';
 import 'plan_session_screen.dart';
 
 /// Library of standalone planned workouts (a single session, no program).
@@ -86,7 +86,7 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
   }
 
   Future<void> _create() async {
-    final vm = ProgramDetailViewModel();
+    final vm = WorkoutEditorViewModel();
     await Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(
           builder: (_) => PlanSessionScreen(viewModel: vm, standalone: true)),
@@ -96,7 +96,7 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
   }
 
   Future<void> _edit(PlannedSession w) async {
-    final vm = ProgramDetailViewModel();
+    final vm = WorkoutEditorViewModel();
     await Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(
           builder: (_) => PlanSessionScreen(

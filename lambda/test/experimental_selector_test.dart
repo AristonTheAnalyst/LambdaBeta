@@ -21,7 +21,8 @@ void main() {
     expect(find.text('Pull Up'), findsWidgets);
   });
 
-  testWidgets('A dropdown: pop-up menu selects, and delete confirms', (
+  testWidgets('A dropdown: pop-up menu selects, and there is no delete control',
+      (
     tester,
   ) async {
     tester.view.physicalSize = const Size(800, 1800);
@@ -47,30 +48,13 @@ void main() {
       findsOneWidget,
     );
 
-    // Hold the X for 1 second → the warning dialog appears.
-    final x = find.byKey(const ValueKey('exercise-selector-delete'));
-    final hold = await tester.startGesture(tester.getCenter(x));
-    await tester.pump(const Duration(seconds: 1));
-    await tester.pump();
+    // The hold-to-delete X is gone (2026-09-29): removal moved into the
+    // add-exercise modal, where a ticked row is tapped to un-tick it. The
+    // selector field no longer carries a control at all, so the cheapest
+    // regression test for the whole removal is that the key is not there.
     expect(
-      find.text('Are you sure you want to delete this exercise?'),
-      findsOneWidget,
-    );
-    await hold.up();
-    await tester.pumpAndSettle();
-
-    // Confirm the delete.
-    await tester.tap(find.text('Delete'));
-    await tester.pumpAndSettle();
-
-    // Deadlift is gone; the field now shows the exercise that took its
-    // index.
-    expect(
-      find.descendant(
-        of: find.byKey(const ValueKey('exercise-selector-field')),
-        matching: find.text('Overhead Press'),
-      ),
-      findsOneWidget,
+      find.byKey(const ValueKey('exercise-selector-delete')),
+      findsNothing,
     );
   });
 }

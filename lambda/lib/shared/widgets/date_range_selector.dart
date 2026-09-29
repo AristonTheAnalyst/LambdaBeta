@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_fonts.dart';
 import '../../core/styles/app_radius.dart';
@@ -8,6 +7,7 @@ import '../../core/styles/app_text_styles.dart';
 import '../../core/utils/date_range.dart';
 import 'container_styles.dart';
 import 'glass_button.dart';
+import 'month_calendar.dart';
 import 'section_divider.dart';
 import 'slide_up_modal.dart';
 
@@ -46,6 +46,11 @@ class _DateRangeSheetState extends State<_DateRangeSheet> {
     final now = DateTime.now();
     return DateTime(now.year, now.month, now.day);
   }
+
+  /// The range filter looks back a year and never past today — running history
+  /// has no future to show. These are the only bounds the calendar gets; the
+  /// grid itself has no opinion about what is selectable.
+  DateTime get _firstDate => DateTime(_today.year - 1, 1, 1);
 
   @override
   void initState() {
@@ -88,14 +93,20 @@ class _DateRangeSheetState extends State<_DateRangeSheet> {
     }
   }
 
-  void _shiftMonth(int delta) {
-    final next = DateTime(_month.year, _month.month + delta, 1);
-    if (next.isAfter(DateTime(_today.year, _today.month, 1))) return;
-    setState(() => _month = next);
+  /// Days between the pending range's ends, inclusive. A single-day pick has
+  /// start == end, so it reads as both an edge and a range — drawn solid accent,
+  /// which is what "the day you chose" should look like.
+  bool _inRange(DateTime d) {
+    final range = _selection.customRange;
+    if (range == null) return false;
+    return !d.isBefore(range.start) && !d.isAfter(range.end);
   }
 
-  bool get _canNextMonth =>
-      _month.isBefore(DateTime(_today.year, _today.month, 1));
+  bool _isEdge(DateTime d) {
+    final range = _selection.customRange;
+    if (range == null || !_inRange(d)) return false;
+    return _sameDay(d, range.start) || _sameDay(d, range.end);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -136,47 +147,15 @@ class _DateRangeSheetState extends State<_DateRangeSheet> {
             ),
             const SizedBox(height: AppSpacing.md),
             // ── Calendar ──
-            Row(
-              children: [
-                _monthNav(Icons.chevron_left, _month.isAfter(
-                  DateTime(_today.year - 1, 1, 1),
-                ), () => _shiftMonth(-1)),
-                Expanded(
-                  child: Text(
-                    DateFormat('MMMM yyyy').format(_month),
-                    textAlign: TextAlign.center,
-                    style: AppFonts.ui(
-                      fontSize: AppTextStyles.md,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.primary,
-                    ),
-                  ),
-                ),
-                _monthNav(
-                  Icons.chevron_right,
-                  _canNextMonth,
-                  () => _shiftMonth(1),
-                ),
-              ],
+            MonthCalendar(
+              month: _month,
+              onMonthChanged: (m) => setState(() => _month = m),
+              firstDate: _firstDate,
+              lastDate: _today,
+              isSelected: _isEdge,
+              isInRange: _inRange,
+              onDayTap: _onDayTap,
             ),
-            const SizedBox(height: AppSpacing.sm),
-            Row(
-              children: [
-                for (final d in const ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'])
-                  Expanded(
-                    child: Text(
-                      d,
-                      textAlign: TextAlign.center,
-                      style: AppFonts.mono(
-                        fontSize: 13,
-                        color: AppColors.muted,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.xs),
-            ..._calendarRows(),
             const SizedBox(height: AppSpacing.md),
             // ── Live label ──
             Container(
@@ -258,99 +237,4 @@ class _DateRangeSheetState extends State<_DateRangeSheet> {
     );
   }
 
-  Widget _monthNav(IconData icon, bool enabled, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: enabled ? onTap : null,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: lambdaBox(
-          enabled ? ContainerTone.ghost : ContainerTone.field,
-          radius: AppRadius.md,
-        ),
-        child: Icon(
-          icon,
-          size: 20,
-          color: enabled ? AppColors.primary : AppColors.muted,
-        ),
-      ),
-    );
-  }
-
-  List<Widget> _calendarRows() {
-    final daysInMonth = DateTime(_month.year, _month.month + 1, 0).day;
-    final leadingBlanks = DateTime(_month.year, _month.month, 1).weekday - 1;
-    final cells = <Widget>[
-      for (var i = 0; i < leadingBlanks; i++) const Expanded(child: SizedBox()),
-      for (var d = 1; d <= daysInMonth; d++)
-        _dayCell(DateTime(_month.year, _month.month, d)),
-    ];
-    final rows = <Widget>[];
-    for (var i = 0; i < cells.length; i += 7) {
-      rows.add(
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 2),
-          child: Row(
-            children: cells.sublist(
-              i,
-              (i + 7).clamp(0, cells.length),
-            ),
-          ),
-        ),
-      );
-    }
-    return rows;
-  }
-
-  Widget _dayCell(DateTime d) {
-    final future = d.isAfter(_today);
-    final range = _selection.customRange;
-    final rStart = range?.start;
-    final rEnd = range?.end;
-    final inRange =
-        rStart != null &&
-        rEnd != null &&
-        !d.isBefore(rStart) &&
-        !d.isAfter(rEnd);
-    final isEdge = inRange && (_sameDay(d, rStart) || _sameDay(d, rEnd));
-
-    Color bg = Colors.transparent;
-    Color fg = AppColors.primary;
-    if (isEdge) {
-      bg = AppColors.accent;
-      fg = AppColors.bg;
-    } else if (inRange) {
-      bg = AppColors.accentBg;
-      fg = AppColors.accent;
-    } else if (future) {
-      fg = AppColors.muted.withValues(alpha: 0.4);
-    }
-
-    return Expanded(
-      child: GestureDetector(
-        onTap: future ? null : () => _onDayTap(d),
-        child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 1),
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          decoration: BoxDecoration(
-            color: bg,
-            borderRadius: BorderRadius.circular(6),
-            border: _sameDay(d, _today) && !inRange
-                ? Border.all(
-                    color: AppColors.accent.withValues(alpha: 0.35),
-                  )
-                : null,
-          ),
-          child: Text(
-            '${d.day}',
-            textAlign: TextAlign.center,
-            style: AppFonts.mono(
-              fontSize: 13,
-              fontWeight: isEdge ? FontWeight.w700 : FontWeight.w500,
-              color: fg,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 }

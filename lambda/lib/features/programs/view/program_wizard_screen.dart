@@ -101,7 +101,9 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
 
   Future<void> _addWorkout() async {
     await Navigator.of(context, rootNavigator: true).push(
-      MaterialPageRoute(builder: (_) => PlanSessionScreen(viewModel: _vm)),
+      MaterialPageRoute(
+        builder: (_) => PlanSessionScreen(viewModel: _vm.editor),
+      ),
     );
     await _reloadWorkouts();
   }
@@ -186,7 +188,8 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
   Future<void> _openWorkout(PlannedSession w) async {
     await Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(
-        builder: (_) => PlanSessionScreen(viewModel: _vm, workout: w),
+        builder: (_) =>
+            PlanSessionScreen(viewModel: _vm.editor, workout: w),
       ),
     );
     await _reloadWorkouts();

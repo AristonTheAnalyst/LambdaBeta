@@ -21,6 +21,7 @@ class LambdaInput extends StatelessWidget {
     this.required = false,
     this.minLines,
     this.maxLines,
+    this.maxLength,
   });
 
   final TextEditingController controller;
@@ -42,6 +43,15 @@ class LambdaInput extends StatelessWidget {
   /// Multiline sizing — pass both (e.g. 2 and 6) for a notes-style field.
   final int? minLines;
   final int? maxLines;
+
+  /// Character cap, for fields taking an exercise or variation name
+  /// ([kMaxExerciseNameLength]). Null — the default — leaves the field
+  /// uncapped, which is every caller but those three.
+  ///
+  /// Material's own counter is suppressed in favour of [NameLimitCounter],
+  /// which the screens render from their state listener; two counters under one
+  /// field would be two spellings of the same number.
+  final int? maxLength;
 
   @override
   Widget build(BuildContext context) {
@@ -82,6 +92,7 @@ class LambdaInput extends StatelessWidget {
           textInputAction: textInputAction,
           minLines: minLines,
           maxLines: maxLines,
+          maxLength: maxLength,
           onChanged: onChanged,
           onSubmitted: onSubmitted,
           autocorrect: false,
@@ -94,6 +105,9 @@ class LambdaInput extends StatelessWidget {
           cursorColor: AppColors.primary,
           decoration: InputDecoration(
             hintText: placeholder,
+            // Material's counter only appears when a cap is set; the screens
+            // draw NameLimitCounter instead.
+            counterText: maxLength == null ? null : '',
             hintStyle: AppFonts.ui(
               color: AppColors.muted,
               fontSize: AppTextStyles.md,

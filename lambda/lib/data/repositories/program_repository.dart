@@ -8,6 +8,7 @@ import '../models/planned_session_exercise_set.dart';
 import '../models/planned_session.dart';
 import '../models/planned_session_program.dart';
 import '../models/program.dart';
+import '../models/program_block.dart';
 import '../models/goal.dart';
 import '../../shared/utils/unique_name.dart';
 import 'planned_session_repository.dart';
@@ -209,6 +210,28 @@ class ProgramRepository {
     );
   }
 
+  /// Bumps `program_updated_date` — the single entry point for marking a
+  /// program structurally changed.
+  ///
+  /// Call this from STRUCTURAL mutations only, never from per-set cell commits
+  /// (`quickUpdatePlannedSessionExerciseSet`), which fire on every keystroke
+  /// and would be write amplification against a dim row.
+  ///
+  /// Wired where the program id is already in hand: workout import (here) and
+  /// block CRUD (Phase 4). The template- and link-level mutations in
+  /// [PlannedSessionRepository] are NOT wired, and that is a real gap rather
+  /// than an oversight: a `dim_planned_session` row does not know which
+  /// program it belongs to — it may be standalone, or linked into zero, one or
+  /// several programs — so bumping on a template edit would cost a lookup per
+  /// affected program, and on a shared template it is ambiguous which program
+  /// "changed". Wire those when something renders or sorts by `updatedDate`.
+  Future<void> touchProgram(String programId) async {
+    await ps.safeExec(
+      'UPDATE dim_program SET program_updated_date = ? WHERE program_id = ?',
+      [DateTime.now().toUtc().toIso8601String(), programId],
+    );
+  }
+
   /// Soft-deletes a program (is_archived = 1). Its planned sessions are
   /// unlinked (join rows hard-deleted) and become standalone — they stay
   /// usable as templates. Runs are historical facts and remain.
@@ -218,6 +241,18 @@ class ProgramRepository {
       await tx.execute(
         'DELETE FROM dim_planned_session_program WHERE program_id = ?',
         [programId],
+      );
+      // Blocks go with the program. They are NOT deleted — the revision and
+      // run history references them, and an archived program's phases must
+      // stay browsable.
+      await tx.execute(
+        'UPDATE dim_program_block SET date_archived = ?, updated_date = ? '
+        'WHERE program_id = ? AND date_archived IS NULL',
+        [
+          DateTime.now().toUtc().toIso8601String(),
+          DateTime.now().toUtc().toIso8601String(),
+          programId,
+        ],
       );
       // Archive the program.
       await tx.execute(
@@ -249,6 +284,83 @@ class ProgramRepository {
     return _plannedRepo.duplicatePlannedSession(userId, source);
   }
 
+  // ── Copy-on-add ──────────────────────────────────────────────────────────
+
+  /// Imports a library workout into a program, as a private copy.
+  ///
+  /// The library is a SOURCE, not a shared dependency: the copy is independent
+  /// forever and editing it never touches the original, which stays listed in
+  /// the Workouts library exactly as it was. [`base_session_id`] records where
+  /// it came from so the program can push improvements back on request —
+  /// copies never track the base, so nothing warns when the two drift.
+  ///
+  /// Returns the new program-local session id.
+  Future<String> importWorkoutIntoProgram(
+    String userId, {
+    required String programId,
+    required String sourceSessionId,
+    int? sequenceOrder,
+    String? blockId,
+  }) async {
+    final source = await _plannedRepo.fetchPlannedSessionById(sourceSessionId);
+    if (source == null) {
+      throw StateError('Workout not found: $sourceSessionId');
+    }
+    final newId = await _plannedRepo.copySessionIntoProgram(
+      userId,
+      source: source,
+      programId: programId,
+      sequenceOrder: sequenceOrder,
+      blockId: blockId,
+    );
+    await touchProgram(programId);
+    return newId;
+  }
+
+  /// Pushes a program workout's contents back to the library original.
+  ///
+  /// A program workout with no original — one authored inside a program — gets
+  /// a NEW library workout instead, and is then linked to it, so a second push
+  /// updates that one rather than minting another duplicate.
+  ///
+  /// This is the only path that writes to a library workout from a program.
+  /// It is explicit and button-driven by design: imports are one-way until the
+  /// user says otherwise.
+  Future<void> pushWorkoutToLibrary(String userId, String sessionId) async {
+    final session = await _plannedRepo.fetchPlannedSessionById(sessionId);
+    if (session == null) throw StateError('Workout not found: $sessionId');
+
+    final linked = await ps.db.getAll(
+      'SELECT planned_session_program_id FROM dim_planned_session_program '
+      'WHERE planned_session_id = ? LIMIT 1',
+      [sessionId],
+    );
+    if (linked.isEmpty) {
+      throw StateError('Not a program workout: $sessionId');
+    }
+
+    final baseId = session.baseSessionId;
+    // An archived or missing original is the same problem: nowhere to push to.
+    final base = baseId == null
+        ? null
+        : await _plannedRepo.fetchPlannedSessionById(baseId);
+
+    if (base == null) {
+      await _plannedRepo.createLibraryFrom(
+        userId,
+        session,
+        linkedCopyId: sessionId,
+      );
+      return;
+    }
+
+    await _plannedRepo.replaceContentsFrom(
+      userId,
+      targetSessionId: base.sessionId,
+      source: session,
+    );
+  }
+
   // ── Composite reads / duplication ────────────────────────────────────────
 
   Future<ProgramWithSessions?> fetchProgramWithSessions(String programId) async {
@@ -273,6 +385,10 @@ class ProgramRepository {
     for (final link in await _plannedRepo.fetchProgramLinks(programId)) {
       linksBySessionId[link.plannedSessionId] = link;
     }
+    // Active blocks only. An archived phase is not part of the program any
+    // more, so it is not part of the copy either — and its workouts come
+    // across unassigned rather than pointing at a block that was never copied.
+    final sourceBlocks = await fetchBlocks(programId);
     final exercisesBySessionId =
         <String, List<PlannedSessionExercise>>{};
     final setsBySessionId =
@@ -311,13 +427,49 @@ class ProgramRepository {
         ],
       );
 
+      // Blocks first, so the copied links below can point at the copies. The
+      // old→new map is what makes a workout land in the block it belongs to
+      // rather than in the copy's unassigned group.
+      final newBlockIds = <String, String>{};
+      for (final block in sourceBlocks) {
+        final newBlockId = _uuid.v4();
+        newBlockIds[block.blockId] = newBlockId;
+        await tx.execute(
+          '''
+          INSERT INTO dim_program_block
+            (id, block_id, user_id, program_id, name, notes, block_order,
+             target_weeks, target_days, target_sessions, start_date, end_date,
+             date_archived, created_date, updated_date)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ''',
+          [
+            newBlockId,
+            newBlockId,
+            userId,
+            newProgramId,
+            block.name,
+            block.notes,
+            block.blockOrder,
+            block.targetWeeks,
+            block.targetDays,
+            block.targetSessions,
+            block.startDate?.toIso8601String(),
+            block.endDate?.toIso8601String(),
+            null,
+            now,
+            now,
+          ],
+        );
+      }
+
       for (final session in source.plannedSessions) {
         final newSessionId = _uuid.v4();
         await tx.execute(
           '''
           INSERT INTO dim_planned_session
-            (id, session_id, user_id, name, notes, is_archived, created_date)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
+            (id, session_id, user_id, name, notes, date_archived, created_date,
+             base_session_id)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
           ''',
           [
             newSessionId,
@@ -325,8 +477,14 @@ class ProgramRepository {
             userId,
             session.name,
             session.notes,
-            0,
+            null,
             now,
+            // Lineage is inherited, never invented: a copy of a copy is still
+            // a copy of the same library workout, so the new program points
+            // home too. Pointing at the source session instead would make the
+            // OTHER program the original, and pushing back would overwrite a
+            // workout in a program the user wasn't even looking at.
+            session.baseSessionId,
           ],
         );
 
@@ -386,8 +544,8 @@ class ProgramRepository {
             '''
             INSERT INTO dim_planned_session_program
               (id, planned_session_program_id, program_id, planned_session_id,
-               user_id, sequence_order, day_of_week, week_offset)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+               user_id, sequence_order, day_of_week, week_offset, block_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''',
             [
               newLinkId,
@@ -398,6 +556,10 @@ class ProgramRepository {
               link.sequenceOrder,
               link.dayOfWeek,
               link.weekOffset,
+              // Remapped through the block copies; null when the source link
+              // was unassigned OR pointed at an archived block, which the copy
+              // deliberately does not carry.
+              link.blockId == null ? null : newBlockIds[link.blockId],
             ],
           );
         }
@@ -407,33 +569,460 @@ class ProgramRepository {
     return newProgramId;
   }
 
+  // ── Blocks ───────────────────────────────────────────────────────────────
+
+  /// A program's active blocks, in `block_order`.
+  Future<List<ProgramBlock>> fetchBlocks(String programId) async {
+    final rows = await ps.db.getAll(
+      'SELECT * FROM dim_program_block '
+      'WHERE program_id = ? AND date_archived IS NULL ORDER BY block_order',
+      [programId],
+    );
+    return rows.map((r) => ProgramBlock.fromMap(r)).toList();
+  }
+
+  Future<ProgramBlock?> fetchBlock(String blockId) async {
+    final rows = await ps.db.getAll(
+      'SELECT * FROM dim_program_block WHERE block_id = ?',
+      [blockId],
+    );
+    if (rows.isEmpty) return null;
+    return ProgramBlock.fromMap(rows.first);
+  }
+
+  /// Creates a block, appended to the program's order.
+  ///
+  /// REST-FIRST, like [createProgram], and for the same reason: the server
+  /// enforces `(program_id, block_id)` as a composite FK on the join rows and
+  /// a single-column FK from `fact_program_run`. A block that only exists
+  /// locally would make the first "assign a workout" or "start this block"
+  /// upload fail on a server that has never seen the block. The cost is that a
+  /// fully offline user cannot create a block — accepted deliberately, because
+  /// the alternative failure mode (a run pointing at a block id that never
+  /// uploaded) is a quarantined row nobody can explain.
+  Future<ProgramBlock> createProgramBlock(
+    String userId, {
+    required String programId,
+    String? name,
+    String? notes,
+    int? targetWeeks,
+    int? targetDays,
+    int? targetSessions,
+    DateTime? startDate,
+    DateTime? endDate,
+  }) async {
+    var finalName = name;
+    if (finalName == null || finalName.trim().isEmpty) {
+      final existing = await fetchBlocks(programId);
+      final names = existing.map((b) => b.name).toSet();
+      finalName = uniqueName('Block ${existing.length + 1}', names);
+    }
+
+    // Append: read the current maximum rather than trusting a list the caller
+    // happens to hold, so two offline creations cannot both claim one order.
+    final orderRows = await ps.db.getAll(
+      'SELECT MAX(block_order) AS max_order FROM dim_program_block WHERE program_id = ?',
+      [programId],
+    );
+    final order =
+        (_toInt(orderRows.isEmpty ? null : orderRows.first['max_order']) ?? 0) +
+            1;
+
+    final id = _uuid.v4();
+    final now = DateTime.now().toUtc();
+
+    // The same exclusivity rule `updateBlock` enforces, for the same reason —
+    // see the note there. A new block should never be the thing that trips
+    // `dim_program_block_length_check`.
+    if (targetSessions != null) {
+      targetWeeks = null;
+      targetDays = null;
+      endDate = null;
+    }
+
+    await Supabase.instance.client.from('dim_program_block').insert({
+      'block_id': id,
+      'user_id': userId,
+      'program_id': programId,
+      'name': finalName,
+      'notes': notes,
+      'block_order': order,
+      'target_weeks': targetWeeks,
+      'target_days': targetDays,
+      'target_sessions': targetSessions,
+      'start_date': startDate?.toIso8601String(),
+      'end_date': endDate?.toIso8601String(),
+      'date_archived': null,
+      'created_date': now.toIso8601String(),
+      'updated_date': now.toIso8601String(),
+    }).timeout(const Duration(seconds: 8));
+
+    // No local mirror write — the same rule createProgram follows. A local
+    // insert would leave a CRUD entry that blocks the checkpoint; PowerSync
+    // downloads the row on the next sync.
+    await touchProgram(programId);
+
+    return ProgramBlock(
+      blockId: id,
+      userId: userId,
+      programId: programId,
+      name: finalName,
+      notes: notes,
+      blockOrder: order,
+      targetWeeks: targetWeeks,
+      targetDays: targetDays,
+      targetSessions: targetSessions,
+      startDate: startDate,
+      endDate: endDate,
+      createdDate: now,
+      updatedDate: now,
+    );
+  }
+
+  /// Updates a block.
+  ///
+  /// The clear flags exist because "set this to null" and "leave this alone"
+  /// cannot both be spelled with a nullable parameter — the same reason
+  /// `updateProgramLink` carries its own.
+  ///
+  /// Writing a length also settles the exclusivity rule here rather than
+  /// trusting the caller. A block is measured in weeks **or** in sessions, and
+  /// sessions mode has no calendar end (the block ends when the sessions are
+  /// done). Both are CHECK constraints on `dim_program_block`
+  /// (`dim_program_block_length_check`, `dim_program_block_sessions_no_end_check`),
+  /// so normalising at the one place these columns are written is what keeps
+  /// them unreachable from the app instead of a source of quarantined uploads.
+  /// Sessions wins when both arrive, matching `blockLengthModeOf`.
+  ///
+  /// `targetWeeks` and `targetDays` are two halves of one number — a calendar
+  /// length is whole weeks plus a remainder — so they are meant to be sent
+  /// together. The remainder's own constraints (`0..6`, and weeks-without-days)
+  /// are settled here for the same reason as the exclusivity rule.
+  ///
+  /// Lengths are applied *after* dates for that reason — a length is the last
+  /// word on whether an end date is allowed to exist.
+  Future<void> updateBlock(
+    String blockId, {
+    String? name,
+    String? notes,
+    bool clearNotes = false,
+    int? targetWeeks,
+    int? targetDays,
+    bool clearTargetDays = false,
+    bool clearWeeks = false,
+    int? targetSessions,
+    bool clearSessions = false,
+    DateTime? startDate,
+    bool clearStartDate = false,
+    DateTime? endDate,
+    bool clearEndDate = false,
+  }) async {
+    final updates = <String, dynamic>{};
+    if (name != null) updates['name'] = name;
+    if (clearNotes) {
+      updates['notes'] = null;
+    } else if (notes != null) {
+      updates['notes'] = notes;
+    }
+    if (startDate != null) updates['start_date'] = startDate.toIso8601String();
+    if (endDate != null) updates['end_date'] = endDate.toIso8601String();
+    if (clearStartDate) updates['start_date'] = null;
+    if (clearEndDate) updates['end_date'] = null;
+
+    if (targetWeeks != null) {
+      updates['target_weeks'] = targetWeeks;
+      updates['target_sessions'] = null;
+    }
+    if (targetSessions != null) {
+      updates['target_sessions'] = targetSessions;
+      updates['target_weeks'] = null;
+      updates['target_days'] = null;
+      updates['end_date'] = null;
+    }
+    if (targetDays != null) updates['target_days'] = targetDays;
+    if (clearTargetDays) updates['target_days'] = null;
+    if (clearWeeks) {
+      updates['target_weeks'] = null;
+      // A remainder with no weeks to remain from is a value nothing can read
+      // (`dim_program_block_days_need_weeks_check`) — clearing the weeks takes
+      // the days with it, whether or not the caller remembered to say so. That
+      // is why this clear runs last: the days pair cannot be written past it.
+      updates['target_days'] = null;
+    }
+    if (clearSessions) updates['target_sessions'] = null;
+
+    if (updates.isEmpty) return;
+    updates['updated_date'] = DateTime.now().toUtc().toIso8601String();
+    final (setClause, params) = _buildSetClause(updates);
+    await ps.safeExec(
+      'UPDATE dim_program_block SET $setClause WHERE block_id = ?',
+      [...params, blockId],
+    );
+    final block = await fetchBlock(blockId);
+    if (block != null) await touchProgram(block.programId);
+  }
+
+  /// Rewrites `block_order` to match [blockIdsInOrder] (1-based).
+  ///
+  /// Only blocks in the list are touched. `block_order` is scoped to the block
+  /// table alone, so reordering blocks never renumbers a workout —
+  /// `sequence_order` on the join rows stays program-global and untouched.
+  Future<void> reorderBlocks(
+    String programId,
+    List<String> blockIdsInOrder,
+  ) async {
+    if (blockIdsInOrder.isEmpty) return;
+    await ps.safeWriteTransaction((tx) async {
+      for (var i = 0; i < blockIdsInOrder.length; i++) {
+        await tx.execute(
+          'UPDATE dim_program_block SET block_order = ?, updated_date = ? '
+          'WHERE block_id = ? AND program_id = ?',
+          [
+            i + 1,
+            DateTime.now().toUtc().toIso8601String(),
+            blockIdsInOrder[i],
+            programId,
+          ],
+        );
+      }
+    });
+    await touchProgram(programId);
+  }
+
+  /// Soft-deletes a block. Its workouts are NOT deleted — they return to the
+  /// program's unassigned group, because a block is a grouping, not a
+  /// container: removing the phase must not remove the training.
+  Future<void> archiveBlock(String blockId) async {
+    final block = await fetchBlock(blockId);
+    if (block == null) return;
+    final now = DateTime.now().toUtc().toIso8601String();
+    await ps.safeWriteTransaction((tx) async {
+      await tx.execute(
+        'UPDATE dim_planned_session_program SET block_id = NULL WHERE block_id = ?',
+        [blockId],
+      );
+      await tx.execute(
+        'UPDATE dim_program_block SET date_archived = ?, updated_date = ? WHERE block_id = ?',
+        [now, now, blockId],
+      );
+    });
+    await touchProgram(block.programId);
+  }
+
+  /// Restores an archived block. Its workouts are NOT restored with it — the
+  /// membership was cleared on archive and cannot be reconstructed.
+  Future<void> reactivateBlock(String blockId) async {
+    final block = await fetchBlock(blockId);
+    if (block == null) return;
+    await ps.safeExec(
+      'UPDATE dim_program_block SET date_archived = NULL, updated_date = ? WHERE block_id = ?',
+      [DateTime.now().toUtc().toIso8601String(), blockId],
+    );
+    await touchProgram(block.programId);
+  }
+
+  Future<List<ProgramBlock>> fetchArchivedBlocks(String programId) async {
+    final rows = await ps.db.getAll(
+      'SELECT * FROM dim_program_block WHERE program_id = ? '
+      'AND date_archived IS NOT NULL ORDER BY date_archived DESC',
+      [programId],
+    );
+    return rows.map((r) => ProgramBlock.fromMap(r)).toList();
+  }
+
+  /// Deep-copies a block AND its workouts.
+  ///
+  /// The workouts are fresh copies, not links to the originals: a duplicated
+  /// block is a new phase, and editing one must never change the other. Each
+  /// copy inherits its source's `base_session_id`, so lineage still points at
+  /// the library original rather than at the block's first copy.
+  ///
+  /// Returns the new block id.
+  Future<String> duplicateBlock(
+    String userId,
+    String blockId, {
+    String? name,
+  }) async {
+    final source = await fetchBlock(blockId);
+    if (source == null) throw StateError('Block not found: $blockId');
+
+    final links = await _plannedRepo.fetchProgramLinks(
+      source.programId,
+      blockId: blockId,
+    );
+    // Read every workout up front: querying ps.db inside the transaction below
+    // would contend with the write lock it holds.
+    final sessions = <String, PlannedSession>{};
+    final exercisesBySessionId = <String, List<PlannedSessionExercise>>{};
+    final setsBySessionId = <String, List<PlannedSessionExerciseSet>>{};
+    for (final link in links) {
+      final session =
+          await _plannedRepo.fetchPlannedSessionById(link.plannedSessionId);
+      if (session == null) continue;
+      sessions[link.plannedSessionId] = session;
+      exercisesBySessionId[session.sessionId] =
+          await _plannedRepo.fetchPlannedExercises(session.sessionId);
+      setsBySessionId[session.sessionId] =
+          await _plannedRepo.fetchPlannedSets(session.sessionId);
+    }
+
+    final existing = await fetchBlocks(source.programId);
+    final finalName = name ??
+        uniqueName(
+          '${source.name} (Copy)',
+          existing.map((b) => b.name).toSet(),
+          numbered: (n) => '${source.name} (Copy $n)',
+        );
+
+    final orderRows = await ps.db.getAll(
+      'SELECT MAX(block_order) AS max_order FROM dim_program_block WHERE program_id = ?',
+      [source.programId],
+    );
+    final newOrder =
+        (_toInt(orderRows.isEmpty ? null : orderRows.first['max_order']) ?? 0) +
+            1;
+
+    final newBlockId = _uuid.v4();
+    final now = DateTime.now().toUtc();
+
+    await ps.safeWriteTransaction((tx) async {
+      await tx.execute(
+        '''
+        INSERT INTO dim_program_block
+          (id, block_id, user_id, program_id, name, notes, block_order,
+           target_weeks, target_days, target_sessions, start_date, end_date,
+           date_archived, created_date, updated_date)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''',
+        [
+          newBlockId,
+          newBlockId,
+          userId,
+          source.programId,
+          finalName,
+          source.notes,
+          newOrder,
+          source.targetWeeks,
+          source.targetDays,
+          source.targetSessions,
+          source.startDate?.toIso8601String(),
+          source.endDate?.toIso8601String(),
+          null,
+          now.toIso8601String(),
+          now.toIso8601String(),
+        ],
+      );
+
+      // The workouts, as copies. `_insertCopy` writes the session row and its
+      // children; the link is inserted here so it lands in the same
+      // transaction — a copied block holding no workouts would be a partial
+      // success nobody asked for.
+      for (final link in links) {
+        final session = sessions[link.plannedSessionId];
+        if (session == null) continue;
+        final newSessionId = await _plannedRepo.insertCopyIn(
+          tx,
+          userId,
+          source: session,
+          exercises:
+              exercisesBySessionId[session.sessionId] ?? const [],
+          sets: setsBySessionId[session.sessionId] ?? const [],
+          baseSessionId: session.baseSessionId,
+        );
+        final newLinkId = _uuid.v4();
+        await tx.execute(
+          '''
+          INSERT INTO dim_planned_session_program
+            (id, planned_session_program_id, program_id, planned_session_id,
+             user_id, sequence_order, day_of_week, week_offset, block_id)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ''',
+          [
+            newLinkId,
+            newLinkId,
+            source.programId,
+            newSessionId,
+            userId,
+            link.sequenceOrder,
+            link.dayOfWeek,
+            link.weekOffset,
+            newBlockId,
+          ],
+        );
+      }
+    });
+
+    await touchProgram(source.programId);
+    return newBlockId;
+  }
+
   // ── Goals ────────────────────────────────────────────────────────────────
 
-  Future<List<Goal>> fetchGoals(String userId, {String? programRunId}) async {
+  /// Goals, narrowed by whichever scope is given.
+  ///
+  /// - `programId` — that program's goals, **both levels**. Filtering to one
+  ///   block in Dart is the caller's job (`g.appliesDuring(run.blockId)`),
+  ///   because the usual question is "what is in force right now", and that is
+  ///   the program's goals PLUS the running block's — a union, not a filter.
+  /// - `blockId` — only when paired with `programId`: that block's own goals.
+  /// - `programRunId` — the run link, for goals created before scoping.
+  ///
+  /// With no scope at all: standalone goals. The clauses are explicit rather
+  /// than implied by "no filter given", so a goal can never be returned by a
+  /// query that did not name its scope.
+  Future<List<Goal>> fetchGoals(
+    String userId, {
+    String? programId,
+    String? blockId,
+    String? programRunId,
+  }) async {
+    final where = <String>['user_id = ?'];
+    final args = <Object?>[userId];
+
+    if (programId != null) {
+      where.add('program_id = ?');
+      args.add(programId);
+      if (blockId != null) {
+        where.add('block_id = ?');
+        args.add(blockId);
+      }
+    } else if (programRunId != null) {
+      where.add('program_run_id = ?');
+      args.add(programRunId);
+    } else {
+      where.add('program_id IS NULL AND program_run_id IS NULL');
+    }
+
     final rows = await ps.db.getAll(
-      programRunId != null
-          ? 'SELECT * FROM fact_goal WHERE user_id = ? AND program_run_id = ? ORDER BY goal_created_date'
-          : 'SELECT * FROM fact_goal WHERE user_id = ? AND program_run_id IS NULL ORDER BY goal_created_date',
-      programRunId != null ? [userId, programRunId] : [userId],
+      'SELECT * FROM fact_goal WHERE ${where.join(' AND ')} '
+      'ORDER BY goal_created_date',
+      args,
     );
     return rows.map((r) => Goal.fromMap(r)).toList();
   }
 
-  Future<void> createGoal(String userId, String runId, Goal goal) async {
+  /// Writes a goal. The goal carries its own scope — program, block, variation
+  /// and run link are all on [Goal], so there is no second place for a caller
+  /// to pass one that disagrees with the row.
+  Future<void> createGoal(String userId, Goal goal) async {
     await ps.db.execute(
       '''
       INSERT INTO fact_goal
-        (id, goal_id, program_run_id, user_id, goal_text, custom_exercise_id,
-         target_weight, target_reps, goal_created_date)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (id, goal_id, user_id, program_id, block_id, program_run_id, goal_text,
+         custom_exercise_id, custom_variation_id, target_weight, target_reps,
+         goal_created_date)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ''',
       [
         goal.goalId,
         goal.goalId,
-        runId,
         userId,
+        goal.programId,
+        goal.blockId,
+        goal.programRunId,
         goal.text,
         goal.exerciseId,
+        goal.variationId,
         goal.targetWeight,
         goal.targetReps,
         DateTime.now().toUtc().toIso8601String(),
@@ -447,4 +1036,10 @@ class ProgramRepository {
       [goalId],
     );
   }
+}
+
+int? _toInt(dynamic v) {
+  if (v == null) return null;
+  if (v is int) return v;
+  return int.tryParse('$v');
 }

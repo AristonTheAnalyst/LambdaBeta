@@ -4,7 +4,6 @@ import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_fonts.dart';
 import '../../core/styles/app_radius.dart';
 import './container_styles.dart';
-import '../../core/utils/session_format.dart';
 import '../../data/models/planned_session_exercise_set.dart';
 import '../../features/session/view/notes_modal.dart';
 import '../utils/pop_dialog.dart';
@@ -667,7 +666,7 @@ class _SessionSetRowState extends State<SessionSetRow> {
                           : '',
                       child: Text(
                         variationId != null
-                            ? truncateName(widget.initialVariationName ?? '')
+                            ? (widget.initialVariationName ?? '')
                             : '—',
                         textAlign: TextAlign.center,
                         maxLines: 1,

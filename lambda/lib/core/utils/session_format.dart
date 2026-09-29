@@ -12,8 +12,15 @@ List<num> parseValues(String input) {
 /// was removed (2026-08-22) because it wasn't respecting user input.
 String toProperCase(String s) => s;
 
-/// Truncates a display name to [max] characters plus ".." — keeps long
-/// variation names from crowding their set-row cell (the full name lives in
-/// the cell's tooltip).
-String truncateName(String s, [int max = 10]) =>
-    s.length <= max ? s : '${s.substring(0, max)}..';
+/// A program's 1–7 day assignment as a three-letter label. Null (and anything
+/// outside 1–7) is the empty string — an unassigned session shows no chip.
+String dayOfWeekLabel(int? d) => switch (d) {
+  1 => 'Mon',
+  2 => 'Tue',
+  3 => 'Wed',
+  4 => 'Thu',
+  5 => 'Fri',
+  6 => 'Sat',
+  7 => 'Sun',
+  _ => '',
+};

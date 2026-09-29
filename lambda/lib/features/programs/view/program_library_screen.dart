@@ -3,21 +3,21 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/styles/app_colors.dart';
 import '../../../../core/styles/app_fonts.dart';
 import '../../../../core/styles/app_radius.dart';
-import '../../../shared/widgets/container_styles.dart';
 import '../../../../core/styles/app_spacing.dart';
 import '../../../../core/styles/app_text_styles.dart';
 import '../../../../core/utils/session_format.dart';
 import '../../../../data/models/program.dart';
+import '../../../../data/models/program_block.dart';
+import '../../../../data/models/program_history.dart';
 import '../../../../data/models/program_progress.dart';
 import '../../../../shared/widgets/app_card.dart';
 import '../../../../shared/widgets/archived_sheet.dart';
 import '../../../../shared/widgets/glass_button.dart';
-import '../../../../shared/widgets/lambda_input.dart';
-import '../../../../shared/widgets/segmented_control.dart';
 import '../../../../shared/widgets/page_header.dart';
 import '../../../../shared/widgets/slide_up_modal.dart';
 import '../../../../shared/widgets/swipe_actions.dart';
 import 'program_wizard_screen.dart';
+import 'run_config_sheet.dart';
 import '../viewmodel/program_library_viewmodel.dart';
 
 class ProgramLibraryScreen extends StatefulWidget {
@@ -138,52 +138,37 @@ class _ProgramLibraryScreenState extends State<ProgramLibraryScreen> {
             .firstOrNull
         : null;
 
-    if (currentProgram != null) {
-      final ok = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          backgroundColor: AppColors.surface,
-          title: Text('Begin Program?',
-              style: AppFonts.ui(fontWeight: FontWeight.w800, color: AppColors.primary)),
-          content: Text(
-              'Begin "${toProperCase(p.name)}"? Your progress on '
-              '"${toProperCase(currentProgram.name)}" will reset.',
-              style: AppFonts.ui(color: AppColors.muted)),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.of(ctx).pop(false),
-                child: Text('Cancel', style: AppFonts.ui(color: AppColors.muted))),
-            TextButton(
-                onPressed: () => Navigator.of(ctx).pop(true),
-                child: Text('Begin',
-                    style: AppFonts.ui(color: AppColors.accent, fontWeight: FontWeight.w600))),
-          ],
-        ),
-      );
-      if (ok != true || !mounted) return;
+    // The blocks have to be read before the sheet opens so it can offer them —
+    // and starting a block is the reason this screen needs them at all.
+    List<ProgramBlock> blocks = const [];
+    try {
+      blocks = await _viewModel.blocksFor(p.programId);
+    } catch (_) {
+      // Offline or unreadable: the sheet simply has no blocks to offer, and
+      // beginning the whole program still works.
     }
-
     if (!mounted) return;
-    await _showBeginConfigModal(p);
-  }
 
-  /// Asks for the run's duration config: sequential → number of sessions;
-  /// calendar → number of weeks OR an end date.
-  Future<void> _showBeginConfigModal(Program p) async {
-    final result = await showDialog<_RunConfig>(
-      context: context,
-      builder: (_) => _BeginConfigDialog(program: p),
+    // Beginning a program while another is running is a destructive act — the
+    // other run ends here — so it is stated before the config, not after.
+    final result = await showRunConfigSheet(
+      context,
+      programName: p.name,
+      blocks: blocks,
+      warning: currentProgram == null
+          ? null
+          : 'This resets your progress on '
+              '"${toProperCase(currentProgram.name)}".',
     );
     if (result == null || !mounted) return;
     try {
       await _viewModel.setCurrentProgram(
         p.programId,
-        progressionMode: result.mode,
-        targetSessions: result.mode == 'order' ? result.count : null,
-        targetWeeks: (result.mode == 'frequency' && !result.useEndDate)
-            ? result.count
-            : null,
+        progressionMode: result.progressionMode,
+        targetSessions: result.targetSessions,
+        targetWeeks: result.targetWeeks,
         endDate: result.endDate,
+        blockId: result.blockId,
       );
     } catch (_) {
       // Error already set on _viewModel.state.error — the error bar and
@@ -336,6 +321,7 @@ class _ProgramLibraryScreenState extends State<ProgramLibraryScreen> {
                                 isCurrent: isCurrent,
                                 settingCurrent: settingCurrent,
                                 progress: isCurrent ? state.currentProgress : null,
+                                due: state.dueFor(p.programId),
                                 onOpen: () =>
                                     context.push('/exercises/programs/${p.programId}'),
                                 onSetCurrent: () =>
@@ -365,6 +351,7 @@ class _ProgramCard extends StatelessWidget {
     required this.onDuplicate,
     required this.onDelete,
     this.progress,
+    this.due,
   });
 
   final Program program;
@@ -377,6 +364,11 @@ class _ProgramCard extends StatelessWidget {
 
   /// Progress of the current program — shown as a bar only on the current card.
   final ProgramProgress? progress;
+
+  /// Something waiting on this program. The badge opens the program rather
+  /// than acting here: a review needs the achievements panel and the proposal
+  /// in front of it, and neither belongs on a library card.
+  final DueItem? due;
 
   @override
   Widget build(BuildContext context) {
@@ -438,6 +430,36 @@ class _ProgramCard extends StatelessWidget {
                                     color: AppColors.accent)),
                           ),
                         ],
+                        if (due != null) ...[
+                          const SizedBox(width: AppSpacing.xs),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: AppColors.accentBg,
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(
+                                color: AppColors.accent.withValues(
+                                  alpha: 0.35,
+                                ),
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.flag_outlined,
+                                    size: 12, color: AppColors.accent),
+                                const SizedBox(width: 4),
+                                Text(due!.label,
+                                    style: AppFonts.ui(
+                                        fontSize: 14,
+                                        letterSpacing: 0.5,
+                                        fontWeight: FontWeight.w800,
+                                        color: AppColors.accent)),
+                              ],
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                     if (program.description?.isNotEmpty == true) ...[
@@ -466,10 +488,29 @@ class _ProgramCard extends StatelessWidget {
               ),
             ),
             const SizedBox(height: AppSpacing.xs),
+            // A block run's numbers are already block-relative, so the only
+            // thing this line has to add is which block they belong to.
+            if (progress!.blockLabel != null)
+              Padding(
+                padding: const EdgeInsets.only(top: AppSpacing.xs),
+                child: Text(
+                  progress!.blockLabel!,
+                  style: AppFonts.ui(
+                    fontSize: AppTextStyles.sm,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.primary,
+                  ),
+                ),
+              ),
+            const SizedBox(height: AppSpacing.xs),
             Text(
-              progress!.isFinished
-                  ? 'Finished'
-                  : progress!.run.progressionMode == 'frequency'
+              // "Ready to end", not "Finished": the length is met, and the run
+              // is still current until the user says otherwise. Saying
+              // "Finished" over a row that still offers to continue is the
+              // exact confusion this rename exists to remove.
+              progress!.isLengthReached
+                  ? 'Ready to end'
+                  : !progress!.boundedBySessions
                       ? 'Week ${progress!.weekNumber} of ${progress!.totalWeeks ?? '?'} · ${progress!.remainingLabel}'
                       : '${progress!.workoutsCompletedInCycle}/${progress!.totalWorkoutsInCycle} sessions · ${progress!.remainingLabel}',
               style: AppFonts.mono(fontSize: 13, color: AppColors.muted),
@@ -497,146 +538,6 @@ class _ProgramCard extends StatelessWidget {
         ],
       ),
       ),
-    );
-  }
-}
-
-/// Result of the "Begin Program" config dialog — progression mode + duration.
-class _RunConfig {
-  const _RunConfig({
-    this.count,
-    this.endDate,
-    this.useEndDate = false,
-    this.mode = 'order',
-  });
-  final int? count;
-  final DateTime? endDate;
-  final bool useEndDate;
-  final String mode; // 'frequency' | 'order'
-}
-
-/// The "Begin Program" duration-config dialog. Stateful so it owns the
-/// [TextEditingController] — disposing a controller right after `showDialog`
-/// returns crashes because the TextField is still mounted and rebuilding
-/// during the pop animation.
-class _BeginConfigDialog extends StatefulWidget {
-  const _BeginConfigDialog({required this.program});
-
-  final Program program;
-
-  @override
-  State<_BeginConfigDialog> createState() => _BeginConfigDialogState();
-}
-
-class _BeginConfigDialogState extends State<_BeginConfigDialog> {
-  final _controller = TextEditingController();
-  bool _useEndDate = false;
-  DateTime? _endDate;
-  String _mode = 'order';
-
-  /// Frequency runs schedule by days in the week/fortnight; order runs work
-  /// through the list. The mode lives on the run, chosen here at run start.
-  bool get _isFrequency => _mode == 'frequency';
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  void _submit() {
-    final count = int.tryParse(_controller.text.trim());
-    if (_isFrequency && _useEndDate) {
-      final end = _endDate;
-      if (end == null) return;
-      Navigator.of(context).pop(_RunConfig(
-        endDate: end,
-        useEndDate: true,
-        mode: _mode,
-      ));
-    } else {
-      if (count == null || count <= 0) return;
-      Navigator.of(context).pop(_RunConfig(count: count, mode: _mode));
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final now = DateTime.now();
-    return AlertDialog(
-      backgroundColor: AppColors.surface,
-      title: Text('Begin "${toProperCase(widget.program.name)}"',
-          style: AppFonts.ui(fontWeight: FontWeight.w800, color: AppColors.primary)),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          SegmentedControl<String>(
-            subtle: true,
-            options: const [
-              SegmentOption(label: 'Order', value: 'order'),
-              SegmentOption(label: 'Frequency', value: 'frequency'),
-            ],
-            value: _mode,
-            onChange: (v) => setState(() => _mode = v),
-          ),
-          const SizedBox(height: AppSpacing.md),
-          if (_isFrequency) ...[
-            SegmentedControl<bool>(
-              subtle: true,
-              options: const [
-                SegmentOption(label: 'Weeks', value: false),
-                SegmentOption(label: 'End date', value: true),
-              ],
-              value: _useEndDate,
-              onChange: (v) => setState(() => _useEndDate = v),
-            ),
-            const SizedBox(height: AppSpacing.md),
-          ],
-          if (!_isFrequency || !_useEndDate)
-            LambdaInput(
-              controller: _controller,
-              label: _isFrequency ? 'Number of weeks' : 'Number of sessions',
-              placeholder: _isFrequency ? 'e.g. 6' : 'e.g. 12',
-              keyboardType: TextInputType.number,
-              required: true,
-            )
-          else ...[
-            Text('End date',
-                style: AppFonts.ui(fontSize: AppTextStyles.sm,
-                    fontWeight: FontWeight.w600, color: AppColors.primary)),
-            const SizedBox(height: 6),
-            GestureDetector(
-              onTap: () async {
-                final picked = await showDatePicker(
-                  context: context,
-                  initialDate: DateTime.now().add(const Duration(days: 7)),
-                  firstDate: DateTime.now(),
-                  lastDate: DateTime(now.year + 5),
-                );
-                if (picked != null) setState(() => _endDate = picked);
-              },
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                decoration: glassBox(AppColors.primary, radius: 8),
-                child: Text(_endDate != null
-                    ? '${_endDate!.day}/${_endDate!.month}/${_endDate!.year}'
-                    : 'Pick a date…',
-                    style: AppFonts.ui(color: _endDate != null ? AppColors.primary : AppColors.muted)),
-              ),
-            ),
-          ],
-        ],
-      ),
-      actions: [
-        TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text('Cancel', style: AppFonts.ui(color: AppColors.muted))),
-        TextButton(
-            onPressed: _submit,
-            child: Text('Begin',
-                style: AppFonts.ui(color: AppColors.accent, fontWeight: FontWeight.w600))),
-      ],
     );
   }
 }

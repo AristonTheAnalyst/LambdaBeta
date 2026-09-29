@@ -112,8 +112,16 @@ class SessionRepository {
     }
   }
 
-  Future<void> cancelSession(String sessionId) async {
-    // PRs are derived from sets on read — nothing extra to clean up.
+  /// Hard-deletes a logged session and everything under it — the Training
+  /// Logs delete and the live session's Cancel are the same operation.
+  ///
+  /// Sessions are facts: they hard-delete (never soft-delete), and PRs are
+  /// derived on read so there is nothing else to clean up. Children go
+  /// first and the parent last — `fact_session_exercise.session_id` is a
+  /// NO ACTION FK on the server, and the upload queue replays these in the
+  /// order they were written. `dim_lesson.session_id` is ON DELETE SET
+  /// NULL, so lessons logged during the session survive it.
+  Future<void> deleteSession(String sessionId) async {
     await ps.db.execute(
       '''
       DELETE FROM fact_session_exercise_set
@@ -131,6 +139,9 @@ class SessionRepository {
       sessionId,
     ]);
   }
+
+  /// Discards an in-progress session — same cascade as [deleteSession].
+  Future<void> cancelSession(String sessionId) => deleteSession(sessionId);
 
   Future<String?> getActiveSessionId(String userId) async {
     final rows = await ps.db.getAll(

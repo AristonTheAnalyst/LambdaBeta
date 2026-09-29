@@ -12,7 +12,9 @@ import '../../../core/utils/session_format.dart';
 import '../../../core/powersync/database.dart' as ps;
 import '../../../data/models/planned_session_exercise_set.dart';
 import '../../../data/models/session.dart';
+import '../../../shared/router/app_router.dart';
 import '../../../shared/widgets/app_card.dart';
+import '../../../shared/widgets/confirm_delete_session_dialog.dart';
 import '../../../shared/widgets/dropdown_select.dart';
 import '../../../shared/widgets/feeling_rating.dart';
 import '../../../shared/widgets/glass_button.dart';
@@ -28,10 +30,8 @@ import '../../../shared/widgets/slide_pages.dart';
 import '../../../shared/widgets/slide_up_modal.dart';
 import '../../../shared/widgets/container_styles.dart';
 import '../../../shared/widgets/section_divider.dart';
-import '../../logs/view/session_detail_screen.dart';
-import '../../logs/viewmodel/session_detail_viewmodel.dart';
+import '../../logs/view/logs_screen.dart';
 import '../viewmodel/session_viewmodel.dart';
-import 'add_exercise_modal.dart';
 import 'live_exercise_card.dart';
 import 'session_stats_bar.dart';
 
@@ -43,7 +43,7 @@ class SessionScreen extends StatefulWidget {
 }
 
 class _SessionScreenState extends State<SessionScreen>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, RouteAware {
   static SessionViewModel? _cachedVm;
 
   static void _clearCachedVm() => _cachedVm = null;
@@ -98,7 +98,22 @@ class _SessionScreenState extends State<SessionScreen>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Route-return refresh — edits made in the past-session viewer must show
+    // in the reflection surfaces (Summary's recap, the questionnaire's Last
+    // Session toggle) when the user comes back.
+    AppRouter.routeObserver.subscribe(this, ModalRoute.of(context)!);
+  }
+
+  @override
+  void didPopNext() {
+    _vm.refreshShownReflection();
+  }
+
+  @override
   void dispose() {
+    AppRouter.routeObserver.unsubscribe(this);
     WidgetsBinding.instance.removeObserver(this);
     if (ps.onSignOutReset == _resetCachedVmOnSignOut) {
       ps.onSignOutReset = null;
@@ -157,9 +172,9 @@ class _SessionScreenState extends State<SessionScreen>
     _endNotesCtrl.clear();
   }
 
-  /// Post-questionnaire Done — writes the post answers, lands Home with the
-  /// congrats banner, and clears the pre answers so the next session's
-  /// questionnaire starts blank.
+  /// Post-questionnaire Done — writes the post answers, lands Home, and
+  /// clears the pre answers so the next session's questionnaire starts
+  /// blank.
   Future<void> _completePost() async {
     await _vm.completePostQuestionnaire();
     _startNotesCtrl.clear();
@@ -465,9 +480,11 @@ class _SessionScreenState extends State<SessionScreen>
 
 // ── Page 0: Home ──────────────────────────────────────────────────────────────
 
-/// The wizard's landing page: the congrats banner after a finished session
-/// and the read-only last-session recap. The fillable pre-questionnaire
-/// lives on the next page, after Start.
+/// The wizard's landing page — the ALL SESSIONS browse: the full logs view
+/// (filters on top, session cards below; a card opens the past-session
+/// viewer) fills the page, with Start (header) kicking off the
+/// active-session flow. Keyed by the past-sets version so a finished
+/// workout remounts it with fresh data.
 class _HomePage extends StatelessWidget {
   const _HomePage({required this.vm});
 
@@ -475,207 +492,18 @@ class _HomePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Any completed history shows the card — sessions without planned names,
-    // feelings, PRs or lessons still appear, with explicit empty states.
-    final hasLastSession = vm.reflectionSession != null;
-    final stats = vm.lastCompletedStats;
-    return Column(
-      children: [
-        // The wizard's closing step — shown until the next session starts.
-        if (vm.sessionJustCompleted)
-          Container(
-            margin: const EdgeInsets.fromLTRB(
-              AppSpacing.lg,
-              AppSpacing.lg,
-              AppSpacing.lg,
-              0,
-            ),
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.lg,
-              vertical: AppSpacing.md,
-            ),
-            decoration: BoxDecoration(
-              color: AppColors.successBg,
-              borderRadius: BorderRadius.circular(AppRadius.md),
-              border: Border.all(color: AppColors.success),
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(
-                  Icons.check_circle_outline,
-                  size: 18,
-                  color: AppColors.success,
-                ),
-                const SizedBox(width: AppSpacing.sm),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Session complete, rest well and see you soon',
-                        style: AppFonts.ui(
-                          fontSize: AppTextStyles.sm,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.success,
-                        ),
-                      ),
-                      if (stats != null) ...[
-                        const SizedBox(height: 2),
-                        Text(
-                          '${stats.sets} sets · ${stats.exercises} exercises · ${stats.prs} PRs',
-                          style: AppFonts.mono(
-                            fontSize: 14,
-                            color: AppColors.success,
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        // The header always shows — the picker/pager degrade to disabled
-        // when there is no completed history yet.
-        Padding(
-          padding: const EdgeInsets.fromLTRB(
-            AppSpacing.lg,
-            AppSpacing.lg,
-            AppSpacing.lg,
-            AppSpacing.md,
-          ),
-          child: _HomeSessionHeader(vm: vm),
-        ),
-        if (hasLastSession)
-          Expanded(
-            // Keyed by session so paging to another session remounts a
-            // fresh viewer (fresh VM + load).
-            child: _HomeSessionViewer(
-              key: ValueKey(vm.reflectionSession!.sessionId),
-              sessionId: vm.reflectionSession!.sessionId,
-            ),
-          ),
-      ],
+    return LogsScreen(
+      key: ValueKey('home-logs-${vm.pastSetsVersion}'),
+      showHeader: false,
+      // A deleted session must leave the reflection card too — the recap
+      // and the live PR baselines both read the VM's timeline, which only
+      // this list's own reload doesn't touch. Reloading bumps
+      // pastSetsVersion, so the list remounts from the same fresh read.
+      onSessionDeleted: (_) => vm.refreshShownReflection(),
     );
   }
 }
 
-/// The embedded past-session viewer — the same Details/Summary toggle and
-/// surfaces as the /logs route, rendered inline under the Home header.
-class _HomeSessionViewer extends StatefulWidget {
-  const _HomeSessionViewer({super.key, required this.sessionId});
-
-  final String sessionId;
-
-  @override
-  State<_HomeSessionViewer> createState() => _HomeSessionViewerState();
-}
-
-class _HomeSessionViewerState extends State<_HomeSessionViewer> {
-  final _vm = SessionDetailViewModel();
-
-  @override
-  void initState() {
-    super.initState();
-    _vm.load(widget.sessionId);
-  }
-
-  @override
-  void dispose() {
-    _vm.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return ValueListenableBuilder<SessionDetailState>(
-      valueListenable: _vm.state,
-      builder: (context, state, _) {
-        if (state.isLoading) {
-          return Center(
-            child: CircularProgressIndicator(color: AppColors.accent),
-          );
-        }
-        return SessionDetailView(viewModel: _vm, state: state);
-      },
-    );
-  }
-}
-
-/// The Home page's session header — the previous-session picker and pager,
-/// with the shown session's date and planned source (planned name, or
-/// "Freestyle Session") next to it.
-class _HomeSessionHeader extends StatelessWidget {
-  const _HomeSessionHeader({required this.vm});
-
-  final SessionViewModel vm;
-
-  @override
-  Widget build(BuildContext context) {
-    final session = vm.reflectionSession;
-    final plannedName = session?.plannedSessionName;
-    return AppCard(
-      padding: const EdgeInsets.all(AppSpacing.md),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // The shown session's date anchors the pager.
-                Text(
-                  session == null
-                      ? ''
-                      : DateFormat('MMM d').format(session.createdDatetime),
-                  style: AppFonts.mono(
-                    fontSize: 13,
-                    letterSpacing: 0.8,
-                    color: AppColors.muted,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  session == null
-                      ? ''
-                      : (plannedName ?? 'Freestyle Session'),
-                  style: AppFonts.ui(
-                    fontSize: AppTextStyles.sm,
-                    fontWeight: FontWeight.w700,
-                    color: plannedName != null
-                        ? AppColors.planned
-                        : AppColors.muted,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-          ),
-          // All-sessions picker — jumps to any completed session instead of
-          // paging one step at a time.
-          _pagerButton(
-            Icons.list_alt,
-            vm.completedSessionCount > 0,
-            () => _openSessionPicker(context, vm),
-          ),
-          const SizedBox(width: AppSpacing.sm),
-          _pagerButton(
-            Icons.chevron_left,
-            vm.reflectionCanGoOlder,
-            vm.showOlderReflectionSession,
-          ),
-          const SizedBox(width: AppSpacing.sm),
-          _pagerButton(
-            Icons.chevron_right,
-            vm.reflectionCanGoNewer,
-            vm.showNewerReflectionSession,
-          ),
-        ],
-      ),
-    );
-  }
-}
 
 // ── Page 1: Pre-Evaluation ───────────────────────────────────────────────────
 
@@ -1069,8 +897,41 @@ class _SessionPickerSheet extends StatefulWidget {
 }
 
 class _SessionPickerSheetState extends State<_SessionPickerSheet> {
-  late final Future<List<SessionWithSets>> _sessions = widget.vm
-      .loadCompletedSessions();
+  /// Null until the first load lands — drives the sheet's spinner.
+  List<SessionWithSets>? _sessions;
+
+  /// One global walk per load — the VM's timeline is loaded well before the
+  /// picker can be reached (it lives on the Summary page).
+  Map<String, Map<String, int>> _prCounts = const {};
+
+  @override
+  void initState() {
+    super.initState();
+    _reload();
+  }
+
+  /// Refetches the rows and the trophy counts. Called on open and after a
+  /// delete; `deleteCompletedSession` has already rebuilt the VM's timeline
+  /// by the time we read the counts, so they can't be stale.
+  Future<void> _reload() async {
+    final sessions = await widget.vm.loadCompletedSessions();
+    if (!mounted) return;
+    setState(() {
+      _sessions = sessions;
+      _prCounts = widget.vm.prCountsByCompletedSession();
+    });
+  }
+
+  /// The card's ⋮ → Delete Session. Safe from this sheet: the picker lists
+  /// completed sessions only, so the in-progress workout can never be the
+  /// row behind the menu.
+  Future<void> _confirmDelete(SessionWithSets w) async {
+    final ok = await confirmDeleteSession(context, setCount: w.sets.length);
+    if (!ok || !mounted) return;
+    await widget.vm.deleteCompletedSession(w.session.sessionId);
+    if (!mounted) return;
+    await _reload();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1099,51 +960,46 @@ class _SessionPickerSheetState extends State<_SessionPickerSheet> {
                 ),
               ),
             ),
-            Flexible(
-              child: FutureBuilder<List<SessionWithSets>>(
-                future: _sessions,
-                builder: (context, snap) {
-                  final list = snap.data;
-                  if (list == null) {
-                    return Padding(
-                      padding: const EdgeInsets.all(AppSpacing.xl),
-                      child: Center(
-                        child: CircularProgressIndicator(
-                          color: AppColors.accent,
-                        ),
-                      ),
-                    );
-                  }
-                  if (list.isEmpty) {
-                    return Padding(
-                      padding: const EdgeInsets.all(AppSpacing.xl),
-                      child: Center(
-                        child: Text(
-                          'No completed sessions yet',
-                          style: TextStyle(
-                            color: AppColors.muted,
-                            fontSize: AppTextStyles.sm,
-                          ),
-                        ),
-                      ),
-                    );
-                  }
-                  return ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(
-                      AppSpacing.lg,
-                      AppSpacing.xs,
-                      AppSpacing.lg,
-                      AppSpacing.xl,
-                    ),
-                    itemCount: list.length,
-                    itemBuilder: (context, i) => _pickerRow(context, list[i]),
-                  );
-                },
-              ),
-            ),
+            Flexible(child: _body(context)),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _body(BuildContext context) {
+    final list = _sessions;
+    if (list == null) {
+      return Padding(
+        padding: const EdgeInsets.all(AppSpacing.xl),
+        child: Center(
+          child: CircularProgressIndicator(color: AppColors.accent),
+        ),
+      );
+    }
+    if (list.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.all(AppSpacing.xl),
+        child: Center(
+          child: Text(
+            'No completed sessions yet',
+            style: TextStyle(
+              color: AppColors.muted,
+              fontSize: AppTextStyles.sm,
+            ),
+          ),
+        ),
+      );
+    }
+    return ListView.builder(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.lg,
+        AppSpacing.xs,
+        AppSpacing.lg,
+        AppSpacing.xl,
+      ),
+      itemCount: list.length,
+      itemBuilder: (context, i) => _pickerRow(context, list[i]),
     );
   }
 
@@ -1151,6 +1007,8 @@ class _SessionPickerSheetState extends State<_SessionPickerSheet> {
     return SessionLogCard(
       workout: w,
       selected: w.session.sessionId == widget.vm.reflectionSession?.sessionId,
+      prsByExercise: _prCounts[w.session.sessionId] ?? const {},
+      onDelete: () => _confirmDelete(w),
       onTap: () {
         Navigator.of(context, rootNavigator: true).pop();
         widget.vm.selectReflectionSession(w.session.sessionId);
@@ -1199,7 +1057,7 @@ class _SessionTemplateCard extends StatelessWidget {
                 children: [
                   if (vm.selectedPlannedSession != null) ...[
                     Text(
-                      'Week ${vm.programProgress!.weekNumber} · ${vm.programProgress!.program.name}',
+                      vm.programProgress!.kickerLine,
                       style: AppFonts.mono(
                         fontSize: 13,
                         letterSpacing: 0.6,
@@ -1293,9 +1151,21 @@ class _TrainingPage extends StatelessWidget {
 
   /// Idle: template picker + read-only planned-set preview of the selection.
   Widget _buildIdle(BuildContext context) {
+    final finishedBlock = vm.finishedBlock;
     return ListView(
       padding: const EdgeInsets.all(AppSpacing.lg),
       children: [
+        // The block's last session is logged, and nothing has ended it. Said
+        // here — the screen the user lands on after a session — because the
+        // program screens are a tab away, and a phase that has run its length
+        // is worth knowing about at the moment it happens.
+        if (finishedBlock != null) ...[
+          _BlockCompleteBanner(
+            blockName: finishedBlock.name,
+            programId: vm.programProgress!.program.programId,
+          ),
+          const SizedBox(height: AppSpacing.md),
+        ],
         // Always shown while idle — with nothing selected it is the freestyle
         // identity card (icon + sub-line), not an empty shell.
         _SessionTemplateCard(
@@ -1330,8 +1200,7 @@ class _TrainingPage extends StatelessWidget {
                     key: ValueKey(vm.activeSlot!.id),
                     vm: vm,
                     slot: vm.activeSlot!,
-                    onRemoveExercise: () =>
-                        onRemoveExercise(vm.activeSlotIndex),
+                    onRemoveExercise: onRemoveExercise,
                   ),
           ),
         ),
@@ -1564,6 +1433,72 @@ Future<void> _showWorkoutPickerSheet(
     );
 }
 
+/// "You've completed this training block" — shown on the idle training page
+/// when the block the current run follows has reached its length.
+///
+/// A statement plus one action, not a dialog: nothing is blocked, the session
+/// picker below it still works, and the phase-ending decision belongs on the
+/// program screen where the block's numbers and its history both live. The
+/// alternative — ending the block from here — would be this screen making a
+/// call it cannot show the consequences of.
+class _BlockCompleteBanner extends StatelessWidget {
+  const _BlockCompleteBanner({
+    required this.blockName,
+    required this.programId,
+  });
+
+  final String blockName;
+  final String programId;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: lambdaBox(ContainerTone.accent, radius: AppRadius.lg),
+      child: Row(
+        children: [
+          Icon(Icons.emoji_events_outlined, size: 20, color: AppColors.accent),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  "You've completed this training block",
+                  style: AppFonts.ui(
+                    fontSize: AppTextStyles.sm,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.primary,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '${toProperCase(blockName)} has run its length.',
+                  style: AppFonts.ui(
+                    fontSize: AppTextStyles.xs,
+                    color: AppColors.muted,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          // `go` rather than `push`: the program detail route lives under the
+          // Exercises branch, and pushing it from here would stack a second
+          // branch's screen over the session tab's wizard — with a Back button
+          // that lands mid-session. Switching branches is what the user means
+          // by "take me to the program".
+          GlassButton(
+            label: 'Go to program',
+            compact: true,
+            onPressed: () => context.go('/exercises/programs/$programId'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// The Training page's pre-start preview, rendered like the live session:
 /// exercise pill bar + the exercise card's grid.
 ///
@@ -1601,8 +1536,8 @@ class _SessionPreviewState extends State<_SessionPreview> {
       ],
       activeIndex: activeIndex,
       onSelect: (i) => setState(() => _selectedIndex = i),
-      // No onMove/onAdd/onDeleteRequest — the preview is read-only (the
-      // shared card greys the arrows and Add row, hides the delete X).
+      // No onMove/onAdd — the preview is read-only (the shared card greys
+      // the reorder arrows and the Add row).
       planned: true,
       rows: _previewRows(vm, exerciseId),
       // No pills / history / ADD SET — all greyed or hidden via nulls.
@@ -1735,7 +1670,7 @@ class _PlaceholderExerciseCard extends StatelessWidget {
       exerciseNames: const ['Add your first exercise'],
       activeIndex: 0,
       onSelect: (_) {},
-      onAdd: () => showAddExerciseModal(context, vm: vm),
+      onAdd: () => showSessionExercisePicker(context, vm),
       rows: [
         Padding(
           padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),

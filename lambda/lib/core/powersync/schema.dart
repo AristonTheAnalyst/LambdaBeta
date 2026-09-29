@@ -96,6 +96,69 @@ const schema = Schema([
     Column.text('ended_date'),
     Column.integer('is_current'),
     Column.text('progression_mode'),
+    // The block being followed; NULL = a blockless run. Every run before this
+    // column existed is NULL, so blockless rendering is byte-identical.
+    Column.text('block_id'),
+  ]),
+  // An ordered, duration-bounded phase of a program, holding workouts and (from
+  // the goals phase) goals. A program either uses blocks or doesn't — never
+  // mixed. `date_archived` rather than `is_archived` because a block is named,
+  // dated and user-visible with its own run/revision trail to keep browsable.
+  Table('dim_program_block', [
+    Column.text('block_id'),
+    Column.text('user_id'),
+    Column.text('program_id'),
+    Column.text('name'),
+    Column.text('notes'),
+    Column.integer('block_order'),
+    Column.integer('target_weeks'),
+    Column.integer('target_days'),
+    Column.integer('target_sessions'),
+    Column.text('start_date'),
+    Column.text('end_date'),
+    Column.text('date_archived'),
+    Column.text('created_date'),
+    Column.text('updated_date'),
+  ]),
+  // An immutable snapshot of a program's contents — one row per version.
+  // Read-only from the client's perspective (write-once, never updated), and
+  // only ever inserted off a `captureRevision` transaction.
+  Table('fact_program_revision', [
+    Column.text('revision_id'),
+    Column.text('user_id'),
+    Column.text('program_id'),
+    Column.text('block_id'),
+    Column.text('block_run_id'),
+    Column.text('review_id'),
+    Column.integer('revision_number'),
+    Column.text('reason'),
+    Column.text('content_json'),
+    Column.text('content_hash'),
+    Column.integer('session_count'),
+    Column.integer('exercise_count'),
+    Column.integer('set_count'),
+    Column.text('created_date'),
+  ]),
+  // The checkpoints a program's run passes through — one row per review, per
+  // proposed change, and per run close. `completed_date` NULL is what makes a
+  // review open; there is no status column to keep in sync with it.
+  Table('fact_program_review', [
+    Column.text('review_id'),
+    Column.text('user_id'),
+    Column.text('program_id'),
+    Column.text('block_id'),
+    Column.text('program_run_id'),
+    Column.text('kind'),
+    Column.text('title'),
+    Column.text('notes'),
+    Column.text('scheduled_for'),
+    Column.text('completed_date'),
+    Column.text('outcome'),
+    Column.text('proposed_content'),
+    Column.text('proposed_hash'),
+    Column.text('achievements_json'),
+    Column.text('revision_id'),
+    Column.text('created_date'),
   ]),
   Table('dim_lesson', [
     Column.text('lesson_id'),
@@ -119,6 +182,10 @@ const schema = Schema([
     Column.text('notes'),
     Column.text('date_archived'),
     Column.text('created_date'),
+    // Copy-on-add provenance. NULL = this workout originated here; set = this
+    // is a program copy of the library workout it names. Plain ref (no FK):
+    // an offline create→import must not be able to fail an FK on upload.
+    Column.text('base_session_id'),
   ]),
   Table('dim_pr_view_setting', [
     Column.text('pr_view_setting_id'),
@@ -135,6 +202,10 @@ const schema = Schema([
     Column.integer('sequence_order'),
     Column.integer('day_of_week'),
     Column.integer('week_offset'),
+    // The block this workout belongs to; NULL = a blockless program. The
+    // server enforces (program_id, block_id) as a composite FK, so a workout
+    // can only join a block of its own program.
+    Column.text('block_id'),
   ]),
   Table('dim_planned_session_exercise', [
     Column.text('planned_exercise_id'),
@@ -161,9 +232,16 @@ const schema = Schema([
     Column.text('user_id'),
     Column.text('goal_text'),
     Column.text('custom_exercise_id'),
+    // The scope: a program, or a block of one. NULL program = standalone.
+    Column.text('program_id'),
+    Column.text('block_id'),
+    // Narrows the goal to one variation; NULL = any variation counts.
+    Column.text('custom_variation_id'),
     Column.text('target_weight'),
     Column.integer('target_reps'),
     Column.text('goal_created_date'),
-    Column.text('achieved_date'),
+    // `achieved_date` is deliberately absent — a goal's outcome is a per-run
+    // fact now, frozen into fact_program_review.achievements_json at close.
+    // See 20260927000004_program_goal_scoping.sql.
   ]),
 ]);

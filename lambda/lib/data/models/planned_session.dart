@@ -9,6 +9,7 @@ class PlannedSession {
     this.notes,
     this.archivedDate,
     this.createdDate,
+    this.baseSessionId,
   });
 
   final String sessionId;
@@ -23,6 +24,19 @@ class PlannedSession {
 
   final DateTime? createdDate;
 
+  /// Copy-on-add provenance: the library workout this is a copy of.
+  ///
+  /// NULL means the workout originated where it is — a library workout, or one
+  /// authored inside a program. Set means this is a program-local copy, and
+  /// names the original it came from. Copies never track the base (no
+  /// "your copy is behind" state) — it exists so a program edit can push back
+  /// to the original on request, and so duplication can inherit lineage rather
+  /// than inventing a new root.
+  final String? baseSessionId;
+
+  /// Whether this workout is a program copy rather than a library original.
+  bool get isCopy => baseSessionId != null;
+
   factory PlannedSession.fromMap(Map<String, dynamic> map) => PlannedSession(
         sessionId: map['session_id'] as String,
         userId: map['user_id'] as String,
@@ -34,6 +48,7 @@ class PlannedSession {
         createdDate: map['created_date'] != null
             ? DateTime.tryParse(map['created_date'] as String)
             : null,
+        baseSessionId: map['base_session_id'] as String?,
       );
 
   Map<String, dynamic> toMap() => {
@@ -43,5 +58,6 @@ class PlannedSession {
         'notes': notes,
         'date_archived': archivedDate?.toIso8601String(),
         'created_date': createdDate?.toIso8601String(),
+        'base_session_id': baseSessionId,
       };
 }

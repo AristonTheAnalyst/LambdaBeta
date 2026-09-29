@@ -1,7 +1,10 @@
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../data/models/program.dart';
+import '../../../data/models/program_block.dart';
+import '../../../data/models/program_history.dart';
 import '../../../data/models/program_progress.dart';
+import '../../../data/repositories/program_history_repository.dart';
 import '../../../data/repositories/program_repository.dart';
 import '../../../data/repositories/program_run_repository.dart';
 
@@ -16,6 +19,7 @@ class ProgramLibraryState {
     this.createName = '',
     this.isCreating = false,
     this.currentProgress,
+    this.dueItems = const {},
   });
 
   final bool isLoading;
@@ -31,7 +35,14 @@ class ProgramLibraryState {
   /// Progress of the current program (null when none is current).
   final ProgramProgress? currentProgress;
 
-  /// Current program pinned to the top, rest by created-date desc.
+  /// What each program is waiting on, keyed by program id.
+  ///
+  /// A map rather than a list because every reader asks "does THIS program have
+  /// something due?" while rendering a card it already has. Empty is the norm —
+  /// a due item is rare, and a card with none renders nothing.
+  final Map<String, DueItem> dueItems;
+
+  /// The current program pinned to the top, rest by created-date desc.
   List<Program> get sortedPrograms {
     final sorted = [...programs];
     sorted.sort((a, b) {
@@ -41,6 +52,8 @@ class ProgramLibraryState {
     });
     return sorted;
   }
+
+  DueItem? dueFor(String programId) => dueItems[programId];
 
   ProgramLibraryState copyWith({
     bool? isLoading,
@@ -55,6 +68,7 @@ class ProgramLibraryState {
     String? createName,
     bool? isCreating,
     ProgramProgress? currentProgress,
+    Map<String, DueItem>? dueItems,
   }) =>
       ProgramLibraryState(
         isLoading: isLoading ?? this.isLoading,
@@ -70,6 +84,7 @@ class ProgramLibraryState {
         createName: createName ?? this.createName,
         isCreating: isCreating ?? this.isCreating,
         currentProgress: currentProgress ?? this.currentProgress,
+        dueItems: dueItems ?? this.dueItems,
       );
 }
 
@@ -77,11 +92,14 @@ class ProgramLibraryViewModel {
   ProgramLibraryViewModel({
     ProgramRepository? repo,
     ProgramRunRepository? runRepo,
+    ProgramHistoryRepository? historyRepo,
   })  : _repo = repo ?? ProgramRepository(),
-        _runRepo = runRepo ?? ProgramRunRepository();
+        _runRepo = runRepo ?? ProgramRunRepository(),
+        _historyRepo = historyRepo ?? ProgramHistoryRepository();
 
   final ProgramRepository _repo;
   final ProgramRunRepository _runRepo;
+  final ProgramHistoryRepository _historyRepo;
   final state = ValueNotifier(const ProgramLibraryState());
 
   String get _userId => Supabase.instance.client.auth.currentUser!.id;
@@ -105,15 +123,36 @@ class ProgramLibraryViewModel {
           progress = await _runRepo.getProgress(_userId);
         } catch (_) {}
       }
+      final due = await _dueItems();
       state.value = state.value.copyWith(
         isLoading: false,
         programs: programs,
         currentProgramId: currentRun?.programId,
         clearCurrentProgramId: currentRun == null,
         currentProgress: progress,
+        dueItems: due,
       );
     } catch (e) {
       state.value = state.value.copyWith(isLoading: false, error: e.toString());
+    }
+  }
+
+  /// The due prompts, keyed by program.
+  ///
+  /// Swallows its failure on purpose: a due check that throws must not blank a
+  /// library that loaded perfectly well — the badge is an addition to the
+  /// screen, not the screen. At most one item per program is kept, earliest
+  /// first, because a card can only show one.
+  Future<Map<String, DueItem>> _dueItems() async {
+    try {
+      final items = await _historyRepo.fetchDueItems(_userId);
+      final out = <String, DueItem>{};
+      for (final item in items) {
+        out.putIfAbsent(item.programId, () => item);
+      }
+      return out;
+    } catch (_) {
+      return const {};
     }
   }
 
@@ -167,12 +206,21 @@ class ProgramLibraryViewModel {
     }
   }
 
+  /// The program's active blocks, for the begin sheet's run picker.
+  ///
+  /// Not held in state: the list is read on demand for one sheet, and caching
+  /// it would mean invalidating it every time a block is edited on another
+  /// screen. A read of a handful of local rows is cheaper than that bookkeeping.
+  Future<List<ProgramBlock>> blocksFor(String programId) =>
+      _repo.fetchBlocks(programId);
+
   Future<void> setCurrentProgram(
     String programId, {
     String? progressionMode,
     int? targetSessions,
     int? targetWeeks,
     DateTime? endDate,
+    String? blockId,
   }) async {
     if (_disposed) return;
     state.value = state.value.copyWith(settingCurrentId: programId, clearError: true);
@@ -184,7 +232,8 @@ class ProgramLibraryViewModel {
           progressionMode: progressionMode,
           targetSessions: targetSessions,
           targetWeeks: targetWeeks,
-          endDate: endDate);
+          endDate: endDate,
+          blockId: blockId);
       if (_disposed) return;
       state.value = state.value.copyWith(
         clearSettingCurrentId: true,

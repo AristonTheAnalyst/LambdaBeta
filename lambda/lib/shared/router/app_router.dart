@@ -18,6 +18,7 @@ import '../../features/logs/view/logs_screen.dart';
 import '../../features/logs/view/session_detail_screen.dart';
 import '../../features/onboarding/view/onboarding_screen.dart';
 import '../../features/programs/view/program_detail_screen.dart';
+import '../../features/programs/view/program_history_screen.dart';
 import '../../features/programs/view/program_library_screen.dart';
 import '../../features/profile/view/profile_detail_screen.dart';
 import '../../features/profile/view/profile_hub_screen.dart';
@@ -83,6 +84,20 @@ abstract final class AppRouter {
       GoRoute(path: '/reset-password',  builder: (_, _) => ResetPasswordScreen()),
       GoRoute(path: '/onboarding',      builder: (_, _) => OnboardingScreen()),
 
+      // ── Logs (pushed from the Session tab — no nav tab) ──────────────────
+      GoRoute(
+        path: '/logs',
+        builder: (_, _) => LogsScreen(),
+        routes: [
+          GoRoute(
+            path: ':id',
+            builder: (_, state) => SessionDetailScreen(
+              sessionId: state.pathParameters['id']!,
+            ),
+          ),
+        ],
+      ),
+
       // ── Tab shell ─────────────────────────────────────────────────────────
       ShellRoute(
         builder: (context, state, child) => _TabShell(
@@ -93,18 +108,6 @@ abstract final class AppRouter {
           GoRoute(
             path: '/session',
             builder: (_, _) => SessionScreen(),
-          ),
-          GoRoute(
-            path: '/logs',
-            builder: (_, _) => LogsScreen(),
-            routes: [
-              GoRoute(
-                path: ':id',
-                builder: (_, state) => SessionDetailScreen(
-                  sessionId: state.pathParameters['id']!,
-                ),
-              ),
-            ],
           ),
           GoRoute(
             path: '/exercises',
@@ -127,6 +130,17 @@ abstract final class AppRouter {
                     builder: (_, state) => ProgramDetailScreen(
                       programId: state.pathParameters['id']!,
                     ),
+                    routes: [
+                      GoRoute(
+                        path: 'history',
+                        // `?block=<id>` opens already scoped to that block —
+                        // how a block editor links to its own phase's history.
+                        builder: (_, state) => ProgramHistoryScreen(
+                          programId: state.pathParameters['id']!,
+                          initialBlockId: state.uri.queryParameters['block'],
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -163,7 +177,7 @@ class _TabShell extends StatelessWidget {
   final Widget child;
 
   static const _tabRoots = [
-    '/session', '/logs', '/exercises', '/profile', '/dev',
+    '/session', '/exercises', '/profile', '/dev',
   ];
 
   bool get _showBottomNav => _tabRoots.contains(currentRoute);

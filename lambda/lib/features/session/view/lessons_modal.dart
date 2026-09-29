@@ -12,7 +12,7 @@ import '../../../shared/widgets/swipe_actions.dart';
 
 /// Bound to a [Listenable] + a handful of callbacks rather than a concrete
 /// viewmodel type, so both `SessionViewModel` (a `ChangeNotifier`) and
-/// `ProgramDetailViewModel` (a `ValueNotifier<ProgramDetailState>`) can
+/// `WorkoutEditorViewModel` (a `ValueNotifier<WorkoutEditorState>`) can
 /// reuse this same modal for the exact same `fact_lesson` data — lessons are
 /// per-exercise and cross-session, not tied to either feature.
 void showLessonsModal(

@@ -20,7 +20,6 @@ class BottomNavItem {
 /// Dev tools (and the destructive server-side "Clear All Tables" action
 /// behind them) must never reach shipping builds — gate on debug/profile.
 final _navItems = [
-  const BottomNavItem(label: 'Logs',       icon: Icons.list_alt,  route: '/logs'),
   const BottomNavItem(label: 'Session',    icon: Icons.play_circle_outline, route: '/session'),
   const BottomNavItem(label: 'Library',    icon: Icons.local_library_outlined, route: '/exercises'),
   const BottomNavItem(label: 'Profile',    icon: Icons.person_outline, route: '/profile'),

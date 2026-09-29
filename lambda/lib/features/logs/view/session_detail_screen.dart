@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
-import '../../../core/styles/app_radius.dart';
 import '../../../core/styles/app_spacing.dart';
 import '../../../core/utils/session_format.dart';
 import '../../../data/models/lesson.dart';
 import '../../../data/models/session_exercise_set.dart';
 import '../../../shared/mixins/unsaved_changes_guard.dart';
+import '../../../shared/widgets/add_exercise_modal.dart';
 import '../../../shared/widgets/app_card.dart';
 import '../../../shared/widgets/dropdown_select.dart';
 import '../../../shared/widgets/glass_button.dart';
@@ -16,10 +16,8 @@ import '../../../shared/widgets/reflection_summary.dart';
 import '../../../shared/widgets/segmented_control.dart';
 import '../../../shared/widgets/session_bookend.dart';
 import '../../../shared/widgets/session_identity_card.dart';
-import '../../../shared/widgets/container_styles.dart';
 import '../../../shared/widgets/session_exercise_card.dart';
 import '../../../shared/widgets/session_set_row.dart';
-import '../../../shared/widgets/slide_up_modal.dart';
 import '../../../shared/widgets/stats_row.dart';
 import '../../session/model/pr_engine.dart';
 import '../../session/view/lessons_modal.dart';
@@ -284,11 +282,79 @@ class _SessionDetailViewState extends State<SessionDetailView> {
   }
 
   void _showAddExercise(BuildContext context) {
-    showLambdaModal(
+    final vm = widget.viewModel;
+    showAddExerciseModal(
       context,
-      fitContent: true,
-      keyboardAware: true,
-      child: _DetailAddExerciseContent(viewModel: widget.viewModel),
+      listenable: vm.state,
+      entries: () {
+        final s = vm.state.value;
+        return [
+          for (final e in s.exerciseDetailMap.values)
+            AddExerciseEntry(
+              exerciseId: e.exerciseId,
+              name: toProperCase(e.name),
+              lastUsed: lastUsedFromHistory(s.historyByExercise, e.exerciseId),
+            ),
+        ];
+      },
+      isAdded: (id) =>
+          vm.state.value.exerciseSlots.any((slot) => slot.exerciseId == id),
+      onAdd: vm.addExerciseGroup,
+      onRemoveRequest: (id) async {
+        final i = vm.state.value.exerciseSlots.indexWhere(
+          (slot) => slot.exerciseId == id,
+        );
+        if (i >= 0) _confirmRemoveExercise(i);
+      },
+      onCreate: vm.submitNewExercise,
+      isCreating: () => vm.state.value.newExCreating,
+    );
+  }
+
+  /// Remove-exercise confirmation, addressed by slot index. Lives on the screen
+  /// rather than on the card because the exercise picker identifies an exercise
+  /// by id, not by the tab the card happens to be showing.
+  void _confirmRemoveExercise(int index) {
+    final state = widget.viewModel.state.value;
+    final slot = state.exerciseSlots[index];
+    final name = toProperCase(widget.viewModel.exerciseDisplayName(slot.exerciseId));
+    final setCount = state.setsFor(slot.groupOrder).length;
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: Text(
+          'Remove Exercise',
+          style: AppFonts.ui(
+            fontWeight: FontWeight.w800,
+            color: AppColors.danger,
+          ),
+        ),
+        content: Text(
+          'Remove $name from this workout?\n$setCount set${setCount == 1 ? '' : 's'} will be removed.',
+          style: AppFonts.ui(color: AppColors.muted),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text('Keep', style: AppFonts.ui(color: AppColors.muted)),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              widget.viewModel.removeExerciseGroup(index);
+            },
+            child: Text(
+              'Remove',
+              style: AppFonts.ui(
+                color: AppColors.danger,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -443,8 +509,8 @@ class _SessionPrsBody extends StatelessWidget {
 
 /// The past-session viewer's exercise card — an adapter over the shared
 /// [SessionExerciseCard]. View mode greys edit-only affordances (reorder,
-/// add, hold-to-delete X, ADD SET, swipe, editable cells); edit mode enables
-/// them. The selector switch works in both modes (browsing).
+/// add, ADD SET, swipe, editable cells); edit mode enables them. The selector
+/// switch works in both modes (browsing).
 class _DetailCardBuilder extends StatelessWidget {
   const _DetailCardBuilder({
     required this.viewModel,
@@ -467,51 +533,6 @@ class _DetailCardBuilder extends StatelessWidget {
   static List<num>? _parseReps(String? t) {
     final r = t == null || t.isEmpty ? null : num.tryParse(t);
     return r == null ? null : [r];
-  }
-
-  void _confirmRemoveExercise(BuildContext context) {
-    final name = toProperCase(viewModel.exerciseDisplayName(slot.exerciseId));
-    final setCount = state.setsFor(slot.groupOrder).length;
-
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        title: Text(
-          'Remove Exercise',
-          style: AppFonts.ui(
-            fontWeight: FontWeight.w800,
-            color: AppColors.danger,
-          ),
-        ),
-        content: Text(
-          'Remove $name from this workout?\n$setCount set${setCount == 1 ? '' : 's'} will be removed.',
-          style: AppFonts.ui(color: AppColors.muted),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text('Keep', style: AppFonts.ui(color: AppColors.muted)),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              final index = state.exerciseSlots.indexWhere(
-                (sl) => sl.groupOrder == slot.groupOrder,
-              );
-              viewModel.removeExerciseGroup(index);
-            },
-            child: Text(
-              'Remove',
-              style: AppFonts.ui(
-                color: AppColors.danger,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
   }
 
   /// Delete with the PR-count warning — cascade so PRs recompute.
@@ -718,14 +739,11 @@ class _DetailCardBuilder extends StatelessWidget {
       activeIndex: state.activeSlotIndex,
       onSelect: (i) => viewModel.tapTab(i),
       // Edit-only affordances: null greys the reorder arrows and the Add
-      // Exercise row; the hold-to-delete X is hidden in view mode.
+      // Exercise row.
       onMove: state.isEditing
           ? (i, dir) => viewModel.reorderExercises(i, i + dir)
           : null,
       onAdd: state.isEditing ? onAddExercise : null,
-      onDeleteRequest: state.isEditing
-          ? () => _confirmRemoveExercise(context)
-          : null,
       pinnedLesson: pinnedLesson != null
           ? PinnedLessonData(
               text: pinnedLesson.text,
@@ -781,216 +799,6 @@ class _DetailCardBuilder extends StatelessWidget {
       ),
       // The picker tiles show each past session's PR count.
       isPrSet: (setId) => state.prEventSetIds.contains(setId),
-    );
-  }
-}
-
-// ── Add Exercise Modal ───────────────────────────────────────────────────────
-
-class _DetailAddExerciseContent extends StatefulWidget {
-  const _DetailAddExerciseContent({required this.viewModel});
-
-  final SessionDetailViewModel viewModel;
-
-  @override
-  State<_DetailAddExerciseContent> createState() =>
-      _DetailAddExerciseContentState();
-}
-
-class _DetailAddExerciseContentState extends State<_DetailAddExerciseContent> {
-  String _query = '';
-
-  List<MapEntry<String, String>> get _filtered {
-    final s = widget.viewModel.state.value;
-    final entries = s.exerciseDetailMap.entries
-        .where(
-          (e) => toProperCase(
-            e.value.name,
-          ).toLowerCase().contains(_query.toLowerCase()),
-        )
-        .map((e) => MapEntry(e.key, toProperCase(e.value.name)))
-        .toList();
-    // Most recently used first (newest history session per exercise, nulls
-    // last), then name.
-    final lastUsed = <String, DateTime>{};
-    for (final sessions in s.historyByExercise.values) {
-      if (sessions.isNotEmpty) {
-        final exId = sessions.first.sets.first.exerciseId;
-        if (exId != null) lastUsed[exId] = sessions.first.date;
-      }
-    }
-    entries.sort((a, b) {
-      final da = lastUsed[a.key];
-      final db = lastUsed[b.key];
-      if (da != null && db != null) return db.compareTo(da);
-      if (da != null) return -1;
-      if (db != null) return 1;
-      return a.value.toLowerCase().compareTo(b.value.toLowerCase());
-    });
-    return entries;
-  }
-
-  bool get _canCreate =>
-      _query.trim().length > 1 &&
-      !widget.viewModel.state.value.exerciseDetailMap.values.any(
-        (e) => e.name.toLowerCase() == _query.trim().toLowerCase(),
-      );
-
-  void _pick(String exerciseId) {
-    widget.viewModel.addExerciseGroup(exerciseId);
-    Navigator.of(context, rootNavigator: true).pop();
-  }
-
-  Future<void> _createNew() async {
-    final id = await widget.viewModel.submitNewExercise(_query);
-    if (id == null || !mounted) return;
-    _pick(id);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(
-          AppSpacing.xl,
-          AppSpacing.xl,
-          AppSpacing.xl,
-          AppSpacing.xl,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'Add exercise',
-                    style: AppFonts.ui(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.primary,
-                    ),
-                  ),
-                ),
-                GestureDetector(
-                  onTap: () => Navigator.of(context, rootNavigator: true).pop(),
-                  child: Icon(Icons.close, size: 20, color: AppColors.muted),
-                ),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.lg),
-            TextField(
-              autofocus: true,
-              style: AppFonts.ui(fontSize: 14, color: AppColors.primary),
-              decoration: InputDecoration(
-                hintText: 'Search exercises…',
-                hintStyle: AppFonts.ui(color: AppColors.muted),
-                prefixIcon: Icon(
-                  Icons.search,
-                  size: 18,
-                  color: AppColors.muted,
-                ),
-                filled: true,
-                fillColor: AppColors.surfaceHigh,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(AppRadius.md),
-                  borderSide: BorderSide(color: AppColors.border),
-                ),
-              ),
-              onChanged: (v) => setState(() => _query = v),
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 260),
-              child: ValueListenableBuilder<SessionDetailState>(
-                valueListenable: widget.viewModel.state,
-                builder: (context, state, _) => ListView(
-                  shrinkWrap: true,
-                  children: [
-                    ..._filtered.map(
-                      // Exercises are unique per session — already-added
-                      // ones are marked, and picking one just switches to
-                      // its existing tab.
-                      (e) => _resultRow(
-                        e.value,
-                        () => _pick(e.key),
-                        added: state.exerciseSlots.any(
-                          (sl) => sl.exerciseId == e.key,
-                        ),
-                      ),
-                    ),
-                    if (_canCreate)
-                      _resultRow(
-                        '+ Create "${_query.trim()}"',
-                        state.newExCreating ? null : _createNew,
-                        accent: true,
-                      ),
-                    if (_filtered.isEmpty &&
-                        !_canCreate &&
-                        _query.trim().isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(
-                          vertical: AppSpacing.lg,
-                        ),
-                        child: Center(
-                          child: Text(
-                            'No exercises found',
-                            style: AppFonts.ui(
-                              fontSize: 13,
-                              color: AppColors.muted,
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _resultRow(String label, VoidCallback? onTap, {bool accent = false, bool added = false}) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          // Pressable rows — the glass recipe in their semantic color.
-          decoration: glassBox(accent ? AppColors.accent : AppColors.primary),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  label,
-                  style: AppFonts.ui(
-                    fontSize: 14,
-                    fontWeight: accent ? FontWeight.w700 : FontWeight.w600,
-                    color: accent ? AppColors.accent : AppColors.primary,
-                  ),
-                ),
-              ),
-              if (added) ...[
-                const SizedBox(width: 8),
-                Icon(Icons.check_circle, size: 14, color: AppColors.success),
-                const SizedBox(width: 4),
-                Text(
-                  'Added',
-                  style: AppFonts.mono(
-                    fontSize: 13,
-                    letterSpacing: 0.4,
-                    color: AppColors.success,
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
     );
   }
 }

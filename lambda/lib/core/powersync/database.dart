@@ -26,6 +26,9 @@ const _pkColumns = {
   'fact_session_exercise': 'session_exercise_id',
   'dim_program': 'program_id',
   'fact_program_run': 'program_run_id',
+  'fact_program_revision': 'revision_id',
+  'fact_program_review': 'review_id',
+  'dim_program_block': 'block_id',
   'dim_lesson': 'lesson_id',
   'dim_planned_session': 'session_id',
   'dim_planned_session_exercise_set': 'planned_set_id',
@@ -210,7 +213,16 @@ class SupabaseConnector extends PowerSyncBackendConnector {
   }
 }
 
-late final PowerSyncDatabase db;
+late PowerSyncDatabase db;
+
+/// Points the global [db] at a caller-provided database — the seam integration
+/// tests use to drive the REAL repositories against a throwaway PowerSync
+/// database with the real client schema (`openDatabase` is never called there,
+/// and cannot be: it wants a signed-in Supabase session and the device's app
+/// container). Repositories read `db` per call, so a swap takes effect for any
+/// repo already constructed.
+@visibleForTesting
+void setDatabaseForTesting(PowerSyncDatabase database) => db = database;
 
 /// Registered by features (e.g. the session screen) to release their cached
 /// in-memory state when the user signs out — the local DB is being cleared,
@@ -270,6 +282,7 @@ Future<void> openDatabase() async {
     path: await _dbPath(),
     logger: attachedLogger,
   );
+
   await db.initialize();
 
   // Purge stale CRUD entries for tables that have been renamed, dropped, or

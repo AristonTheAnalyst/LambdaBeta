@@ -6,6 +6,7 @@ import '../../../data/models/lesson.dart';
 import '../../../data/models/session.dart';
 import '../../../data/models/session_exercise.dart';
 import '../../../data/models/session_exercise_set.dart';
+import '../../../core/utils/name_limit.dart';
 import '../../../data/repositories/exercise_repository.dart';
 import '../../../data/repositories/lesson_repository.dart';
 import '../../../data/repositories/session_repository.dart';
@@ -563,8 +564,8 @@ class SessionDetailViewModel {
   }
 
   /// Removes an exercise group (slot + all its sets) — the past-session
-  /// viewer's mirror of the planner's remove, so the full-mirror selector's
-  /// hold-to-delete X works in edit mode. Sets go through
+  /// viewer's mirror of the planner's remove, so removing a ticked row in the
+  /// add-exercise modal works in edit mode. Sets go through
   /// [deleteSetCascade] so PRs recompute from the remaining history.
   Future<void> removeExerciseGroup(int index) async {
     final s = state.value;
@@ -807,6 +808,7 @@ class SessionDetailViewModel {
   Future<String?> submitNewExercise(String name) async {
     final trimmed = name.trim();
     if (trimmed.isEmpty) return null;
+    if (nameTooLong(trimmed)) return null;
     state.value = state.value.copyWith(newExCreating: true);
     try {
       final existing = await _exerciseRepo.findExerciseByName(_userId, trimmed);
@@ -840,6 +842,10 @@ class SessionDetailViewModel {
   }) async {
     final trimmed = name.trim();
     if (trimmed.isEmpty && useExistingId == null) return null;
+    // Only the name-bearing path is capped: a "did you mean?" pick carries the
+    // id, and refusing it over the typed text would break the reuse it exists
+    // for.
+    if (useExistingId == null && nameTooLong(trimmed)) return null;
     state.value = state.value.copyWith(newVarCreating: true);
     try {
       String id;

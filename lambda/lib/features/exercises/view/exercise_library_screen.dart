@@ -8,6 +8,7 @@ import '../../../../core/styles/app_text_styles.dart';
 import '../../../../shared/widgets/app_card.dart';
 import '../../../../shared/widgets/archived_sheet.dart';
 import '../../../../shared/widgets/container_styles.dart';
+import '../../../../core/utils/name_limit.dart';
 import '../../../../core/utils/session_format.dart';
 import '../../../../data/models/custom_exercise.dart';
 import '../../../../data/models/custom_variation.dart';
@@ -15,6 +16,7 @@ import '../../../../data/models/exercise_usage.dart';
 import '../../../../shared/widgets/glass_button.dart';
 import '../../../../shared/widgets/lambda_button.dart';
 import '../../../../shared/widgets/lambda_input.dart';
+import '../../../../shared/widgets/name_limit_counter.dart';
 import '../../../../shared/widgets/page_header.dart';
 import '../../../../shared/widgets/slide_tab_bar.dart';
 import '../../../../shared/widgets/slide_tab_view.dart';
@@ -742,8 +744,13 @@ class _CreateExerciseModal extends StatelessWidget {
                   enabled: !state.isCreatingEx,
                   textCapitalization: TextCapitalization.words,
                   textInputAction: TextInputAction.done,
+                  maxLength: kMaxExerciseNameLength,
                   onChanged: viewModel.setCreateExName,
                 ),
+                if (state.createExName.trim().isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  NameLimitCounter(length: state.createExName.trim().length),
+                ],
                 const SizedBox(height: AppSpacing.lg),
                 Row(
                   children: [
@@ -821,8 +828,13 @@ class _CreateVariationModal extends StatelessWidget {
                   enabled: !state.isCreatingVar,
                   textCapitalization: TextCapitalization.words,
                   textInputAction: TextInputAction.done,
+                  maxLength: kMaxExerciseNameLength,
                   onChanged: viewModel.setCreateVarName,
                 ),
+                if (state.createVarName.trim().isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  NameLimitCounter(length: state.createVarName.trim().length),
+                ],
                 const SizedBox(height: AppSpacing.lg),
                 Row(
                   children: [
@@ -916,8 +928,13 @@ class _EditVariationModal extends StatelessWidget {
                   placeholder: 'Variation name',
                   enabled: !state.isSaving,
                   textCapitalization: TextCapitalization.words,
+                  maxLength: kMaxExerciseNameLength,
                   onChanged: viewModel.setEditVarName,
                 ),
+                if (state.editVarName.trim().isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  NameLimitCounter(length: state.editVarName.trim().length),
+                ],
                 const SizedBox(height: AppSpacing.lg),
                 Row(
                   children: [

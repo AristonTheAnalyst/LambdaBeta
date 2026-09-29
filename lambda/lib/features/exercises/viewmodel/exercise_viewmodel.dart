@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../core/utils/name_limit.dart';
 import '../../../data/models/custom_exercise.dart';
 import '../../../data/models/custom_variation.dart';
 import '../../../data/models/exercise_detail.dart';
@@ -239,6 +240,7 @@ class ExerciseViewModel {
   Future<void> saveEditExercise() async {
     final s = state.value;
     if (s.editExercise == null || s.editExName.trim().isEmpty) return;
+    if (nameTooLong(s.editExName)) return;
     state.value = s.copyWith(isSaving: true, clearError: true);
     try {
       await _repo.updateExercise(
@@ -281,6 +283,7 @@ class ExerciseViewModel {
   Future<void> renameExercise(String exerciseId, String name) async {
     final trimmed = name.trim();
     if (trimmed.isEmpty) return;
+    if (nameTooLong(trimmed)) return;
     await _repo.updateExercise(exerciseId, trimmed);
     await fetchAll();
   }
@@ -306,6 +309,7 @@ class ExerciseViewModel {
   Future<void> saveEditVariation() async {
     final s = state.value;
     if (s.editVariation == null || s.editVarName.trim().isEmpty) return;
+    if (nameTooLong(s.editVarName)) return;
     state.value = s.copyWith(isSaving: true, clearError: true);
     try {
       await _repo.updateVariation(
@@ -356,6 +360,7 @@ class ExerciseViewModel {
     final s = state.value;
     final name = s.createExName.trim();
     if (name.isEmpty) return null;
+    if (nameTooLong(name)) return null;
     state.value = s.copyWith(isCreatingEx: true);
     try {
       final existing = await _repo.findExerciseByName(_userId, name);
@@ -400,6 +405,7 @@ class ExerciseViewModel {
     final s = state.value;
     final name = s.createVarName.trim();
     if (name.isEmpty) return null;
+    if (nameTooLong(name)) return null;
     state.value = s.copyWith(isCreatingVar: true);
     try {
       final existing = await _repo.findVariationByName(_userId, name);

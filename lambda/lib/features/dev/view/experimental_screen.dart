@@ -568,7 +568,6 @@ class _DropdownMenuSelectorState extends State<_DropdownMenuSelector> {
         _exercises.insert(i + dir, e);
       }),
       onAdd: _openExercisePicker,
-      onDeleteRequest: _confirmDelete,
     );
   }
 
@@ -595,55 +594,18 @@ class _DropdownMenuSelectorState extends State<_DropdownMenuSelector> {
     });
   }
 
-  /// Hold-to-delete warning — asks for confirmation before removing the
-  /// exercise (and all of its sets) from the workout.
-  Future<void> _confirmDelete() async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        title: Text(
-          'Are you sure you want to delete this exercise?',
-          style: AppFonts.ui(
-            fontWeight: FontWeight.w800,
-            color: AppColors.danger,
-          ),
-        ),
-        content: Text(
-          'All sets in this workout under this exercise will be deleted.',
-          style: AppFonts.ui(color: AppColors.muted),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text('Cancel', style: AppFonts.ui(color: AppColors.muted)),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(
-              'Delete',
-              style: AppFonts.ui(
-                color: AppColors.danger,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-    if (ok != true || !mounted) return;
-    setState(() {
-      _exercises.removeAt(_active);
-      if (_exercises.isEmpty) {
-        _exercises.add('Benchpress');
-      }
-      _active = _active.clamp(0, _exercises.length - 1);
-    });
-  }
 }
 
 /// The demo's choose-exercise sheet — search the available list or create a
 /// new name; returns the picked name.
+///
+/// Deliberately NOT the shared `showAddExerciseModal` (2026-09-29), unlike
+/// every real screen: this demo drives a local `List<String>` with no
+/// repository behind it, so it picks a *name* and hides rows already in the
+/// list, where the real picker takes ids, shows additions ticked, and stays
+/// open. Wiring it up would mean inventing a name→id adapter for a screen that
+/// has no data layer — the drift is the honest state of a dev harness, and it
+/// is noted here rather than papered over.
 class _ExercisePickerSheet extends StatefulWidget {
   const _ExercisePickerSheet({required this.existing, required this.available});
 

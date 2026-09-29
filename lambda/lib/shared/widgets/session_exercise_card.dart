@@ -34,7 +34,6 @@ class SessionExerciseCard extends StatefulWidget {
     required this.onSelect,
     this.onMove,
     this.onAdd,
-    this.onDeleteRequest,
     // ── Pinned lesson (sits between the selector and the pills) ──
     this.pinnedLesson,
     this.onPinnedLessonTap,
@@ -66,9 +65,6 @@ class SessionExerciseCard extends StatefulWidget {
 
   /// Null greys the popover's Add Exercise row.
   final VoidCallback? onAdd;
-
-  /// Null hides the hold-to-delete X.
-  final VoidCallback? onDeleteRequest;
 
   final PinnedLessonData? pinnedLesson;
 
@@ -152,7 +148,6 @@ class _SessionExerciseCardState extends State<SessionExerciseCard> {
                     onSelect: widget.onSelect,
                     onMove: widget.onMove,
                     onAdd: widget.onAdd,
-                    onDeleteRequest: widget.onDeleteRequest,
                   ),
                   const SizedBox(height: 6),
                   // The pinned lesson sits right under the exercise, just

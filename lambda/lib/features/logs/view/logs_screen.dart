@@ -9,8 +9,8 @@ import '../../../../core/styles/app_text_styles.dart';
 import '../../../../data/models/exercise_usage.dart';
 import '../../../../data/models/session.dart';
 import '../../../../data/models/session_exercise_set.dart';
-import '../../../../shared/widgets/container_styles.dart';
-import '../../../../shared/widgets/dropdown_select.dart';
+import '../../../../shared/widgets/confirm_delete_session_dialog.dart';
+import '../../../../shared/widgets/logs_filter_bar.dart';
 import '../../../../shared/widgets/page_header.dart';
 import '../../../../core/utils/date_range.dart';
 import '../../../../shared/widgets/date_range_selector.dart';
@@ -21,7 +21,18 @@ import '../../../../shared/router/app_router.dart';
 import '../viewmodel/logs_viewmodel.dart';
 
 class LogsScreen extends StatefulWidget {
-  const LogsScreen({super.key});
+  const LogsScreen({super.key, this.showHeader = true, this.onSessionDeleted});
+
+  /// Whether the 'Training Logs' PageHeader renders — false when the screen
+  /// is embedded (the prep page's PREVIOUS SESSIONS section) so the host
+  /// provides its own label.
+  final bool showHeader;
+
+  /// Called with the deleted session's id after its card's swipe-delete
+  /// lands — the embedded host reloads the state that outlives the list
+  /// (the session VM's reflection card and PR timeline). Null in the
+  /// Training Logs tab, which owns nothing beyond this list.
+  final ValueChanged<String>? onSessionDeleted;
 
   @override
   State<LogsScreen> createState() => _LogsScreenState();
@@ -103,6 +114,19 @@ class _LogsScreenState extends State<LogsScreen> with RouteAware {
     _tabController.jumpTo(i);
   }
 
+  /// The card's ⋮ → Delete Session — shared confirmation first, then the
+  /// cascading hard delete and a reload. Only completed sessions are ever
+  /// listed (both list queries filter `end_datetime IS NOT NULL`), so the
+  /// in-progress workout can never be deleted out from under the live
+  /// session VM from here.
+  Future<void> _confirmDeleteSession(SessionWithSets w) async {
+    final ok = await confirmDeleteSession(context, setCount: w.sets.length);
+    if (!ok || !mounted) return;
+    await _viewModel.deleteSession(w.session.sessionId);
+    if (!mounted) return;
+    widget.onSessionDeleted?.call(w.session.sessionId);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -182,13 +206,13 @@ class _LogsScreenState extends State<LogsScreen> with RouteAware {
 
           return Column(
             children: [
-              PageHeader(title: 'Training Logs'),
+              if (widget.showHeader) PageHeader(title: 'Training Logs'),
               SlideTabBar(
                 tabs: ['Workouts', 'Sets'],
                 activeIndex: state.activeTab,
                 onTap: _onTabChanged,
               ),
-              _FilterBar(
+              LogsFilterBar(
                 exercises: exercises,
                 variations: variations,
                 selectedExercise: _selectedExercise,
@@ -241,6 +265,7 @@ class _LogsScreenState extends State<LogsScreen> with RouteAware {
                       onRefresh: _viewModel.refresh,
                       formatDate: _formatDate,
                       onTap: (id) => context.push('/logs/$id'),
+                      onDelete: _confirmDeleteSession,
                     ),
                     _SetsPanel(
                       pastSets: filteredSets,
@@ -258,147 +283,6 @@ class _LogsScreenState extends State<LogsScreen> with RouteAware {
   }
 }
 
-// ── Filter bar ──────────────────────────────────────────────────────────────────
-
-class _FilterBar extends StatelessWidget {
-  const _FilterBar({
-    required this.exercises,
-    required this.variations,
-    required this.selectedExercise,
-    required this.selectedVariation,
-    required this.dateLabel,
-    required this.dateActive,
-    required this.onExerciseChanged,
-    required this.onVariationChanged,
-    required this.onDateTap,
-    required this.onClear,
-  });
-
-  final List<String> exercises;
-  final List<String> variations;
-  final String? selectedExercise;
-  final String? selectedVariation;
-  final String dateLabel;
-  final bool dateActive;
-  final ValueChanged<String?> onExerciseChanged;
-  final ValueChanged<String?> onVariationChanged;
-  final VoidCallback onDateTap;
-  final VoidCallback? onClear;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
-      decoration: BoxDecoration(
-        color: AppColors.bg,
-        border: Border(bottom: BorderSide(color: AppColors.border, width: 0.5)),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: _FilterChip(
-              label: selectedExercise ?? 'Exercise',
-              isActive: selectedExercise != null,
-              onTap: exercises.isEmpty
-                  ? null
-                  : () => showDropdownPickerSheet<String>(
-                        context,
-                        options: exercises
-                            .map((e) => DropdownOption(label: e, value: e))
-                            .toList(),
-                        value: selectedExercise,
-                        searchable: true,
-                        onSelect: onExerciseChanged,
-                      ),
-            ),
-          ),
-          const SizedBox(width: AppSpacing.sm),
-          Expanded(
-            child: _FilterChip(
-              label: selectedVariation ?? 'Variation',
-              isActive: selectedVariation != null,
-              onTap: variations.isEmpty
-                  ? null
-                  : () => showDropdownPickerSheet<String>(
-                        context,
-                        options: variations
-                            .map((v) => DropdownOption(label: v, value: v))
-                            .toList(),
-                        value: selectedVariation,
-                        searchable: true,
-                        onSelect: onVariationChanged,
-                      ),
-            ),
-          ),
-          const SizedBox(width: AppSpacing.sm),
-          Expanded(
-            child: _FilterChip(
-              label: dateLabel,
-              isActive: dateActive,
-              onTap: onDateTap,
-            ),
-          ),
-          if (onClear != null) ...[
-            const SizedBox(width: AppSpacing.sm),
-            GestureDetector(
-              onTap: onClear,
-              child: Icon(Icons.close, size: 18, color: AppColors.muted),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-// ── Generic filter chip (non-searchable, just opens a sheet) ───────────────────
-
-class _FilterChip extends StatelessWidget {
-  const _FilterChip({
-    required this.label,
-    required this.isActive,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool isActive;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        height: 44,
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-        // The glass recipe — active in accent, inactive in primary.
-        decoration: glassBox(isActive ? AppColors.accent : AppColors.primary),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                label,
-                style: AppFonts.ui(
-                  fontSize: AppTextStyles.sm,
-                  fontWeight: FontWeight.w600,
-                  color: isActive ? AppColors.accent : AppColors.muted,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            const SizedBox(width: 4),
-            Icon(Icons.keyboard_arrow_down, size: 14,
-                color: isActive ? AppColors.accent : AppColors.muted),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ── Workouts panel ──────────────────────────────────────────────────────────────
 
 class _WorkoutsPanel extends StatelessWidget {
   const _WorkoutsPanel({
@@ -407,6 +291,7 @@ class _WorkoutsPanel extends StatelessWidget {
     required this.onRefresh,
     required this.formatDate,
     required this.onTap,
+    required this.onDelete,
   });
 
   final List<SessionWithSets> workouts;
@@ -414,6 +299,7 @@ class _WorkoutsPanel extends StatelessWidget {
   final Future<void> Function() onRefresh;
   final String Function(DateTime) formatDate;
   final ValueChanged<String> onTap;
+  final ValueChanged<SessionWithSets> onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -433,9 +319,12 @@ class _WorkoutsPanel extends StatelessWidget {
         itemBuilder: (_, i) {
           final w = workouts[i];
           // THE session card — the same one the all-sessions sheet shows.
+          // Both surfaces can delete: onDelete renders the card's ⋮, whose
+          // Delete Session entry routes through _confirmDeleteSession.
           return SessionLogCard(
             workout: w,
             onTap: () => onTap(w.session.sessionId),
+            onDelete: () => onDelete(w),
           );
         },
       ),
