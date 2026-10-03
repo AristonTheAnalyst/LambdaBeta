@@ -43,8 +43,8 @@ class Goal {
   /// Exercise-specific target — which exercise, at what weight × reps.
   final String? exerciseId;
 
-  /// Narrows the target to one variation. NULL = any variation of the
-  /// exercise counts, which is how every goal behaved before this column.
+  /// The one variation this target is scoped to. NULL = the exercise
+  /// performed with no variation — a scope of its own, not a wildcard.
   final String? variationId;
 
   final num? targetWeight;

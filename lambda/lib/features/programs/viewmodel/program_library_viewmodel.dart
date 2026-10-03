@@ -112,6 +112,16 @@ class ProgramLibraryViewModel {
     await fetchAll();
   }
 
+  /// Sessions that a [hardDeleteProgram] would unlink — see
+  /// [ProgramRepository.programSessionCount].
+  Future<int> programSessionCount(String programId) =>
+      _repo.programSessionCount(programId);
+
+  Future<void> hardDeleteProgram(String programId) async {
+    await _repo.hardDeleteProgram(programId);
+    await fetchAll();
+  }
+
   Future<void> fetchAll() async {
     state.value = state.value.copyWith(isLoading: true, clearError: true);
     try {

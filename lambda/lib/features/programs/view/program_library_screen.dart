@@ -90,12 +90,53 @@ class _ProgramLibraryScreenState extends State<ProgramLibraryScreen> {
             (id: pr.programId, name: pr.name),
         ],
         onRestore: (id) => _viewModel.reactivateProgram(id),
+        onDelete: _confirmHardDelete,
       ),
     );
   }
 
-  /// Programs can never be fully deleted — runs FK-reference them — so the
-  /// dialog says "Archive" and the copy explains it.
+  /// The archived sheet's bin. Unlike [_confirmDelete] there is no undo, so it
+  /// counts what the delete would unlink first — the runs go with the program,
+  /// and sessions logged under them keep every set but lose the run they
+  /// belonged to.
+  Future<void> _confirmHardDelete(({String id, String name}) item) async {
+    final sessions = await _viewModel.programSessionCount(item.id);
+    if (!mounted) return;
+    final name = toProperCase(item.name);
+    final consequence = sessions == 0
+        ? "This can't be undone."
+        : '$sessions logged ${sessions == 1 ? "session stays" : "sessions stay"}'
+            ' in Training Logs, unlinked from the run.';
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: Text('Delete Program',
+            style: AppFonts.ui(
+                fontWeight: FontWeight.w800, color: AppColors.danger)),
+        content: Text(
+            'Delete "$name" permanently? Its runs and revision history go '
+            'with it. $consequence',
+            style: AppFonts.ui(color: AppColors.muted)),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child:
+                  Text('Cancel', style: AppFonts.ui(color: AppColors.muted))),
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: Text('Delete',
+                  style: AppFonts.ui(
+                      color: AppColors.danger, fontWeight: FontWeight.w600))),
+        ],
+      ),
+    );
+    if (ok == true) await _viewModel.hardDeleteProgram(item.id);
+  }
+
+  /// The card's one-tap archive. This one can't delete for good: a program has
+  /// to be archived before the bin in the archived sheet will take it, and the
+  /// copy says "Archive" because that is all this does.
   void _confirmDelete(Program p) {
     final isCurrent = _viewModel.state.value.currentProgramId == p.programId;
     showDialog<void>(
@@ -164,10 +205,7 @@ class _ProgramLibraryScreenState extends State<ProgramLibraryScreen> {
     try {
       await _viewModel.setCurrentProgram(
         p.programId,
-        progressionMode: result.progressionMode,
         targetSessions: result.targetSessions,
-        targetWeeks: result.targetWeeks,
-        endDate: result.endDate,
         blockId: result.blockId,
       );
     } catch (_) {

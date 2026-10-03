@@ -235,7 +235,8 @@ const schema = Schema([
     // The scope: a program, or a block of one. NULL program = standalone.
     Column.text('program_id'),
     Column.text('block_id'),
-    // Narrows the goal to one variation; NULL = any variation counts.
+    // The one variation the goal is scoped to; NULL = the plain exercise,
+    // which is a scope of its own rather than a wildcard.
     Column.text('custom_variation_id'),
     Column.text('target_weight'),
     Column.integer('target_reps'),

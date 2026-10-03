@@ -8,13 +8,12 @@ import 'package:lambda/shared/widgets/swipe_actions.dart';
 /// workouts with. Null callbacks hide their control — the convention the
 /// shared session widgets follow.
 void main() {
-  testWidgets('renders the name, the badge and the day chip', (tester) async {
+  testWidgets('renders the name and the badge', (tester) async {
     await tester.pumpWidget(
       _host(
         ProgramWorkoutRow(
           workout: _workout(name: 'Squat Day', notes: 'Heavy singles'),
           badge: 'Session 3',
-          dayOfWeek: 2,
         ),
       ),
     );
@@ -22,10 +21,9 @@ void main() {
     expect(find.text('Squat Day'), findsOneWidget);
     expect(find.text('Heavy singles'), findsOneWidget);
     expect(find.text('Session 3'), findsOneWidget);
-    expect(find.text('Tue'), findsOneWidget);
   });
 
-  testWidgets('no badge, no day, no dragIndex → no chrome for them',
+  testWidgets('no badge, no dragIndex → no chrome for them',
       (tester) async {
     await tester.pumpWidget(_host(ProgramWorkoutRow(workout: _workout())));
 

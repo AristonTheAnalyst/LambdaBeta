@@ -89,10 +89,6 @@ class AchievementsDerivation {
         sets: sets,
         from: from,
         to: end,
-        // A goal's own variation narrows what counts as evidence; null means
-        // any variation of the exercise, which is how every goal read before
-        // the column existed.
-        variationIdOf: (g) => g.variationId,
       ),
       weightStart: weight.start,
       weightEnd: weight.end,

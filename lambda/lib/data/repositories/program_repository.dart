@@ -262,6 +262,97 @@ class ProgramRepository {
     });
   }
 
+  /// How many logged sessions hang off this program's runs — what a
+  /// [hardDeleteProgram] would cost. Those sessions are NOT deleted (the FK
+  /// is ON DELETE SET NULL); they lose their link to the run and nothing else.
+  Future<int> programSessionCount(String programId) async {
+    final rows = await ps.db.getAll(
+      '''
+      SELECT COUNT(*) c FROM fact_session
+      WHERE program_run_id IN (
+        SELECT program_run_id FROM fact_program_run WHERE program_id = ?
+      )
+      ''',
+      [programId],
+    );
+    if (rows.isEmpty) return 0;
+    final v = rows.first['c'];
+    if (v is int) return v;
+    return int.tryParse('$v') ?? 0;
+  }
+
+  /// Hard-deletes a program and everything under it — blocks, goals, reviews,
+  /// revisions, runs. There is no soft option left, unlike [deleteProgram].
+  ///
+  /// Logged sessions survive: `fact_session.program_run_id` is ON DELETE SET
+  /// NULL, so they stay in Training Logs and simply lose the run they belonged
+  /// to. Callers should show [programSessionCount] before confirming.
+  ///
+  /// **The statement order is load-bearing**, because Postgres refuses several
+  /// of these in the wrong sequence: `fact_program_review.program_run_id` is
+  /// NO ACTION rather than CASCADE, so runs cannot go until reviews do, and
+  /// `fact_program_run.block_id` pins runs to blocks, so blocks cannot go until
+  /// runs do. PowerSync drains its CRUD queue in order, so what the server sees
+  /// is what is written here.
+  Future<void> hardDeleteProgram(String programId) async {
+    await ps.db.writeTransaction((tx) async {
+      // Leaves — nothing references these, so they can go first.
+      await tx.execute(
+        'DELETE FROM fact_program_review WHERE program_id = ?',
+        [programId],
+      );
+      await tx.execute(
+        'DELETE FROM fact_program_revision WHERE program_id = ?',
+        [programId],
+      );
+      // Goals FK block_id AND program_run_id — they block both of the next two.
+      // Matching on block as well as program is belt-and-braces. The server
+      // cannot hold the gap: fact_goal_block_scope_check requires program_id
+      // whenever block_id is set. But this statement runs against the LOCAL
+      // SQLite, which declares no constraints at all, and createGoal writes the
+      // two scope columns independently — so a row only this DB can hold is
+      // still a row that would strand the block delete below.
+      await tx.execute(
+        '''
+        DELETE FROM fact_goal
+        WHERE program_id = ?
+           OR block_id IN (SELECT block_id FROM dim_program_block
+                           WHERE program_id = ?)
+        ''',
+        [programId, programId],
+      );
+      // Also clears every block_id reference into this program's blocks.
+      await tx.execute(
+        'DELETE FROM dim_planned_session_program WHERE program_id = ?',
+        [programId],
+      );
+      // Mirror the server's ON DELETE SET NULL by hand. Locally there is no FK
+      // to fire it, so without this the sessions keep pointing at a run that
+      // no longer exists until a sync round-trip — which may never come if the
+      // device is offline, and Training Logs reads the local rows.
+      await tx.execute(
+        '''
+        UPDATE fact_session SET program_run_id = NULL
+        WHERE program_run_id IN (SELECT program_run_id FROM fact_program_run
+                                 WHERE program_id = ?)
+        ''',
+        [programId],
+      );
+      await tx.execute(
+        'DELETE FROM fact_program_run WHERE program_id = ?',
+        [programId],
+      );
+      await tx.execute(
+        'DELETE FROM dim_program_block WHERE program_id = ?',
+        [programId],
+      );
+      await tx.execute(
+        'DELETE FROM dim_program WHERE program_id = ?',
+        [programId],
+      );
+    });
+  }
+
   // ── Planned sessions (delegating to PlannedSessionRepository) ─────────────
 
   Future<List<PlannedSession>> fetchPlannedSessions(String programId) async {

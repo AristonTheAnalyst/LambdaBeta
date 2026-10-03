@@ -10,45 +10,35 @@ import '../../../core/utils/session_format.dart';
 import '../../../data/models/program_block.dart';
 import '../../../data/models/program_run.dart';
 import '../../../shared/widgets/container_styles.dart';
-import '../../../shared/widgets/date_picker_sheet.dart';
 import '../../../shared/widgets/glass_button.dart';
 import '../../../shared/widgets/lambda_input.dart';
-import '../../../shared/widgets/segmented_control.dart';
 import '../../../shared/widgets/slide_up_modal.dart';
 
 /// What the user chose when configuring a run.
 ///
 /// One shape for all four callers — begin from the library, begin from the
 /// program, start a block, and edit a running run — because they are the same
-/// question ("how does this progress, and for how long") asked at four
-/// moments. The caller decides what to do with the answer; the sheet never
-/// writes anything itself.
+/// question ("how long, and what does it run") asked at four moments. The
+/// caller decides what to do with the answer; the sheet never writes anything
+/// itself.
+///
+/// A run is order-based by definition — it works through the program's
+/// workouts in sequence, counting sessions. Day scheduling (and with it the
+/// frequency progression mode and its calendar duration) is retired for now:
+/// nothing assigns a workout to a weekday, so there is no schedule to
+/// configure.
 class RunConfigRequest {
-  const RunConfigRequest({
-    required this.progressionMode,
-    this.targetSessions,
-    this.targetWeeks,
-    this.endDate,
-    this.blockId,
-  });
+  const RunConfigRequest({this.targetSessions, this.blockId});
 
-  /// 'order' (work through the list) or 'frequency' (assigned to days).
-  final String progressionMode;
-
-  /// Order runs: how many sessions. Null for a frequency run.
+  /// How many sessions the run lasts. Null for a block run, whose block owns
+  /// the length.
   final int? targetSessions;
-
-  /// Frequency runs: how many weeks. Null when an end date was given instead.
-  final int? targetWeeks;
-
-  /// Frequency runs: an explicit end date, instead of a week count.
-  final DateTime? endDate;
 
   /// The block to run, or null for the whole program.
   final String? blockId;
 }
 
-/// Configures a run — its progression mode, its duration, and what it runs.
+/// Configures a run — its duration and what it runs.
 ///
 /// This replaces three near-identical dialogs (`_BeginConfigDialog` in the
 /// library, `_confirmBeginProgram` and `_editRunConfig` in the detail screen)
@@ -130,17 +120,12 @@ class _RunConfigSheet extends StatefulWidget {
 
 class _RunConfigSheetState extends State<_RunConfigSheet> {
   late final TextEditingController _count;
-  late String _mode;
-  late bool _useEndDate;
-  DateTime? _endDate;
   String? _blockId;
 
   /// Whether the user has typed into the count field. Until they do, the field
   /// holds whatever the selected block suggests — so switching blocks updates
   /// the suggestion instead of fighting the user's own number.
   bool _countTouched = false;
-
-  bool get _isFrequency => _mode == 'frequency';
 
   ProgramBlock? get _block {
     for (final b in widget.blocks) {
@@ -153,14 +138,8 @@ class _RunConfigSheetState extends State<_RunConfigSheet> {
   void initState() {
     super.initState();
     final run = widget.run;
-    _mode = run?.progressionMode ?? 'order';
     _blockId = widget.initialBlockId ?? run?.blockId;
-    _useEndDate = _mode == 'frequency' && run?.endDate != null &&
-        run?.targetWeeks == null;
-    _endDate = run?.endDate;
-    final prefill = run != null
-        ? (run.targetSessions ?? run.targetWeeks)
-        : _suggestedCount();
+    final prefill = run?.targetSessions ?? _suggestedCount();
     _count = TextEditingController(text: prefill?.toString() ?? '');
     _countTouched = run != null;
   }
@@ -171,12 +150,9 @@ class _RunConfigSheetState extends State<_RunConfigSheet> {
     super.dispose();
   }
 
-  /// The duration a block declares for itself, in whichever unit is showing.
-  int? _suggestedCount() {
-    final b = _block;
-    if (b == null) return null;
-    return _isFrequency ? b.targetWeeks : b.targetSessions;
-  }
+  /// The session count a block declares for itself, so a block run's field
+  /// opens on a sensible number.
+  int? _suggestedCount() => _block?.targetSessions;
 
   void _selectBlock(String? blockId) {
     setState(() {
@@ -185,54 +161,19 @@ class _RunConfigSheetState extends State<_RunConfigSheet> {
     });
   }
 
-  void _setMode(String mode) {
-    setState(() {
-      _mode = mode;
-      if (!_countTouched) _count.text = _suggestedCount()?.toString() ?? '';
-    });
-  }
-
-  Future<void> _pickEndDate() async {
-    final now = DateTime.now();
-    final picked = await showDatePickerSheet(
-      context,
-      initial: _endDate ?? now.add(const Duration(days: 7)),
-      firstDate: now,
-      lastDate: DateTime(now.year + 5, 12, 31),
-      title: 'END DATE',
-    );
-    if (picked != null) setState(() => _endDate = picked);
-  }
-
   void _submit() {
     // A block run carries no length of its own. The block's own targets are
-    // what `getProgress` measures it against — `block?.targetWeeks ??
-    // run.targetWeeks` — so anything typed here would be shadowed on the very
-    // first read. Not sending it at all is the only honest answer to a
+    // what `getProgress` measures it against — `block?.targetSessions ??
+    // run.targetSessions` — so anything typed here would be shadowed on the
+    // very first read. Not sending it at all is the only honest answer to a
     // duration the user was never asked about.
     if (_blockId != null) {
-      Navigator.of(context).pop(RunConfigRequest(
-        progressionMode: _mode,
-        blockId: _blockId,
-      ));
+      Navigator.of(context).pop(RunConfigRequest(blockId: _blockId));
       return;
     }
     final count = int.tryParse(_count.text.trim());
-    if (_isFrequency && _useEndDate) {
-      final end = _endDate;
-      if (end == null) return;
-      Navigator.of(context).pop(RunConfigRequest(
-        progressionMode: _mode,
-        endDate: end,
-      ));
-      return;
-    }
     if (count == null || count <= 0) return;
-    Navigator.of(context).pop(RunConfigRequest(
-      progressionMode: _mode,
-      targetSessions: _isFrequency ? null : count,
-      targetWeeks: _isFrequency ? count : null,
-    ));
+    Navigator.of(context).pop(RunConfigRequest(targetSessions: count));
   }
 
   @override
@@ -289,27 +230,6 @@ class _RunConfigSheetState extends State<_RunConfigSheet> {
             ],
           ],
           const SizedBox(height: AppSpacing.lg),
-          _label('Progression'),
-          const SizedBox(height: AppSpacing.sm),
-          SegmentedControl<String>(
-            value: _mode,
-            onChange: _setMode,
-            options: const [
-              SegmentOption(label: 'Order', value: 'order'),
-              SegmentOption(label: 'Frequency', value: 'frequency'),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          Text(
-            _isFrequency
-                ? 'Workouts are assigned to days of the week.'
-                : 'Workouts are worked through in order.',
-            style: AppFonts.ui(
-              fontSize: AppTextStyles.xs,
-              color: AppColors.muted,
-            ),
-          ),
-          const SizedBox(height: AppSpacing.lg),
           // A block states its own length, so there is nothing to ask for here.
           // The line below says which length is in force rather than leaving a
           // duration control that would be overruled the moment the run was
@@ -330,60 +250,15 @@ class _RunConfigSheetState extends State<_RunConfigSheet> {
                 color: AppColors.muted,
               ),
             ),
-          ] else ...[
-            if (_isFrequency) ...[
-              _label('Duration'),
-              const SizedBox(height: AppSpacing.sm),
-              SegmentedControl<bool>(
-                subtle: true,
-                value: _useEndDate,
-                onChange: (v) => setState(() => _useEndDate = v),
-                options: const [
-                  SegmentOption(label: 'Weeks', value: false),
-                  SegmentOption(label: 'End date', value: true),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.md),
-            ],
-            if (!_isFrequency || !_useEndDate)
-              LambdaInput(
-                controller: _count,
-                label: _isFrequency ? 'Number of weeks' : 'Number of sessions',
-                placeholder: _isFrequency ? 'e.g. 6' : 'e.g. 12',
-                keyboardType: TextInputType.number,
-                required: true,
-                onChanged: (_) => _countTouched = true,
-              )
-            else ...[
-              _label('End date'),
-              const SizedBox(height: 6),
-              GestureDetector(
-                onTap: _pickEndDate,
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.lg,
-                    vertical: 14,
-                  ),
-                  decoration: lambdaBox(
-                    ContainerTone.ghost,
-                    radius: AppRadius.md,
-                  ),
-                  child: Text(
-                    _endDate == null
-                        ? 'Pick a date…'
-                        : '${_endDate!.day}/${_endDate!.month}/${_endDate!.year}',
-                    style: AppFonts.ui(
-                      fontSize: AppTextStyles.sm,
-                      color: _endDate == null
-                          ? AppColors.muted
-                          : AppColors.primary,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ],
+          ] else
+            LambdaInput(
+              controller: _count,
+              label: 'Number of sessions',
+              placeholder: 'e.g. 12',
+              keyboardType: TextInputType.number,
+              required: true,
+              onChanged: (_) => _countTouched = true,
+            ),
           const SizedBox(height: AppSpacing.xl),
           GlassButton(
             label: widget.actionLabel ?? 'Begin',

@@ -35,7 +35,8 @@ class ExerciseTarget {
   /// map. Carried so a goal can name its lift without a second lookup.
   final String exerciseName;
 
-  /// NULL = any variation of the exercise counts.
+  /// NULL = the exercise performed with no variation — a plain bench set, not
+  /// any bench set. Its own scope, the same way the PR frontier keys one.
   final String? variationId;
 
   final num? weight;
@@ -144,7 +145,7 @@ class _ExerciseTargetPickerState extends State<ExerciseTargetPicker> {
         if (!v.isArchived) v,
     ]..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
     return [
-      const DropdownOption(label: 'Any variation', value: null),
+      const DropdownOption(label: 'No variation', value: null),
       for (final v in sorted)
         DropdownOption(label: v.name, value: v.variationId),
     ];
@@ -258,7 +259,7 @@ class _ExerciseTargetPickerState extends State<ExerciseTargetPicker> {
                   child: DropdownSelect<String?>(
                     options: _variationOptions,
                     value: _variationId,
-                    placeholder: 'Any variation',
+                    placeholder: 'No variation',
                     onChange: (v) => setState(() => _variationId = v),
                   ),
                 ),

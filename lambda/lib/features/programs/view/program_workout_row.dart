@@ -9,8 +9,8 @@ import '../../../shared/widgets/app_card.dart';
 import '../../../shared/widgets/swipe_actions.dart';
 
 /// One workout inside a program, as a card: name, notes, an optional badge,
-/// an optional day chip, and — when [dragIndex] is given — a drag handle for
-/// the reorderable list it lives in.
+/// and — when [dragIndex] is given — a drag handle for the reorderable list it
+/// lives in.
 ///
 /// Shared by the program detail screen (where the badge is the session number
 /// and the swipe drawer is Duplicate / Delete) and the block editor (where
@@ -20,7 +20,6 @@ class ProgramWorkoutRow extends StatelessWidget {
   const ProgramWorkoutRow({
     super.key,
     required this.workout,
-    this.dayOfWeek,
     this.badge,
     this.onTap,
     this.dragIndex,
@@ -28,9 +27,6 @@ class ProgramWorkoutRow extends StatelessWidget {
   });
 
   final PlannedSession workout;
-
-  /// The session's assigned day from its program link row — null = none.
-  final int? dayOfWeek;
 
   /// A short mono chip on the right, e.g. `Session 3`.
   final String? badge;
@@ -97,23 +93,6 @@ class ProgramWorkoutRow extends StatelessWidget {
                 ),
               ),
             ),
-          if (dayOfWeek != null) ...[
-            const SizedBox(width: AppSpacing.sm),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: AppColors.surfaceHigh,
-                borderRadius: BorderRadius.circular(999),
-              ),
-              child: Text(
-                dayOfWeekLabel(dayOfWeek),
-                style: AppFonts.ui(
-                  fontSize: AppTextStyles.xs,
-                  color: AppColors.muted,
-                ),
-              ),
-            ),
-          ],
           if (dragIndex != null)
             ReorderableDragStartListener(
               index: dragIndex!,

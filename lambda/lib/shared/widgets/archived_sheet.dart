@@ -17,12 +17,18 @@ class ArchivedSheet extends StatefulWidget {
     required this.emptyText,
     required this.fetch,
     required this.onRestore,
+    this.onDelete,
   });
 
   final String title;
   final String emptyText;
   final Future<List<({String id, String name})>> Function() fetch;
   final Future<void> Function(String id) onRestore;
+
+  /// Null for libraries that can only be restored. When non-null every row
+  /// grows a delete affordance, and this owns the confirmation — only the
+  /// caller knows what the delete costs, so the sheet never asks on its own.
+  final Future<void> Function(({String id, String name}) item)? onDelete;
 
   @override
   State<ArchivedSheet> createState() => _ArchivedSheetState();
@@ -157,11 +163,37 @@ class _ArchivedSheetState extends State<ArchivedSheet> {
                           color: AppColors.primary,
                         ),
                       ),
-                      trailing: Icon(
-                        Icons.restore,
-                        size: 18,
-                        color: AppColors.accent,
-                      ),
+                      trailing: widget.onDelete == null
+                          ? Icon(
+                              Icons.restore,
+                              size: 18,
+                              color: AppColors.accent,
+                            )
+                          : Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.restore,
+                                  size: 18,
+                                  color: AppColors.accent,
+                                ),
+                                const SizedBox(width: AppSpacing.md),
+                                // Opaque, so the tap lands on the bin rather
+                                // than falling through to the row's restore.
+                                GestureDetector(
+                                  behavior: HitTestBehavior.opaque,
+                                  onTap: () async {
+                                    await widget.onDelete!(item);
+                                    await _load();
+                                  },
+                                  child: Icon(
+                                    Icons.delete_outline,
+                                    size: 18,
+                                    color: AppColors.danger,
+                                  ),
+                                ),
+                              ],
+                            ),
                     );
                   },
                 ),

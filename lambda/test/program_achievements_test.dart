@@ -140,9 +140,13 @@ void main() {
       expect(out.single.evidenceWeight, isNull);
     });
 
-    test('unscoped, any variation of the exercise answers the goal', () {
-      final out = evaluateGoals(
-        goals: [_goal(id: 'g1', exerciseId: 'bench', weight: 100, reps: 1)],
+    test('a no-variation goal is answered only by no-variation sets', () {
+      final goals = [
+        _goal(id: 'g1', exerciseId: 'bench', weight: 100, reps: 1),
+      ];
+
+      final pausedOnly = evaluateGoals(
+        goals: goals,
         sets: [
           _set('s1',
               exerciseId: 'bench',
@@ -154,14 +158,34 @@ void main() {
         from: _jan10,
         to: _mar10,
       );
+      expect(pausedOnly.single.achieved, isFalse,
+          reason: 'a paused set is not the plain bench the goal names');
+      expect(pausedOnly.single.evidenceWeight, isNull,
+          reason: 'out of scope is not evidence for a near miss either');
 
-      expect(out.single.achieved, isTrue);
-      expect(out.single.evidenceVariationId, 'paused');
+      final plain = evaluateGoals(
+        goals: goals,
+        sets: [
+          _set('s1', exerciseId: 'bench', weight: 105, reps: 1, date: _feb10),
+        ],
+        from: _jan10,
+        to: _mar10,
+      );
+      expect(plain.single.achieved, isTrue);
+      expect(plain.single.evidenceVariationId, isNull);
     });
 
     test('a variation-scoped goal ignores other variations of the same lift',
         () {
-      final goals = [_goal(id: 'g1', exerciseId: 'bench', weight: 100, reps: 1)];
+      final goals = [
+        _goal(
+          id: 'g1',
+          exerciseId: 'bench',
+          weight: 100,
+          reps: 1,
+          variationId: 'paused',
+        ),
+      ];
 
       final onlyPlain = evaluateGoals(
         goals: goals,
@@ -170,7 +194,6 @@ void main() {
         ],
         from: _jan10,
         to: _mar10,
-        variationIdOf: (g) => 'paused',
       );
       expect(onlyPlain.single.achieved, isFalse,
           reason: 'the 150 single was a plain bench set; the goal is paused');
@@ -189,7 +212,6 @@ void main() {
         ],
         from: _jan10,
         to: _mar10,
-        variationIdOf: (g) => 'paused',
       );
       expect(withPaused.single.achieved, isTrue);
       expect(withPaused.single.evidenceWeight, 105,

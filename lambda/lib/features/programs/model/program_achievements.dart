@@ -186,16 +186,17 @@ List<PrEvent> prsAcrossScopes(
 /// Not the PR frontier, which answers a different question ("is this the best
 /// ever?") than a goal does ("did I do the thing I said I would?").
 ///
-/// [variationIdOf] scopes a goal to a variation. It is a function rather than a
-/// field because `fact_goal.custom_variation_id` arrives with the goal-scoping
-/// migration; until then callers pass nothing, every goal matches every
-/// variation of its exercise, and this rule stays pinned by a test either way.
+/// A goal names exactly one variation, or none — and "none" is a scope of its
+/// own rather than a wildcard. A goal on plain bench is met by plain bench
+/// sets only; a goal on paused bench by paused sets only, and neither answers
+/// the other. That is the same per-(exercise × variation) scoping the PR
+/// frontier uses, so a goal and a PR can never disagree about which lift a set
+/// belongs to.
 List<GoalAchievement> evaluateGoals({
   required List<Goal> goals,
   required List<PastSetRow> sets,
   required DateTime from,
   required DateTime to,
-  String? Function(Goal goal)? variationIdOf,
 }) {
   final out = <GoalAchievement>[];
   for (final goal in goals) {
@@ -208,13 +209,14 @@ List<GoalAchievement> evaluateGoals({
       continue;
     }
 
-    final variationId = variationIdOf?.call(goal);
     PastSetRow? strongest;
     PastSetRow? strongestQualifying;
 
     for (final set in sets) {
       if (set.exerciseId != exerciseId) continue;
-      if (variationId != null && set.variationId != variationId) continue;
+      // Exact, null included: a no-variation goal asks for plain sets, so a
+      // paused set is out of scope — not evidence for a near miss either.
+      if (set.variationId != goal.variationId) continue;
       final date = set.sessionCreatedDate;
       if (date.isBefore(from) || !date.isBefore(to)) continue;
 

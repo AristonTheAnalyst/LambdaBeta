@@ -112,6 +112,31 @@ Locally: `perl -pe 's/--.*$//' f.sql | tr -d '[:space:];' | tr '[:upper:]'
 that actually ran. A file that differs *on purpose* (an added `if exists`
 guard, say) should say so in a comment — otherwise the next person "fixes" it.
 
+## Deleting rows: the client has no constraints
+
+PowerSync's local SQLite is built from `schema.dart` and declares **no foreign
+keys and no checks**. Every rule the cloud schema enforces is absent on the
+client, which matters in both directions:
+
+- **`ON DELETE CASCADE` / `ON DELETE SET NULL` never fire locally.** A
+  client-side delete has to mirror them by hand, or the local rows stay wrong
+  until a sync round-trip — which never comes if the device is offline, and the
+  UI reads local rows. This is a real bug that shipped into a branch: deleting
+  `dim_program` locally left `fact_session.program_run_id` pointing at a run
+  that no longer existed, because the `SET NULL` is the *server's* rule. The
+  integration test caught it; nothing else would have.
+- **A local integration test cannot prove statement order.** Nothing refuses a
+  bad order locally, so a green test says only that the statements ran. The
+  order those deletes need (reviews before runs, runs before blocks) exists to
+  satisfy NO ACTION edges that live only in Postgres. Prove it separately
+  against the real constraints — seed the fixtures and run the statements in a
+  transaction you `rollback`, e.g. through the Supabase MCP tool.
+
+The reverse also bites: the server has CHECKs the client lacks, so a row the
+client stores happily can be rejected on upload. `fact_goal_block_scope_check`
+(`block_id` implies `program_id`) is one — the local DB will hold a row the
+server refuses.
+
 ## Workflow to add or change a table
 
 1. **Migration** — `supabase/migrations/<ts>_<name>.sql`:

@@ -8,7 +8,6 @@ import '../../../data/models/lesson.dart';
 import '../../../data/models/planned_session.dart';
 import '../../../data/models/planned_session_exercise.dart';
 import '../../../data/models/planned_session_exercise_set.dart';
-import '../../../data/models/planned_session_program.dart';
 import '../../../data/repositories/exercise_repository.dart';
 import '../../../data/repositories/lesson_repository.dart';
 import '../../../data/repositories/planned_session_repository.dart';
@@ -51,11 +50,6 @@ abstract interface class WorkoutEditorHost {
   /// The program being edited, or null before it has loaded.
   String? get programId;
 
-  /// The program's join rows. The editor reads the one belonging to the
-  /// workout it opened, because day_of_week lives on the link, not the
-  /// workout — a workout in two programs has two schedules.
-  List<PlannedSessionProgram> get programLinks;
-
   /// How many workouts the program has, so a new one lands at the end.
   int get workoutCount;
 
@@ -69,7 +63,6 @@ class WorkoutEditorState {
     this.editingWorkout,
     this.workoutNameDraft = '',
     this.workoutNotesDraft = '',
-    this.workoutDayOfWeekDraft,
     this.workoutPlannedSessionExerciseSets = const [],
     this.workoutPlannedExercises = const [],
     this.workoutExerciseSlots = const [],
@@ -96,7 +89,6 @@ class WorkoutEditorState {
   final PlannedSession? editingWorkout;
   final String workoutNameDraft;
   final String workoutNotesDraft;
-  final int? workoutDayOfWeekDraft;
   final List<PlannedSessionExerciseSet> workoutPlannedSessionExerciseSets;
   final List<PlannedSessionExercise> workoutPlannedExercises;
   final List<PlanExerciseSlot> workoutExerciseSlots;
@@ -138,8 +130,6 @@ class WorkoutEditorState {
     bool clearEditingWorkout = false,
     String? workoutNameDraft,
     String? workoutNotesDraft,
-    int? workoutDayOfWeekDraft,
-    bool clearWorkoutDayOfWeekDraft = false,
     List<PlannedSessionExerciseSet>? workoutPlannedSessionExerciseSets,
     List<PlannedSessionExercise>? workoutPlannedExercises,
     List<PlanExerciseSlot>? workoutExerciseSlots,
@@ -165,9 +155,6 @@ class WorkoutEditorState {
     workoutNotesDraft: clearEditingWorkout
         ? ''
         : (workoutNotesDraft ?? this.workoutNotesDraft),
-    workoutDayOfWeekDraft: clearEditingWorkout || clearWorkoutDayOfWeekDraft
-        ? null
-        : (workoutDayOfWeekDraft ?? this.workoutDayOfWeekDraft),
     workoutPlannedSessionExerciseSets: clearEditingWorkout
         ? const []
         : (workoutPlannedSessionExerciseSets ??
@@ -229,11 +216,10 @@ class WorkoutEditorViewModel {
   /// The program being edited, or null when this is a standalone workout.
   ///
   /// This is the whole of "standalone mode": the library opens an editor with
-  /// no program behind it, and every program-only affordance (the day-of-week
-  /// picker, the link lookup, the parent list refresh) hangs off this being
-  /// null. It used to be a separate id field, which had to be re-asserted at
-  /// each open and could be left unset — a standalone workout that thought it
-  /// was in a program, and offered the day picker accordingly.
+  /// no program behind it, and every program-only affordance (the link write
+  /// on create, the parent list refresh) hangs off this being null. It used to
+  /// be a separate id field, which had to be re-asserted at each open and could
+  /// be left unset — a standalone workout that thought it was in a program.
   final WorkoutEditorHost? _host;
 
   final ExerciseRepository _exerciseRepo;
@@ -251,10 +237,6 @@ class WorkoutEditorViewModel {
 
   bool get isStandaloneMode => _host == null;
 
-  /// The join row for the workout being edited (program mode only) — its
-  /// day_of_week / week_offset live here, not on the planned session.
-  PlannedSessionProgram? _editingLink;
-
   /// Virtual draft row ids for the workout editor — "+ ADD SET" and new
   /// exercise groups add drafts that materialize on input or explicit Save.
   int _nextDraftId = 1;
@@ -267,7 +249,6 @@ class WorkoutEditorViewModel {
   List<PlannedSessionExerciseSet> _openedSetsSnapshot = const [];
   String? _openedName;
   String? _openedNotes;
-  int? _openedDayOfWeek;
   bool _openedExisting = false;
   final state = ValueNotifier(const WorkoutEditorState());
 
@@ -302,13 +283,12 @@ class WorkoutEditorViewModel {
     await _ensureCatalog();
     try {
       final wp = await _plannedSessionRepo.createPlannedSession(_userId);
-      final link = await _plannedSessionRepo.createProgramLink(
+      await _plannedSessionRepo.createProgramLink(
         _userId,
         programId: programId,
         plannedSessionId: wp.sessionId,
         sequenceOrder: host.workoutCount + 1,
       );
-      _editingLink = link;
       // Created this editing session — Discard rolls back its existence.
       _openedExisting = false;
       _openedExercises = const [];
@@ -317,7 +297,6 @@ class WorkoutEditorViewModel {
         editingWorkout: wp,
         workoutNameDraft: wp.name,
         workoutNotesDraft: wp.notes ?? '',
-        clearWorkoutDayOfWeekDraft: true,
         workoutPlannedExercises: const [],
         workoutPlannedSessionExerciseSets: const [],
         workoutExerciseSlots: const [],
@@ -330,13 +309,10 @@ class WorkoutEditorViewModel {
   }
 
   Future<void> openEditWorkout(PlannedSession w) async {
-    _editingLink = _linkFor(w.sessionId);
     state.value = state.value.copyWith(
       editingWorkout: w,
       workoutNameDraft: w.name,
       workoutNotesDraft: w.notes ?? '',
-      workoutDayOfWeekDraft: _editingLink?.dayOfWeek,
-      clearWorkoutDayOfWeekDraft: _editingLink?.dayOfWeek == null,
       workoutSetsLoading: true,
     );
     // The catalog is loaded here rather than inherited from the program
@@ -356,7 +332,6 @@ class WorkoutEditorViewModel {
       _openedSetsSnapshot = sets;
       _openedName = w.name;
       _openedNotes = w.notes;
-      _openedDayOfWeek = _editingLink?.dayOfWeek;
       _openedExisting = true;
       state.value = state.value.copyWith(
         workoutPlannedSessionExerciseSets: sets,
@@ -379,7 +354,6 @@ class WorkoutEditorViewModel {
   /// Opens a standalone workout for editing (no program). Loads its name,
   /// notes, and planned sets into the editor.
   Future<void> openStandaloneWorkout(String sessionId) async {
-    _editingLink = null;
     await _ensureCatalog();
     final workouts = await _plannedSessionRepo.fetchPlannedSessions(_userId);
     final w = workouts.where((x) => x.sessionId == sessionId).firstOrNull;
@@ -396,7 +370,6 @@ class WorkoutEditorViewModel {
       editingWorkout: w,
       workoutNameDraft: w.name,
       workoutNotesDraft: w.notes ?? '',
-      clearWorkoutDayOfWeekDraft: true,
       workoutSetsLoading: true,
     );
     try {
@@ -412,7 +385,6 @@ class WorkoutEditorViewModel {
       _openedSetsSnapshot = sets;
       _openedName = w.name;
       _openedNotes = w.notes;
-      _openedDayOfWeek = null;
       _openedExisting = true;
       state.value = state.value.copyWith(
         workoutPlannedSessionExerciseSets: sets,
@@ -434,7 +406,6 @@ class WorkoutEditorViewModel {
 
   /// Creates a brand-new standalone workout and opens it for editing.
   Future<void> createStandaloneWorkoutAndOpen() async {
-    _editingLink = null;
     state.value = state.value.copyWith(clearError: true);
     await _ensureCatalog();
     try {
@@ -450,7 +421,6 @@ class WorkoutEditorViewModel {
         editingWorkout: created,
         workoutNameDraft: created.name,
         workoutNotesDraft: created.notes ?? '',
-        clearWorkoutDayOfWeekDraft: true,
         workoutPlannedExercises: const [],
         workoutPlannedSessionExerciseSets: const [],
         workoutExerciseSlots: const [],
@@ -485,11 +455,7 @@ class WorkoutEditorViewModel {
       );
       return;
     }
-    await Future.wait([
-      commitWorkoutName(),
-      commitWorkoutNotes(),
-      commitWorkoutDayOfWeek(s.workoutDayOfWeekDraft),
-    ]);
+    await Future.wait([commitWorkoutName(), commitWorkoutNotes()]);
     // Flush before the draft pass below. A row the user gave a variation, or a
     // note, but no target holds it in the row until it commits — without this
     // the pass writes an empty row for it and what they entered is dropped.
@@ -527,7 +493,6 @@ class WorkoutEditorViewModel {
       final savedNotes = state.value.workoutNotesDraft.trim();
       _openedName = savedName.isEmpty ? null : savedName;
       _openedNotes = savedNotes.isEmpty ? null : savedNotes;
-      _openedDayOfWeek = state.value.workoutDayOfWeekDraft;
       _openedExisting = true;
     }
     state.value = state.value.copyWith(workoutUnsavedChanges: false);
@@ -555,14 +520,6 @@ class WorkoutEditorViewModel {
         clearNotes: _openedNotes == null,
         userId: _userId,
       );
-      // Day-of-week lives on the link row — restore its open-time value.
-      if (_editingLink != null) {
-        await _plannedSessionRepo.updateProgramLink(
-          _editingLink!.plannedSessionProgramId,
-          dayOfWeek: _openedDayOfWeek,
-          clearDayOfWeek: _openedDayOfWeek == null,
-        );
-      }
       // Groups added since open are discarded; snapshot groups come back.
       final currentExercises = await _plannedSessionRepo.fetchPlannedExercises(
         w.sessionId,
@@ -636,7 +593,7 @@ class WorkoutEditorViewModel {
     closeWorkoutEditor();
   }
 
-  // ── Session name/notes/day-of-week — auto-commit on blur/change ─────────
+  // ── Session name/notes — auto-commit on blur/change ─────────────────────
   void setWorkoutNameDraft(String v) => state.value = state.value.copyWith(
     workoutNameDraft: v,
     workoutUnsavedChanges: true,
@@ -647,18 +604,15 @@ class WorkoutEditorViewModel {
   );
 
   /// Whether anything is still unsaved after an auto-commit — pending set
-  /// drafts, or name/notes/day-of-week drafts that differ from the persisted
-  /// workout. Auto-committed fields must clear the dirty flag or the back
-  /// guard prompts "Discard/Save" for already-saved data.
+  /// drafts, or name/notes drafts that differ from the persisted workout.
+  /// Auto-committed fields must clear the dirty flag or the back guard prompts
+  /// "Discard/Save" for already-saved data.
   bool _workoutStillDirty(PlannedSession w) {
     if (state.value.workoutSetDrafts.values.any((l) => l.isNotEmpty)) {
       return true;
     }
     if (state.value.workoutNameDraft.trim() != w.name) return true;
     if (state.value.workoutNotesDraft.trim() != (w.notes ?? '')) return true;
-    if (state.value.workoutDayOfWeekDraft != _editingLink?.dayOfWeek) {
-      return true;
-    }
     return false;
   }
 
@@ -706,45 +660,6 @@ class WorkoutEditorViewModel {
       editingWorkout: updated,
       workoutUnsavedChanges: _workoutStillDirty(updated),
     );
-  }
-
-  /// Persists the editing workout's day-of-week onto its program link row
-  /// (standalone workouts have no weekday — no link, no-op).
-  Future<void> commitWorkoutDayOfWeek(int? v) async {
-    final w = state.value.editingWorkout;
-    final host = _host;
-    if (w == null || host == null) {
-      return; // standalone workouts have no weekday
-    }
-    if (_editingLink == null) {
-      // Shouldn't happen for program workouts (links exist for every
-      // program session), but create one rather than drop the assignment.
-      final programId = host.programId;
-      if (programId == null) return;
-      final link = await _plannedSessionRepo.createProgramLink(
-        _userId,
-        programId: programId,
-        plannedSessionId: w.sessionId,
-        sequenceOrder: host.workoutCount + 1,
-      );
-      _editingLink = link;
-    }
-    state.value = v == null
-        ? state.value.copyWith(clearWorkoutDayOfWeekDraft: true)
-        : state.value.copyWith(workoutDayOfWeekDraft: v);
-    await _plannedSessionRepo.updateProgramLink(
-      _editingLink!.plannedSessionProgramId,
-      dayOfWeek: v,
-      clearDayOfWeek: v == null,
-    );
-  }
-
-  /// The join row for [sessionId] in the host program, if it has one.
-  PlannedSessionProgram? _linkFor(String sessionId) {
-    for (final l in _host?.programLinks ?? const <PlannedSessionProgram>[]) {
-      if (l.plannedSessionId == sessionId) return l;
-    }
-    return null;
   }
 
   // ── Exercise tabs ─────────────────────────────────────────────────────────

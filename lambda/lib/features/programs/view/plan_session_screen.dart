@@ -12,21 +12,10 @@ import '../../../shared/mixins/unsaved_changes_guard.dart';
 import '../../../shared/widgets/add_exercise_modal.dart';
 import '../../../shared/widgets/bottom_nav_bar.dart';
 import '../../../shared/widgets/dropdown_select.dart';
-import '../../../shared/widgets/segmented_control.dart';
 import '../../../shared/widgets/session_exercise_card.dart';
 import '../../../shared/widgets/session_set_row.dart';
 import '../../../shared/widgets/stats_row.dart';
 import '../viewmodel/workout_editor_viewmodel.dart';
-
-const _dayOfWeekOptions = [
-  SegmentOption<int?>(label: 'Mon', value: 1),
-  SegmentOption<int?>(label: 'Tue', value: 2),
-  SegmentOption<int?>(label: 'Wed', value: 3),
-  SegmentOption<int?>(label: 'Thu', value: 4),
-  SegmentOption<int?>(label: 'Fri', value: 5),
-  SegmentOption<int?>(label: 'Sat', value: 6),
-  SegmentOption<int?>(label: 'Sun', value: 7),
-];
 
 /// Full-screen planned-workout editor that mirrors the active-session UX:
 /// tabbed by exercise, inline editable set grid (PlanSetRow), auto-commit on
@@ -274,28 +263,9 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         // Session Notes is hidden from the frontend for now
-                        // (the VM plumbing stays — see initState). The
-                        // day-of-week assignment lives on the program link
-                        // row, so it only applies to program workouts
-                        // (standalone templates have no schedule).
-                        if (!widget.viewModel.isStandaloneMode) ...[
-                          Text(
-                            'Day of week',
-                            style: AppFonts.ui(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w500,
-                              color: AppColors.primary,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          SegmentedControl<int?>(
-                            options: _dayOfWeekOptions,
-                            value: state.workoutDayOfWeekDraft,
-                            onChange: (v) =>
-                                widget.viewModel.commitWorkoutDayOfWeek(v),
-                          ),
-                          const SizedBox(height: AppSpacing.lg),
-                        ],
+                        // (the VM plumbing stays — see initState). Day-of-week
+                        // scheduling is retired for now: a workout is a list
+                        // of exercises, and nothing assigns it to a weekday.
                         if (state.workoutSetsLoading)
                           Center(
                             child: Padding(

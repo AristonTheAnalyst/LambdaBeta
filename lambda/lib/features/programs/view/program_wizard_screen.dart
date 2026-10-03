@@ -19,12 +19,13 @@ import '../viewmodel/program_detail_viewmodel.dart';
 import 'plan_session_screen.dart';
 
 /// 2-step guided program creation: name the program, then design the planned
-/// workouts. Progression mode is NOT chosen here — it's a run property,
-/// picked when the program is started (frequency vs order). Day assignment
-/// happens in the workout editor (day-of-week lives on the program link).
+/// workouts. Nothing about scheduling is chosen here — a program is a list of
+/// workouts, and how long a run of it lasts is a run property set when the
+/// program is started.
 ///
-/// The program is created when the name step continues, then the wizard edits
-/// it via a real [ProgramDetailViewModel]. Goals are set later from the
+/// The program is created when the name step continues — carrying the name the
+/// user just typed, so step two never shows a placeholder — and the wizard then
+/// edits it via a real [ProgramDetailViewModel]. Goals are set later from the
 /// program detail screen once a run is active.
 class ProgramWizardScreen extends StatefulWidget {
   const ProgramWizardScreen({super.key});
@@ -73,17 +74,47 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
 
   Future<void> _next() async {
     if (_step == 0) {
-      // Create the program now so the workouts step operates on a real
-      // program. Progression mode is chosen at run start, not here.
+      final name = _nameCtrl.text.trim();
+      final description = _descriptionCtrl.text.trim();
+      // Back-then-Continue must not create a second program. The first pass
+      // already made this one, so a second pass only renames it — and a second
+      // create would fail outright, since the name it would reuse is taken.
+      final existing = _detailVm;
+      if (existing != null) {
+        existing.setNameDraft(name);
+        existing.setDescriptionDraft(description);
+        await existing.saveProgramDetails();
+        if (!mounted) return;
+        setState(() => _step = 1);
+        return;
+      }
+      // Create the program now, name and all, so the workouts step operates on
+      // a real program that is already called what the user called it.
+      // Progression mode is chosen at run start, not here.
       final vm = ProgramDetailViewModel();
-      final id = await vm.createNewProgram();
-      if (id == null) return;
+      final id = await vm.createNewProgram(name: name, description: description);
+      if (!mounted) return;
+      if (id == null) {
+        // The VM keeps its error in state, but nothing is listening to it yet
+        // — without this the Continue button would just do nothing. A name
+        // that is already taken lands here.
+        final message =
+            vm.state.value.error ?? 'Could not create the program.';
+        vm.dispose();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(message),
+            backgroundColor: AppColors.danger,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
       await vm.load(id);
       if (!mounted) return;
       setState(() {
         _detailVm = vm;
         _programId = id;
-        _nameCtrl.text = vm.state.value.nameDraft;
         _step = 1;
       });
       return;

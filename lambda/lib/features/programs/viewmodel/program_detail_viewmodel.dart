@@ -241,7 +241,6 @@ class ProgramDetailViewModel implements WorkoutEditorHost {
   @override
   String? get programId => state.value.program?.programId;
 
-  @override
   List<PlannedSessionProgram> get programLinks => state.value.programLinks;
 
   @override
@@ -255,12 +254,20 @@ class ProgramDetailViewModel implements WorkoutEditorHost {
 
   String get _userId => Supabase.instance.client.auth.currentUser!.id;
 
-  /// Creates a new program (name/goals are set by the wizard's later steps)
-  /// and returns its id, ready for [load]. Progression mode is NOT a program
-  /// property — it's chosen when a run starts.
-  Future<String?> createNewProgram() async {
+  /// Creates a new program and returns its id, ready for [load].
+  ///
+  /// The wizard names it here rather than renaming a placeholder afterwards:
+  /// the name is the one thing the user typed before this call, so passing it
+  /// through is what makes it stick. Goals are added later, from the detail
+  /// screen. Progression mode is NOT a program property — it's chosen when a
+  /// run starts.
+  Future<String?> createNewProgram({String? name, String? description}) async {
     try {
-      final created = await _repo.createProgram(_userId);
+      final created = await _repo.createProgram(
+        _userId,
+        name: name,
+        description: description,
+      );
       return created.programId;
     } catch (e) {
       state.value = state.value.copyWith(error: e.toString());
@@ -502,9 +509,13 @@ class ProgramDetailViewModel implements WorkoutEditorHost {
     }
   }
 
-  /// Starts a run of this program. [progressionMode] is chosen HERE —
-  /// 'frequency' (sessions assigned to days) or 'order' (work through the
-  /// list) — and lives on the run, not the program.
+  /// Starts a run of this program. The mode lives on the run, not the
+  /// program.
+  ///
+  /// The UI only starts order runs — day scheduling is retired, so nothing
+  /// assigns sessions to weekdays and [progressionMode] keeps its default. The
+  /// parameters stay because the column, the model and the repository still
+  /// carry a frequency run's shape for when scheduling comes back.
   Future<void> setAsCurrent({
     String progressionMode = 'order',
     int? targetSessions,
