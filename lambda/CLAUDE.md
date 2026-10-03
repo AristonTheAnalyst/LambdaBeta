@@ -70,7 +70,6 @@ The app has three session surfaces that share one UX. **The live session screen 
 
 **Key features:**
 - Editable inline header (tap to rename, auto-commit on blur), session notes
-- Day-of-week picker (calendar-mode programs only)
 - Stats bar: SETS / EXERCISES (no PRs/rest — no live data)
 - Exercise selector (arrows reorder → `exercise_sequence_order` persisted)
 - Lessons/History/PRs pills greyed by decision
@@ -200,7 +199,7 @@ Rule of thumb: complex state needing selective rebuilds → immutable state; tig
 | `stats_row.dart` | All three screens | StatsRow + StatsTile. |
 | `page_header.dart` | All screens | Standard app header bar. |
 | `glass_button.dart` | All screens | Accent outline button. |
-| `segmented_control.dart` | Program screens | Day-of-week picker, mode toggle. |
+| `segmented_control.dart` | Program screens, session detail | Segmented option control (tabs, scope/kind pickers). |
 | `dropdown_select.dart` | All set rows | Variation picker with search + create-new. |
 | `slide_up_modal.dart` | Add exercise, notes, pickers | Bottom sheet modal (`showLambdaModal`). |
 | `reflection_summary.dart` | Session prep/reflection | Shared before/after recap widget. |
@@ -218,8 +217,9 @@ Each repository wraps PowerSync SQLite CRUD.
 
 - `SessionRepository`: createSession, endSession, updateSessionNotes, reorderSessionExercises, cancelSession, getActiveSessionId, insertSessionExercise, updateSessionExercise, loadSessionExercises, deleteSessionExercise, insertSet, updateSet, deleteSet, loadSetsForSession, reorderSets, loadSessionsWithSets, loadPastSetsTimeline, fetchSession, findLastSetForExercise(Variation)
 - `PlannedSessionRepository`: fetchPlannedSessions (standalone or via program links), fetchPlannedSessionById, fetchPlannedExercises, fetchPlannedSets, createPlannedSession, updatePlannedSession, deletePlannedSession (archives + its groups/sets, hard-deletes links), createPlannedExercise, deletePlannedExercise, createPlannedSet, updatePlannedSet, deletePlannedSet, fetchNormalizedPlannedSets, duplicatePlannedSession, swapExerciseOrders, renumberExerciseOrders, fetchProgramLinks, createProgramLink, updateProgramLink, deleteProgramLink
-- `ProgramRepository`: fetchPrograms, fetchProgram, createProgram, updateProgram, deleteProgram (archives + hard-deletes links), fetchPlannedSessions(programId), fetchPlannedSessionSets, duplicatePlannedSession, fetchProgramWithSessions, duplicateProgram, fetchGoals, createGoal, deleteGoal
-- `ProgramRunRepository`: getCurrentRun, startProgramRun (takes progressionMode), updateRunConfig, endCurrentRun, fetchProgramHistory, getNextPlannedSession (from run mode + join rows), getProgress
+- `ProgramRepository`: fetchPrograms, fetchArchivedPrograms, fetchProgram, createProgram, updateProgram, deleteProgram (archives), hardDeleteProgram (dependent-row order — sessions stay, unlinked), reactivateProgram, programSessionCount, touchProgram, fetchPlannedSessions(programId), duplicatePlannedSession, importWorkoutIntoProgram, pushWorkoutToLibrary, fetchProgramWithSessions, duplicateProgram, fetchBlocks, fetchBlock, createProgramBlock, updateBlock, reorderBlocks, archiveBlock, reactivateBlock, fetchArchivedBlocks, duplicateBlock, fetchGoals, createGoal, deleteGoal
+- `ProgramRunRepository`: getCurrentRun, startProgramRun, updateRunConfig, endCurrentRun, fetchProgramHistory, getNextPlannedSession (order-based — the run config owns the session count), getProgress
+- `ProgramHistoryRepository`: fetchReviews, fetchReview, fetchOpenReview, scheduleReview, updateProposal, completeReview, closeRun, fetchDueItems, checkpointFor, fetchRunSessions (frozen achievements), weightWindow, buildContent, captureRevision, fetchRevisions, fetchLatestRevision
 - `ExerciseRepository`: fetchExerciseDetailMap, fetchVariations, findExerciseByName, createExercise, reactivateExercise, findVariationByName, createVariation, reactivateVariation, deactivate/update variants
 - `LessonRepository`: fetchLessons, createLesson, updateLesson, setPinned, deleteLesson
 
