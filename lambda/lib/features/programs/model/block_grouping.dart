@@ -7,8 +7,8 @@ import '../../../data/models/program_block.dart';
 class ProgramBlockGroup {
   const ProgramBlockGroup({required this.block, required this.workouts});
 
-  /// Null is the unassigned group: a blockless program's single section, or
-  /// the leftovers of a program that has blocks.
+  /// Null is the unassigned group: a simple program's single section, or the
+  /// leftovers of a program that has blocks.
   final ProgramBlock? block;
 
   final List<PlannedSession> workouts;
@@ -23,8 +23,11 @@ class ProgramBlockGroup {
 /// by id. Workout order within a group follows the incoming order, which is
 /// the program-global `sequence_order`.
 ///
-/// A program with no blocks comes back as exactly one unassigned group, so
-/// blockless rendering is the same list it has always been.
+/// An empty block list yields exactly one unassigned group. That is not a
+/// statement about the program's *shape* — a simple program and a blocked one
+/// with no blocks yet both come back this way, and only `dim_program.uses_blocks`
+/// can tell them apart. It is a statement about the split: there is nothing to
+/// group by, so nothing is grouped.
 List<ProgramBlockGroup> groupWorkoutsByBlock({
   required List<ProgramBlock> blocks,
   required List<PlannedSession> workouts,

@@ -953,6 +953,12 @@ class _EditVariationModal extends StatelessWidget {
                     Expanded(
                       child: LambdaButton(
                         label: 'Save',
+                        // Nothing to write until the name differs from the
+                        // one being renamed — Cancel is the dismissal.
+                        disabled: state.isSaving ||
+                            state.editVarName.trim().isEmpty ||
+                            state.editVarName.trim() ==
+                                state.editVariation!.name,
                         onPressed: () async {
                           final original = state.editVariation!.name;
                           final renamed = state.editVarName.trim() != original;
@@ -1005,7 +1011,6 @@ class _EditVariationModal extends StatelessWidget {
                           }
                         },
                         loading: state.isSaving,
-                        disabled: state.isSaving,
                       ),
                     ),
                   ],

@@ -11,6 +11,7 @@ import '../../features/dev/view/dev_screen.dart';
 import '../../features/dev/view/experimental_screen.dart';
 import '../../features/dev/view/gallery_screen.dart';
 import '../../features/dev/view/lesson_debug_screen.dart';
+import '../../features/dev/view/nav_bar_demo_screen.dart';
 import '../../features/exercises/view/exercise_hub_screen.dart';
 import '../../features/exercises/view/exercise_detail_screen.dart';
 import '../../features/exercises/view/guide_screen.dart';
@@ -98,6 +99,15 @@ abstract final class AppRouter {
         ],
       ),
 
+      // ── Dev-only full-screen demos ───────────────────────────────────────
+      // Outside the tab shell on purpose: these pages draw their own bottom
+      // bar, and the shell's bar would sit underneath it.
+      if (!kReleaseMode)
+        GoRoute(
+          path: '/nav-bar-demo',
+          builder: (_, _) => const NavBarDemoScreen(),
+        ),
+
       // ── Tab shell ─────────────────────────────────────────────────────────
       ShellRoute(
         builder: (context, state, child) => _TabShell(
@@ -170,24 +180,33 @@ abstract final class AppRouter {
   );
 }
 
+/// Whether the tab shell's bar belongs on [location].
+///
+/// Every location inside a tab's branch gets the bar — not just its root.
+/// The shell is built once per branch and is not rebuilt as pages are pushed
+/// within it, so in practice a pushed page keeps its branch's bar; but a `go`
+/// straight to a nested location builds the shell with that deeper location,
+/// and the bar must not vanish just because the user arrived by a different
+/// door.
+@visibleForTesting
+bool showBottomNavFor(String location) =>
+    _kTabRoots.any((r) => location == r || location.startsWith('$r/'));
+
+const _kTabRoots = ['/session', '/exercises', '/profile', '/dev'];
+
 class _TabShell extends StatelessWidget {
   const _TabShell({required this.currentRoute, required this.child});
 
   final String currentRoute;
   final Widget child;
 
-  static const _tabRoots = [
-    '/session', '/exercises', '/profile', '/dev',
-  ];
-
-  bool get _showBottomNav => _tabRoots.contains(currentRoute);
-
   @override
   Widget build(BuildContext context) {
+    final showNav = showBottomNavFor(currentRoute);
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: child,
-      bottomNavigationBar: _showBottomNav
+      bottomNavigationBar: showNav
           ? BottomNavBar(
               currentRoute: currentRoute,
               onTap: (route) => GoRouter.of(context).go(route),

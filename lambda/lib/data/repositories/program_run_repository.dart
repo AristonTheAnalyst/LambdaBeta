@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 import '../../core/powersync/database.dart' as ps;
@@ -12,15 +13,77 @@ import 'program_repository.dart';
 
 const _uuid = Uuid();
 
+/// The network half of [ProgramRunRepository] — the three calls that go
+/// straight to Supabase because the local mirror may be stale or empty (a run
+/// that has never been downloaded is invisible locally, which is exactly the
+/// state a just-begun run is in).
+///
+/// A seam, not an abstraction for its own sake: tests cannot construct
+/// `Supabase.instance` at all, so the run lifecycle's contract with the server
+/// — the id it inserts, the times it clears — is only testable if it can be
+/// observed through an injected object.
+abstract class ProgramRunRemote {
+  Future<Map<String, dynamic>?> fetchCurrentRun(String userId);
+
+  /// Steps the user's current run aside: `is_current = false`, and
+  /// deliberately **no** `ended_date`.
+  ///
+  /// Pausing is not ending. Ending stamps a date, which is what freezes the
+  /// run as history; pausing leaves the row open so it can be resumed with its
+  /// id, config, block and session attribution intact.
+  Future<void> pauseCurrentRun(String userId);
+
+  Future<void> insertRun(Map<String, dynamic> row);
+}
+
+/// The real remote: Supabase REST via the ambient client.
+class SupabaseProgramRunRemote implements ProgramRunRemote {
+  const SupabaseProgramRunRemote();
+
+  SupabaseClient get _client => Supabase.instance.client;
+
+  @override
+  Future<Map<String, dynamic>?> fetchCurrentRun(String userId) async {
+    final remote = await _client
+        .from('fact_program_run')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('is_current', true)
+        .limit(1)
+        .timeout(const Duration(seconds: 5));
+    return remote.isEmpty ? null : remote.first;
+  }
+
+  @override
+  Future<void> pauseCurrentRun(String userId) async {
+    await _client.from('fact_program_run').update({
+      'is_current': false,
+    }).eq('user_id', userId).eq('is_current', true)
+        .timeout(const Duration(seconds: 5));
+  }
+
+  @override
+  Future<void> insertRun(Map<String, dynamic> row) async {
+    await _client
+        .from('fact_program_run')
+        .insert(row)
+        .timeout(const Duration(seconds: 8));
+  }
+}
+
 /// Owns "what program is current" and "what's next" — the logic needed by
 /// both the live session (Phase 4) and the standalone progress screen
 /// (Phase 3), kept out of both so neither has to duplicate it.
 class ProgramRunRepository {
-  ProgramRunRepository({ProgramRepository? programRepository})
-      : _programRepo = programRepository ?? ProgramRepository();
+  ProgramRunRepository({
+    ProgramRepository? programRepository,
+    ProgramRunRemote? remote,
+  })  : _programRepo = programRepository ?? ProgramRepository(),
+        _remote = remote ?? const SupabaseProgramRunRemote();
 
   final ProgramRepository _programRepo;
   final PlannedSessionRepository _plannedRepo = PlannedSessionRepository();
+  final ProgramRunRemote _remote;
 
   Future<ProgramRun?> getCurrentRun(String userId) async {
     // 1. Try the local PowerSync mirror first — it's fast and offline-safe.
@@ -30,34 +93,35 @@ class ProgramRunRepository {
     );
     if (rows.isNotEmpty) return ProgramRun.fromMap(rows.first);
 
-    // 2. Fall back to Supabase REST — the local PowerSync DB can be stale when
-    //    a checkpoint is stuck, but the server always has the latest state.
+    // 2. Fall back to the server — the local mirror can be stale when a
+    //    checkpoint is stuck, but the server always has the latest state.
     try {
-      final remote = await Supabase.instance.client
-          .from('fact_program_run')
-          .select('*')
-          .eq('user_id', userId)
-          .eq('is_current', true)
-          .limit(1)
-          .timeout(const Duration(seconds: 5));
-      if (remote.isNotEmpty) return ProgramRun.fromMap(remote.first);
+      final remote = await _remote.fetchCurrentRun(userId);
+      if (remote != null) return ProgramRun.fromMap(remote);
     } catch (_) {
       // Server unreachable — genuinely no current run, or just offline.
     }
     return null;
   }
 
-  /// Ends any existing current run and starts a fresh one for [programId],
-  /// carrying how it progresses ('frequency' | 'order') and the duration
-  /// config (sessions for order, weeks or end date for frequency).
+  /// Starts a fresh run for [programId], carrying how it progresses
+  /// ('frequency' | 'order') and the duration config (sessions for order,
+  /// weeks or end date for frequency).
+  ///
+  /// **It pauses the previous run, it does not end it.** Starting something
+  /// else is a switch, not a verdict on what you left: the run that was current
+  /// keeps its id, its config, its block and every session attributed to it,
+  /// and can be resumed. Ending is always a separate, explicit act — see
+  /// [ProgramRunLifecycle].
   ///
   /// [blockId] names the block being run. Null runs the whole program — the
   /// only option for a program with no blocks, and unchanged behaviour for one
   /// that has them.
   ///
-  /// Writes to Supabase REST first (the authoritative write), then mirrors
-  /// locally through PowerSync so the UI shows the change immediately.  If the
-  /// REST call fails the local write is skipped — the caller gets the error.
+  /// Writes to Supabase REST first (the authoritative write), then mirrors the
+  /// run locally through PowerSync so the UI — and anything logged against the
+  /// run, including sessions started right after — sees it at once. If the REST
+  /// call fails the local write is skipped and the caller gets the error.
   Future<ProgramRun> startProgramRun(
     String userId,
     String programId, {
@@ -69,17 +133,14 @@ class ProgramRunRepository {
   }) async {
     final id = _uuid.v4();
     final startedDate = DateTime.now().toUtc();
-    final client = Supabase.instance.client;
 
-    // 1. End the previous run on the server FIRST — a unique partial index
-    //    enforces at most one is_current=true row per user, so the old run
-    //    must be cleared before inserting the new one.
+    // 1. Step the previous run aside on the server FIRST — a unique partial
+    //    index enforces at most one is_current=true row per user, so the old
+    //    run must be cleared before inserting the new one. Cleared, not ended:
+    //    the run left behind stays resumable, and only an explicit end stamps
+    //    an `ended_date`.
     try {
-      await client.from('fact_program_run').update({
-        'is_current': false,
-        'ended_date': startedDate.toIso8601String(),
-      }).eq('user_id', userId).eq('is_current', true)
-          .timeout(const Duration(seconds: 5));
+      await _remote.pauseCurrentRun(userId);
     } catch (_) {
       // If this fails the insert below will also fail with a duplicate-key
       // violation — let that propagate to the caller.
@@ -87,7 +148,7 @@ class ProgramRunRepository {
 
     // 2. Authoritative write — hits Supabase directly so the run exists
     //    server-side even if PowerSync is stuck reconciling a checkpoint.
-    await client.from('fact_program_run').insert({
+    await _remote.insertRun({
       'program_run_id': id,
       'program_id': programId,
       'user_id': userId,
@@ -100,11 +161,56 @@ class ProgramRunRepository {
       // The block must already exist server-side — `createProgramBlock` is
       // REST-first for exactly this reason (its FK is checked on upload).
       'block_id': blockId,
-    }).timeout(const Duration(seconds: 8));
+    });
 
-    // No local PowerSync mirror — writing locally creates a CRUD entry that
-    // blocks the checkpoint from applying (the row already exists server-side
-    // and PowerSync will download it on the next successful sync).
+    // 3. Mirror it locally, under the same id the server knows. Without this
+    //    the run is invisible until the next download lands: `getProgress`
+    //    reads locally first, and a session started in that window would be
+    //    logged with `program_run_id = NULL`, silently not counting toward the
+    //    run the user just began.
+    //
+    //    The uploader upserts (`database.dart` → `uploadData`), so the PUT this
+    //    queues is a no-op against the row already on the server, and the
+    //    server's copy downloads onto the same row rather than beside it. The
+    //    previous run is cleared locally in the same transaction so the local
+    //    queue mirrors the order the server saw — and cleared the same way the
+    //    server cleared it, with no `ended_date`, so the two halves cannot
+    //    disagree about whether the run that was left is paused or finished.
+    //
+    //    Best-effort: the run exists server-side either way, so a mirror
+    //    failure logs and moves on rather than failing a begin that succeeded.
+    try {
+      await ps.safeWriteTransaction((tx) async {
+        await tx.execute(
+          'UPDATE fact_program_run SET is_current = 0 '
+          'WHERE user_id = ? AND is_current = 1',
+          [userId],
+        );
+        await tx.execute(
+          'INSERT INTO fact_program_run '
+          '(id, program_run_id, program_id, user_id, target_sessions, '
+          'target_weeks, end_date, started_date, ended_date, is_current, '
+          'progression_mode, block_id) '
+          'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          [
+            id,
+            id,
+            programId,
+            userId,
+            targetSessions,
+            targetWeeks,
+            endDate?.toUtc().toIso8601String(),
+            startedDate.toIso8601String(),
+            null,
+            1,
+            progressionMode,
+            blockId,
+          ],
+        );
+      });
+    } catch (e) {
+      debugPrint('startProgramRun: local mirror failed: $e');
+    }
 
     return ProgramRun(
       programRunId: id,
@@ -150,6 +256,44 @@ class ProgramRunRepository {
     );
   }
 
+  /// Steps the user's current run aside **without ending it**.
+  ///
+  /// The counterpart to [endCurrentRun]'s two columns: this writes only
+  /// `is_current = 0`, which is exactly what makes the run paused rather than
+  /// ended. Kept here (as well as on the remote) so a caller that pauses
+  /// without starting anything — none today, but the state exists — has one
+  /// spelling to use.
+  ///
+  /// Why there is no `(user_id, program_id) WHERE ended_date IS NULL` unique
+  /// index on the server, which would make "one open attempt per program" a
+  /// fact: this write is local, and reaches the server through PowerSync on its
+  /// own schedule, while the begin that follows inserts over REST immediately.
+  /// A restart begins against the same program the old run belongs to, so the
+  /// insert would arrive while the server still sees that old run as open — its
+  /// end is still queued locally — and the index would refuse it. A normal
+  /// restart would come back as a constraint violation. The rule stays a rule
+  /// of the app, enforced by the paths that produce it.
+  Future<void> pauseCurrentRun(String userId) async {
+    await ps.safeExec(
+      'UPDATE fact_program_run SET is_current = 0 '
+      'WHERE user_id = ? AND is_current = 1',
+      [userId],
+    );
+  }
+
+  /// Ends one run by id, stamping the end.
+  ///
+  /// By id because a run can be ended from either state: "End program" has to
+  /// work on a paused run, which [endCurrentRun] cannot reach — that one only
+  /// knows what is current.
+  Future<void> endRun(String programRunId) async {
+    await ps.safeExec(
+      'UPDATE fact_program_run SET is_current = 0, ended_date = ? '
+      'WHERE program_run_id = ?',
+      [DateTime.now().toUtc().toIso8601String(), programRunId],
+    );
+  }
+
   Future<void> endCurrentRun(String userId) async {
     await ps.safeExec(
       'UPDATE fact_program_run SET is_current = 0, ended_date = ? WHERE user_id = ? AND is_current = 1',
@@ -157,10 +301,94 @@ class ProgramRunRepository {
     );
   }
 
+  /// Puts a paused run back in charge, in a single local transaction.
+  ///
+  /// Order matters: whatever is current steps aside before this one steps up,
+  /// because two `is_current` rows at once is exactly what the server's
+  /// one-current unique index refuses — and the refusal would arrive as a
+  /// quarantined upload, not as an error here.
+  ///
+  /// Local, like [endCurrentRun]: the write syncs up through PowerSync. The
+  /// run being resumed is necessarily a local row — it is read with
+  /// [fetchPausedRun], which reads locally — so the update always has
+  /// something to land on.
+  Future<void> resumeRun(String userId, String programRunId) async {
+    await ps.safeWriteTransaction((tx) async {
+      await tx.execute(
+        'UPDATE fact_program_run SET is_current = 0 '
+        'WHERE user_id = ? AND is_current = 1 AND program_run_id != ?',
+        [userId, programRunId],
+      );
+      await tx.execute(
+        'UPDATE fact_program_run SET is_current = 1 WHERE program_run_id = ?',
+        [programRunId],
+      );
+    });
+  }
+
+  /// Every open run that is not current — "stepped away from", newest first.
+  ///
+  /// Open means `ended_date IS NULL`: the test is the whole distinction
+  /// between paused and ended, so this can never return a run that is over.
+  /// There can be one per program (only one run of any program is current),
+  /// and the list is bounded by how many programs a human has actually paused.
+  Future<List<ProgramRun>> fetchPausedRuns(String userId) async {
+    final rows = await ps.db.getAll(
+      'SELECT * FROM fact_program_run '
+      'WHERE user_id = ? AND is_current = 0 AND ended_date IS NULL '
+      'ORDER BY started_date DESC',
+      [userId],
+    );
+    return rows.map((r) => ProgramRun.fromMap(r)).toList();
+  }
+
+  /// The paused run of one program, or the newest paused run overall.
+  ///
+  /// [programId] is how the detail screen asks "was THIS program ever
+  /// paused?"; without it the question is "what did I step away from?", which
+  /// is what the library badge wants.
+  Future<ProgramRun?> fetchPausedRun(String userId, {String? programId}) async {
+    final runs = await fetchPausedRuns(userId);
+    for (final run in runs) {
+      if (programId == null || run.programId == programId) return run;
+    }
+    return null;
+  }
+
+  /// One run by id, or null when its row has not synced locally.
+  ///
+  /// Used to answer "when did the run behind this record start?" — the
+  /// achievements window of a first run opens there, so the question has to be
+  /// answerable for a run that is no longer current.
+  Future<ProgramRun?> fetchRunById(String programRunId) async {
+    final rows = await ps.db.getAll(
+      'SELECT * FROM fact_program_run WHERE program_run_id = ? LIMIT 1',
+      [programRunId],
+    );
+    if (rows.isEmpty) return null;
+    return ProgramRun.fromMap(rows.first);
+  }
+
   Future<List<ProgramRun>> fetchProgramHistory(String userId) async {
     final rows = await ps.db.getAll(
       'SELECT * FROM fact_program_run WHERE user_id = ? ORDER BY started_date DESC',
       [userId],
+    );
+    return rows.map((r) => ProgramRun.fromMap(r)).toList();
+  }
+
+  /// Every run of one program, newest first — the history a block sequence
+  /// reads.
+  ///
+  /// Ended runs included and, more to the point, ended runs *distinguished*:
+  /// "which blocks are behind you" is the question that decides what may be
+  /// begun next, and it is only answerable from the runs that were formally
+  /// closed.
+  Future<List<ProgramRun>> fetchRunsForProgram(String programId) async {
+    final rows = await ps.db.getAll(
+      'SELECT * FROM fact_program_run WHERE program_id = ? '
+      'ORDER BY started_date DESC',
+      [programId],
     );
     return rows.map((r) => ProgramRun.fromMap(r)).toList();
   }
@@ -236,6 +464,22 @@ class ProgramRunRepository {
   Future<ProgramProgress?> getProgress(String userId) async {
     final run = await getCurrentRun(userId);
     if (run == null) return null;
+    return progressFor(run);
+  }
+
+  /// The same numbers for a named run, whatever its state.
+  ///
+  /// Split out for the paused case: a paused run is not current, so
+  /// [getProgress] returns null for it and the program could not say how far
+  /// it had got — which is the one thing a user coming back to a paused
+  /// program wants to see. Everything is keyed off the run's id and its block,
+  /// so nothing changes but the entry point.
+  ///
+  /// The caller decides whether to show the "next workout" this computes:
+  /// nothing is scheduled while a run is paused, and [getProgress] — the read
+  /// the session screen and the due prompts use — still answers for the
+  /// current run only.
+  Future<ProgramProgress?> progressFor(ProgramRun run) async {
     final program = await _programRepo.fetchProgram(run.programId);
     if (program == null) return null;
 
@@ -243,7 +487,7 @@ class ProgramRunRepository {
     // downstream number (in-cycle progress, isFinished, remainingLabel) is
     // block-relative without a single branch in those getters.
     final workouts = await _plannedRepo.fetchPlannedSessions(
-      userId,
+      run.userId,
       programId: program.programId,
       blockId: run.blockId,
     );

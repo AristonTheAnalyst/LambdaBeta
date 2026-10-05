@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'core/powersync/database.dart';
 import 'core/powersync/secure_local_storage.dart';
 import 'core/styles/app_fonts.dart';
+import 'features/programs/view/review_container.dart';
 import 'version_gate_app.dart';
 
 Future<void> main() async {
@@ -27,7 +28,10 @@ Future<void> main() async {
 
   _initDeepLinks();
 
-  runApp(const VersionGateApp());
+  // Above the app, not inside it: a review's bar has to survive every route the
+  // user drills into, and the ambient session is the one piece of state that
+  // outlives them all.
+  runApp(ReviewScope(child: const VersionGateApp()));
 }
 
 void _initDeepLinks() {

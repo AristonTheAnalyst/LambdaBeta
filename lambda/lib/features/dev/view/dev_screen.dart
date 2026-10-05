@@ -47,7 +47,13 @@ class DevScreen extends StatelessWidget {
                     subtitle: 'Raw dim_lesson rows + upload queue',
                     onTap: () => context.push('/dev/lesson-debug'),
                   ),
-                  const SizedBox(height: AppSpacing.xl),
+                  const SizedBox(height: AppSpacing.sm),
+                  _NavCard(
+                    icon: Icons.blur_on,
+                    label: 'Nav Bar Demo',
+                    subtitle: 'Floating blurred bar that shrinks on scroll',
+                    onTap: () => context.push('/nav-bar-demo'),
+                  ),
                   const SizedBox(height: AppSpacing.xl),
                   AppCard(
                     child: Column(

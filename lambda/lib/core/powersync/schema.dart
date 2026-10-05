@@ -84,6 +84,12 @@ const schema = Schema([
     Column.text('date_archived'),
     Column.text('program_created_date'),
     Column.text('program_updated_date'),
+    // The program's shape, fixed at creation: 1 = made of blocks, 0 = a list
+    // of workouts. Stored, not inferred — a blocked program with no blocks yet
+    // is a real state and must not read as a simple one.
+    Column.integer('uses_blocks'),
+    // A simple program's remembered length; NULL = none set yet.
+    Column.integer('default_target_sessions'),
   ]),
   Table('fact_program_run', [
     Column.text('program_run_id'),
@@ -103,7 +109,7 @@ const schema = Schema([
   // An ordered, duration-bounded phase of a program, holding workouts and (from
   // the goals phase) goals. A program either uses blocks or doesn't — never
   // mixed. `date_archived` rather than `is_archived` because a block is named,
-  // dated and user-visible with its own run/revision trail to keep browsable.
+  // dated and user-visible with its own run/review trail to keep browsable.
   Table('dim_program_block', [
     Column.text('block_id'),
     Column.text('user_id'),
@@ -120,33 +126,22 @@ const schema = Schema([
     Column.text('created_date'),
     Column.text('updated_date'),
   ]),
-  // An immutable snapshot of a program's contents — one row per version.
-  // Read-only from the client's perspective (write-once, never updated), and
-  // only ever inserted off a `captureRevision` transaction.
-  Table('fact_program_revision', [
-    Column.text('revision_id'),
-    Column.text('user_id'),
-    Column.text('program_id'),
-    Column.text('block_id'),
-    Column.text('block_run_id'),
-    Column.text('review_id'),
-    Column.integer('revision_number'),
-    Column.text('reason'),
-    Column.text('content_json'),
-    Column.text('content_hash'),
-    Column.integer('session_count'),
-    Column.integer('exercise_count'),
-    Column.integer('set_count'),
-    Column.text('created_date'),
-  ]),
   // The checkpoints a program's run passes through — one row per review, per
-  // proposed change, and per run close. `completed_date` NULL is what makes a
-  // review open; there is no status column to keep in sync with it.
+  // proposed change, and per run close — AND the snapshot each one cut.
+  // `completed_date` NULL is what makes a review open; there is no status column
+  // to keep in sync with it. `snapshot_content` is the same `ProgramContent`
+  // document the retired revision table held, written when the review completes.
+  //
+  // SCOPE — exactly one of: the program's own (`block_id` and `session_id` both
+  // null), a block (`block_id`), or one planned session (`session_id`). The two
+  // ids are never both set; the server enforces it, and `scheduleReview`
+  // refuses it client-side so the row cannot reach the CHECK at all.
   Table('fact_program_review', [
     Column.text('review_id'),
     Column.text('user_id'),
     Column.text('program_id'),
     Column.text('block_id'),
+    Column.text('session_id'),
     Column.text('program_run_id'),
     Column.text('kind'),
     Column.text('title'),
@@ -156,8 +151,9 @@ const schema = Schema([
     Column.text('outcome'),
     Column.text('proposed_content'),
     Column.text('proposed_hash'),
+    Column.text('snapshot_content'),
+    Column.text('snapshot_hash'),
     Column.text('achievements_json'),
-    Column.text('revision_id'),
     Column.text('created_date'),
   ]),
   Table('dim_lesson', [

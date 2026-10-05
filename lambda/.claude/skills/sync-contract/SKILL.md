@@ -112,6 +112,20 @@ Locally: `perl -pe 's/--.*$//' f.sql | tr -d '[:space:];' | tr '[:upper:]'
 that actually ran. A file that differs *on purpose* (an added `if exists`
 guard, say) should say so in a comment — otherwise the next person "fixes" it.
 
+### Held migrations (a destructive half that must land later)
+
+`supabase db push` has no per-file flag — it applies every pending file in
+`supabase/migrations/`. So when a change must land in two moments (additive
+first, destructive after the sync-stream deploy and the app build), the
+destructive file is **held** in `supabase/held_migrations/`, which `db push`
+never reads. A plain push is then safe by construction, instead of resting on
+someone remembering to move a file out and back.
+
+Held files keep their real version (nothing was ever applied under it, so
+there is no drift to reconcile) and the directory's README carries the landing
+instructions. First case: `20261005130100_drop_program_revisions.sql`
+(reviews replace versions, 2026-10-05).
+
 ## Deleting rows: the client has no constraints
 
 PowerSync's local SQLite is built from `schema.dart` and declares **no foreign

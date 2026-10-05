@@ -2,138 +2,17 @@ import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
 
+import 'goal.dart';
 import 'planned_session.dart';
 import 'planned_session_exercise.dart';
 import 'planned_session_exercise_set.dart';
 
-/// One immutable version of a program's contents (`fact_program_revision`).
-///
-/// Cut at the first save, at every review, and just before a block or the
-/// program stops running. Never updated after insert.
-class ProgramRevision {
-  const ProgramRevision({
-    required this.revisionId,
-    required this.userId,
-    required this.programId,
-    required this.revisionNumber,
-    required this.reason,
-    required this.contentJson,
-    required this.contentHash,
-    required this.createdDate,
-    this.blockId,
-    this.blockRunId,
-    this.reviewId,
-    this.sessionCount = 0,
-    this.exerciseCount = 0,
-    this.setCount = 0,
-  });
-
-  final String revisionId;
-  final String userId;
-  final String programId;
-
-  /// The block that was active when this was cut — CONTEXT, not scope. A
-  /// revision is always a whole-program snapshot; this only lets the history
-  /// view filter.
-  final String? blockId;
-
-  /// Plain refs (no FK): revisions and reviews reference each other, and a
-  /// circular FK pair would break PowerSync upload ordering. Neither runs nor
-  /// reviews are ever deleted, so nothing can dangle.
-  final String? blockRunId;
-  final String? reviewId;
-
-  /// 1-based, unique per program. "Version N" in the UI.
-  final int revisionNumber;
-
-  /// One of [kRevisionCreated], [kRevisionReview], [kRevisionBlockEnd],
-  /// [kRevisionProgramEnd], [kRevisionManual].
-  final String reason;
-
-  final String contentJson;
-  final String contentHash;
-  final DateTime createdDate;
-
-  // Flat projections written at capture time so the timeline renders without
-  // parsing [contentJson].
-  final int sessionCount;
-  final int exerciseCount;
-  final int setCount;
-
-  bool get isRunEnd =>
-      reason == kRevisionBlockEnd || reason == kRevisionProgramEnd;
-
-  /// Decoded contents, or null if the stored document can't be read (an
-  /// unknown schema written by a newer build). Callers render a placeholder
-  /// rather than throwing — an unreadable old version must not crash the
-  /// history screen.
-  ProgramRevisionContent? get content {
-    try {
-      return ProgramRevisionContent.decode(contentJson);
-    } catch (_) {
-      return null;
-    }
-  }
-
-  factory ProgramRevision.fromMap(Map<String, dynamic> map) => ProgramRevision(
-        revisionId: map['revision_id'] as String,
-        userId: map['user_id'] as String,
-        programId: map['program_id'] as String,
-        blockId: map['block_id'] as String?,
-        blockRunId: map['block_run_id'] as String?,
-        reviewId: map['review_id'] as String?,
-        revisionNumber: _toInt(map['revision_number']) ?? 0,
-        reason: (map['reason'] as String?) ?? kRevisionManual,
-        contentJson: (map['content_json'] as String?) ?? '{}',
-        contentHash: (map['content_hash'] as String?) ?? '',
-        sessionCount: _toInt(map['session_count']) ?? 0,
-        exerciseCount: _toInt(map['exercise_count']) ?? 0,
-        setCount: _toInt(map['set_count']) ?? 0,
-        createdDate:
-            DateTime.tryParse('${map['created_date']}')?.toLocal() ??
-                DateTime.now(),
-      );
-
-  static int? _toInt(dynamic v) {
-    if (v == null) return null;
-    if (v is int) return v;
-    return int.tryParse('$v');
-  }
-}
-
-/// Why a revision was cut. Persisted as text; the DB has a CHECK constraint
-/// listing exactly these.
-const kRevisionCreated = 'created';
-const kRevisionReview = 'review';
-const kRevisionBlockEnd = 'block_end';
-const kRevisionProgramEnd = 'program_end';
-const kRevisionManual = 'manual';
-
-const kRevisionReasons = <String>[
-  kRevisionCreated,
-  kRevisionReview,
-  kRevisionBlockEnd,
-  kRevisionProgramEnd,
-  kRevisionManual,
-];
-
-/// Human label for a [ProgramRevision.reason] — the chip on a version, in the
-/// timeline and on the version itself.
-String revisionReasonLabel(String reason) => switch (reason) {
-      kRevisionCreated => 'Created',
-      kRevisionReview => 'Review',
-      kRevisionBlockEnd => 'Block end',
-      kRevisionProgramEnd => 'Program end',
-      kRevisionManual => 'Saved',
-      _ => 'Version',
-    };
-
-/// An immutable snapshot of a program's contents — the JSON document stored in
-/// `fact_program_revision.content_json`.
+/// An immutable snapshot of a program's contents — the JSON document a
+/// completed review stores in `fact_program_review.snapshot_content`.
 ///
 /// Deliberately a document rather than row copies. Three reasons: it is ONE
 /// table to register in the three-place sync contract instead of three; a
-/// multi-revision history stays kilobytes rather than thousands of cold rows;
+/// deep history stays kilobytes rather than thousands of cold rows;
 /// and it is immutable by construction — a document is one row, so it exists
 /// or it doesn't, where a row-copy snapshot can be torn by a partial
 /// transaction or a quarantined `ps_crud` op.
@@ -154,26 +33,35 @@ String revisionReasonLabel(String reason) => switch (reason) {
 /// Archive columns are omitted rather than written null: a snapshot only ever
 /// captures active rows, so they are invariantly inactive, and every `fromMap`
 /// tolerates the missing key.
-class ProgramRevisionContent {
-  const ProgramRevisionContent({
+class ProgramContent {
+  const ProgramContent({
     this.schema = currentSchema,
     this.blocks = const [],
     this.sessions = const [],
+    this.goals = const [],
   });
 
   /// Bump when the document shape changes incompatibly. [decode] refuses an
   /// unknown version rather than guessing at a shape it doesn't know.
-  static const int currentSchema = 1;
+  ///
+  /// 2 added [goals]. Safe on the read side: a stored 1 decodes with none of
+  /// them, which is exactly what it held — the key was simply not written yet.
+  static const int currentSchema = 2;
 
   final int schema;
-  final List<RevisionBlock> blocks;
+  final List<ContentBlock> blocks;
 
   /// In program order (the join row's global `sequence_order`), so a position
   /// in this list IS the workout's place in the program — which is what makes
   /// the diff's move detection meaningful.
-  final List<RevisionSession> sessions;
+  final List<ContentSession> sessions;
 
-  bool get isEmpty => sessions.isEmpty && blocks.isEmpty;
+  /// Every goal the program owns, at both scopes — a block's targets are part
+  /// of what the program is, and a review of a phase has to be able to say
+  /// what that phase was chasing.
+  final List<ContentGoal> goals;
+
+  bool get isEmpty => sessions.isEmpty && blocks.isEmpty && goals.isEmpty;
 
   int get sessionCount => sessions.length;
 
@@ -199,44 +87,50 @@ class ProgramRevisionContent {
         'schema': schema,
         'blocks': blocks.map((b) => b.toMap()).toList(),
         'sessions': sessions.map((s) => s.toJson()).toList(),
+        'goals': goals.map((g) => g.toMap()).toList(),
       };
 
   /// Throws [FormatException] on an unknown schema or malformed JSON — callers
-  /// that must not crash should use [ProgramRevision.content], which swallows
-  /// it and returns null.
-  static ProgramRevisionContent decode(String json) {
+  /// that must not crash read through the nullable snapshot getters on the
+  /// record models, which swallow it and return null.
+  static ProgramContent decode(String json) {
     final raw = jsonDecode(json);
     if (raw is! Map) {
-      throw const FormatException('Revision content is not a JSON object');
+      throw const FormatException('Snapshot content is not a JSON object');
     }
     final schema = raw['schema'];
     if (schema is! int || schema > currentSchema) {
-      throw FormatException('Unsupported revision schema: $schema');
+      throw FormatException('Unsupported snapshot schema: $schema');
     }
-    return ProgramRevisionContent(
+    return ProgramContent(
       schema: schema,
       blocks: _mapList(raw['blocks'])
-          .map(RevisionBlock.fromMap)
+          .map(ContentBlock.fromMap)
           .toList(growable: false),
       sessions: _mapList(raw['sessions'])
-          .map(RevisionSession.fromJson)
+          .map(ContentSession.fromJson)
+          .toList(growable: false),
+      // Absent in a schema-1 document, which held no goals at all.
+      goals: _mapList(raw['goals'])
+          .map(ContentGoal.fromMap)
           .toList(growable: false),
     );
   }
 
   /// Builds a snapshot from live rows, preserving [sessions]' given order.
-  factory ProgramRevisionContent.fromRows({
-    List<RevisionBlock> blocks = const [],
-    required List<RevisionSession> sessions,
+  factory ProgramContent.fromRows({
+    List<ContentBlock> blocks = const [],
+    required List<ContentSession> sessions,
+    List<ContentGoal> goals = const [],
   }) =>
-      ProgramRevisionContent(blocks: blocks, sessions: sessions);
+      ProgramContent(blocks: blocks, sessions: sessions, goals: goals);
 }
 
 /// One block definition inside a snapshot. Empty until blocks ship — but the
-/// key exists in schema 1 from the start so revisions cut now stay readable
+/// key exists in schema 1 from the start so snapshots cut now stay readable
 /// afterwards.
-class RevisionBlock {
-  const RevisionBlock({
+class ContentBlock {
+  const ContentBlock({
     required this.blockId,
     required this.name,
     required this.blockOrder,
@@ -254,7 +148,7 @@ class RevisionBlock {
   final int? targetDays;
   final int? targetSessions;
 
-  factory RevisionBlock.fromMap(Map<String, dynamic> map) => RevisionBlock(
+  factory ContentBlock.fromMap(Map<String, dynamic> map) => ContentBlock(
         blockId: map['block_id'] as String,
         name: (map['name'] as String?) ?? '',
         notes: map['notes'] as String?,
@@ -275,10 +169,84 @@ class RevisionBlock {
       };
 }
 
+/// One goal inside a snapshot.
+///
+/// An id-only row like everything else here: the exercise is resolved live, so
+/// renaming one changes how an old review reads, consistently with sessions.
+///
+/// A goal's scope is its [blockId] and it is stored as the scope rather than
+/// the answer — null is the program's own, in force through every block
+/// ([Goal.appliesDuring]'s rule). A snapshot that flattened it would have to
+/// decide "in force" for a run it does not know about.
+class ContentGoal {
+  const ContentGoal({
+    required this.goalId,
+    required this.userId,
+    this.blockId,
+    this.exerciseId,
+    this.variationId,
+    this.targetWeight,
+    this.targetReps,
+    this.text,
+  });
+
+  final String goalId;
+  final String userId;
+
+  /// The block this goal belongs to; null for the program's own.
+  final String? blockId;
+  final String? exerciseId;
+  final String? variationId;
+
+  /// Numbers, unlike a planned set's free-text targets: a goal is a line the
+  /// user crossed or did not, so there is nothing for "8-15" to mean.
+  final num? targetWeight;
+  final int? targetReps;
+  final String? text;
+
+  Map<String, dynamic> toMap() => {
+        'goal_id': goalId,
+        'user_id': userId,
+        'block_id': blockId,
+        'custom_exercise_id': exerciseId,
+        'custom_variation_id': variationId,
+        'target_weight': targetWeight,
+        'target_reps': targetReps,
+        'goal_text': text,
+      };
+
+  factory ContentGoal.fromMap(Map<String, dynamic> map) => ContentGoal(
+        goalId: map['goal_id'] as String,
+        userId: (map['user_id'] as String?) ?? '',
+        blockId: map['block_id'] as String?,
+        exerciseId: map['custom_exercise_id'] as String?,
+        variationId: map['custom_variation_id'] as String?,
+        targetWeight: _toNum(map['target_weight']),
+        targetReps: _toInt(map['target_reps']),
+        text: map['goal_text'] as String?,
+      );
+
+  /// The real model, for rendering through the shared goal widgets.
+  ///
+  /// [programId] is passed in: the document is one program's, so repeating its
+  /// id on every goal would be bytes for a fact the reader already holds.
+  Goal toGoal({String? programId}) => Goal(
+        goalId: goalId,
+        userId: userId,
+        programId: programId,
+        blockId: blockId,
+        text: text,
+        exerciseId: exerciseId,
+        variationId: variationId,
+        targetWeight: targetWeight,
+        targetReps: targetReps,
+      );
+}
+
 /// One workout inside a snapshot: the template row, its program link, and its
 /// full content.
-class RevisionSession {
-  const RevisionSession({
+class ContentSession {
+  const ContentSession({
     required this.sessionId,
     required this.userId,
     required this.name,
@@ -305,7 +273,7 @@ class RevisionSession {
   final int? weekOffset;
   final String? blockId;
 
-  final List<RevisionExercise> exercises;
+  final List<ContentExercise> exercises;
 
   int get setCount =>
       exercises.fold(0, (sum, e) => sum + e.sets.length);
@@ -332,10 +300,10 @@ class RevisionSession {
         'exercises': exercises.map((e) => e.toJson()).toList(),
       };
 
-  factory RevisionSession.fromJson(Map<String, dynamic> map) {
+  factory ContentSession.fromJson(Map<String, dynamic> map) {
     final link = map['link'];
     final linkMap = link is Map ? link : const {};
-    return RevisionSession(
+    return ContentSession(
       sessionId: map['session_id'] as String,
       userId: map['user_id'] as String,
       name: (map['name'] as String?) ?? '',
@@ -348,7 +316,7 @@ class RevisionSession {
       weekOffset: _toInt(linkMap['week_offset']),
       blockId: linkMap['block_id'] as String?,
       exercises: _mapList(map['exercises'])
-          .map(RevisionExercise.fromJson)
+          .map(ContentExercise.fromJson)
           .toList(growable: false),
     );
   }
@@ -358,8 +326,8 @@ class RevisionSession {
 }
 
 /// One exercise group inside a snapshotted workout.
-class RevisionExercise {
-  const RevisionExercise({
+class ContentExercise {
+  const ContentExercise({
     required this.plannedExerciseId,
     required this.plannedSessionId,
     required this.userId,
@@ -373,7 +341,7 @@ class RevisionExercise {
   final String userId;
   final String? exerciseId;
   final int exerciseOrder;
-  final List<RevisionSet> sets;
+  final List<ContentSet> sets;
 
   Map<String, dynamic> toExerciseMap() => {
         'planned_exercise_id': plannedExerciseId,
@@ -388,13 +356,13 @@ class RevisionExercise {
         'sets': sets.map((s) => s.toMap()).toList(),
       };
 
-  factory RevisionExercise.fromJson(Map<String, dynamic> map) => RevisionExercise(
+  factory ContentExercise.fromJson(Map<String, dynamic> map) => ContentExercise(
         plannedExerciseId: map['planned_exercise_id'] as String,
         plannedSessionId: map['planned_session_id'] as String,
         userId: map['user_id'] as String,
         exerciseId: map['custom_exercise_id'] as String?,
         exerciseOrder: _toInt(map['exercise_order']) ?? 0,
-        sets: _mapList(map['sets']).map(RevisionSet.fromMap).toList(growable: false),
+        sets: _mapList(map['sets']).map(ContentSet.fromMap).toList(growable: false),
       );
 
   PlannedSessionExercise toExercise() =>
@@ -402,8 +370,8 @@ class RevisionExercise {
 }
 
 /// One target set inside a snapshotted exercise group.
-class RevisionSet {
-  const RevisionSet({
+class ContentSet {
+  const ContentSet({
     required this.plannedSetId,
     required this.plannedExerciseId,
     required this.plannedSessionId,
@@ -442,7 +410,7 @@ class RevisionSet {
         'target_notes': targetNotes,
       };
 
-  factory RevisionSet.fromMap(Map<String, dynamic> map) => RevisionSet(
+  factory ContentSet.fromMap(Map<String, dynamic> map) => ContentSet(
         plannedSetId: map['planned_set_id'] as String,
         plannedExerciseId: map['planned_exercise_id'] as String,
         plannedSessionId: map['planned_session_id'] as String,
@@ -480,6 +448,12 @@ int? _toInt(dynamic v) {
   if (v == null) return null;
   if (v is int) return v;
   return int.tryParse('$v');
+}
+
+num? _toNum(dynamic v) {
+  if (v == null) return null;
+  if (v is num) return v;
+  return num.tryParse('$v');
 }
 
 /// Normalizes a target column to raw text, matching

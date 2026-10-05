@@ -9,25 +9,24 @@ import '../../../core/styles/app_text_styles.dart';
 import '../../../core/utils/session_format.dart';
 import '../../../data/models/program_block.dart';
 import '../../../data/models/program_review.dart';
-import '../../../data/models/program_revision.dart';
 import '../../../shared/widgets/app_card.dart';
 import '../../../shared/widgets/container_styles.dart';
 import '../../../shared/widgets/glass_button.dart';
-import '../../../shared/widgets/segmented_control.dart';
-import '../model/program_revision_diff.dart';
+import '../model/program_content_diff.dart';
 import '../viewmodel/program_history_viewmodel.dart';
-import 'program_revision_screen.dart';
-import 'review_sheet.dart';
-import 'revision_diff_sheet.dart';
-import 'schedule_review_sheet.dart';
+import 'content_diff_sheet.dart';
+import 'review_container.dart';
+import 'review_detail_sheet.dart';
+import 'review_setup_sheet.dart';
+import 'review_snapshot_screen.dart';
 
-/// A program's history — the versions its contents have passed through, and
-/// the reviews that checkpointed them — as one panel.
+/// A program's history: the reviews that checkpoint it, newest first, each one
+/// able to show the program as it stood when it was taken.
 ///
-/// Two segments rather than one merged list because they answer different
-/// questions. Versions answer "what changed?" and are the complete record;
-/// reviews answer "what did we say about it?" and are the small subset someone
-/// actually wrote. Merging them would bury the second in the first.
+/// Checkpoints are the whole record now — a review is the only thing that
+/// writes one, whether the user scheduled it or a run ended. The row answers
+/// "what did we say about it, and what was true then", and opening it reads
+/// back the snapshot it froze.
 ///
 /// It loads itself. The program screen's Reviews tab and the pushed History
 /// screen — how a block editor links to its own phase — are the same read at
@@ -56,7 +55,7 @@ class _ProgramHistoryPanelState extends State<ProgramHistoryPanel>
   final _vm = ProgramHistoryViewModel();
 
   // The tab view disposes pages that scroll out of it, and this panel's load
-  // decodes every revision's contents — not something to redo on a swipe back.
+  // decodes every snapshot's contents — not something to redo on a swipe back.
   // It reloads when it is meant to: on entry, and when the program screen
   // bumps the key it is built under.
   @override
@@ -83,139 +82,212 @@ class _ProgramHistoryPanelState extends State<ProgramHistoryPanel>
     super.dispose();
   }
 
-  Future<void> _capture() async {
-    final revision = await _vm.capture(widget.programId);
-    if (!mounted) return;
-    // Only on success — a failure is already reported by the error bar, and
-    // saying it twice would be noise.
-    if (revision != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Version ${revision.revisionNumber} saved.'),
-          backgroundColor: AppColors.success,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    }
-  }
-
-  Future<void> _schedule() async {
-    final request = await showScheduleReviewSheet(context);
-    if (request == null || !mounted) return;
-    final review = await _vm.scheduleReview(
-      widget.programId,
-      // Scheduled while scoped to a block, this is that block's checkpoint —
-      // the block id is recorded as context so the timeline can group by it.
-      blockId: _vm.state.value.blockFilter,
-      title: request.title,
-      notes: request.notes,
-      scheduledFor: request.scheduledFor,
-      withProposal: request.isChange,
-    );
-    if (!mounted || review == null) return;
-    _vm.setTab(HistoryTab.reviews);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          '${reviewKindLabel(review.kind)} scheduled for '
-          '${DateFormat('d MMM').format(request.scheduledFor)}.',
-        ),
-        backgroundColor: AppColors.success,
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
-  }
-
-  /// Opens the checkpoint and acts on what the user decides.
-  Future<void> _review(ProgramHistoryState state, ProgramReview review) async {
-    final decision = await showReviewSheet(
+  /// Sets a review up, then either takes it or leaves it for its date.
+  Future<void> _setup(ProgramHistoryState state) async {
+    final request = await showReviewSetupSheet(
       context,
-      review: review,
-      achievements: state.achievements,
-      proposedSummary: _proposalSummary(review),
-      onViewProposal: () => _showProposal(state, review),
+      scopes: state.scopes,
+      usesBlocks: state.usesBlocks,
+      // The timeline's filter is a hint, not a decision — see the sheet.
+      initialBlockId: state.blockFilter,
     );
-    if (decision == null || !mounted) return;
+    if (request == null || !mounted) return;
 
-    // "Make changes" is the one answer that does not close the review: the
-    // user is going to edit the program, and completing the checkpoint before
-    // they have would record a revision of the state they rejected.
-    if (decision.outcome == null) {
-      if (decision.wantsEditor) {
+    switch (request.mode) {
+      case ReviewStartMode.now:
+        await _start(request.scope, title: request.title);
+
+      case ReviewStartMode.scheduled:
+        final review = await _vm.scheduleReview(
+          widget.programId,
+          blockId: request.scope.blockId,
+          sessionId: request.scope.sessionId,
+          title: request.title,
+          notes: request.notes,
+          scheduledFor: request.scheduledFor,
+          withProposal: request.isChange,
+        );
+        if (!mounted || review == null) return;
+        final due = request.scheduledFor;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
+          SnackBar(
             content: Text(
-              'Edit the program, then come back and complete this review.',
+              due == null
+                  ? '${reviewKindLabel(review.kind)} scheduled.'
+                  : '${reviewKindLabel(review.kind)} scheduled for '
+                        '${DateFormat('d MMM').format(due)}.',
             ),
+            backgroundColor: AppColors.success,
             behavior: SnackBarBehavior.floating,
           ),
         );
-      }
+    }
+  }
+
+  /// Opens the ceremony on [scope].
+  ///
+  /// The review row is written first — the ceremony's whole job is to end in a
+  /// snapshot on it, and a pass that existed only in the UI until Finish would
+  /// lose everything the user did if the app died mid-review.
+  Future<void> _start(ScopeOption scope, {String? title}) async {
+    final started = await _vm.startReview(
+      widget.programId,
+      kind: scope.kind,
+      blockId: scope.blockId,
+      sessionId: scope.sessionId,
+      title: title,
+    );
+    if (!mounted) return;
+    if (started == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not start the review.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
       return;
     }
 
-    final revision = await _vm.completeReview(
-      widget.programId,
-      review.reviewId,
-      outcome: decision.outcome!,
-    );
-    if (!mounted || revision == null) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Version ${revision.revisionNumber} saved.'),
-        backgroundColor: AppColors.success,
-        behavior: SnackBarBehavior.floating,
+    final finished = await startReview(
+      context,
+      ReviewSession(
+        reviewId: started.review.reviewId,
+        programId: widget.programId,
+        scopeKind: scope.kind,
+        // The picker's own words, so the bar names the scope the user chose
+        // rather than a second derivation that could disagree.
+        scopeLabel: scope.label,
+        blockId: started.review.blockId,
+        sessionId: started.review.sessionId,
+        title: started.review.title,
+        sinceDate: started.sinceDate,
+        achievements: started.achievements,
       ),
+    );
+    // Only a finish cut a snapshot; backing out left the review open, and the
+    // timeline already shows it from `startReview`'s own reload.
+    if (finished == true && mounted) await _vm.load(widget.programId);
+  }
+
+  /// Opens one checkpoint. A completed one is a record and reads back its own
+  /// snapshot; an open one is a pass still to be taken.
+  Future<void> _open(ProgramHistoryState state, ProgramReview review) async {
+    if (review.isOpen) {
+      await _start(_optionFor(state, review));
+      return;
+    }
+    if (!review.hasSnapshot) return;
+
+    final previous = _previousCheckpoint(state, review);
+    final before = previous?.snapshot;
+    final content = review.snapshot;
+    final change = before != null && content != null
+        ? diffContent(before, content, exerciseNames: state.exerciseNames)
+        : null;
+
+    await showReviewDetailSheet(
+      context,
+      review: review,
+      usesBlocks: state.usesBlocks,
+      change: change,
+      exerciseNames: state.exerciseNames,
+      onViewChanges: change == null
+          ? null
+          : () => _showChanges(state, review, previous!),
+      onViewWorkouts: () => _openSnapshot(state, review),
     );
   }
 
-  /// What a proposal says, in the terms the timeline uses — it is one more
-  /// document of the same shape, diffed against the program as it stands now.
-  Future<void> _showProposal(
+  /// The whole diff, at the size it deserves.
+  void _showChanges(
     ProgramHistoryState state,
     ProgramReview review,
-  ) async {
-    final proposal = review.proposal;
-    if (proposal == null) return;
-    final live = await _vm.liveContent(widget.programId);
-    if (!mounted) return;
-    showRevisionDiffSheet(
+    ProgramReview previous,
+  ) {
+    final before = previous.snapshot;
+    final after = review.snapshot;
+    if (before == null || after == null) return;
+    showContentDiffSheet(
       context,
       title: review.title?.trim().isNotEmpty == true
           ? review.title!.trim()
-          : 'Proposed change',
-      subtitle: 'proposed  ·  against the program today',
-      before: live,
-      after: proposal,
+          : 'What changed',
+      subtitle:
+          '${DateFormat('MMM d').format(previous.effectiveDate)}'
+          '  ·  '
+          '${DateFormat('MMM d, yyyy').format(review.effectiveDate)}',
+      before: before,
+      after: after,
       exerciseNames: state.exerciseNames,
     );
   }
 
-  String? _proposalSummary(ProgramReview review) {
-    final proposal = review.proposal;
-    if (proposal == null) return null;
-    final sessions = proposal.sessions.length;
-    final sets = proposal.sessions.fold<int>(
-      0,
-      (n, s) => n + s.exercises.fold<int>(0, (m, e) => m + e.sets.length),
-    );
-    return 'Proposes $sessions workouts · $sets sets.';
-  }
-
-  /// Opens one version. Pushed on the ROOT navigator, matching the workout
-  /// editor (`PlanSessionScreen`) — a version is a full-screen read of one
-  /// record, not another level of the tab it was reached from.
-  void _open(ProgramHistoryState state, ProgramRevision revision) {
+  /// Opens one checkpoint's snapshot. Pushed on the ROOT navigator, matching
+  /// the workout editor (`PlanSessionScreen`) — a snapshot is a full-screen
+  /// read of one record, not another level of the tab it was reached from.
+  void _openSnapshot(ProgramHistoryState state, ProgramReview review) {
     Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(
-        builder: (_) => ProgramRevisionScreen(
-          revision: revision,
-          previous: state.previousOf(revision),
+        builder: (_) => ReviewSnapshotScreen(
+          review: review,
+          previous: _previousCheckpoint(state, review),
           exerciseNames: state.exerciseNames,
           variationNames: state.variationNames,
         ),
       ),
     );
+  }
+
+  /// The scope picker's entry for a review that already exists — how an open
+  /// one, reached from its card rather than from the sheet, still knows what it
+  /// is a review of.
+  ///
+  /// Falls back to the review's own vocabulary when the picker has no entry for
+  /// it: a workout or block deleted since the review was scheduled still has a
+  /// review, and the bar should name it rather than stay blank.
+  ScopeOption _optionFor(ProgramHistoryState state, ProgramReview review) {
+    for (final s in state.scopes) {
+      if (s.kind == review.scopeKind &&
+          s.blockId == review.blockId &&
+          s.sessionId == review.sessionId) {
+        return s;
+      }
+    }
+    return ScopeOption(
+      kind: review.scopeKind,
+      label: switch (review.scopeKind) {
+        ReviewScopeKind.program => 'Whole program',
+        ReviewScopeKind.block => 'This block',
+        ReviewScopeKind.session => 'This workout',
+      },
+      blockId: review.blockId,
+      sessionId: review.sessionId,
+    );
+  }
+
+  /// The completed same-scope checkpoint before [review] that carries a
+  /// snapshot — the one its "Changes" sheet diffs against.
+  ///
+  /// Same pairing rule as the viewmodel's digests: a session review's
+  /// predecessor is a session review of that workout, a block's is a block
+  /// review of that block, and a program's is a program review. A scope that
+  /// has changed in between is skipped, never bridged.
+  static ProgramReview? _previousCheckpoint(
+    ProgramHistoryState state,
+    ProgramReview review,
+  ) {
+    final i = state.reviews.indexWhere((r) => r.reviewId == review.reviewId);
+    if (i < 0) return null;
+    for (var j = i + 1; j < state.reviews.length; j++) {
+      final r = state.reviews[j];
+      if (r.hasSnapshot &&
+          r.scopeKind == review.scopeKind &&
+          r.blockId == review.blockId &&
+          r.sessionId == review.sessionId) {
+        return r;
+      }
+    }
+    return null;
   }
 
   @override
@@ -224,7 +296,6 @@ class _ProgramHistoryPanelState extends State<ProgramHistoryPanel>
     return ValueListenableBuilder<ProgramHistoryState>(
       valueListenable: _vm.state,
       builder: (context, state, _) {
-        final onVersions = state.tab == HistoryTab.versions;
         return Column(
           children: [
             Padding(
@@ -237,32 +308,22 @@ class _ProgramHistoryPanelState extends State<ProgramHistoryPanel>
               child: Row(
                 children: [
                   Expanded(
-                    child: SegmentedControl<HistoryTab>(
-                      subtle: true,
-                      value: state.tab,
-                      onChange: _vm.setTab,
-                      options: [
-                        SegmentOption(
-                          label:
-                              'Versions (${state.visibleRevisions.length})',
-                          value: HistoryTab.versions,
-                        ),
-                        SegmentOption(
-                          label: 'Reviews (${state.visibleReviews.length})',
-                          value: HistoryTab.reviews,
-                        ),
-                      ],
+                    child: Text(
+                      'HISTORY',
+                      style: AppFonts.mono(
+                        fontSize: AppTextStyles.xs,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1.0,
+                        color: AppColors.muted,
+                      ),
                     ),
                   ),
-                  const SizedBox(width: AppSpacing.sm),
-                  // One action per segment, always in the same place: the
-                  // thing you want to do most is the thing you are looking at.
                   GlassButton(
-                    label: onVersions ? 'Save version' : 'Schedule',
+                    label: 'Review',
                     compact: true,
-                    loading: onVersions ? state.isSaving : state.isReviewing,
-                    disabled: onVersions ? state.isSaving : state.isReviewing,
-                    onPressed: onVersions ? _capture : _schedule,
+                    loading: state.isReviewing,
+                    disabled: state.isReviewing,
+                    onPressed: () => _setup(state),
                   ),
                 ],
               ),
@@ -294,19 +355,16 @@ class _ProgramHistoryPanelState extends State<ProgramHistoryPanel>
             Expanded(
               child: state.isLoading
                   ? Center(
-                      child: CircularProgressIndicator(
-                        color: AppColors.accent,
-                      ),
+                      child: CircularProgressIndicator(color: AppColors.accent),
                     )
-                  : state.tab == HistoryTab.versions
-                      ? _VersionsTab(
-                          state: state,
-                          onOpen: (r) => _open(state, r),
-                        )
-                      : _ReviewsTab(
-                          state: state,
-                          onOpen: (r) => _review(state, r),
-                        ),
+                  : _ReviewList(
+                      state: state,
+                      onOpen: (r) => _open(state, r),
+                      onDismiss: (r) => _vm.dismissReview(
+                        widget.programId,
+                        r.reviewId,
+                      ),
+                    ),
             ),
           ],
         );
@@ -315,40 +373,16 @@ class _ProgramHistoryPanelState extends State<ProgramHistoryPanel>
   }
 }
 
-class _VersionsTab extends StatelessWidget {
-  const _VersionsTab({required this.state, required this.onOpen});
-
-  final ProgramHistoryState state;
-  final ValueChanged<ProgramRevision> onOpen;
-
-  @override
-  Widget build(BuildContext context) {
-    final revisions = state.visibleRevisions;
-    if (revisions.isEmpty) return const _EmptyTab('No versions yet');
-    return ListView.separated(
-      padding: const EdgeInsets.all(AppSpacing.lg),
-      itemCount: revisions.length,
-      separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.md),
-      itemBuilder: (context, i) {
-        final revision = revisions[i];
-        return _VersionCard(
-          revision: revision,
-          // No predecessor at all, versus one that can't be compared — the
-          // card says different things.
-          isFirst: state.previousOf(revision) == null,
-          diff: state.diffFor(revision.revisionId),
-          onTap: () => onOpen(revision),
-        );
-      },
-    );
-  }
-}
-
-class _ReviewsTab extends StatelessWidget {
-  const _ReviewsTab({required this.state, required this.onOpen});
+class _ReviewList extends StatelessWidget {
+  const _ReviewList({
+    required this.state,
+    required this.onOpen,
+    required this.onDismiss,
+  });
 
   final ProgramHistoryState state;
   final ValueChanged<ProgramReview> onOpen;
+  final ValueChanged<ProgramReview> onDismiss;
 
   @override
   Widget build(BuildContext context) {
@@ -356,8 +390,9 @@ class _ReviewsTab extends StatelessWidget {
     if (reviews.isEmpty) {
       return const _EmptyTab(
         'No reviews yet',
-        detail: 'A review is a checkpoint with a note attached. Schedule one '
-            'to look at what this program has produced since the last time.',
+        detail:
+            'A review is a pass over the plan with a record of what it looked '
+            'like attached. Take one now, or schedule one for later.',
       );
     }
     return ListView.separated(
@@ -371,7 +406,11 @@ class _ReviewsTab extends StatelessWidget {
           // Only the open one gets the achievements treatment — a closed
           // review reads back its frozen record instead.
           isDue: review.isDue(DateTime.now()),
+          // What it changed, already derived from consecutive same-scope
+          // snapshots — the Versions timeline's question, on the row.
+          changeSummary: state.digestFor(review.reviewId).vsPrevious?.summary,
           onTap: () => onOpen(review),
+          onDismiss: review.isOpen ? () => onDismiss(review) : null,
         );
       },
     );
@@ -384,20 +423,30 @@ class _ReviewCard extends StatelessWidget {
   const _ReviewCard({
     required this.review,
     required this.isDue,
+    required this.changeSummary,
     required this.onTap,
+    this.onDismiss,
   });
 
   final ProgramReview review;
   final bool isDue;
+  final String? changeSummary;
   final VoidCallback onTap;
+
+  /// "Not now" — only an open review can be dismissed, because only an open
+  /// one is asking anything.
+  final VoidCallback? onDismiss;
 
   @override
   Widget build(BuildContext context) {
     final open = review.isOpen;
     final accent = isDue && open;
 
+    // A completed checkpoint opens read-only; an open one opens the plan.
+    // One completed without a snapshot (a dismissal, or a record written
+    // before the snapshot column existed) has nothing to open.
     return AppCard(
-      onTap: open ? onTap : null,
+      onTap: open || review.hasSnapshot ? onTap : null,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -421,12 +470,43 @@ class _ReviewCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: AppSpacing.sm),
-          Text(
-            _when(review),
-            style: AppFonts.mono(
-              fontSize: AppTextStyles.xs,
-              color: accent ? AppColors.accent : AppColors.muted,
-            ),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  _when(review),
+                  style: AppFonts.mono(
+                    fontSize: AppTextStyles.xs,
+                    color: accent ? AppColors.accent : AppColors.muted,
+                  ),
+                ),
+              ),
+              // The timeline's answer to "what did this one change?" — the
+              // same line the checkpoint's own sheet leads with.
+              if (changeSummary != null && !open)
+                Text(
+                  changeSummary!,
+                  style: AppFonts.mono(
+                    fontSize: AppTextStyles.xs,
+                    color: AppColors.muted,
+                  ),
+                ),
+              if (onDismiss != null)
+                GestureDetector(
+                  onTap: onDismiss,
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: AppSpacing.sm),
+                    child: Text(
+                      'Dismiss',
+                      style: AppFonts.ui(
+                        fontSize: AppTextStyles.xs,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.muted,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
           ),
           if (review.notes?.trim().isNotEmpty == true) ...[
             const SizedBox(height: AppSpacing.sm),
@@ -489,8 +569,8 @@ class _StatusChip extends StatelessWidget {
         horizontal: AppSpacing.sm,
         vertical: 3,
       ),
-      // The same chrome as the version card's reason chip, so the two chips
-      // read as the same kind of thing.
+      // The same chrome as the outcome chip on a snapshot's header, so the
+      // two chips read as the same kind of thing.
       decoration: accent
           ? lambdaBox(ContainerTone.accent)
           : lambdaBox(ContainerTone.ghost),
@@ -507,101 +587,9 @@ class _StatusChip extends StatelessWidget {
   }
 }
 
-/// One version in the timeline: when it was cut, why, what it contained, and
-/// what it changed.
-class _VersionCard extends StatelessWidget {
-  const _VersionCard({
-    required this.revision,
-    required this.diff,
-    required this.isFirst,
-    required this.onTap,
-  });
-
-  final ProgramRevision revision;
-
-  /// Changes since the version before this one. Null when either document
-  /// can't be decoded by this build.
-  final RevisionDiff? diff;
-
-  /// The oldest version on record — there is nothing before it.
-  final bool isFirst;
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return AppCard(
-      onTap: onTap,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'VERSION ${revision.revisionNumber}',
-                  style: AppFonts.mono(
-                    fontSize: AppTextStyles.xs,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 1.0,
-                    color: AppColors.accent,
-                  ),
-                ),
-              ),
-              _ReasonChip(reason: revision.reason),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          Text(
-            '${DateFormat('MMM d, yyyy').format(revision.createdDate)}'
-            '  ·  #${revision.contentHash.isEmpty ? '--------' : revision.contentHash.substring(0, 8)}',
-            style: AppFonts.mono(
-              fontSize: AppTextStyles.xs,
-              color: AppColors.muted,
-            ),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          Text(
-            '${revision.sessionCount} workouts · '
-            '${revision.exerciseCount} exercises · '
-            '${revision.setCount} sets',
-            style: AppFonts.ui(
-              fontSize: AppTextStyles.sm,
-              color: AppColors.muted,
-            ),
-          ),
-          if (isFirst || diff != null) ...[
-            const SizedBox(height: AppSpacing.sm),
-            _ChangeLine(summary: isFirst ? 'first version' : diff!.summary,
-                isMuted: isFirst || diff!.isEmpty),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-/// `+2 −1 ~3` — what this version changed, in one line.
-class _ChangeLine extends StatelessWidget {
-  const _ChangeLine({required this.summary, required this.isMuted});
-
-  final String summary;
-  final bool isMuted;
-
-  @override
-  Widget build(BuildContext context) => Text(
-        summary,
-        style: AppFonts.mono(
-          fontSize: AppTextStyles.xs,
-          fontWeight: FontWeight.w700,
-          color: isMuted ? AppColors.muted : AppColors.accent,
-        ),
-      );
-}
-
-/// Scopes the timeline to one block. Context, not scope, is how `block_id` is
-/// stored — a revision is always a whole-program snapshot — so this narrows
-/// what is shown, never what a checkpoint means.
+/// Scopes the timeline to one block. A review's `block_id` IS its scope, so
+/// this narrows to the checkpoints taken of that block — it never re-reads a
+/// program checkpoint as if it were one.
 ///
 /// A scrolling chip row rather than a segmented control: a program can have
 /// more blocks than fit, and the segmented control's equal-width cells would
@@ -625,7 +613,11 @@ class _BlockFilterRow extends StatelessWidget {
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
         children: [
-          _chip(label: 'All', selected: value == null, onTap: () => onChange(null)),
+          _chip(
+            label: 'All',
+            selected: value == null,
+            onTap: () => onChange(null),
+          ),
           for (final b in blocks) ...[
             const SizedBox(width: AppSpacing.sm),
             _chip(
@@ -643,56 +635,27 @@ class _BlockFilterRow extends StatelessWidget {
     required String label,
     required bool selected,
     required VoidCallback onTap,
-  }) =>
-      GestureDetector(
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-          alignment: Alignment.center,
-          decoration: selected
-              ? lambdaBox(ContainerTone.accent, radius: AppRadius.md)
-              : lambdaBox(ContainerTone.ghost, radius: AppRadius.md),
-          child: Text(
-            toProperCase(label),
-            style: AppFonts.ui(
-              fontSize: AppTextStyles.sm,
-              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-              color: AppColors.primary,
-            ),
-          ),
+  }) => GestureDetector(
+    onTap: onTap,
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+      alignment: Alignment.center,
+      decoration: selected
+          ? lambdaBox(ContainerTone.accent, radius: AppRadius.md)
+          : lambdaBox(ContainerTone.ghost, radius: AppRadius.md),
+      child: Text(
+        toProperCase(label),
+        style: AppFonts.ui(
+          fontSize: AppTextStyles.sm,
+          fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+          color: AppColors.primary,
         ),
-      );
+      ),
+    ),
+  );
 }
 
-class _ReasonChip extends StatelessWidget {
-  const _ReasonChip({required this.reason});
-
-  final String reason;
-
-  @override
-  Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.sm,
-          vertical: 3,
-        ),
-        // Ghost rather than the accent a single version uses: in a list of
-        // them the version number is the accent element, and two competing
-        // accents per row would read as noise.
-        decoration: lambdaBox(ContainerTone.ghost),
-        child: Text(
-          revisionReasonLabel(reason).toUpperCase(),
-          style: AppFonts.mono(
-            fontSize: AppTextStyles.xs,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 0.6,
-            color: AppColors.muted,
-          ),
-        ),
-      );
-}
-
-/// Both segments start empty the same way, and both actions sit in the row
-/// above — so the empty state points at that row rather than duplicating the
+/// The empty state points at the action row above rather than duplicating the
 /// button.
 class _EmptyTab extends StatelessWidget {
   const _EmptyTab(this.title, {this.detail});
@@ -702,32 +665,32 @@ class _EmptyTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Center(
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.xl),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                title,
-                style: AppFonts.ui(
-                  fontSize: AppTextStyles.md,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.primary,
-                ),
-              ),
-              if (detail != null) ...[
-                const SizedBox(height: AppSpacing.sm),
-                Text(
-                  detail!,
-                  textAlign: TextAlign.center,
-                  style: AppFonts.ui(
-                    fontSize: AppTextStyles.sm,
-                    color: AppColors.muted,
-                  ),
-                ),
-              ],
-            ],
+    child: Padding(
+      padding: const EdgeInsets.all(AppSpacing.xl),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            title,
+            style: AppFonts.ui(
+              fontSize: AppTextStyles.md,
+              fontWeight: FontWeight.w800,
+              color: AppColors.primary,
+            ),
           ),
-        ),
-      );
+          if (detail != null) ...[
+            const SizedBox(height: AppSpacing.sm),
+            Text(
+              detail!,
+              textAlign: TextAlign.center,
+              style: AppFonts.ui(
+                fontSize: AppTextStyles.sm,
+                color: AppColors.muted,
+              ),
+            ),
+          ],
+        ],
+      ),
+    ),
+  );
 }

@@ -1,9 +1,9 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:lambda/data/models/program_revision.dart';
+import 'package:lambda/data/models/program_content.dart';
 
-RevisionSet _set(
+ContentSet _set(
   String id, {
   String? weight,
   String? reps,
@@ -11,7 +11,7 @@ RevisionSet _set(
   String? notes,
   int n = 1,
 }) =>
-    RevisionSet(
+    ContentSet(
       plannedSetId: id,
       plannedExerciseId: 'e1',
       plannedSessionId: 's1',
@@ -25,7 +25,7 @@ RevisionSet _set(
 
 /// Re-parents a set fixture onto [exerciseId], so a fixture stays internally
 /// consistent however the set was constructed.
-RevisionSet _withParent(RevisionSet s, String exerciseId) => RevisionSet(
+ContentSet _withParent(ContentSet s, String exerciseId) => ContentSet(
       plannedSetId: s.plannedSetId,
       plannedExerciseId: exerciseId,
       plannedSessionId: s.plannedSessionId,
@@ -37,13 +37,13 @@ RevisionSet _withParent(RevisionSet s, String exerciseId) => RevisionSet(
       targetNotes: s.targetNotes,
     );
 
-RevisionExercise _exercise(
+ContentExercise _exercise(
   String id, {
   String? exerciseId = 'ex1',
   int order = 1,
-  List<RevisionSet>? sets,
+  List<ContentSet>? sets,
 }) =>
-    RevisionExercise(
+    ContentExercise(
       plannedExerciseId: id,
       plannedSessionId: 's1',
       userId: 'u1',
@@ -54,15 +54,15 @@ RevisionExercise _exercise(
           .toList(),
     );
 
-RevisionSession _session(
+ContentSession _session(
   String id, {
   String name = 'Push',
   String? notes,
   int? sequenceOrder = 1,
   String? blockId,
-  List<RevisionExercise>? exercises,
+  List<ContentExercise>? exercises,
 }) =>
-    RevisionSession(
+    ContentSession(
       sessionId: id,
       userId: 'u1',
       name: name,
@@ -72,9 +72,29 @@ RevisionSession _session(
       exercises: exercises ?? [_exercise('${id}e1')],
     );
 
-ProgramRevisionContent _sample() => ProgramRevisionContent(
+ContentGoal _goal(
+  String id, {
+  String? blockId,
+  String? exerciseId,
+  String? variationId,
+  num? weight,
+  int? reps,
+  String? text,
+}) =>
+    ContentGoal(
+      goalId: id,
+      userId: 'u1',
+      blockId: blockId,
+      exerciseId: exerciseId,
+      variationId: variationId,
+      targetWeight: weight,
+      targetReps: reps,
+      text: text,
+    );
+
+ProgramContent _sample() => ProgramContent(
       blocks: const [
-        RevisionBlock(
+        ContentBlock(
           blockId: 'b1',
           name: 'Accumulation',
           blockOrder: 1,
@@ -92,6 +112,14 @@ ProgramRevisionContent _sample() => ProgramRevisionContent(
         ]),
         _session('s2', name: 'Pull', sequenceOrder: 2),
       ],
+      // One per scope: the program's own (in force through every block) and
+      // the phase's, which is the pair a review has to tell apart.
+      goals: [
+        _goal('g1',
+            exerciseId: 'ex1', variationId: 'v1', weight: 100, reps: 1,
+            text: 'Bench'),
+        _goal('g2', blockId: 'b1', text: 'Sleep eight hours'),
+      ],
     );
 
 /// Reverses key order at every level, so a document with identical content but
@@ -106,12 +134,12 @@ dynamic _reverseKeys(dynamic v) {
 }
 
 void main() {
-  group('ProgramRevisionContent round-trip', () {
+  group('ProgramContent round-trip', () {
     test('encode → decode preserves every field', () {
       final original = _sample();
-      final decoded = ProgramRevisionContent.decode(original.encode());
+      final decoded = ProgramContent.decode(original.encode());
 
-      expect(decoded.schema, ProgramRevisionContent.currentSchema);
+      expect(decoded.schema, ProgramContent.currentSchema);
       expect(decoded.blocks, hasLength(1));
       expect(decoded.blocks.first.blockId, 'b1');
       expect(decoded.blocks.first.name, 'Accumulation');
@@ -134,6 +162,72 @@ void main() {
       expect(s1.exercises.first.sets[1].targetNotes, 'backoff');
       expect(s1.exercises[1].exerciseId, 'ex2');
       expect(s1.exercises[1].exerciseOrder, 2);
+
+      expect(decoded.goals, hasLength(2));
+      final programGoal = decoded.goals.first;
+      expect(programGoal.goalId, 'g1');
+      expect(programGoal.blockId, isNull,
+          reason: 'a program-level goal is in force in every block — that is '
+              'the scope, and storing it as null is how it stays so');
+      expect(programGoal.exerciseId, 'ex1');
+      expect(programGoal.variationId, 'v1');
+      expect(programGoal.targetWeight, 100);
+      expect(programGoal.targetReps, 1);
+      expect(programGoal.text, 'Bench');
+
+      expect(decoded.goals[1].blockId, 'b1');
+      expect(decoded.goals[1].targetWeight, isNull);
+      expect(decoded.goals[1].text, 'Sleep eight hours');
+    });
+
+    test('a document written before goals existed still decodes', () {
+      // The whole risk of the schema bump: these rows are already stored, and
+      // a reader that choked on them would take the review history with it.
+      // Schema 1 had no `goals` key at all — so decoding is a matter of the
+      // key being absent rather than null.
+      final v1 = jsonEncode({
+        'schema': 1,
+        'blocks': [
+          {
+            'block_id': 'b1',
+            'name': 'Accumulation',
+            'block_order': 1,
+            'target_weeks': 4,
+          },
+        ],
+        'sessions': [
+          {
+            'session_id': 's1',
+            'user_id': 'u1',
+            'name': 'Push',
+            'link': {'sequence_order': 1, 'block_id': 'b1'},
+            'exercises': const [],
+          },
+        ],
+      });
+
+      final decoded = ProgramContent.decode(v1);
+
+      expect(decoded.schema, 1, reason: 'the document says what it is');
+      expect(decoded.goals, isEmpty,
+          reason: 'it held no goals — not "it held unknown goals"');
+      expect(decoded.blocks.single.name, 'Accumulation');
+      expect(decoded.sessions.single.name, 'Push');
+      expect(decoded.sessions.single.blockId, 'b1');
+    });
+
+    test('a document from a newer schema still refuses to decode', () {
+      final future = jsonEncode({
+        'schema': ProgramContent.currentSchema + 1,
+        'blocks': const [],
+        'sessions': const [],
+        'goals': const [],
+      });
+
+      expect(() => ProgramContent.decode(future), throwsFormatException,
+          reason: 'tolerating an older document is not the same as guessing '
+              'at a newer one — an unknown shape renders as missing content, '
+              'never as wrong content');
     });
 
     test('counts match the captured content', () {
@@ -144,15 +238,15 @@ void main() {
     });
 
     test('an empty program round-trips', () {
-      const empty = ProgramRevisionContent();
-      final decoded = ProgramRevisionContent.decode(empty.encode());
+      const empty = ProgramContent();
+      final decoded = ProgramContent.decode(empty.encode());
       expect(decoded.isEmpty, isTrue);
       expect(decoded.sessionCount, 0);
       expect(decoded.contentHash, empty.contentHash);
     });
 
     test('session order is preserved — it IS the program order', () {
-      final decoded = ProgramRevisionContent.decode(_sample().encode());
+      final decoded = ProgramContent.decode(_sample().encode());
       expect(decoded.sessions.map((s) => s.sessionId).toList(), ['s1', 's2']);
     });
   });
@@ -164,7 +258,7 @@ void main() {
       final scrambled = jsonEncode(_reverseKeys(jsonDecode(original.encode())));
       expect(scrambled, isNot(equals(original.encode())));
 
-      final decoded = ProgramRevisionContent.decode(scrambled);
+      final decoded = ProgramContent.decode(scrambled);
       expect(decoded.contentHash, original.contentHash);
     });
 
@@ -176,7 +270,7 @@ void main() {
 
     test('changes when a single target changes', () {
       final before = _sample();
-      final after = ProgramRevisionContent(
+      final after = ProgramContent(
         blocks: before.blocks,
         sessions: [
           _session('s1', notes: 'chest focus', blockId: 'b1', exercises: [
@@ -194,7 +288,7 @@ void main() {
 
     test('changes when only the order changes', () {
       final before = _sample();
-      final reordered = ProgramRevisionContent(
+      final reordered = ProgramContent(
         blocks: before.blocks,
         sessions: before.sessions.reversed.toList(),
       );
@@ -211,8 +305,8 @@ void main() {
   group('decode rejects what it cannot understand', () {
     test('an unknown schema throws rather than guessing', () {
       expect(
-        () => ProgramRevisionContent.decode(
-            '{"schema": ${ProgramRevisionContent.currentSchema + 1}, '
+        () => ProgramContent.decode(
+            '{"schema": ${ProgramContent.currentSchema + 1}, '
             '"sessions": []}'),
         throwsFormatException,
       );
@@ -220,42 +314,28 @@ void main() {
 
     test('a missing schema throws', () {
       expect(
-        () => ProgramRevisionContent.decode('{"sessions": []}'),
+        () => ProgramContent.decode('{"sessions": []}'),
         throwsFormatException,
       );
     });
 
     test('non-object JSON throws', () {
       expect(
-        () => ProgramRevisionContent.decode('[1, 2, 3]'),
+        () => ProgramContent.decode('[1, 2, 3]'),
         throwsFormatException,
       );
     });
 
     test('malformed JSON throws', () {
       expect(
-        () => ProgramRevisionContent.decode('{not json'),
+        () => ProgramContent.decode('{not json'),
         throwsA(isA<FormatException>()),
       );
-    });
-
-    test('a newer schema surfaces as null content instead of crashing', () {
-      final revision = ProgramRevision(
-        revisionId: 'r1',
-        userId: 'u1',
-        programId: 'p1',
-        revisionNumber: 1,
-        reason: kRevisionCreated,
-        contentJson: '{"schema": 999}',
-        contentHash: 'x',
-        createdDate: DateTime(2026, 9, 1),
-      );
-      expect(revision.content, isNull);
     });
   });
 
   group('map adapters produce real models', () {
-    test('RevisionSession.toSession matches the shared model', () {
+    test('ContentSession.toSession matches the shared model', () {
       final session = _sample().sessions.first;
       final model = session.toSession();
 
@@ -268,7 +348,7 @@ void main() {
       expect(model.isArchived, isFalse);
     });
 
-    test('RevisionExercise.toExercise matches the shared model', () {
+    test('ContentExercise.toExercise matches the shared model', () {
       final exercise = _sample().sessions.first.exercises.first;
       final model = exercise.toExercise();
 
@@ -279,7 +359,7 @@ void main() {
       expect(model.isArchived, isFalse);
     });
 
-    test('RevisionSet.toSet matches the shared model', () {
+    test('ContentSet.toSet matches the shared model', () {
       final set = _sample().sessions.first.exercises.first.sets.first;
       final model = set.toSet();
 
@@ -292,10 +372,26 @@ void main() {
       expect(model.isArchived, isFalse);
     });
 
+    test('ContentGoal.toGoal matches the shared model, scope included', () {
+      final goal = _sample().goals.last;
+      final model = goal.toGoal(programId: 'p1');
+
+      expect(model.goalId, 'g2');
+      expect(model.userId, 'u1');
+      expect(model.programId, 'p1');
+      expect(model.blockId, 'b1');
+      expect(model.text, 'Sleep eight hours');
+      // The scope survives as a scope: the review asks `appliesDuring` of the
+      // row it renders, so a goal flattened to "in force" at capture time
+      // would answer for a run the snapshot never knew about.
+      expect(model.appliesDuring('b1'), isTrue);
+      expect(model.appliesDuring('b2'), isFalse);
+    });
+
     test('legacy numeric targets normalize the way the planner shows them', () {
       // Values written before the free-text change (see
       // PlannedSessionExerciseSet._toTargetText).
-      const legacy = RevisionSet(
+      const legacy = ContentSet(
         plannedSetId: 'x',
         plannedExerciseId: 'e',
         plannedSessionId: 's',

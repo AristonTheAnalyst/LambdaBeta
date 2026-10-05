@@ -123,6 +123,20 @@ class ProgramProgress {
         totalWorkoutsCompleted >= totalWorkoutsInCycle;
   }
 
+  /// Whether the run has done what it was asked to do and is still open —
+  /// the one spelling of "this attempt is waiting on the user to end it".
+  ///
+  /// Two screens ask it and had each written it out for themselves: the
+  /// session screen's block-complete banner and the due item that keeps
+  /// prompting until the run is ended. They are the same condition, and the
+  /// moment they were spelled twice they could disagree — which shows up as a
+  /// banner and no prompt, or a prompt for a run the banner says is not done.
+  ///
+  /// Not the whole story at either site, and deliberately so: the banner also
+  /// needs a block to name, and the session screen also needs no workout to be
+  /// open. Those are each site's own question, asked *on top of* this one.
+  bool get isReadyToEnd => isLengthReached && run.isCurrent;
+
   /// 0..1 fraction of the length complete, for progress bars.
   ///
   /// A bar that has filled is a bar waiting on the user, not a bar that keeps

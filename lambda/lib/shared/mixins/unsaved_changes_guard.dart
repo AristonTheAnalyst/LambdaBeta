@@ -50,6 +50,18 @@ mixin UnsavedChangesGuard<T extends StatefulWidget> on State<T> {
     return !hasUnsavedChanges;
   }
 
+  /// Settles before a review finishes. Same dialog as [confirmBack], but with
+  /// no Discard option — a review's snapshot records the plan as it actually
+  /// stands, so discarding edits on the way to the snapshot would capture the
+  /// stored state, not what the user just spent the review changing.
+  ///
+  /// Returns true when the editor is settled and the caller may proceed.
+  Future<bool> settleForReview() async {
+    if (!hasUnsavedChanges) return true;
+    await _showUnsavedDialog(includeDiscard: false);
+    return !hasUnsavedChanges;
+  }
+
   void _confirmAndPop() async {
     if (!hasUnsavedChanges) {
       if (mounted) Navigator.of(context).pop();
@@ -61,22 +73,27 @@ mixin UnsavedChangesGuard<T extends StatefulWidget> on State<T> {
     }
   }
 
-  Future<void> _showUnsavedDialog() async {
+  Future<void> _showUnsavedDialog({bool includeDiscard = true}) async {
     final choice = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
         title: Text('Unsaved Changes',
             style: AppFonts.ui(fontWeight: FontWeight.w800, color: AppColors.primary)),
-        content: Text('You have unsaved changes. What would you like to do?',
+        content: Text(
+            includeDiscard
+                ? 'You have unsaved changes. What would you like to do?'
+                : 'The review finishes on what is saved. Save these changes first?',
             style: AppFonts.ui(color: AppColors.muted)),
         actions: [
-          TextButton(
-              onPressed: () => Navigator.of(ctx).pop('discard'),
-              child: Text('Discard', style: AppFonts.ui(color: AppColors.danger))),
+          if (includeDiscard)
+            TextButton(
+                onPressed: () => Navigator.of(ctx).pop('discard'),
+                child: Text('Discard', style: AppFonts.ui(color: AppColors.danger))),
           TextButton(
               onPressed: () => Navigator.of(ctx).pop('save'),
-              child: Text('Save', style: AppFonts.ui(color: AppColors.accent, fontWeight: FontWeight.w600))),
+              child: Text(includeDiscard ? 'Save' : 'Save and finish',
+                  style: AppFonts.ui(color: AppColors.accent, fontWeight: FontWeight.w600))),
           TextButton(
               onPressed: () => Navigator.of(ctx).pop('cancel'),
               child: Text('Stay', style: AppFonts.ui(color: AppColors.muted))),

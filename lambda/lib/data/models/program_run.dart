@@ -1,3 +1,21 @@
+/// What a run's two state columns say it is.
+///
+/// There is no state column — the pair is enough. `is_current` alone cannot
+/// tell "stepped away from" from "finished", and that distinction is the whole
+/// point of pausing: a paused run keeps its id, its config, its block and its
+/// session attribution, and can be resumed; an ended one is history with a
+/// frozen record.
+enum RunState {
+  /// The one you are doing. At most one per user.
+  current,
+
+  /// Stepped away from, resumable. `is_current` off, no end stamped.
+  paused,
+
+  /// Formally finished or restarted. Its close record is frozen.
+  ended,
+}
+
 class ProgramRun {
   const ProgramRun({
     required this.programRunId,
@@ -42,6 +60,40 @@ class ProgramRun {
 
   /// Calendar: explicit end date (alternative to [targetWeeks]).
   final DateTime? endDate;
+
+  /// Where this run stands. See [RunState] — [isCurrent] alone is not enough
+  /// to tell a run that was stepped away from a run that is over.
+  RunState get state {
+    if (isCurrent) return RunState.current;
+    return endedDate == null ? RunState.paused : RunState.ended;
+  }
+
+  /// Stepped away from, not finished — the state a switch produces.
+  ///
+  /// `ended_date` is stamped only by an explicit end, so a run that is off and
+  /// has no end date is waiting to be picked back up.
+  bool get isPaused => state == RunState.paused;
+
+  /// This run as a superseding begin leaves it: off, and unstamped.
+  ///
+  /// Exists so a caller can report "this run was paused" while holding the run
+  /// the write actually applies to. Handing back the object as it was read
+  /// would describe it as `isCurrent` — true of the row before the switch and
+  /// of nothing afterwards, which is exactly the kind of stale claim that made
+  /// runs unaddressable in the first place.
+  ProgramRun asPaused() => ProgramRun(
+        programRunId: programRunId,
+        programId: programId,
+        userId: userId,
+        startedDate: startedDate,
+        isCurrent: false,
+        endedDate: null,
+        blockId: blockId,
+        progressionMode: progressionMode,
+        targetSessions: targetSessions,
+        targetWeeks: targetWeeks,
+        endDate: endDate,
+      );
 
   factory ProgramRun.fromMap(Map<String, dynamic> map) => ProgramRun(
         programRunId: map['program_run_id'] as String,

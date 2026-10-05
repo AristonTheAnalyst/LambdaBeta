@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
+import '../../../core/utils/friendly_error.dart';
+import '../../../data/models/block_sequence.dart';
 import '../../../data/models/custom_variation.dart';
 import '../../../data/models/exercise_detail.dart';
 import '../../../data/models/planned_session.dart';
@@ -12,7 +14,6 @@ import '../../../data/models/goal.dart';
 import '../../../data/models/program_block.dart';
 import '../../../data/models/program_history.dart';
 import '../../../data/models/program_progress.dart';
-import '../../../data/models/program_revision.dart';
 import '../../../data/models/program_run.dart';
 import '../../../data/repositories/exercise_repository.dart';
 import '../../../data/repositories/lesson_repository.dart';
@@ -24,6 +25,7 @@ import '../../../data/repositories/session_repository.dart';
 import '../model/achievements_derivation.dart';
 import '../model/program_achievements.dart';
 import '../model/block_grouping.dart';
+import '../model/program_run_lifecycle.dart';
 import 'workout_editor_viewmodel.dart';
 
 /// The program screen's state: the program itself, its workouts, its blocks,
@@ -43,12 +45,17 @@ class ProgramDetailState {
     this.plannedWorkouts = const [],
     this.programLinks = const [],
     this.blocks = const [],
+    this.programRuns = const [],
     this.exerciseDetailMap = const {},
     this.isCurrent = false,
     this.anotherProgramIsCurrent = false,
+    this.currentProgramName,
     this.settingCurrent = false,
     this.activeRun,
     this.currentProgress,
+    this.pausedRun,
+    this.pausedProgress,
+    this.historyWarning,
     // Program field drafts
     this.nameDraft = '',
     this.descriptionDraft = '',
@@ -72,9 +79,26 @@ class ProgramDetailState {
   final List<PlannedSessionProgram> programLinks;
   final Map<String, ExerciseDetail> exerciseDetailMap;
 
-  /// The program's active blocks, in `block_order`. Empty = a blockless
-  /// program, which renders as one flat list exactly as it always has.
+  /// The program's active blocks, in `block_order`. Empty on a simple program,
+  /// and — a different fact with the same list — on a blocked one that has no
+  /// blocks yet. `program.usesBlocks` is what tells those apart.
   final List<ProgramBlock> blocks;
+
+  /// Every run this program has had, newest first.
+  ///
+  /// The history half of [blockSequence]: which blocks have been run and ended
+  /// is a fact about runs, not about the blocks, so the block rows on their own
+  /// cannot say where the program is in its sequence.
+  final List<ProgramRun> programRuns;
+
+  /// Where the program is in its block sequence — which block has been run,
+  /// which one is next, and whether one is open right now.
+  ///
+  /// Derived on read rather than stored, like every other thing here that is a
+  /// function of its inputs: the sequence is only ever `blocks` × `programRuns`,
+  /// and caching it would be one more field to invalidate when either changes.
+  BlockSequence get blockSequence =>
+      BlockSequence(blocks: blocks, runs: programRuns);
   final bool isCurrent;
 
   /// Whether some *other* program is the current one.
@@ -85,6 +109,15 @@ class ProgramDetailState {
   /// the common path would be the one that says "this resets progress on any
   /// currently active program" to a user who has none.
   final bool anotherProgramIsCurrent;
+
+  /// The name of that other program, when there is one — so the begin sheet can
+  /// say what it is about to pause instead of "another program".
+  ///
+  /// The copy is the philosophy: a warning that names what you are leaving
+  /// reads as "this is kept, pick it back up", which is exactly what happens
+  /// now. Null while nothing else is running, and also when the name could not
+  /// be read — the warning falls back to generic wording either way.
+  final String? currentProgramName;
   final bool settingCurrent;
 
   /// The active run for this program (when it's the current program) — carries
@@ -93,6 +126,28 @@ class ProgramDetailState {
 
   /// Progress of the active run (null unless this program is current).
   final ProgramProgress? currentProgress;
+
+  /// This program's open-but-not-current run — stepped away from, resumable.
+  ///
+  /// A third state beside "running" and "not running", and deliberately its
+  /// own field rather than a relaxation of [activeRun]: `activeRun` means
+  /// "this program is the one being run" everywhere it is read, and the bug
+  /// that made every later write miss its row was exactly a field that meant
+  /// two things. Only ever set when [isCurrent] is false.
+  final ProgramRun? pausedRun;
+
+  /// How far the paused run got, so coming back to a paused program shows what
+  /// it did rather than starting the story at "Paused". Null when there is no
+  /// paused run, or when its numbers cannot be read.
+  final ProgramProgress? pausedProgress;
+
+  /// A run action that succeeded but left something unwritten — currently,
+  /// only a close record that could not be saved.
+  ///
+  /// Deliberately not [error]: the run *is* over, and rejecting the action
+  /// would be a lie. But the loss is real and invisible otherwise, so it is
+  /// shown until the next run action clears it.
+  final String? historyWarning;
 
   final String nameDraft;
   final String descriptionDraft;
@@ -148,11 +203,22 @@ class ProgramDetailState {
     List<PlannedSessionProgram>? programLinks,
     Map<String, ExerciseDetail>? exerciseDetailMap,
     List<ProgramBlock>? blocks,
+    List<ProgramRun>? programRuns,
     bool? isCurrent,
     bool? anotherProgramIsCurrent,
+    String? currentProgramName,
+    bool clearCurrentProgramName = false,
     bool? settingCurrent,
     ProgramRun? activeRun,
+    bool clearActiveRun = false,
     ProgramProgress? currentProgress,
+    bool clearCurrentProgress = false,
+    ProgramRun? pausedRun,
+    bool clearPausedRun = false,
+    ProgramProgress? pausedProgress,
+    bool clearPausedProgress = false,
+    String? historyWarning,
+    bool clearHistoryWarning = false,
     String? nameDraft,
     String? descriptionDraft,
     List<CustomVariation>? allVariations,
@@ -171,12 +237,25 @@ class ProgramDetailState {
     programLinks: programLinks ?? this.programLinks,
     exerciseDetailMap: exerciseDetailMap ?? this.exerciseDetailMap,
     blocks: blocks ?? this.blocks,
+    programRuns: programRuns ?? this.programRuns,
     isCurrent: isCurrent ?? this.isCurrent,
     anotherProgramIsCurrent:
         anotherProgramIsCurrent ?? this.anotherProgramIsCurrent,
+    currentProgramName: clearCurrentProgramName
+        ? null
+        : (currentProgramName ?? this.currentProgramName),
     settingCurrent: settingCurrent ?? this.settingCurrent,
-    activeRun: activeRun ?? this.activeRun,
-    currentProgress: currentProgress ?? this.currentProgress,
+    // `activeRun: null` cannot mean "clear" through a `??` copyWith — the
+    // explicit `clearActiveRun` is what a caller ending a run must pass, or the
+    // ended run's data lingers as if it were still going.
+    activeRun: clearActiveRun ? null : (activeRun ?? this.activeRun),
+    currentProgress:
+        clearCurrentProgress ? null : (currentProgress ?? this.currentProgress),
+    pausedRun: clearPausedRun ? null : (pausedRun ?? this.pausedRun),
+    pausedProgress:
+        clearPausedProgress ? null : (pausedProgress ?? this.pausedProgress),
+    historyWarning:
+        clearHistoryWarning ? null : (historyWarning ?? this.historyWarning),
     nameDraft: nameDraft ?? this.nameDraft,
     descriptionDraft: descriptionDraft ?? this.descriptionDraft,
     allVariations: allVariations ?? this.allVariations,
@@ -205,20 +284,32 @@ class ProgramDetailViewModel implements WorkoutEditorHost {
     PlannedSessionRepository? workoutPlanRepo,
     ProgramHistoryRepository? historyRepo,
     AchievementsDerivation? achievementsDerivation,
+    String? userId,
   }) : _repo = repo ?? ProgramRepository(),
        _runRepo = runRepo ?? ProgramRunRepository(),
        _exerciseRepo = exerciseRepo ?? ExerciseRepository(),
        _plannedSessionRepo = workoutPlanRepo ?? PlannedSessionRepository(),
        _historyRepo = historyRepo ?? ProgramHistoryRepository(),
-       _derivation = achievementsDerivation ?? AchievementsDerivation() {
-    // Built here rather than in the initializer list: the editor is handed
-    // `this` as its host, and `this` does not exist until the body.
+       _derivation = achievementsDerivation ?? AchievementsDerivation(),
+       _userIdOverride = userId {
+    // Built here rather than in the initializer list: the lifecycle shares the
+    // injected repos, and the editor is handed `this` as its host — `this` does
+    // not exist until the body.
+    _lifecycle = ProgramRunLifecycle(
+      runRepo: _runRepo,
+      historyRepo: _historyRepo,
+      derivation: _derivation,
+    );
     editor = WorkoutEditorViewModel(
       host: this,
       exerciseRepo: exerciseRepo,
       lessonRepo: lessonRepo,
       workoutRepo: workoutRepo,
       workoutPlanRepo: workoutPlanRepo,
+      // The override travels with the repo overrides: a caller who had to name
+      // the user because there is no Supabase to ask (see [_userId]) would
+      // otherwise be handed an editor that asks it anyway.
+      userId: userId,
     );
   }
 
@@ -233,6 +324,8 @@ class ProgramDetailViewModel implements WorkoutEditorHost {
   final PlannedSessionRepository _plannedSessionRepo;
   final ProgramHistoryRepository _historyRepo;
   final AchievementsDerivation _derivation;
+  final String? _userIdOverride;
+  late final ProgramRunLifecycle _lifecycle;
 
   final state = ValueNotifier(const ProgramDetailState());
 
@@ -252,7 +345,10 @@ class ProgramDetailViewModel implements WorkoutEditorHost {
   @override
   Future<void> onContentsChanged() => _reloadContents();
 
-  String get _userId => Supabase.instance.client.auth.currentUser!.id;
+  /// The signed-in user. Overridable because host tests cannot construct
+  /// `Supabase.instance` at all.
+  String get _userId =>
+      _userIdOverride ?? Supabase.instance.client.auth.currentUser!.id;
 
   /// Creates a new program and returns its id, ready for [load].
   ///
@@ -261,16 +357,27 @@ class ProgramDetailViewModel implements WorkoutEditorHost {
   /// through is what makes it stick. Goals are added later, from the detail
   /// screen. Progression mode is NOT a program property — it's chosen when a
   /// run starts.
-  Future<String?> createNewProgram({String? name, String? description}) async {
+  ///
+  /// [usesBlocks] is the shape chosen on the wizard's first step. It is written
+  /// once here and never changed: whether a program is a list of workouts or a
+  /// sequence of blocks decides its tabs, where its workouts are made, what its
+  /// begin sheet offers and what a goal can be scoped to, and those surfaces
+  /// cannot be half-switched after real workouts exist.
+  Future<String?> createNewProgram({
+    String? name,
+    String? description,
+    bool usesBlocks = false,
+  }) async {
     try {
       final created = await _repo.createProgram(
         _userId,
         name: name,
         description: description,
+        usesBlocks: usesBlocks,
       );
       return created.programId;
     } catch (e) {
-      state.value = state.value.copyWith(error: e.toString());
+      state.value = state.value.copyWith(error: friendlyError(e));
       return null;
     }
   }
@@ -292,7 +399,7 @@ class ProgramDetailViewModel implements WorkoutEditorHost {
     final programId = state.value.program?.programId;
     if (programId == null) return;
     final goal = Goal(
-      goalId: Uuid().v4(),
+      goalId: _uuid.v4(),
       userId: _userId,
       programId: programId,
       blockId: blockId,
@@ -308,7 +415,7 @@ class ProgramDetailViewModel implements WorkoutEditorHost {
       await _repo.createGoal(_userId, goal);
       await _loadGoals();
     } catch (e) {
-      state.value = state.value.copyWith(error: e.toString());
+      state.value = state.value.copyWith(error: friendlyError(e));
     }
   }
 
@@ -325,7 +432,7 @@ class ProgramDetailViewModel implements WorkoutEditorHost {
         },
       );
     } catch (e) {
-      state.value = state.value.copyWith(error: e.toString());
+      state.value = state.value.copyWith(error: friendlyError(e));
     }
   }
 
@@ -358,13 +465,20 @@ class ProgramDetailViewModel implements WorkoutEditorHost {
 
       var outcomes = const <String, GoalAchievement>{};
       if (run != null && inForce.isNotEmpty) {
-        final from = await _historyRepo.checkpointFor(programId);
+        // A first-ever run has no previous checkpoint, so the window opens
+        // where the run itself did — `checkpointFor`'s old `now` fallback made
+        // the window empty and every derived goal look unbeaten. The scope is
+        // the run's, so the outcomes match what its close record will say.
+        final from = await _historyRepo.checkpointFor(
+          programId,
+          blockId: run.blockId,
+          fallback: run.startedDate,
+        );
         final achievements = await _derivation.derive(
           userId: _userId,
           from: from,
           programId: programId,
           blockId: run.blockId,
-          runId: run.programRunId,
         );
         outcomes = {
           for (final g in achievements.goals) g.goal.goalId: g,
@@ -430,15 +544,52 @@ class ProgramDetailViewModel implements WorkoutEditorHost {
             .fetchVariations(_userId)
             .timeout(const Duration(seconds: 4)),
         _repo.fetchBlocks(programId).timeout(const Duration(seconds: 4)),
+        _runRepo
+            .fetchPausedRun(_userId, programId: programId)
+            .timeout(const Duration(seconds: 4)),
+        // Every run this program has had — the other half of where it is in
+        // its block sequence.
+        _runRepo
+            .fetchRunsForProgram(programId)
+            .timeout(const Duration(seconds: 4)),
       ]);
       final program = results[0] as Program?;
       final currentRun = results[4] as ProgramRun?;
-      var isCurrent = currentRun != null && currentRun.programId == programId;
+      final isCurrent = currentRun != null && currentRun.programId == programId;
       ProgramProgress? progress;
       if (isCurrent) {
         try {
           progress = await _runRepo.getProgress(_userId);
         } catch (_) {}
+      }
+
+      // Name the program that would be paused by beginning this one. Read on
+      // demand rather than held in a list: exactly one program can be current,
+      // and this is the only screen that has to name it.
+      String? currentProgramName;
+      if (currentRun != null && !isCurrent) {
+        try {
+          currentProgramName = (await _repo
+                  .fetchProgram(currentRun.programId)
+                  .timeout(const Duration(seconds: 4)))
+              ?.name;
+        } catch (_) {
+          // Only the warning's wording depends on this.
+        }
+      }
+
+      // This program's paused run, when it is not the one being run. A program
+      // cannot be both — pausing is what stepping away does — so the two are
+      // read together and only one of them is ever set.
+      final pausedRun =
+          isCurrent ? null : results[7] as ProgramRun?;
+      ProgramProgress? pausedProgress;
+      if (pausedRun != null) {
+        try {
+          pausedProgress = await _runRepo.progressFor(pausedRun);
+        } catch (_) {
+          // The paused row is what matters; its numbers are a bonus.
+        }
       }
 
       // Nothing ends the run here, and nothing should.
@@ -452,6 +603,10 @@ class ProgramDetailViewModel implements WorkoutEditorHost {
       // therefore has an honest reason attached, which is what the history
       // screen reads back.
 
+      // The screen can be gone by now — every fetch above is awaited, and
+      // backing out mid-load is one tap. Writing to the disposed notifier
+      // throws on the fetch's own stack, where nothing catches it.
+      if (_disposed) return;
       state.value = state.value.copyWith(
         isLoading: false,
         program: program,
@@ -459,12 +614,21 @@ class ProgramDetailViewModel implements WorkoutEditorHost {
         programLinks: results[2] as List<PlannedSessionProgram>,
         exerciseDetailMap: results[3] as Map<String, ExerciseDetail>,
         blocks: results[6] as List<ProgramBlock>,
+        programRuns: results[8] as List<ProgramRun>,
         nameDraft: program?.name ?? '',
         descriptionDraft: program?.description ?? '',
         isCurrent: isCurrent,
         anotherProgramIsCurrent: currentRun != null && !isCurrent,
+        currentProgramName: currentProgramName,
+        clearCurrentProgramName: currentProgramName == null,
         activeRun: isCurrent ? currentRun : null,
+        clearActiveRun: !isCurrent,
         currentProgress: progress,
+        clearCurrentProgress: progress == null,
+        pausedRun: pausedRun,
+        clearPausedRun: pausedRun == null,
+        pausedProgress: pausedProgress,
+        clearPausedProgress: pausedProgress == null,
         allVariations: results[5] as List<CustomVariation>,
       );
       // Goals and the due prompt load independently — neither is critical for
@@ -472,7 +636,8 @@ class ProgramDetailViewModel implements WorkoutEditorHost {
       _loadGoals();
       _loadDueItems();
     } catch (e) {
-      state.value = state.value.copyWith(isLoading: false, error: e.toString());
+      if (_disposed) return;
+      state.value = state.value.copyWith(isLoading: false, error: friendlyError(e));
     }
   }
 
@@ -495,17 +660,27 @@ class ProgramDetailViewModel implements WorkoutEditorHost {
         userId: _userId,
       );
       final updated = await _repo.fetchProgram(s.program!.programId);
+      if (_disposed) return;
       state.value = state.value.copyWith(
         isSaving: false,
         program: updated,
         saveSuccess: true,
       );
-      // Auto-dismiss the success banner after a short delay.
+      // Auto-dismiss the success banner after a short delay. Guarded like
+      // every other continuation here: the screen can be popped inside those
+      // two seconds — a review finishing is exactly that — and writing to a
+      // disposed notifier throws on the timer's own stack, where nothing can
+      // catch it.
       Future.delayed(const Duration(seconds: 2), () {
+        if (_disposed) return;
         state.value = state.value.copyWith(saveSuccess: false);
       });
     } catch (e) {
-      state.value = state.value.copyWith(isSaving: false, error: e.toString());
+      // The screen can be gone by the time a failed write comes back, and a
+      // throw from here would surface as an unhandled exception on a stack
+      // with no screen left to catch it.
+      if (_disposed) return;
+      state.value = state.value.copyWith(isSaving: false, error: friendlyError(e));
     }
   }
 
@@ -526,70 +701,57 @@ class ProgramDetailViewModel implements WorkoutEditorHost {
     final s = state.value;
     if (s.program == null || _disposed) return;
 
-    // Read the run being replaced BEFORE starting: `startProgramRun` clears
-    // `is_current` server-side, and afterwards there is nothing left to name.
-    // It is read here rather than taken from state because the previous run can
-    // belong to a different program — this screen only ever shows one.
-    ProgramRun? previous;
-    try {
-      previous = await _runRepo.getCurrentRun(_userId);
-    } catch (_) {}
-
-    // Optimistic: build the run locally and flip state immediately so the UI
-    // never blocks on the network.  The server write happens in the background
-    // (bounded by short timeouts inside the repository) and the run is picked
-    // up by PowerSync on the next successful sync.
-    final run = ProgramRun(
-      programRunId: _uuid.v4(),
-      programId: s.program!.programId,
-      userId: _userId,
-      startedDate: DateTime.now().toUtc(),
-      isCurrent: true,
-      progressionMode: progressionMode,
-      targetSessions: targetSessions,
-      targetWeeks: targetWeeks,
-      endDate: endDate?.toUtc(),
-      blockId: blockId,
-    );
+    // Flip the UI immediately so it never blocks on the network; the write
+    // itself is awaited. The run that replaces whatever was running — and the
+    // closing of that run — are the lifecycle's job, so both entry points
+    // behave identically.
     state.value = s.copyWith(
       settingCurrent: false,
       isCurrent: true,
-      // Whatever was running is about to be closed by `startProgramRun`, so
-      // the warning that names it stops applying the moment this succeeds.
+      // Whatever was running is paused by the begin, so it is no longer the
+      // current program — but it is still there, waiting on its own card.
       anotherProgramIsCurrent: false,
-      activeRun: run,
+      clearCurrentProgramName: true,
       clearError: true,
+      // This program cannot be paused and current at once.
+      clearPausedRun: true,
+      clearPausedProgress: true,
     );
     try {
-      // Write through PowerSync (queued offline, synced later). Await so a
-      // real failure surfaces instead of leaving optimistic state that a
-      // restart would not reproduce.
-      await _runRepo.startProgramRun(
-        _userId,
-        s.program!.programId,
+      final result = await _lifecycle.begin(
+        userId: _userId,
+        programId: s.program!.programId,
         progressionMode: progressionMode,
         targetSessions: targetSessions,
         targetWeeks: targetWeeks,
         endDate: endDate,
         blockId: blockId,
       );
+      // The repository's run, never one minted here: its id is what every
+      // later write — config edits, the close record — must address.
+      state.value = state.value.copyWith(activeRun: result.run);
+      // A simple program remembers the length it was just begun with, so the
+      // next begin opens on that number. Best-effort and guarded inside the
+      // repository — the run is live either way.
+      await _repo.rememberDefaultTargetSessions(
+        s.program!.programId,
+        blockId: blockId,
+        targetSessions: targetSessions,
+      );
       // Load progress immediately — the detail screen's progress row would
       // otherwise stay hidden until the next full reload.
       final progress = await _runRepo.getProgress(_userId);
-      state.value = state.value.copyWith(currentProgress: progress);
-      // The replaced run gets its final checkpoint. It is over — starting a
-      // run ended it — and the plan's rule is that a revision is cut just
-      // before a program stops running. Its own program's history, not this
-      // one's, which is why the run carries the program id.
-      if (previous != null) await _closeRun(previous);
-    } catch (e) {
-      // The write failed — roll the optimistic UI back so the program is not
-      // left marked "current" when nothing was actually persisted.
       state.value = state.value.copyWith(
-        isCurrent: false,
-        activeRun: null,
-        error: e.toString(),
+        currentProgress: progress,
+        clearCurrentProgress: progress == null,
       );
+      // The run just opened is the sequence's new answer: its block is no
+      // longer beginnable, and the block rows have to say so.
+      await _loadRuns();
+    } catch (e) {
+      // The write failed — roll the UI back to exactly what it was, so the
+      // program is not left marked "current" when nothing was persisted.
+      state.value = s.copyWith(error: friendlyError(e));
     }
     _loadGoals();
     _loadDueItems();
@@ -598,63 +760,182 @@ class ProgramDetailViewModel implements WorkoutEditorHost {
   /// Ends the current run for this program, marking it as no longer active.
   Future<void> endCurrentRun() async {
     final s = state.value;
-    final run = s.activeRun;
-    // Optimistic: clear immediately so the UI never blocks.
+    // Optimistic: clear immediately so the UI never blocks. The cleared run's
+    // close record is cut by the lifecycle, from the row the repository names
+    // as current — not from this screen's copy, which the next reload would
+    // replace anyway.
     state.value = s.copyWith(
       isCurrent: false,
       anotherProgramIsCurrent: false,
-      activeRun: null,
+      clearCurrentProgramName: true,
+      clearActiveRun: true,
+      clearCurrentProgress: true,
       clearError: true,
     );
     try {
-      await _runRepo.endCurrentRun(_userId);
-      // The checkpoint is cut AFTER the run is over, so the revision records a
-      // finished run rather than one that is still going.
-      if (run != null) await _closeRun(run);
+      final warning = await _lifecycle.end(userId: _userId);
+      if (warning != null && !_disposed) {
+        state.value = state.value.copyWith(historyWarning: warning);
+      }
       // Ending a run settles what was waiting on it: the "program finished"
       // prompt is derived from the run and disappears with it.
       await _loadDueItems();
+      // An ended run is what advances the sequence — the block that just
+      // closed stops being current, and the next one becomes beginnable.
+      await _loadRuns();
     } catch (e) {
       // Roll back on failure.
-      state.value = state.value.copyWith(
-        isCurrent: s.isCurrent,
-        activeRun: s.activeRun,
-        error: e.toString(),
-      );
+      state.value = s.copyWith(error: friendlyError(e));
     }
   }
 
-  /// Cuts a run's final revision and freezes what it produced.
+  /// Whether some *other* program has a run sitting paused.
   ///
-  /// The achievements are derived ONCE, here, and the UI reads the same
-  /// document the record keeps — a panel that says one thing and an archive
-  /// that says another is the failure this avoids.
+  /// Read when the confirmation is about to be asked rather than held in
+  /// [ProgramDetailState]: only that dialog's wording needs it, and every run
+  /// action on this screen rewrites which runs are open — a field would have to
+  /// be carried true through each of those patches to stay honest, and a stale
+  /// "nothing else is paused" is exactly the kind of drift the D1 bug was. A
+  /// local read at the moment of asking cannot go stale.
   ///
-  /// Failures are swallowed: the run is over either way, and an error that
-  /// left it looking active would be worse than a missing checkpoint.
-  Future<void> _closeRun(ProgramRun run) async {
+  /// False on failure: the sentence it feeds is a courtesy about paused runs,
+  /// and the question is worth asking without it.
+  Future<bool> anotherProgramIsPaused() async {
     try {
-      final from = await _historyRepo.checkpointFor(run.programId);
-      final achievements = await _derivation.derive(
-        userId: _userId,
-        from: from,
-        programId: run.programId,
-        // The block that was running, so the frozen record names the goals
-        // that were actually in force for it.
-        blockId: run.blockId,
-        runId: run.programRunId,
+      final runs = await _runRepo.fetchPausedRuns(_userId);
+      final mine = programId;
+      return runs.any((run) => run.programId != mine);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Puts this program's paused run back in charge.
+  ///
+  /// No config sheet: the run already exists, with its config, its block and
+  /// its session cursor. Resuming is not beginning, and asking how long the
+  /// run should be again would be asking a question that already has an
+  /// answer. Whatever was current steps aside — that is [resume]'s write, and
+  /// it is why resuming from here can pause another program.
+  Future<void> resumeRun() async {
+    final s = state.value;
+    final run = s.pausedRun;
+    if (run == null || _disposed) return;
+    state.value = s.copyWith(settingCurrent: true, clearError: true);
+    try {
+      await _lifecycle.resume(run, userId: _userId);
+      // Read the result rather than assuming it: the write is a local update,
+      // and claiming "current" for a row that did not move would be the same
+      // class of lie the old optimistic run id told.
+      final current = await _runRepo.getCurrentRun(_userId);
+      final isCurrent = current?.programRunId == run.programRunId;
+      ProgramProgress? progress;
+      if (isCurrent) {
+        try {
+          progress = await _runRepo.getProgress(_userId);
+        } catch (_) {}
+      }
+      if (_disposed) return;
+      state.value = state.value.copyWith(
+        settingCurrent: false,
+        isCurrent: isCurrent,
+        anotherProgramIsCurrent: !isCurrent && current != null,
+        // The row as it stands now, not the one that was read before the
+        // write: `run` still describes itself as paused, and anything that
+        // later reads its state would be told the run this screen calls
+        // current is not running.
+        activeRun: isCurrent ? current : null,
+        clearActiveRun: !isCurrent,
+        currentProgress: progress,
+        clearCurrentProgress: progress == null,
+        clearPausedRun: isCurrent,
+        clearPausedProgress: isCurrent,
       );
-      await _historyRepo.closeRun(
+      await _loadRuns();
+    } catch (e) {
+      state.value =
+          state.value.copyWith(settingCurrent: false, error: friendlyError(e));
+    }
+    _loadGoals();
+    _loadDueItems();
+  }
+
+  /// Ends this program's paused run, formally, and cuts its record.
+  ///
+  /// The "End program" the paused state needs: the user may be done with an
+  /// attempt without having finished it, and saying so is what freezes what it
+  /// got to. Ending is the only thing that unstamps a run from the paused
+  /// state — a restart ends it too, but then begins another.
+  Future<void> endPausedRun() async {
+    final run = state.value.pausedRun;
+    if (run == null || _disposed) return;
+    state.value = state.value.copyWith(
+      clearPausedRun: true,
+      clearPausedProgress: true,
+      clearError: true,
+    );
+    try {
+      final warning = await _lifecycle.endRun(run, userId: _userId);
+      if (warning != null && !_disposed) {
+        state.value = state.value.copyWith(historyWarning: warning);
+      }
+      await _loadDueItems();
+      await _loadRuns();
+    } catch (e) {
+      state.value = state.value.copyWith(error: friendlyError(e));
+    }
+  }
+
+  /// Starts this attempt over.
+  ///
+  /// Works from either state: a run being restarted is ended with its record
+  /// first — a formal end, so what it produced is frozen where every other
+  /// end's is — and a fresh run begins. The old run's sessions stay attributed
+  /// to it, and the program's goals stay in force (they belong to the program,
+  /// not the attempt). [targetSessions] comes from the config sheet, which the
+  /// caller opens prefilled with the old numbers.
+  Future<void> restartRun({
+    String? progressionMode,
+    int? targetSessions,
+    int? targetWeeks,
+    DateTime? endDate,
+  }) async {
+    final s = state.value;
+    final old = s.activeRun ?? s.pausedRun;
+    if (old == null || _disposed) return;
+    state.value = s.copyWith(settingCurrent: true, clearError: true);
+    try {
+      final result = await _lifecycle.restart(
+        oldRun: old,
         userId: _userId,
-        programId: run.programId,
-        runId: run.programRunId,
-        // A block ending is not the program ending: the record says which
-        // stopped running, which is what makes the history readable later.
-        blockId: run.blockId,
-        reason: run.blockId == null ? kRevisionProgramEnd : kRevisionBlockEnd,
-        achievementsJson: achievements.encode(),
+        progressionMode: progressionMode,
+        targetSessions: targetSessions,
+        targetWeeks: targetWeeks,
+        endDate: endDate,
       );
-    } catch (_) {}
+      ProgramProgress? progress;
+      try {
+        progress = await _runRepo.getProgress(_userId);
+      } catch (_) {}
+      if (_disposed) return;
+      state.value = state.value.copyWith(
+        settingCurrent: false,
+        isCurrent: true,
+        anotherProgramIsCurrent: false,
+        activeRun: result.run,
+        clearPausedRun: true,
+        clearPausedProgress: true,
+        currentProgress: progress,
+        clearCurrentProgress: progress == null,
+        historyWarning: result.warning,
+        clearHistoryWarning: result.warning == null,
+      );
+    } catch (e) {
+      state.value =
+          state.value.copyWith(settingCurrent: false, error: friendlyError(e));
+    }
+    _loadGoals();
+    _loadDueItems();
   }
 
   /// Updates the active run's config (mutable while running) — progression
@@ -671,8 +952,12 @@ class ProgramDetailViewModel implements WorkoutEditorHost {
     final run = state.value.activeRun;
     if (run == null) return;
     try {
-      await _runRepo.updateRunConfig(
-        run.programRunId,
+      // The rebuild is [ProgramRunLifecycle.withConfig]'s — it preserves the
+      // fields this method does not touch, `blockId` included. Rebuilding the
+      // run here from the arguments alone used to silently drop a block run's
+      // block, un-blocking it for goal scoping and mislabelling its close.
+      final updated = await _lifecycle.updateConfig(
+        run,
         progressionMode: progressionMode,
         targetSessions: targetSessions,
         targetWeeks: targetWeeks,
@@ -681,27 +966,19 @@ class ProgramDetailViewModel implements WorkoutEditorHost {
         clearWeeks: clearWeeks,
         clearEndDate: clearEndDate,
       );
-      // Rebuild the run so the duration label and the edit dialog show the
-      // new config without a full reload.
-      final updated = ProgramRun(
-        programRunId: run.programRunId,
-        programId: run.programId,
-        userId: run.userId,
-        startedDate: run.startedDate,
-        isCurrent: run.isCurrent,
-        endedDate: run.endedDate,
-        progressionMode: progressionMode ?? run.progressionMode,
-        targetSessions: clearSessions
-            ? null
-            : (targetSessions ?? run.targetSessions),
-        targetWeeks: clearWeeks ? null : (targetWeeks ?? run.targetWeeks),
-        endDate: clearEndDate ? null : (endDate ?? run.endDate),
-      );
       state.value = state.value.copyWith(activeRun: updated, clearError: true);
     } catch (e) {
-      state.value = state.value.copyWith(error: e.toString());
+      state.value = state.value.copyWith(error: friendlyError(e));
     }
   }
+
+  /// The workouts a program can copy in — the standalone ones, which are what
+  /// the workout library holds.
+  ///
+  /// Read on demand rather than held in state: the list belongs to the
+  /// library, which is another screen, and it changes there rather than here.
+  Future<List<PlannedSession>> standaloneWorkouts() =>
+      _plannedSessionRepo.fetchPlannedSessions(_userId);
 
   /// Imports a library workout into the current program as a private copy.
   /// Returns the new program-local workout.
@@ -722,7 +999,7 @@ class ProgramDetailViewModel implements WorkoutEditorHost {
       state.value = state.value.copyWith(plannedWorkouts: wps);
       return wps.where((w) => w.sessionId == newId).firstOrNull;
     } catch (e) {
-      state.value = state.value.copyWith(error: e.toString());
+      state.value = state.value.copyWith(error: friendlyError(e));
       return null;
     }
   }
@@ -801,6 +1078,22 @@ class ProgramDetailViewModel implements WorkoutEditorHost {
     state.value = state.value.copyWith(blocks: blocks);
   }
 
+  /// Re-reads this program's runs.
+  ///
+  /// The half of the block sequence that no block edit touches, so it is loaded
+  /// where runs change rather than where blocks do. Best-effort: a failed read
+  /// leaves the previous sequence, and the block rows only lose their "next"
+  /// marking until the next load.
+  Future<void> _loadRuns() async {
+    final programId = state.value.program?.programId;
+    if (programId == null) return;
+    try {
+      final runs = await _runRepo.fetchRunsForProgram(programId);
+      if (_disposed) return;
+      state.value = state.value.copyWith(programRuns: runs);
+    } catch (_) {}
+  }
+
   /// Creates a block, appended to the program's order.
   ///
   /// Requires network — the repo writes it to Supabase first, so the block
@@ -834,7 +1127,7 @@ class ProgramDetailViewModel implements WorkoutEditorHost {
       );
       return block;
     } catch (e) {
-      state.value = state.value.copyWith(error: e.toString());
+      state.value = state.value.copyWith(error: friendlyError(e));
       return null;
     }
   }
@@ -875,7 +1168,7 @@ class ProgramDetailViewModel implements WorkoutEditorHost {
       await loadBlocks();
       return true;
     } catch (e) {
-      state.value = state.value.copyWith(error: e.toString());
+      state.value = state.value.copyWith(error: friendlyError(e));
       return false;
     }
   }
@@ -912,7 +1205,7 @@ class ProgramDetailViewModel implements WorkoutEditorHost {
       await _reloadContents();
       return newId;
     } catch (e) {
-      state.value = state.value.copyWith(error: e.toString());
+      state.value = state.value.copyWith(error: friendlyError(e));
       return null;
     }
   }

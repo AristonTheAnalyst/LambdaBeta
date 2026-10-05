@@ -1,14 +1,14 @@
-import '../../../data/models/program_revision.dart';
+import '../../../data/models/program_content.dart';
 
 /// What kind of thing changed.
-enum RevisionEntity { block, session, exercise, set }
+enum ContentEntity { block, session, exercise, set, goal }
 
 /// How it changed.
-enum RevisionChangeKind { added, removed, edited, moved }
+enum ContentChangeKind { added, removed, edited, moved }
 
-/// One line in a version comparison.
-class RevisionChange {
-  const RevisionChange({
+/// One line in a snapshot comparison.
+class ContentChange {
+  const ContentChange({
     required this.entity,
     required this.kind,
     required this.id,
@@ -20,8 +20,8 @@ class RevisionChange {
     this.exerciseName,
   });
 
-  final RevisionEntity entity;
-  final RevisionChangeKind kind;
+  final ContentEntity entity;
+  final ContentChangeKind kind;
 
   /// The id of the changed thing — a `session_id`, `planned_exercise_id`,
   /// `planned_set_id` or `block_id`.
@@ -45,27 +45,27 @@ class RevisionChange {
       '${detail != null ? ' ($detail)' : ''}';
 }
 
-/// The result of comparing two revisions.
-class RevisionDiff {
-  const RevisionDiff(this.changes);
+/// The result of comparing two snapshots.
+class ContentDiff {
+  const ContentDiff(this.changes);
 
-  const RevisionDiff.empty() : changes = const [];
+  const ContentDiff.empty() : changes = const [];
 
-  final List<RevisionChange> changes;
+  final List<ContentChange> changes;
 
   bool get isEmpty => changes.isEmpty;
   bool get isNotEmpty => changes.isNotEmpty;
 
-  int countOf(RevisionChangeKind kind) =>
+  int countOf(ContentChangeKind kind) =>
       changes.where((c) => c.kind == kind).length;
 
-  int get addedCount => countOf(RevisionChangeKind.added);
-  int get removedCount => countOf(RevisionChangeKind.removed);
-  int get editedCount => countOf(RevisionChangeKind.edited);
-  int get movedCount => countOf(RevisionChangeKind.moved);
+  int get addedCount => countOf(ContentChangeKind.added);
+  int get removedCount => countOf(ContentChangeKind.removed);
+  int get editedCount => countOf(ContentChangeKind.edited);
+  int get movedCount => countOf(ContentChangeKind.moved);
 
   /// Changes touching a given workout, in emitted order.
-  List<RevisionChange> forSession(String sessionId) =>
+  List<ContentChange> forSession(String sessionId) =>
       changes.where((c) => c.sessionId == sessionId).toList();
 
   /// `+2 −1 ~3` — a one-line summary for a timeline row.
@@ -96,15 +96,15 @@ class RevisionDiff {
 /// at the head — which is exactly what makes version histories unreadable.
 /// This also means renumbering orders without changing relative order reports
 /// nothing, correctly.
-RevisionDiff diffRevisions(
-  ProgramRevisionContent? from,
-  ProgramRevisionContent? to, {
+ContentDiff diffContent(
+  ProgramContent? from,
+  ProgramContent? to, {
   Map<String, String> exerciseNames = const {},
   Map<String, String> blockNames = const {},
 }) {
-  final before = from ?? const ProgramRevisionContent();
-  final after = to ?? const ProgramRevisionContent();
-  final changes = <RevisionChange>[];
+  final before = from ?? const ProgramContent();
+  final after = to ?? const ProgramContent();
+  final changes = <ContentChange>[];
 
   final beforeBlockById = {for (final b in before.blocks) b.blockId: b};
   final afterBlockById = {for (final b in after.blocks) b.blockId: b};
@@ -140,9 +140,9 @@ RevisionDiff diffRevisions(
     final prior = beforeById[session.sessionId];
 
     if (prior == null) {
-      changes.add(RevisionChange(
-        entity: RevisionEntity.session,
-        kind: RevisionChangeKind.added,
+      changes.add(ContentChange(
+        entity: ContentEntity.session,
+        kind: ContentChangeKind.added,
         id: session.sessionId,
         label: session.name,
         sessionId: session.sessionId,
@@ -152,9 +152,9 @@ RevisionDiff diffRevisions(
     }
 
     if (movedSessions.contains(session.sessionId)) {
-      changes.add(RevisionChange(
-        entity: RevisionEntity.session,
-        kind: RevisionChangeKind.moved,
+      changes.add(ContentChange(
+        entity: ContentEntity.session,
+        kind: ContentChangeKind.moved,
         id: session.sessionId,
         label: session.name,
         detail: 'position ${beforePositions[session.sessionId]} → '
@@ -165,9 +165,9 @@ RevisionDiff diffRevisions(
     }
 
     if (prior.name != session.name) {
-      changes.add(RevisionChange(
-        entity: RevisionEntity.session,
-        kind: RevisionChangeKind.edited,
+      changes.add(ContentChange(
+        entity: ContentEntity.session,
+        kind: ContentChangeKind.edited,
         id: session.sessionId,
         label: session.name,
         detail: 'renamed: ${prior.name} → ${session.name}',
@@ -177,9 +177,9 @@ RevisionDiff diffRevisions(
     }
 
     if ((prior.notes ?? '') != (session.notes ?? '')) {
-      changes.add(RevisionChange(
-        entity: RevisionEntity.session,
-        kind: RevisionChangeKind.edited,
+      changes.add(ContentChange(
+        entity: ContentEntity.session,
+        kind: ContentChangeKind.edited,
         id: session.sessionId,
         label: session.name,
         detail: 'notes edited',
@@ -189,9 +189,9 @@ RevisionDiff diffRevisions(
     }
 
     if (prior.blockId != session.blockId) {
-      changes.add(RevisionChange(
-        entity: RevisionEntity.session,
-        kind: RevisionChangeKind.edited,
+      changes.add(ContentChange(
+        entity: ContentEntity.session,
+        kind: ContentChangeKind.edited,
         id: session.sessionId,
         label: session.name,
         detail: 'block: ${_blockLabel(prior.blockId, blockNames)} → '
@@ -203,9 +203,9 @@ RevisionDiff diffRevisions(
 
     if (prior.dayOfWeek != session.dayOfWeek ||
         prior.weekOffset != session.weekOffset) {
-      changes.add(RevisionChange(
-        entity: RevisionEntity.session,
-        kind: RevisionChangeKind.edited,
+      changes.add(ContentChange(
+        entity: ContentEntity.session,
+        kind: ContentChangeKind.edited,
         id: session.sessionId,
         label: session.name,
         detail: 'schedule changed',
@@ -224,9 +224,9 @@ RevisionDiff diffRevisions(
   // Removed workouts last — they have no place in the new ordering.
   for (final session in before.sessions) {
     if (afterById.containsKey(session.sessionId)) continue;
-    changes.add(RevisionChange(
-      entity: RevisionEntity.session,
-      kind: RevisionChangeKind.removed,
+    changes.add(ContentChange(
+      entity: ContentEntity.session,
+      kind: ContentChangeKind.removed,
       id: session.sessionId,
       label: session.name,
       sessionId: session.sessionId,
@@ -234,16 +234,130 @@ RevisionDiff diffRevisions(
     ));
   }
 
-  return RevisionDiff(List.unmodifiable(changes));
+  // ── Goals ─────────────────────────────────────────────────────────────────
+  // Last, and in the document's own order at each scope: a goal is a target
+  // rather than a step, so it has no position to move from and every change to
+  // one is added, removed or edited.
+  changes.addAll(_compareGoals(
+    before: before,
+    after: after,
+    exerciseNames: exerciseNames,
+    blockNames: blockNames,
+  ));
+
+  return ContentDiff(List.unmodifiable(changes));
 }
 
-List<RevisionChange> _compareBlocks({
-  required Map<String, RevisionBlock> before,
-  required Map<String, RevisionBlock> after,
+List<ContentChange> _compareGoals({
+  required ProgramContent before,
+  required ProgramContent after,
+  required Map<String, String> exerciseNames,
+  required Map<String, String> blockNames,
+}) {
+  final changes = <ContentChange>[];
+  final beforeById = {for (final g in before.goals) g.goalId: g};
+  final afterById = {for (final g in after.goals) g.goalId: g};
+
+  for (final goal in after.goals) {
+    final prior = beforeById[goal.goalId];
+    if (prior == null) {
+      changes.add(ContentChange(
+        entity: ContentEntity.goal,
+        kind: ContentChangeKind.added,
+        id: goal.goalId,
+        label: _goalLabel(goal, exerciseNames),
+        detail: _goalTarget(goal),
+      ));
+      continue;
+    }
+
+    // Scope first: "this target now belongs to Block 2" is a different claim
+    // from "the target moved from 100 to 110", and a goal can do both at once.
+    if (prior.blockId != goal.blockId) {
+      changes.add(ContentChange(
+        entity: ContentEntity.goal,
+        kind: ContentChangeKind.edited,
+        id: goal.goalId,
+        label: _goalLabel(goal, exerciseNames),
+        detail: 'scope: ${_goalScopeLabel(prior.blockId, blockNames)} → '
+            '${_goalScopeLabel(goal.blockId, blockNames)}',
+      ));
+    }
+
+    if (prior.targetWeight != goal.targetWeight ||
+        prior.targetReps != goal.targetReps) {
+      changes.add(ContentChange(
+        entity: ContentEntity.goal,
+        kind: ContentChangeKind.edited,
+        id: goal.goalId,
+        label: _goalLabel(goal, exerciseNames),
+        detail: 'target: ${_goalTarget(prior)} → ${_goalTarget(goal)}',
+      ));
+    }
+
+    if ((prior.text ?? '') != (goal.text ?? '') ||
+        prior.exerciseId != goal.exerciseId ||
+        prior.variationId != goal.variationId) {
+      changes.add(ContentChange(
+        entity: ContentEntity.goal,
+        kind: ContentChangeKind.edited,
+        id: goal.goalId,
+        label: _goalLabel(goal, exerciseNames),
+        detail: 'reworded',
+      ));
+    }
+  }
+
+  for (final goal in before.goals) {
+    if (afterById.containsKey(goal.goalId)) continue;
+    changes.add(ContentChange(
+      entity: ContentEntity.goal,
+      kind: ContentChangeKind.removed,
+      id: goal.goalId,
+      label: _goalLabel(goal, exerciseNames),
+      detail: _goalTarget(goal),
+    ));
+  }
+
+  return changes;
+}
+
+/// A goal's noun: the text the user wrote, which for an exercise goal is the
+/// exercise's name (the picker writes it there at creation), with the live
+/// exercise name as the fallback for a row that somehow has none.
+///
+/// Deliberately not the target — that is the [ContentChange.detail], so
+/// "Bench" and "100 kg × 1" do not repeat each other on one line.
+String _goalLabel(ContentGoal goal, Map<String, String> exerciseNames) {
+  final text = goal.text?.trim();
+  if (text != null && text.isNotEmpty) return text;
+  final id = goal.exerciseId;
+  if (id != null) return exerciseNames[id] ?? 'Goal';
+  return 'Goal';
+}
+
+/// A goal's target as a reader says it: `100 kg × 1`, or "no target" for a
+/// goal that is only a sentence.
+String _goalTarget(ContentGoal goal) {
+  final parts = <String>[];
+  if (goal.targetWeight != null) parts.add('${_trim(goal.targetWeight!)} kg');
+  if (goal.targetReps != null) {
+    final reps = goal.targetReps!;
+    parts.add('$reps rep${reps == 1 ? '' : 's'}');
+  }
+  return parts.isEmpty ? 'no target' : parts.join(' × ');
+}
+
+String _trim(num n) =>
+    n == n.roundToDouble() ? '${n.round()}' : n.toString();
+
+List<ContentChange> _compareBlocks({
+  required Map<String, ContentBlock> before,
+  required Map<String, ContentBlock> after,
   required List<String> beforeOrder,
   required List<String> afterOrder,
 }) {
-  final changes = <RevisionChange>[];
+  final changes = <ContentChange>[];
   final surviving =
       afterOrder.where(before.containsKey).toList(growable: false);
   final beforePositions = _positionsAmong(surviving, beforeOrder);
@@ -254,27 +368,27 @@ List<RevisionChange> _compareBlocks({
     final prior = before[id];
     final block = after[id]!;
     if (prior == null) {
-      changes.add(RevisionChange(
-        entity: RevisionEntity.block,
-        kind: RevisionChangeKind.added,
+      changes.add(ContentChange(
+        entity: ContentEntity.block,
+        kind: ContentChangeKind.added,
         id: id,
         label: block.name,
       ));
       continue;
     }
     if (movedBlocks.contains(id)) {
-      changes.add(RevisionChange(
-        entity: RevisionEntity.block,
-        kind: RevisionChangeKind.moved,
+      changes.add(ContentChange(
+        entity: ContentEntity.block,
+        kind: ContentChangeKind.moved,
         id: id,
         label: block.name,
         detail: 'position ${beforePositions[id]} → ${afterPositions[id]}',
       ));
     }
     if (prior.name != block.name) {
-      changes.add(RevisionChange(
-        entity: RevisionEntity.block,
-        kind: RevisionChangeKind.edited,
+      changes.add(ContentChange(
+        entity: ContentEntity.block,
+        kind: ContentChangeKind.edited,
         id: id,
         label: block.name,
         detail: 'renamed: ${prior.name} → ${block.name}',
@@ -287,9 +401,9 @@ List<RevisionChange> _compareBlocks({
     if (prior.targetWeeks != block.targetWeeks ||
         prior.targetDays != block.targetDays ||
         prior.targetSessions != block.targetSessions) {
-      changes.add(RevisionChange(
-        entity: RevisionEntity.block,
-        kind: RevisionChangeKind.edited,
+      changes.add(ContentChange(
+        entity: ContentEntity.block,
+        kind: ContentChangeKind.edited,
         id: id,
         label: block.name,
         detail: 'targets changed',
@@ -299,9 +413,9 @@ List<RevisionChange> _compareBlocks({
 
   for (final id in beforeOrder) {
     if (after.containsKey(id)) continue;
-    changes.add(RevisionChange(
-      entity: RevisionEntity.block,
-      kind: RevisionChangeKind.removed,
+    changes.add(ContentChange(
+      entity: ContentEntity.block,
+      kind: ContentChangeKind.removed,
       id: id,
       label: before[id]!.name,
     ));
@@ -312,12 +426,12 @@ List<RevisionChange> _compareBlocks({
 
 /// Sets are ordered by `set_number` in the document, so array position is the
 /// set order and `set_number` itself is positional, not an edit field.
-List<RevisionChange> _compareExercises({
-  required RevisionSession session,
-  required RevisionSession prior,
+List<ContentChange> _compareExercises({
+  required ContentSession session,
+  required ContentSession prior,
   required Map<String, String> exerciseNames,
 }) {
-  final changes = <RevisionChange>[];
+  final changes = <ContentChange>[];
 
   final beforeById = {for (final e in prior.exercises) e.plannedExerciseId: e};
   final afterById = {for (final e in session.exercises) e.plannedExerciseId: e};
@@ -341,9 +455,9 @@ List<RevisionChange> _compareExercises({
     final name = _exerciseLabel(exercise.exerciseId, exerciseNames);
 
     if (priorExercise == null) {
-      changes.add(RevisionChange(
-        entity: RevisionEntity.exercise,
-        kind: RevisionChangeKind.added,
+      changes.add(ContentChange(
+        entity: ContentEntity.exercise,
+        kind: ContentChangeKind.added,
         id: id,
         label: name,
         detail: '${exercise.sets.length} sets',
@@ -360,9 +474,9 @@ List<RevisionChange> _compareExercises({
     // two unrelated exercises.
     if (priorExercise.exerciseId != exercise.exerciseId) {
       final priorName = _exerciseLabel(priorExercise.exerciseId, exerciseNames);
-      changes.add(RevisionChange(
-        entity: RevisionEntity.exercise,
-        kind: RevisionChangeKind.removed,
+      changes.add(ContentChange(
+        entity: ContentEntity.exercise,
+        kind: ContentChangeKind.removed,
         id: id,
         label: priorName,
         sessionId: session.sessionId,
@@ -370,9 +484,9 @@ List<RevisionChange> _compareExercises({
         exerciseId: priorExercise.exerciseId,
         exerciseName: priorName,
       ));
-      changes.add(RevisionChange(
-        entity: RevisionEntity.exercise,
-        kind: RevisionChangeKind.added,
+      changes.add(ContentChange(
+        entity: ContentEntity.exercise,
+        kind: ContentChangeKind.added,
         id: id,
         label: name,
         detail: 'replaced $priorName',
@@ -385,9 +499,9 @@ List<RevisionChange> _compareExercises({
     }
 
     if (movedExercises.contains(id)) {
-      changes.add(RevisionChange(
-        entity: RevisionEntity.exercise,
-        kind: RevisionChangeKind.moved,
+      changes.add(ContentChange(
+        entity: ContentEntity.exercise,
+        kind: ContentChangeKind.moved,
         id: id,
         label: name,
         detail: 'position ${beforePositions[id]} → ${afterPositions[id]}',
@@ -410,9 +524,9 @@ List<RevisionChange> _compareExercises({
     final id = exercise.plannedExerciseId;
     if (afterById.containsKey(id)) continue;
     final name = _exerciseLabel(exercise.exerciseId, exerciseNames);
-    changes.add(RevisionChange(
-      entity: RevisionEntity.exercise,
-      kind: RevisionChangeKind.removed,
+    changes.add(ContentChange(
+      entity: ContentEntity.exercise,
+      kind: ContentChangeKind.removed,
       id: id,
       label: name,
       sessionId: session.sessionId,
@@ -425,13 +539,13 @@ List<RevisionChange> _compareExercises({
   return changes;
 }
 
-List<RevisionChange> _compareSets({
-  required RevisionExercise exercise,
-  required RevisionExercise prior,
-  required RevisionSession session,
+List<ContentChange> _compareSets({
+  required ContentExercise exercise,
+  required ContentExercise prior,
+  required ContentSession session,
   required String exerciseName,
 }) {
-  final changes = <RevisionChange>[];
+  final changes = <ContentChange>[];
 
   final beforeById = {for (final s in prior.sets) s.plannedSetId: s};
   final afterById = {for (final s in exercise.sets) s.plannedSetId: s};
@@ -449,14 +563,14 @@ List<RevisionChange> _compareSets({
     exercise.sets.map((s) => s.plannedSetId).toList(),
   );
 
-  RevisionChange build(
-    RevisionChangeKind kind,
-    RevisionSet set,
+  ContentChange build(
+    ContentChangeKind kind,
+    ContentSet set,
     String label, {
     String? detail,
   }) =>
-      RevisionChange(
-        entity: RevisionEntity.set,
+      ContentChange(
+        entity: ContentEntity.set,
         kind: kind,
         id: set.plannedSetId,
         label: label,
@@ -473,13 +587,13 @@ List<RevisionChange> _compareSets({
     final label = 'Set ${i + 1}';
 
     if (priorSet == null) {
-      changes.add(build(RevisionChangeKind.added, set, label,
+      changes.add(build(ContentChangeKind.added, set, label,
           detail: _setSummary(set)));
       continue;
     }
 
     if (movedSets.contains(set.plannedSetId)) {
-      changes.add(build(RevisionChangeKind.moved, set, label,
+      changes.add(build(ContentChangeKind.moved, set, label,
           detail: 'position ${beforePositions[set.plannedSetId]} → '
               '${afterPositions[set.plannedSetId]}'));
     }
@@ -487,7 +601,7 @@ List<RevisionChange> _compareSets({
     if (priorSet.targetWeight != set.targetWeight ||
         priorSet.targetReps != set.targetReps) {
       changes.add(build(
-        RevisionChangeKind.edited,
+        ContentChangeKind.edited,
         set,
         label,
         detail: '${_setSummary(priorSet)} → ${_setSummary(set)}',
@@ -495,12 +609,12 @@ List<RevisionChange> _compareSets({
     }
 
     if (priorSet.variationId != set.variationId) {
-      changes.add(build(RevisionChangeKind.edited, set, label,
+      changes.add(build(ContentChangeKind.edited, set, label,
           detail: 'variation changed'));
     }
 
     if ((priorSet.targetNotes ?? '') != (set.targetNotes ?? '')) {
-      changes.add(build(RevisionChangeKind.edited, set, label,
+      changes.add(build(ContentChangeKind.edited, set, label,
           detail: 'notes edited'));
     }
   }
@@ -508,14 +622,14 @@ List<RevisionChange> _compareSets({
   for (var i = 0; i < prior.sets.length; i++) {
     final set = prior.sets[i];
     if (afterById.containsKey(set.plannedSetId)) continue;
-    changes.add(build(RevisionChangeKind.removed, set, 'Set ${i + 1}',
+    changes.add(build(ContentChangeKind.removed, set, 'Set ${i + 1}',
         detail: _setSummary(set)));
   }
 
   return changes;
 }
 
-String _setSummary(RevisionSet set) {
+String _setSummary(ContentSet set) {
   final weight = (set.targetWeight?.trim().isNotEmpty ?? false)
       ? set.targetWeight!.trim()
       : '—';
@@ -537,6 +651,20 @@ String _exerciseLabel(String? exerciseId, Map<String, String> names) {
 
 String _blockLabel(String? blockId, Map<String, String> names) {
   if (blockId == null) return 'no block';
+  final name = names[blockId];
+  if (name != null && name.trim().isNotEmpty) return name;
+  return 'a block';
+}
+
+/// A goal's scope as the Goals tab names it.
+///
+/// Distinct from [_blockLabel] because the same null means two things: a
+/// workout with no block is unplaced, while a goal with no block is the
+/// program's own — in force in every block. "No block" would read as the first
+/// on a line about the second, and the screen that sets this calls it
+/// "Whole program".
+String _goalScopeLabel(String? blockId, Map<String, String> names) {
+  if (blockId == null) return 'Whole program';
   final name = names[blockId];
   if (name != null && name.trim().isNotEmpty) return name;
   return 'a block';

@@ -1,37 +1,36 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
 import '../../../core/styles/app_spacing.dart';
 import '../../../core/styles/app_text_styles.dart';
-import '../../../data/models/program_revision.dart';
+import '../../../data/models/program_content.dart';
 import '../../../shared/widgets/container_styles.dart';
 import '../../../shared/widgets/slide_up_modal.dart';
-import '../model/program_revision_diff.dart';
+import '../model/program_content_diff.dart';
 
-/// What changed between two versions of a program.
+/// What changed between two checkpoints of a program.
 ///
 /// Pure data in, like `showPrModal`: it decodes the two documents, diffs them
-/// and renders. Nothing is fetched and nothing is written — a version
-/// comparison is a read of two immutable records.
+/// and renders. Nothing is fetched and nothing is written — a comparison is a
+/// read of two immutable records.
 ///
 /// [title] and [subtitle] are supplied by the caller because there are two
-/// questions this answers — "what changed in version 4?" and "what would this
-/// proposed change do?" — and they are the same comparison with a different
-/// header.
-void showRevisionDiffSheet(
+/// questions this answers — "what changed since the last checkpoint?" and
+/// "what would this proposed change do?" — and they are the same comparison
+/// with a different header.
+void showContentDiffSheet(
   BuildContext context, {
   required String title,
   required String subtitle,
-  required ProgramRevisionContent? before,
-  required ProgramRevisionContent? after,
+  required ProgramContent? before,
+  required ProgramContent? after,
   Map<String, String> exerciseNames = const {},
 }) {
   showLambdaModal(
     context,
     child: SafeArea(
-      child: _RevisionDiffSheet(
+      child: _ContentDiffSheet(
         title: title,
         subtitle: subtitle,
         before: before,
@@ -42,26 +41,8 @@ void showRevisionDiffSheet(
   );
 }
 
-/// "Version 3 → Version 4", the timeline's question.
-void showVersionDiffSheet(
-  BuildContext context, {
-  required ProgramRevision from,
-  required ProgramRevision to,
-  Map<String, String> exerciseNames = const {},
-}) =>
-    showRevisionDiffSheet(
-      context,
-      title: 'Version ${from.revisionNumber} → ${to.revisionNumber}',
-      subtitle: '${DateFormat('MMM d').format(from.createdDate)}'
-          '  ·  '
-          '${DateFormat('MMM d, yyyy').format(to.createdDate)}',
-      before: from.content,
-      after: to.content,
-      exerciseNames: exerciseNames,
-    );
-
-class _RevisionDiffSheet extends StatelessWidget {
-  const _RevisionDiffSheet({
+class _ContentDiffSheet extends StatelessWidget {
+  const _ContentDiffSheet({
     required this.title,
     required this.subtitle,
     required this.before,
@@ -71,16 +52,16 @@ class _RevisionDiffSheet extends StatelessWidget {
 
   final String title;
   final String subtitle;
-  final ProgramRevisionContent? before;
-  final ProgramRevisionContent? after;
+  final ProgramContent? before;
+  final ProgramContent? after;
   final Map<String, String> exerciseNames;
 
   @override
   Widget build(BuildContext context) {
     final readable = before != null && after != null;
     final diff = readable
-        ? diffRevisions(before, after, exerciseNames: exerciseNames)
-        : const RevisionDiff.empty();
+        ? diffContent(before, after, exerciseNames: exerciseNames)
+        : const ContentDiff.empty();
 
     return Padding(
       padding: const EdgeInsets.all(AppSpacing.xl),
@@ -142,7 +123,7 @@ class _RevisionDiffSheet extends StatelessWidget {
   /// One row per change, with a workout heading whenever the change's workout
   /// differs from the previous row's — the diff emits a workout's changes
   /// together, so a running comparison is enough to group them.
-  List<Widget> _rows(RevisionDiff diff) {
+  List<Widget> _rows(ContentDiff diff) {
     final rows = <Widget>[];
     String? lastSessionId;
     for (final change in diff.changes) {
@@ -177,23 +158,23 @@ class _RevisionDiffSheet extends StatelessWidget {
 class _ChangeRow extends StatelessWidget {
   const _ChangeRow({required this.change});
 
-  final RevisionChange change;
+  final ContentChange change;
 
   @override
   Widget build(BuildContext context) {
     final (icon, color) = switch (change.kind) {
-      RevisionChangeKind.added => (Icons.add_circle_outline, AppColors.success),
-      RevisionChangeKind.removed => (
+      ContentChangeKind.added => (Icons.add_circle_outline, AppColors.success),
+      ContentChangeKind.removed => (
           Icons.remove_circle_outline,
           AppColors.danger,
         ),
-      RevisionChangeKind.edited => (Icons.edit_outlined, AppColors.accent),
-      RevisionChangeKind.moved => (Icons.swap_vert, AppColors.muted),
+      ContentChangeKind.edited => (Icons.edit_outlined, AppColors.accent),
+      ContentChangeKind.moved => (Icons.swap_vert, AppColors.muted),
     };
 
     // A set's own label is "Set 2", so it needs its exercise named; an
     // exercise's label IS the exercise, and repeating it would be noise.
-    final exerciseContext = change.entity == RevisionEntity.set
+    final exerciseContext = change.entity == ContentEntity.set
         ? change.exerciseName
         : null;
 

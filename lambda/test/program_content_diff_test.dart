@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:lambda/data/models/program_revision.dart';
-import 'package:lambda/features/programs/model/program_revision_diff.dart';
+import 'package:lambda/data/models/program_content.dart';
+import 'package:lambda/features/programs/model/program_content_diff.dart';
 
-RevisionSet _set(
+ContentSet _set(
   String id, {
   String? weight = '60',
   String? reps = '5',
@@ -10,7 +10,7 @@ RevisionSet _set(
   String? notes,
   int n = 1,
 }) =>
-    RevisionSet(
+    ContentSet(
       plannedSetId: id,
       plannedExerciseId: 'e',
       plannedSessionId: 's',
@@ -22,13 +22,13 @@ RevisionSet _set(
       targetNotes: notes,
     );
 
-RevisionExercise _exercise(
+ContentExercise _exercise(
   String id, {
   String exerciseId = 'ex1',
   int order = 1,
-  List<RevisionSet>? sets,
+  List<ContentSet>? sets,
 }) =>
-    RevisionExercise(
+    ContentExercise(
       plannedExerciseId: id,
       plannedSessionId: 's',
       userId: 'u1',
@@ -37,14 +37,14 @@ RevisionExercise _exercise(
       sets: sets ?? [_set('${id}set1')],
     );
 
-RevisionSession _session(
+ContentSession _session(
   String id, {
   String? name,
   String? notes,
   String? blockId,
-  List<RevisionExercise>? exercises,
+  List<ContentExercise>? exercises,
 }) =>
-    RevisionSession(
+    ContentSession(
       sessionId: id,
       userId: 'u1',
       name: name ?? id,
@@ -53,30 +53,51 @@ RevisionSession _session(
       exercises: exercises ?? [_exercise('${id}e1')],
     );
 
-ProgramRevisionContent _content(
-  List<RevisionSession> sessions, {
-  List<RevisionBlock> blocks = const [],
+ContentGoal _goal(
+  String id, {
+  String? blockId,
+  String? exerciseId,
+  String? variationId,
+  num? weight,
+  int? reps,
+  String? text,
 }) =>
-    ProgramRevisionContent(blocks: blocks, sessions: sessions);
+    ContentGoal(
+      goalId: id,
+      userId: 'u1',
+      blockId: blockId,
+      exerciseId: exerciseId,
+      variationId: variationId,
+      targetWeight: weight,
+      targetReps: reps,
+      text: text,
+    );
+
+ProgramContent _content(
+  List<ContentSession> sessions, {
+  List<ContentBlock> blocks = const [],
+  List<ContentGoal> goals = const [],
+}) =>
+    ProgramContent(blocks: blocks, sessions: sessions, goals: goals);
 
 void main() {
   group('first version', () {
     test('everything is added and nothing is reported as moved', () {
-      final diff = diffRevisions(null, _content([_session('A'), _session('B')]));
+      final diff = diffContent(null, _content([_session('A'), _session('B')]));
 
       expect(diff.addedCount, 2);
       expect(diff.movedCount, 0);
       expect(diff.removedCount, 0);
-      expect(diff.changes.every((c) => c.entity == RevisionEntity.session),
+      expect(diff.changes.every((c) => c.entity == ContentEntity.session),
           isTrue);
     });
 
     test('null on both sides is an empty diff', () {
-      expect(diffRevisions(null, null).isEmpty, isTrue);
+      expect(diffContent(null, null).isEmpty, isTrue);
     });
 
     test('comparing against null reports everything as removed', () {
-      final diff = diffRevisions(_content([_session('A')]), null);
+      final diff = diffContent(_content([_session('A')]), null);
       expect(diff.removedCount, 1);
     });
   });
@@ -89,7 +110,7 @@ void main() {
       final after =
           _content([_session('NEW'), _session('A'), _session('B'), _session('C')]);
 
-      final diff = diffRevisions(before, after);
+      final diff = diffContent(before, after);
 
       expect(diff.addedCount, 1);
       expect(diff.removedCount, 0);
@@ -101,7 +122,7 @@ void main() {
       final before = _content([_session('A'), _session('B'), _session('C')]);
       final after = _content([_session('A'), _session('C')]);
 
-      final diff = diffRevisions(before, after);
+      final diff = diffContent(before, after);
 
       expect(diff.removedCount, 1);
       expect(diff.movedCount, 0);
@@ -114,11 +135,11 @@ void main() {
       final before = _content([_session('A'), _session('B'), _session('C')]);
       final after = _content([_session('C'), _session('A'), _session('B')]);
 
-      final diff = diffRevisions(before, after);
+      final diff = diffContent(before, after);
 
       expect(diff.movedCount, 1);
       expect(diff.changes.single.label, 'C');
-      expect(diff.changes.single.kind, RevisionChangeKind.moved);
+      expect(diff.changes.single.kind, ContentChangeKind.moved);
       expect(diff.changes.single.detail, 'position 3 → 1');
     });
 
@@ -130,7 +151,7 @@ void main() {
       final before = _content([_session('A'), _session('B'), _session('C')]);
       final after = _content([_session('B'), _session('A'), _session('C')]);
 
-      final diff = diffRevisions(before, after);
+      final diff = diffContent(before, after);
 
       expect(diff.movedCount, 1);
       expect(diff.changes.single.label, 'B');
@@ -143,12 +164,12 @@ void main() {
       final before = _content([_session('A'), _session('B'), _session('C')]);
       final after = _content([_session('A'), _session('B'), _session('C')]);
 
-      expect(diffRevisions(before, after).isEmpty, isTrue);
+      expect(diffContent(before, after).isEmpty, isTrue);
     });
 
     test('no changes at all is an empty diff with a readable summary', () {
       final content = _content([_session('A'), _session('B')]);
-      final diff = diffRevisions(content, content);
+      final diff = diffContent(content, content);
 
       expect(diff.isEmpty, isTrue);
       expect(diff.summary, 'no content changes');
@@ -160,7 +181,7 @@ void main() {
       final before = _content([_session('A', name: 'Push')]);
       final after = _content([_session('A', name: 'Push Day')]);
 
-      final diff = diffRevisions(before, after);
+      final diff = diffContent(before, after);
 
       expect(diff.editedCount, 1);
       expect(diff.addedCount, 0);
@@ -172,7 +193,7 @@ void main() {
       final before = _content([_session('A', notes: null)]);
       final after = _content([_session('A', notes: 'add a backoff set')]);
 
-      final diff = diffRevisions(before, after);
+      final diff = diffContent(before, after);
 
       expect(diff.editedCount, 1);
       expect(diff.changes.single.detail, 'notes edited');
@@ -181,14 +202,14 @@ void main() {
     test('an unchanged null notes field is not an edit', () {
       final before = _content([_session('A', notes: null)]);
       final after = _content([_session('A', notes: '')]);
-      expect(diffRevisions(before, after).isEmpty, isTrue);
+      expect(diffContent(before, after).isEmpty, isTrue);
     });
 
     test('moving a workout between blocks names both blocks', () {
       final before = _content([_session('A', blockId: 'b1')]);
       final after = _content([_session('A', blockId: 'b2')]);
 
-      final diff = diffRevisions(
+      final diff = diffContent(
         before,
         after,
         blockNames: {'b1': 'Accumulation', 'b2': 'Intensification'},
@@ -203,7 +224,7 @@ void main() {
       final before = _content([_session('A', blockId: 'b1')]);
       final after = _content([_session('A', blockId: null)]);
 
-      final diff = diffRevisions(before, after);
+      final diff = diffContent(before, after);
 
       expect(diff.changes.single.detail, 'block: a block → no block');
     });
@@ -224,11 +245,11 @@ void main() {
         ])
       ]);
 
-      final diff = diffRevisions(before, after, exerciseNames: {'ex2': 'Row'});
+      final diff = diffContent(before, after, exerciseNames: {'ex2': 'Row'});
 
       final added = diff.changes.single;
-      expect(added.kind, RevisionChangeKind.added);
-      expect(added.entity, RevisionEntity.exercise);
+      expect(added.kind, ContentChangeKind.added);
+      expect(added.entity, ContentEntity.exercise);
       expect(added.label, 'Row');
       expect(added.detail, '2 sets');
       expect(added.sessionId, 'A');
@@ -244,7 +265,7 @@ void main() {
         _session('A', exercises: [_exercise('Ae1', exerciseId: 'ex2')])
       ]);
 
-      final diff = diffRevisions(
+      final diff = diffContent(
         before,
         after,
         exerciseNames: {'ex1': 'Bench Press', 'ex2': 'Incline Press'},
@@ -267,7 +288,7 @@ void main() {
         ])
       ]);
 
-      final diff = diffRevisions(before, after);
+      final diff = diffContent(before, after);
 
       expect(diff.changes.single.label, 'Exercise');
       expect(diff.changes.single.label, isNot(contains('ex-unknown')));
@@ -287,7 +308,7 @@ void main() {
         ])
       ]);
 
-      final diff = diffRevisions(
+      final diff = diffContent(
         before,
         after,
         exerciseNames: {'ex1': 'Bench', 'ex2': 'Row'},
@@ -308,7 +329,7 @@ void main() {
         _session('A', exercises: [_exercise('Ae1', exerciseId: 'ex1')])
       ]);
 
-      final diff = diffRevisions(before, after, exerciseNames: {'ex2': 'Row'});
+      final diff = diffContent(before, after, exerciseNames: {'ex2': 'Row'});
 
       expect(diff.removedCount, 1);
       expect(diff.changes.single.label, 'Row');
@@ -328,10 +349,10 @@ void main() {
         ])
       ]);
 
-      final diff = diffRevisions(before, after);
+      final diff = diffContent(before, after);
 
       expect(diff.editedCount, 1);
-      expect(diff.changes.single.entity, RevisionEntity.set);
+      expect(diff.changes.single.entity, ContentEntity.set);
       expect(diff.changes.single.label, 'Set 1');
       expect(diff.changes.single.detail, '60 × 5 → 65 × 5');
     });
@@ -348,7 +369,7 @@ void main() {
         ])
       ]);
 
-      final diff = diffRevisions(before, after);
+      final diff = diffContent(before, after);
 
       expect(diff.changes.single.detail, '60-70 × AMRAP → 65-75 × AMRAP');
     });
@@ -368,7 +389,7 @@ void main() {
         ])
       ]);
 
-      final diff = diffRevisions(before, after);
+      final diff = diffContent(before, after);
 
       expect(diff.addedCount, 1);
       expect(diff.movedCount, 0);
@@ -391,7 +412,7 @@ void main() {
         ])
       ]);
 
-      final diff = diffRevisions(before, after);
+      final diff = diffContent(before, after);
 
       expect(diff.removedCount, 1);
       expect(diff.changes.single.detail, '70 × 3');
@@ -409,7 +430,7 @@ void main() {
         ])
       ]);
 
-      final diff = diffRevisions(before, after);
+      final diff = diffContent(before, after);
 
       expect(diff.editedCount, 1);
       expect(diff.changes.single.detail, 'variation changed');
@@ -427,7 +448,7 @@ void main() {
         ])
       ]);
 
-      final diff = diffRevisions(before, after, exerciseNames: {'ex1': 'Bench'});
+      final diff = diffContent(before, after, exerciseNames: {'ex1': 'Bench'});
 
       final change = diff.changes.single;
       expect(change.sessionId, 'A');
@@ -440,15 +461,15 @@ void main() {
   group('blocks', () {
     test('a block is added, renamed and removed', () {
       final before = _content(const [], blocks: const [
-        RevisionBlock(blockId: 'b1', name: 'Accumulation', blockOrder: 1),
-        RevisionBlock(blockId: 'b2', name: 'Peaking', blockOrder: 2),
+        ContentBlock(blockId: 'b1', name: 'Accumulation', blockOrder: 1),
+        ContentBlock(blockId: 'b2', name: 'Peaking', blockOrder: 2),
       ]);
       final after = _content(const [], blocks: const [
-        RevisionBlock(blockId: 'b1', name: 'Base', blockOrder: 1),
-        RevisionBlock(blockId: 'b3', name: 'Deload', blockOrder: 2),
+        ContentBlock(blockId: 'b1', name: 'Base', blockOrder: 1),
+        ContentBlock(blockId: 'b3', name: 'Deload', blockOrder: 2),
       ]);
 
-      final diff = diffRevisions(before, after);
+      final diff = diffContent(before, after);
 
       expect(diff.addedCount, 1);
       expect(diff.removedCount, 1);
@@ -460,17 +481,17 @@ void main() {
 
     test('reordering blocks reports only the block that moved', () {
       final before = _content(const [], blocks: const [
-        RevisionBlock(blockId: 'b1', name: 'Base', blockOrder: 1),
-        RevisionBlock(blockId: 'b2', name: 'Build', blockOrder: 2),
-        RevisionBlock(blockId: 'b3', name: 'Peak', blockOrder: 3),
+        ContentBlock(blockId: 'b1', name: 'Base', blockOrder: 1),
+        ContentBlock(blockId: 'b2', name: 'Build', blockOrder: 2),
+        ContentBlock(blockId: 'b3', name: 'Peak', blockOrder: 3),
       ]);
       final after = _content(const [], blocks: const [
-        RevisionBlock(blockId: 'b3', name: 'Peak', blockOrder: 1),
-        RevisionBlock(blockId: 'b1', name: 'Base', blockOrder: 2),
-        RevisionBlock(blockId: 'b2', name: 'Build', blockOrder: 3),
+        ContentBlock(blockId: 'b3', name: 'Peak', blockOrder: 1),
+        ContentBlock(blockId: 'b1', name: 'Base', blockOrder: 2),
+        ContentBlock(blockId: 'b2', name: 'Build', blockOrder: 3),
       ]);
 
-      final diff = diffRevisions(before, after);
+      final diff = diffContent(before, after);
 
       expect(diff.movedCount, 1);
       expect(diff.changes.single.label, 'Peak');
@@ -478,15 +499,15 @@ void main() {
 
     test('a target change is reported', () {
       final before = _content(const [], blocks: const [
-        RevisionBlock(
+        ContentBlock(
             blockId: 'b1', name: 'Base', blockOrder: 1, targetWeeks: 4),
       ]);
       final after = _content(const [], blocks: const [
-        RevisionBlock(
+        ContentBlock(
             blockId: 'b1', name: 'Base', blockOrder: 1, targetWeeks: 6),
       ]);
 
-      expect(diffRevisions(before, after).changes.single.detail,
+      expect(diffContent(before, after).changes.single.detail,
           'targets changed');
     });
 
@@ -496,7 +517,7 @@ void main() {
       // day is a block whose phase runs a day longer, which is exactly the kind
       // of change a revision diff exists to show.
       final before = _content(const [], blocks: const [
-        RevisionBlock(
+        ContentBlock(
           blockId: 'b1',
           name: 'Base',
           blockOrder: 1,
@@ -505,7 +526,7 @@ void main() {
         ),
       ]);
       final after = _content(const [], blocks: const [
-        RevisionBlock(
+        ContentBlock(
           blockId: 'b1',
           name: 'Base',
           blockOrder: 1,
@@ -514,8 +535,110 @@ void main() {
         ),
       ]);
 
-      expect(diffRevisions(before, after).changes.single.detail,
+      expect(diffContent(before, after).changes.single.detail,
           'targets changed');
+    });
+  });
+
+  group('goals', () {
+    test('a goal is added, and one is removed', () {
+      final before = _content(const [], goals: [_goal('g1', text: 'Sleep')]);
+      final after = _content(
+        const [],
+        goals: [_goal('g1', text: 'Sleep'), _goal('g2', blockId: 'b1', text: 'Bench')],
+      );
+
+      final diff = diffContent(before, after);
+
+      expect(diff.addedCount, 1);
+      expect(diff.changes.single.entity, ContentEntity.goal);
+      expect(diff.changes.single.label, 'Bench');
+
+      // Read the other way, the same pair of documents reports the same goal
+      // as gone — a diff is directional, and "which one went" is the reader's
+      // question.
+      final removed = diffContent(after, before);
+      expect(removed.removedCount, 1);
+      expect(removed.changes.single.label, 'Bench');
+    });
+
+    test('a retargeted goal reports both numbers', () {
+      final before = _content(const [],
+          goals: [_goal('g1', exerciseId: 'ex1', weight: 100, reps: 1, text: 'Bench')]);
+      final after = _content(const [],
+          goals: [_goal('g1', exerciseId: 'ex1', weight: 110, reps: 1, text: 'Bench')]);
+
+      final diff = diffContent(before, after,
+          exerciseNames: const {'ex1': 'Bench Press'});
+
+      expect(diff.editedCount, 1);
+      expect(diff.changes.single.detail, 'target: 100 kg × 1 rep → 110 kg × 1 rep');
+    });
+
+    test('rescoping a goal is reported as a scope change, not a rewording', () {
+      // The same target, moved from the program to a phase — the one edit a
+      // goal can make that changes what it applies *to* rather than what it
+      // asks for, so a diff that called this "reworded" would hide the only
+      // part of it a reader needs.
+      // The block is in both documents: the only thing that changed is where
+      // the goal points.
+      const block = ContentBlock(
+          blockId: 'b1', name: 'Accumulation', blockOrder: 1);
+      final before = _content(const [],
+          blocks: const [block], goals: [_goal('g1', text: 'Bench')]);
+      final after = _content(const [],
+          blocks: const [block], goals: [_goal('g1', blockId: 'b1', text: 'Bench')]);
+
+      final diff = diffContent(before, after,
+          blockNames: const {'b1': 'Accumulation'});
+
+      expect(diff.changes, hasLength(1));
+      expect(diff.changes.single.detail, 'scope: Whole program → Accumulation',
+          reason: 'the same words the Goals tab uses to set it — "no block" '
+              'here would describe an unplaced workout, not the program\'s own '
+              'target');
+    });
+
+    test('a goal with no text falls back to its exercise, then to "Goal"', () {
+      final named = diffContent(
+        const ProgramContent(),
+        _content(const [], goals: [_goal('g1', exerciseId: 'ex1', weight: 100, reps: 1)]),
+        exerciseNames: const {'ex1': 'Bench Press'},
+      );
+      expect(named.changes.single.label, 'Bench Press');
+
+      // An exercise that has since been deleted from the library: the goal is
+      // still a change worth reporting, just not a nameable one.
+      final unnamed = diffContent(
+        const ProgramContent(),
+        _content(const [], goals: [_goal('g1', exerciseId: 'gone', weight: 100, reps: 1)]),
+      );
+      expect(unnamed.changes.single.label, 'Goal');
+    });
+
+    test('a sentence-only goal says it has no target', () {
+      final diff = diffContent(const ProgramContent(),
+          _content(const [], goals: [_goal('g1', text: 'Sleep eight hours')]));
+
+      expect(diff.changes.single.detail, 'no target',
+          reason: 'the label is already the whole sentence — an empty detail '
+              'would read as a rendering bug rather than a goal without a '
+              'number');
+    });
+
+    test('goal changes come after the workouts they belong to', () {
+      final before = _content([_session('A')], goals: [_goal('g1', text: 'Sleep')]);
+      final after = _content(
+        [_session('A', notes: 'edited')],
+        blocks: const [ContentBlock(blockId: 'b1', name: 'Base', blockOrder: 1)],
+        goals: [_goal('g1', blockId: 'b1', text: 'Sleep')],
+      );
+
+      final diff = diffContent(before, after);
+
+      expect(diff.changes.last.entity, ContentEntity.goal,
+          reason: 'a diff reads top-down as the program is built — targets '
+              'last, the way the document itself is ordered');
     });
   });
 
@@ -532,7 +655,7 @@ void main() {
         _session('B', exercises: [_exercise('Be1')]),
       ]);
 
-      final diff = diffRevisions(before, after);
+      final diff = diffContent(before, after);
 
       expect(diff.changes, hasLength(1));
       expect(diff.forSession('A'), hasLength(1));
@@ -547,7 +670,7 @@ void main() {
         _session('A', name: 'Push Day', exercises: [_exercise('Ae1')])
       ]);
 
-      final diff = diffRevisions(before, after);
+      final diff = diffContent(before, after);
 
       expect(diff.changes, hasLength(1));
       expect(diff.summary, '~1');
@@ -557,7 +680,7 @@ void main() {
       final before = _content([_session('A'), _session('B')]);
       final after = _content([_session('NEW'), _session('A')]);
 
-      final diff = diffRevisions(before, after);
+      final diff = diffContent(before, after);
 
       expect(diff.addedCount, 1);
       expect(diff.removedCount, 1);

@@ -113,7 +113,12 @@ class DropdownSelect<T> extends StatelessWidget {
         final host = DropdownSheetHost.maybeOf(context);
         if (host != null) {
           // In-modal path: defer to next frame so the host's setState
-          // doesn't run during the parent's build.
+          // doesn't run during the parent's build. The frame has to be
+          // *asked for*: a post-frame callback waits for the next frame, and
+          // a bare tap on a Container schedules none — nothing else here
+          // calls setState, so without this the picker would sit pending
+          // until some unrelated animation happened to bring a frame along.
+          WidgetsBinding.instance.scheduleFrame();
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (!context.mounted) return;
             final h = DropdownSheetHost.maybeOf(context);

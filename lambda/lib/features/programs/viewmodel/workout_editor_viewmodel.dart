@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/powersync/database.dart' as ps;
+import '../../../core/utils/friendly_error.dart';
 import '../../../core/utils/name_limit.dart';
 import '../../../data/models/custom_variation.dart';
 import '../../../data/models/exercise_detail.dart';
@@ -274,7 +275,14 @@ class WorkoutEditorViewModel {
   /// Creates a brand-new planned workout immediately (placeholder name) and
   /// opens it for editing — mirrors how starting a session is a definite
   /// action; there's no separate "draft, unsaved workout" state to manage.
-  Future<void> createWorkoutAndOpen() async {
+  ///
+  /// [blockId] files the new workout into a block as it is linked, which is
+  /// how one is made from inside a block. The link is created with the block
+  /// already on it rather than assigned afterwards: a blocked program has no
+  /// Workouts tab, so a row that spent even a moment unfiled would be a row
+  /// with nowhere to be seen — and a caller that assigned it later would have
+  /// to guess which row appeared.
+  Future<void> createWorkoutAndOpen({String? blockId}) async {
     final host = _host;
     if (host == null) return;
     final programId = host.programId;
@@ -288,6 +296,7 @@ class WorkoutEditorViewModel {
         programId: programId,
         plannedSessionId: wp.sessionId,
         sequenceOrder: host.workoutCount + 1,
+        blockId: blockId,
       );
       // Created this editing session — Discard rolls back its existence.
       _openedExisting = false;
@@ -304,7 +313,7 @@ class WorkoutEditorViewModel {
       );
       await host.onContentsChanged();
     } catch (e) {
-      state.value = state.value.copyWith(error: e.toString());
+      state.value = state.value.copyWith(error: friendlyError(e));
     }
   }
 
@@ -346,7 +355,7 @@ class WorkoutEditorViewModel {
     } catch (e) {
       state.value = state.value.copyWith(
         workoutSetsLoading: false,
-        error: e.toString(),
+        error: friendlyError(e),
       );
     }
   }
@@ -399,7 +408,7 @@ class WorkoutEditorViewModel {
     } catch (e) {
       state.value = state.value.copyWith(
         workoutSetsLoading: false,
-        error: e.toString(),
+        error: friendlyError(e),
       );
     }
   }
@@ -428,7 +437,7 @@ class WorkoutEditorViewModel {
         workoutSetsLoading: false,
       );
     } catch (e) {
-      state.value = state.value.copyWith(error: e.toString());
+      state.value = state.value.copyWith(error: friendlyError(e));
     }
   }
 
@@ -568,7 +577,7 @@ class WorkoutEditorViewModel {
         );
       }
     } catch (e) {
-      state.value = state.value.copyWith(error: e.toString());
+      state.value = state.value.copyWith(error: friendlyError(e));
     }
     closeWorkoutEditor();
   }
@@ -730,7 +739,7 @@ class WorkoutEditorViewModel {
       );
       loadLessonsFor(exerciseId);
     } catch (e) {
-      state.value = state.value.copyWith(error: e.toString());
+      state.value = state.value.copyWith(error: friendlyError(e));
     }
   }
 
@@ -857,7 +866,7 @@ class WorkoutEditorViewModel {
         workoutPlannedSessionExerciseSets: sets,
       );
     } catch (e) {
-      state.value = state.value.copyWith(error: e.toString());
+      state.value = state.value.copyWith(error: friendlyError(e));
     }
   }
 
@@ -953,7 +962,7 @@ class WorkoutEditorViewModel {
       );
       return true;
     } catch (e) {
-      state.value = state.value.copyWith(error: e.toString());
+      state.value = state.value.copyWith(error: friendlyError(e));
       return false;
     }
   }
@@ -991,7 +1000,7 @@ class WorkoutEditorViewModel {
         workoutUnsavedChanges: true,
       );
     } catch (e) {
-      state.value = state.value.copyWith(error: e.toString());
+      state.value = state.value.copyWith(error: friendlyError(e));
     }
   }
 
@@ -1024,7 +1033,7 @@ class WorkoutEditorViewModel {
         workoutUnsavedChanges: true,
       );
     } catch (e) {
-      state.value = state.value.copyWith(error: e.toString());
+      state.value = state.value.copyWith(error: friendlyError(e));
     }
   }
 
@@ -1106,7 +1115,7 @@ class WorkoutEditorViewModel {
     } catch (e) {
       state.value = state.value.copyWith(
         newExCreating: false,
-        error: e.toString(),
+        error: friendlyError(e),
       );
       return null;
     }
@@ -1158,7 +1167,7 @@ class WorkoutEditorViewModel {
     } catch (e) {
       state.value = state.value.copyWith(
         newVarCreating: false,
-        error: e.toString(),
+        error: friendlyError(e),
       );
       return null;
     }
@@ -1196,7 +1205,7 @@ class WorkoutEditorViewModel {
       map[exerciseId] = lessons;
       state.value = state.value.copyWith(lessonsByExercise: map);
     } catch (e) {
-      state.value = state.value.copyWith(error: e.toString());
+      state.value = state.value.copyWith(error: friendlyError(e));
     }
   }
 
@@ -1206,7 +1215,7 @@ class WorkoutEditorViewModel {
       await _lessonRepo.createLesson(_userId, exerciseId, text.trim());
       await loadLessonsFor(exerciseId);
     } catch (e) {
-      state.value = state.value.copyWith(error: e.toString());
+      state.value = state.value.copyWith(error: friendlyError(e));
     }
   }
 
@@ -1224,7 +1233,7 @@ class WorkoutEditorViewModel {
       );
       await loadLessonsFor(exerciseId);
     } catch (e) {
-      state.value = state.value.copyWith(error: e.toString());
+      state.value = state.value.copyWith(error: friendlyError(e));
     }
   }
 
@@ -1233,7 +1242,7 @@ class WorkoutEditorViewModel {
       await _lessonRepo.deleteLesson(lessonId);
       await loadLessonsFor(exerciseId);
     } catch (e) {
-      state.value = state.value.copyWith(error: e.toString());
+      state.value = state.value.copyWith(error: friendlyError(e));
     }
   }
 
@@ -1252,7 +1261,7 @@ class WorkoutEditorViewModel {
       );
       await loadLessonsFor(exerciseId);
     } catch (e) {
-      state.value = state.value.copyWith(error: e.toString());
+      state.value = state.value.copyWith(error: friendlyError(e));
     }
   }
 
@@ -1270,7 +1279,7 @@ class WorkoutEditorViewModel {
         pastSetsLoaded: true,
       );
     } catch (e) {
-      state.value = state.value.copyWith(error: e.toString());
+      state.value = state.value.copyWith(error: friendlyError(e));
     }
   }
 

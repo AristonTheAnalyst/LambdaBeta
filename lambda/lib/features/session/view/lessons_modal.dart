@@ -89,13 +89,19 @@ class _LessonsModalContentState extends State<_LessonsModalContent> {
   void initState() {
     super.initState();
     widget.loadLessonsFor(widget.exerciseId);
+    // The Save Lesson button draws its enabled state from the draft, so the
+    // modal has to rebuild as it is typed into.
+    _draftCtrl.addListener(_onDraftChanged);
   }
 
   @override
   void dispose() {
+    _draftCtrl.removeListener(_onDraftChanged);
     _draftCtrl.dispose();
     super.dispose();
   }
+
+  void _onDraftChanged() => setState(() {});
 
   void _addLesson() {
     if (_draftCtrl.text.trim().isEmpty) return;
@@ -169,7 +175,14 @@ class _LessonsModalContentState extends State<_LessonsModalContent> {
                   Row(
                     children: [
                       Expanded(
-                          child: GlassButton(label: 'Save Lesson', solid: true, onPressed: _addLesson)),
+                        child: GlassButton(
+                          label: 'Save Lesson',
+                          solid: true,
+                          // Nothing to save until something is typed.
+                          disabled: _draftCtrl.text.trim().isEmpty,
+                          onPressed: _addLesson,
+                        ),
+                      ),
                       const SizedBox(width: AppSpacing.sm),
                       Expanded(
                         child: GlassButton(
@@ -254,13 +267,25 @@ class _LessonRowState extends State<_LessonRow> {
   void initState() {
     super.initState();
     _editCtrl = TextEditingController(text: widget.lesson.text);
+    // Save draws its enabled state from the text against the lesson it is
+    // editing, so the editor has to rebuild as it is typed into.
+    _editCtrl.addListener(_onEditChanged);
   }
 
   @override
   void dispose() {
+    _editCtrl.removeListener(_onEditChanged);
     _editCtrl.dispose();
     super.dispose();
   }
+
+  void _onEditChanged() => setState(() {});
+
+  /// Whether the text differs from the lesson being edited. An empty one is
+  /// not a lesson, so it never counts as a change to save.
+  bool get _editDiffers =>
+      _editCtrl.text.trim().isNotEmpty &&
+      _editCtrl.text.trim() != widget.lesson.text.trim();
 
   void _save() {
     if (_editCtrl.text.trim().isEmpty) return;
@@ -397,7 +422,11 @@ class _LessonRowState extends State<_LessonRow> {
           children: [
             Expanded(
                 child: GlassButton(
-                    label: 'Save', solid: true, compact: true, onPressed: _save)),
+                    label: 'Save',
+                    solid: true,
+                    compact: true,
+                    disabled: !_editDiffers,
+                    onPressed: _save)),
             const SizedBox(width: AppSpacing.sm),
             Expanded(
               child: GlassButton(

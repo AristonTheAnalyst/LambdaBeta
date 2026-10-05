@@ -26,7 +26,6 @@ const _pkColumns = {
   'fact_session_exercise': 'session_exercise_id',
   'dim_program': 'program_id',
   'fact_program_run': 'program_run_id',
-  'fact_program_revision': 'revision_id',
   'fact_program_review': 'review_id',
   'dim_program_block': 'block_id',
   'dim_lesson': 'lesson_id',
@@ -314,6 +313,10 @@ Future<void> openDatabase() async {
         'fact_session_set',
         'dim_planned_session_set',
         'dim_exercise_variation_bridge',
+        // Reviews replaced versions (2026-10-05) — the snapshot moved onto
+        // `fact_program_review`, so any queued revision insert is now an
+        // upload against a table the schema no longer has.
+        'fact_program_revision',
       ]) {
         await tx.execute(
           'DELETE FROM ps_crud WHERE table_name = ?',

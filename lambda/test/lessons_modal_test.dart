@@ -167,11 +167,48 @@ void main() {
 
     // Save an edit → the row shows the new text, no stale copy remains.
     await tester.enterText(find.byType(TextField), 'lesson one (edited)');
+    // Save's enabled state is derived from the text, so the frame a real
+    // keystroke would paint has to happen before the tap lands.
+    await tester.pump();
     await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
 
     expect(repo.lessons.single.text, 'lesson one (edited)');
     expect(find.text('lesson one (edited)'), findsOneWidget);
     expect(find.text('lesson one'), findsNothing);
+  });
+
+  testWidgets('Save stays inert until the lesson text differs', (tester) async {
+    repo.lessons.clear();
+    await addLesson('lesson one');
+    await tester.pumpWidget(buildModal());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byType(ElevatedButton));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('lesson one'));
+    await tester.pumpAndSettle();
+
+    // Untouched → Save has nothing to write, so tapping it does nothing and
+    // the editor stays open.
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    expect(repo.lessons.single.text, 'lesson one');
+    expect(find.byType(TextField), findsOneWidget,
+        reason: 'an inert Save must leave the editor open');
+
+    // Retyping the same words is still not a change.
+    await tester.enterText(find.byType(TextField), 'lesson one');
+    await tester.pump();
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    expect(repo.lessons.single.text, 'lesson one');
+
+    // A real difference writes.
+    await tester.enterText(find.byType(TextField), 'lesson two');
+    await tester.pump();
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    expect(repo.lessons.single.text, 'lesson two');
   });
 }

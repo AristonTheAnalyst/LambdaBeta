@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:lambda/core/powersync/database.dart' as ps;
 import 'package:lambda/core/powersync/schema.dart';
+import 'package:lambda/data/models/program_review.dart';
 import 'package:lambda/data/repositories/program_repository.dart';
 import 'package:powersync/powersync.dart';
 
@@ -51,7 +52,6 @@ void main() {
     'dim_program_block',
     'fact_program_run',
     'fact_program_review',
-    'fact_program_revision',
     'fact_goal',
     'dim_planned_session_program',
   ];
@@ -168,28 +168,21 @@ Future<void> _seedProgram(
      blockId],
   );
 
+  // A close review carrying the run — this is the row that makes the delete
+  // order interesting, because the review points at the run that points at the
+  // block. The snapshot columns are the ones the model added in the reviews
+  // rework; a close always carries one.
   await db.execute(
     '''
     INSERT INTO fact_program_review
       (id, review_id, user_id, program_id, block_id, program_run_id, kind,
-       title, notes, scheduled_for, completed_date, outcome, proposed_content,
-       proposed_hash, achievements_json, revision_id, created_date)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       title, notes, scheduled_for, completed_date, outcome, snapshot_content,
+       snapshot_hash, achievements_json, created_date)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ''',
     ['v-$programId', 'v-$programId', userId, programId, blockId, runId,
-     'run_close', 'Close', null, null, null, null, null, null, null, null, now],
-  );
-
-  await db.execute(
-    '''
-    INSERT INTO fact_program_revision
-      (id, revision_id, user_id, program_id, block_id, block_run_id, review_id,
-       revision_number, reason, content_json, content_hash, session_count,
-       exercise_count, set_count, created_date)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ''',
-    ['rev-$programId', 'rev-$programId', userId, programId, blockId, null, null,
-     1, 'created', '{}', 'hash', 0, 0, 0, now],
+     kReviewKindClose, 'Close', null, null, now, kOutcomeClosed, '{}',
+     'hash', null, now],
   );
 
   await db.execute(

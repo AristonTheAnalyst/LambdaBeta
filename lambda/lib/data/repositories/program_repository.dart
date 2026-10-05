@@ -1,8 +1,10 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 import '../../core/powersync/database.dart' as ps;
+import '../../core/utils/lambda_exception.dart';
 import '../models/planned_session_exercise.dart';
 import '../models/planned_session_exercise_set.dart';
 import '../models/planned_session.dart';
@@ -23,10 +25,86 @@ const _uuid = Uuid();
   return (clause, updates.values.toList());
 }
 
+/// The network half of [ProgramRepository] — the four calls that go straight
+/// to Supabase.
+///
+/// Most of this repository is local-first: a read tries the PowerSync mirror
+/// and falls back to REST only when it comes up empty, and a write is purely
+/// local (PowerSync uploads it). Two creates are the exception — `createProgram`
+/// and `createProgramBlock` are REST-first, because a row the server has never
+/// seen would make the next dependent upload (a workout assigned to a block, a
+/// run started against one) fail on the server. Those same two mirror their row
+/// back locally, and the mirror exists so the UI can read the row immediately
+/// rather than waiting for a download.
+///
+/// A seam, not an abstraction for its own sake — the same one
+/// `ProgramRunRemote` is: tests cannot construct `Supabase.instance` at all, so
+/// the REST-first create paths, and the local mirror that is their whole point,
+/// are only reachable through an injected object. Each method is exactly one
+/// REST call; the local half stays in the repository.
+abstract class ProgramRemote {
+  Future<List<Map<String, dynamic>>> fetchPrograms(String userId);
+
+  Future<Map<String, dynamic>?> fetchProgram(String programId);
+
+  Future<void> insertProgram(Map<String, dynamic> row);
+
+  Future<void> insertBlock(Map<String, dynamic> row);
+}
+
+/// The real remote: Supabase REST via the ambient client.
+class SupabaseProgramRemote implements ProgramRemote {
+  const SupabaseProgramRemote();
+
+  SupabaseClient get _client => Supabase.instance.client;
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchPrograms(String userId) async {
+    return await _client
+        .from('dim_program')
+        .select('*')
+        .eq('user_id', userId)
+        .isFilter('date_archived', null)
+        .order('program_created_date', ascending: false)
+        .timeout(const Duration(seconds: 5));
+  }
+
+  @override
+  Future<Map<String, dynamic>?> fetchProgram(String programId) async {
+    final remote = await _client
+        .from('dim_program')
+        .select('*')
+        .eq('program_id', programId)
+        .limit(1)
+        .timeout(const Duration(seconds: 5));
+    return remote.isEmpty ? null : remote.first;
+  }
+
+  @override
+  Future<void> insertProgram(Map<String, dynamic> row) async {
+    await _client
+        .from('dim_program')
+        .insert(row)
+        .timeout(const Duration(seconds: 8));
+  }
+
+  @override
+  Future<void> insertBlock(Map<String, dynamic> row) async {
+    await _client
+        .from('dim_program_block')
+        .insert(row)
+        .timeout(const Duration(seconds: 8));
+  }
+}
+
 /// Program library CRUD — programs (dimensions), their planned sessions, and
 /// goals. Programs are soft-deleted via is_archived so run history never
 /// dangles. Planned-session reads/writes delegate to [PlannedSessionRepository].
 class ProgramRepository {
+  ProgramRepository({ProgramRemote? remote})
+      : _remote = remote ?? const SupabaseProgramRemote();
+
+  final ProgramRemote _remote;
   final PlannedSessionRepository _plannedRepo = PlannedSessionRepository();
   // ── Programs ─────────────────────────────────────────────────────────────
 
@@ -59,12 +137,13 @@ class ProgramRepository {
     return rows.isNotEmpty;
   }
 
-  /// Throws if another program owned by `userId` already has [name].
+  /// Throws a [LambdaException] if another program owned by `userId` already
+  /// has [name] — the message is shown to the user as it stands.
   Future<void> _assertProgramNameUnique(
       String userId, String name, {String? excludeProgramId}) async {
     if (await _programNameExists(userId, name,
         excludeProgramId: excludeProgramId)) {
-      throw Exception('A program named "$name" already exists.');
+      throw LambdaException('A program named "$name" already exists.');
     }
   }
 
@@ -82,13 +161,7 @@ class ProgramRepository {
 
     // 2. Fall back to Supabase REST.
     try {
-      final remote = await Supabase.instance.client
-          .from('dim_program')
-          .select('*')
-          .eq('user_id', userId)
-          .isFilter('date_archived', null)
-          .order('program_created_date', ascending: false)
-          .timeout(const Duration(seconds: 5));
+      final remote = await _remote.fetchPrograms(userId);
       return remote.map((r) => Program.fromMap(r)).toList();
     } catch (_) {
       return [];
@@ -127,13 +200,8 @@ class ProgramRepository {
 
     // 2. Fall back to Supabase REST.
     try {
-      final remote = await Supabase.instance.client
-          .from('dim_program')
-          .select('*')
-          .eq('program_id', programId)
-          .limit(1)
-          .timeout(const Duration(seconds: 5));
-      if (remote.isNotEmpty) return Program.fromMap(remote.first);
+      final remote = await _remote.fetchProgram(programId);
+      if (remote != null) return Program.fromMap(remote);
     } catch (_) {}
     return null;
   }
@@ -151,6 +219,7 @@ class ProgramRepository {
     String userId, {
     String? name,
     String? description,
+    bool usesBlocks = false,
   }) async {
     var finalName = name;
     if (finalName == null) {
@@ -166,7 +235,7 @@ class ProgramRepository {
 
     // 1. Authoritative write — hits Supabase directly so the program exists
     //    server-side even if PowerSync is stuck reconciling a checkpoint.
-    await Supabase.instance.client.from('dim_program').insert({
+    await _remote.insertProgram({
       'program_id': id,
       'user_id': userId,
       'program_name': finalName,
@@ -174,10 +243,45 @@ class ProgramRepository {
       'date_archived': null,
       'program_created_date': createdDate.toIso8601String(),
       'program_updated_date': createdDate.toIso8601String(),
-    }).timeout(const Duration(seconds: 8));
+      // The shape is written at creation because it is one-way: nothing in
+      // the app ever flips it afterwards.
+      'uses_blocks': usesBlocks,
+      'default_target_sessions': null,
+    });
 
-    // No local PowerSync mirror — writing locally creates a CRUD entry that
-    // blocks the checkpoint (PowerSync will download the row on next sync).
+    // Mirror it locally, under the same id — the same fix, for the same reason,
+    // as `createProgramBlock` below and `startProgramRun`. The library reads
+    // `fetchPrograms` locally, so without this the program the wizard just
+    // created is missing from the list it returns to until a download lands.
+    // The queued PUT is idempotent: the uploader upserts, and the server's copy
+    // downloads onto the same row. Best-effort, like the others.
+    try {
+      await ps.safeWriteTransaction((tx) async {
+        await tx.execute(
+          '''
+          INSERT INTO dim_program
+            (id, program_id, user_id, program_name, program_description,
+             date_archived, program_created_date, program_updated_date,
+             uses_blocks, default_target_sessions)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ''',
+          [
+            id,
+            id,
+            userId,
+            finalName,
+            description,
+            null,
+            createdDate.toIso8601String(),
+            createdDate.toIso8601String(),
+            usesBlocks ? 1 : 0,
+            null,
+          ],
+        );
+      });
+    } catch (e) {
+      debugPrint('createProgram: local mirror failed: $e');
+    }
 
     return Program(
       programId: id,
@@ -186,6 +290,7 @@ class ProgramRepository {
       description: description,
       createdDate: createdDate,
       updatedDate: createdDate,
+      usesBlocks: usesBlocks,
     );
   }
 
@@ -208,6 +313,57 @@ class ProgramRepository {
       'UPDATE dim_program SET $setClause WHERE program_id = ?',
       [...params, programId],
     );
+  }
+
+  /// Remembers a simple program's own length: the session count its last begin
+  /// used, so the next begin opens on it instead of asking from scratch.
+  ///
+  /// The run still owns the number it runs against — this is what the program
+  /// suggests, never what an attempt in flight is measured by, which is why
+  /// editing a default can never rewrite a run. A block run has no number of
+  /// its own to remember (the block owns the length), so a begin carrying a
+  /// [blockId] is a no-op here rather than something each caller has to
+  /// remember to skip.
+  ///
+  /// Best-effort by design: this is called once the run is already live, and a
+  /// forgotten default — at worst a prefilled field next time — is never worth
+  /// reporting the begin as failed for.
+  Future<void> rememberDefaultTargetSessions(
+    String programId, {
+    String? blockId,
+    required int? targetSessions,
+  }) async {
+    if (blockId != null || targetSessions == null) return;
+    try {
+      await ps.safeExec(
+        'UPDATE dim_program SET default_target_sessions = ? '
+        'WHERE program_id = ?',
+        [targetSessions, programId],
+      );
+    } catch (e) {
+      debugPrint('ProgramRepository: could not remember the target length of '
+          '$programId: $e');
+    }
+  }
+
+  /// How many active blocks each of a user's programs has, keyed by program id.
+  /// A program with none is absent from the map.
+  ///
+  /// One grouped read rather than a list per program: the library asks this of
+  /// every card it renders, to know whether a blocked program has anything to
+  /// begin, and N queries to answer one question about N rows is the shape of
+  /// read that gets slower the more the user owns.
+  Future<Map<String, int>> fetchActiveBlockCounts(String userId) async {
+    final rows = await ps.db.getAll('''
+      SELECT b.program_id AS program_id, COUNT(*) AS n
+      FROM dim_program_block b
+      JOIN dim_program p ON p.program_id = b.program_id
+      WHERE p.user_id = ? AND b.date_archived IS NULL
+      GROUP BY b.program_id
+      ''', [userId]);
+    return {
+      for (final r in rows) r['program_id'] as String: (r['n'] as num).toInt(),
+    };
   }
 
   /// Bumps `program_updated_date` — the single entry point for marking a
@@ -282,7 +438,7 @@ class ProgramRepository {
   }
 
   /// Hard-deletes a program and everything under it — blocks, goals, reviews,
-  /// revisions, runs. There is no soft option left, unlike [deleteProgram].
+  /// runs. There is no soft option left, unlike [deleteProgram].
   ///
   /// Logged sessions survive: `fact_session.program_run_id` is ON DELETE SET
   /// NULL, so they stay in Training Logs and simply lose the run they belonged
@@ -299,10 +455,6 @@ class ProgramRepository {
       // Leaves — nothing references these, so they can go first.
       await tx.execute(
         'DELETE FROM fact_program_review WHERE program_id = ?',
-        [programId],
-      );
-      await tx.execute(
-        'DELETE FROM fact_program_revision WHERE program_id = ?',
         [programId],
       );
       // Goals FK block_id AND program_run_id — they block both of the next two.
@@ -503,8 +655,9 @@ class ProgramRepository {
         '''
         INSERT INTO dim_program
           (id, program_id, user_id, program_name, program_description,
-           date_archived, program_created_date, program_updated_date)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+           date_archived, program_created_date, program_updated_date,
+           uses_blocks, default_target_sessions)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''',
         [
           newProgramId,
@@ -515,6 +668,12 @@ class ProgramRepository {
           null,
           now,
           now,
+          // The copy has the source's shape and remembered length. Copied
+          // from the columns, not recomputed from whether blocks came across:
+          // a blocked program whose blocks were all archived still has zero
+          // blocks to copy, and the copy is still a blocked program.
+          source.program.usesBlocks ? 1 : 0,
+          source.program.defaultTargetSessions,
         ],
       );
 
@@ -731,7 +890,7 @@ class ProgramRepository {
       endDate = null;
     }
 
-    await Supabase.instance.client.from('dim_program_block').insert({
+    await _remote.insertBlock({
       'block_id': id,
       'user_id': userId,
       'program_id': programId,
@@ -746,11 +905,62 @@ class ProgramRepository {
       'date_archived': null,
       'created_date': now.toIso8601String(),
       'updated_date': now.toIso8601String(),
-    }).timeout(const Duration(seconds: 8));
+    });
 
-    // No local mirror write — the same rule createProgram follows. A local
-    // insert would leave a CRUD entry that blocks the checkpoint; PowerSync
-    // downloads the row on the next sync.
+    // Mirror it locally, under the same id the server now holds.
+    //
+    // Without this the block is invisible until the next download lands, and
+    // the block editor makes that window visible: saving pops back to the
+    // program, which reloads and reads `fetchBlocks` from the LOCAL table — so
+    // a freshly created block is missing from the list it was just created in.
+    // (The reload also overwrites the view model's optimistic append, so the
+    // append cannot cover for the missing row.)
+    //
+    // This is the same fix, for the same reason, as `startProgramRun`'s mirror:
+    // the uploader upserts (`database.dart` → `uploadData`), so the PUT this
+    // queues is a no-op against the row that is already there, and the server's
+    // copy downloads onto the same row rather than beside it. The old note here
+    // warned that a local write blocks the checkpoint; `duplicateBlock` in this
+    // same file has always written its block locally through this path, and the
+    // Stage 1 device smoke showed `ps_crud` draining cleanly with mirrors in
+    // place — the "different id" collision was what the warning was really
+    // describing.
+    //
+    // Best-effort: the block exists server-side either way, so a mirror failure
+    // logs and moves on rather than failing a create that succeeded.
+    try {
+      await ps.safeWriteTransaction((tx) async {
+        await tx.execute(
+          '''
+          INSERT INTO dim_program_block
+            (id, block_id, user_id, program_id, name, notes, block_order,
+             target_weeks, target_days, target_sessions, start_date, end_date,
+             date_archived, created_date, updated_date)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ''',
+          [
+            id,
+            id,
+            userId,
+            programId,
+            finalName,
+            notes,
+            order,
+            targetWeeks,
+            targetDays,
+            targetSessions,
+            startDate?.toIso8601String(),
+            endDate?.toIso8601String(),
+            null,
+            now.toIso8601String(),
+            now.toIso8601String(),
+          ],
+        );
+      });
+    } catch (e) {
+      debugPrint('createProgramBlock: local mirror failed: $e');
+    }
+
     await touchProgram(programId);
 
     return ProgramBlock(

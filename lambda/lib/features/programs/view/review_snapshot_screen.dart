@@ -3,10 +3,10 @@ import 'package:intl/intl.dart';
 
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
-import '../../../core/styles/app_radius.dart';
 import '../../../core/styles/app_spacing.dart';
 import '../../../core/styles/app_text_styles.dart';
-import '../../../data/models/program_revision.dart';
+import '../../../data/models/program_content.dart';
+import '../../../data/models/program_review.dart';
 import '../../../shared/widgets/app_card.dart';
 import '../../../shared/widgets/dropdown_select.dart';
 import '../../../shared/widgets/glass_button.dart';
@@ -15,48 +15,50 @@ import '../../../shared/widgets/section_divider.dart';
 import '../../../shared/widgets/session_exercise_card.dart';
 import '../../../shared/widgets/session_set_row.dart';
 import '../../../shared/widgets/stats_row.dart';
-import 'revision_diff_sheet.dart';
+import 'content_diff_sheet.dart';
+import 'review_checkpoint_meta.dart';
 
-/// One immutable version of a program, read-only.
+/// One checkpoint's frozen snapshot of a program, read-only.
 ///
-/// Deliberately VM-free: a revision is a document, not a view of live state, so
-/// there is nothing to load, mutate or reload. The name maps come from the
-/// history screen because names are resolved live from the dims (a revision
-/// stores ids only) and re-fetching them per version would query for data the
-/// caller already holds.
+/// Deliberately VM-free: a snapshot is a document, not a view of live state,
+/// so there is nothing to load, mutate or reload. The name maps come from the
+/// history screen because names are resolved live from the dims (a snapshot
+/// stores ids only) and re-fetching them per checkpoint would query for data
+/// the caller already holds.
 ///
 /// Renders through the SAME `SessionExerciseCard` / `SessionSetRow` the planner
-/// and the session screen use, with every action callback null — a version
+/// and the session screen use, with every action callback null — a snapshot
 /// viewer that drifted from the planner would defeat the point of keeping the
 /// three (now four) surfaces on one implementation.
-class ProgramRevisionScreen extends StatelessWidget {
-  const ProgramRevisionScreen({
+class ReviewSnapshotScreen extends StatelessWidget {
+  const ReviewSnapshotScreen({
     super.key,
-    required this.revision,
+    required this.review,
     this.previous,
     this.exerciseNames = const {},
     this.variationNames = const {},
   });
 
-  final ProgramRevision revision;
+  final ProgramReview review;
 
-  /// The version immediately before this one. When present the header offers
-  /// the diff against it — "what changed?" is the question a history exists to
-  /// answer.
-  final ProgramRevision? previous;
+  /// The same-scope checkpoint before this one, when there is one. When its
+  /// snapshot is readable the header offers the diff against it — "what
+  /// changed?" is the question a history exists to answer.
+  final ProgramReview? previous;
 
   final Map<String, String> exerciseNames;
   final Map<String, String> variationNames;
 
   @override
   Widget build(BuildContext context) {
-    final content = revision.content;
+    final content = review.snapshot;
+    final before = previous?.snapshot;
     return Scaffold(
       backgroundColor: AppColors.bg,
       body: Column(
         children: [
           PageHeader(
-            title: 'Version ${revision.revisionNumber}',
+            title: _title,
             left: GestureDetector(
               onTap: () => Navigator.of(context).pop(),
               child: Icon(
@@ -65,24 +67,29 @@ class ProgramRevisionScreen extends StatelessWidget {
                 color: AppColors.accent,
               ),
             ),
-            right: previous == null
+            right: before == null || content == null
                 ? null
                 : GlassButton(
                     label: 'Changes',
                     compact: true,
-                    onPressed: () => showVersionDiffSheet(
+                    onPressed: () => showContentDiffSheet(
                       context,
-                      from: previous!,
-                      to: revision,
+                      title: 'What changed',
+                      subtitle:
+                          '${DateFormat('MMM d').format(previous!.effectiveDate)}'
+                          '  ·  '
+                          '${DateFormat('MMM d, yyyy').format(review.effectiveDate)}',
+                      before: before,
+                      after: content,
                       exerciseNames: exerciseNames,
                     ),
                   ),
           ),
           Expanded(
             child: content == null
-                ? const _UnreadableVersion()
-                : _VersionBody(
-                    revision: revision,
+                ? const _UnreadableCheckpoint()
+                : _SnapshotBody(
+                    review: review,
                     content: content,
                     exerciseNames: exerciseNames,
                     variationNames: variationNames,
@@ -92,56 +99,64 @@ class ProgramRevisionScreen extends StatelessWidget {
       ),
     );
   }
+
+  /// The user's own name for the checkpoint when they gave one; the kind is
+  /// the fallback, because a close or a change says more than "Review".
+  String get _title {
+    final title = review.title?.trim();
+    if (title != null && title.isNotEmpty) return title;
+    return reviewKindLabel(review.kind);
+  }
 }
 
-/// A revision this build cannot decode — written by a NEWER app version whose
+/// A snapshot this build cannot decode — written by a NEWER app version whose
 /// document schema this one doesn't know. Shown as a placeholder rather than
 /// thrown: an old build must not crash on the history another device wrote.
-class _UnreadableVersion extends StatelessWidget {
-  const _UnreadableVersion();
+class _UnreadableCheckpoint extends StatelessWidget {
+  const _UnreadableCheckpoint();
 
   @override
   Widget build(BuildContext context) => Center(
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.xl),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.help_outline, color: AppColors.muted, size: 32),
-              const SizedBox(height: AppSpacing.md),
-              Text(
-                "This version can't be displayed",
-                style: AppFonts.ui(
-                  fontSize: AppTextStyles.md,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.primary,
-                ),
-              ),
-              const SizedBox(height: AppSpacing.xs),
-              Text(
-                'It was saved by a newer version of the app.',
-                textAlign: TextAlign.center,
-                style: AppFonts.ui(
-                  fontSize: AppTextStyles.sm,
-                  color: AppColors.muted,
-                ),
-              ),
-            ],
+    child: Padding(
+      padding: const EdgeInsets.all(AppSpacing.xl),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.help_outline, color: AppColors.muted, size: 32),
+          const SizedBox(height: AppSpacing.md),
+          Text(
+            "This checkpoint can't be displayed",
+            style: AppFonts.ui(
+              fontSize: AppTextStyles.md,
+              fontWeight: FontWeight.w600,
+              color: AppColors.primary,
+            ),
           ),
-        ),
-      );
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            'It was saved by a newer version of the app.',
+            textAlign: TextAlign.center,
+            style: AppFonts.ui(
+              fontSize: AppTextStyles.sm,
+              color: AppColors.muted,
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
 }
 
-class _VersionBody extends StatelessWidget {
-  const _VersionBody({
-    required this.revision,
+class _SnapshotBody extends StatelessWidget {
+  const _SnapshotBody({
+    required this.review,
     required this.content,
     required this.exerciseNames,
     required this.variationNames,
   });
 
-  final ProgramRevision revision;
-  final ProgramRevisionContent content;
+  final ProgramReview review;
+  final ProgramContent content;
   final Map<String, String> exerciseNames;
   final Map<String, String> variationNames;
 
@@ -155,7 +170,7 @@ class _VersionBody extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _VersionMeta(revision: revision),
+              ReviewCheckpointMeta(review: review),
               const SizedBox(height: AppSpacing.md),
               StatsRow(
                 tiles: [
@@ -178,7 +193,7 @@ class _VersionBody extends StatelessWidget {
             padding: const EdgeInsets.all(AppSpacing.xl),
             child: Center(
               child: Text(
-                'This version had no workouts.',
+                'This checkpoint had no workouts.',
                 style: AppFonts.ui(
                   fontSize: AppTextStyles.sm,
                   color: AppColors.muted,
@@ -197,7 +212,7 @@ class _VersionBody extends StatelessWidget {
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-              child: _RevisionWorkoutCard(
+              child: _SnapshotWorkoutCard(
                 session: session,
                 exerciseNames: exerciseNames,
                 variationNames: variationNames,
@@ -209,79 +224,24 @@ class _VersionBody extends StatelessWidget {
   }
 }
 
-/// The reason / date / fingerprint line that heads a version.
-class _VersionMeta extends StatelessWidget {
-  const _VersionMeta({required this.revision});
-
-  final ProgramRevision revision;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.sm,
-            vertical: 3,
-          ),
-          decoration: BoxDecoration(
-            color: AppColors.accentBg,
-            borderRadius: BorderRadius.circular(AppRadius.md),
-            border: Border.all(color: AppColors.accent.withAlpha(77)),
-          ),
-          child: Text(
-            revisionReasonLabel(revision.reason).toUpperCase(),
-            style: AppFonts.mono(
-              fontSize: AppTextStyles.xs,
-              fontWeight: FontWeight.w700,
-              color: AppColors.accentText,
-              letterSpacing: 0.6,
-            ),
-          ),
-        ),
-        const SizedBox(width: AppSpacing.sm),
-        Expanded(
-          child: Text(
-            DateFormat('MMM d, yyyy').format(revision.createdDate),
-            style: AppFonts.mono(
-              fontSize: AppTextStyles.xs,
-              color: AppColors.muted,
-            ),
-          ),
-        ),
-        // The content fingerprint. Two versions showing the same short hash
-        // are byte-identical, which is how a "review where nothing changed"
-        // proves itself.
-        Text(
-          '#${revision.contentHash.isEmpty ? '--------' : revision.contentHash.substring(0, 8)}',
-          style: AppFonts.mono(
-            fontSize: AppTextStyles.xs,
-            color: AppColors.muted,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-/// One workout inside a version — a read-only mirror of the planner's card,
+/// One workout inside a checkpoint — a read-only mirror of the planner's card,
 /// tabbed across that workout's exercises.
-class _RevisionWorkoutCard extends StatefulWidget {
-  const _RevisionWorkoutCard({
+class _SnapshotWorkoutCard extends StatefulWidget {
+  const _SnapshotWorkoutCard({
     required this.session,
     required this.exerciseNames,
     required this.variationNames,
   });
 
-  final RevisionSession session;
+  final ContentSession session;
   final Map<String, String> exerciseNames;
   final Map<String, String> variationNames;
 
   @override
-  State<_RevisionWorkoutCard> createState() => _RevisionWorkoutCardState();
+  State<_SnapshotWorkoutCard> createState() => _SnapshotWorkoutCardState();
 }
 
-class _RevisionWorkoutCardState extends State<_RevisionWorkoutCard> {
+class _SnapshotWorkoutCardState extends State<_SnapshotWorkoutCard> {
   int _activeIndex = 0;
 
   @override
@@ -303,7 +263,7 @@ class _RevisionWorkoutCardState extends State<_RevisionWorkoutCard> {
     final active = exercises[index];
 
     // The row reads its variation label out of these options, so they must
-    // contain every variation the version references — including one that has
+    // contain every variation the workout references — including one that has
     // since been archived, which is exactly why the map is built from the
     // archived-inclusive dim read.
     final variationOptions = <DropdownOption<String?>>[
@@ -318,7 +278,7 @@ class _RevisionWorkoutCardState extends State<_RevisionWorkoutCard> {
       ],
       activeIndex: index,
       onSelect: (i) => setState(() => _activeIndex = i),
-      // A version is immutable: no reorder, no add, no delete. Null greys the
+      // A snapshot is immutable: no reorder, no add, no delete. Null greys the
       // arrows and greys the Add row, so the card reads as the planner's with
       // its editing affordances switched off.
       onMove: null,
@@ -342,8 +302,8 @@ class _RevisionWorkoutCardState extends State<_RevisionWorkoutCard> {
       widget.exerciseNames[exerciseId] ?? 'Exercise';
 
   Widget _setRow(
-    RevisionExercise exercise,
-    RevisionSet set,
+    ContentExercise exercise,
+    ContentSet set,
     int index,
     List<DropdownOption<String?>> variationOptions,
   ) {

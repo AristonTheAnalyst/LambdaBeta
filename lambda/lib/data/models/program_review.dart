@@ -1,4 +1,8 @@
-import 'program_revision.dart';
+import 'program_content.dart';
+
+/// What a review examines. Exactly one of the three, decided by which scope id
+/// is set on the row — see [ProgramReview.scopeKind].
+enum ReviewScopeKind { program, block, session }
 
 /// A checkpoint on a program's run (`fact_program_review`).
 ///
@@ -18,6 +22,7 @@ class ProgramReview {
     required this.kind,
     required this.createdDate,
     this.blockId,
+    this.sessionId,
     this.programRunId,
     this.title,
     this.notes,
@@ -26,17 +31,31 @@ class ProgramReview {
     this.outcome,
     this.proposedContent,
     this.proposedHash,
+    this.snapshotContent,
+    this.snapshotHash,
     this.achievementsJson,
-    this.revisionId,
   });
 
   final String reviewId;
   final String userId;
   final String programId;
 
-  /// CONTEXT, not scope — the block that was active when this was written.
-  /// Plain text with no FK until the blocks migration lands.
+  /// The review's BLOCK scope: null = not a block review, else the block it
+  /// examines. Never set together with [sessionId].
+  ///
+  /// Scope rather than context, and the difference is the window: a
+  /// program-level review's "since last time" is cut by program-level reviews
+  /// only, a block's by the reviews of that same block
+  /// ([ProgramHistoryRepository.checkpointFor]), and the contents and the
+  /// achievements the sheet shows follow the same scope.
   final String? blockId;
+
+  /// The review's SESSION scope: the `planned_session_id` being examined, or
+  /// null. Never set together with [blockId] — the server has a CHECK for it.
+  ///
+  /// This is the plan (a `dim_planned_session`), not a logged session: a review
+  /// is a pass over what you intend to do, and what you intend is what you edit.
+  final String? sessionId;
 
   final String? programRunId;
 
@@ -60,21 +79,28 @@ class ProgramReview {
   final String? outcome;
 
   /// A proposed edit, kind [kReviewKindChange] only. Mutable until acted on —
-  /// this is a PROPOSAL, never a revision. Nothing copies it into live rows:
-  /// applying one opens the normal editor pre-filled.
+  /// this is a PROPOSAL, never a snapshot. Nothing copies it into live rows:
+  /// the review container opens the normal editor, and the user makes the
+  /// change themselves.
   final String? proposedContent;
   final String? proposedHash;
+
+  /// The plan as it actually stood when this review completed — a
+  /// `ProgramContent` document, the same one the retired revision table held.
+  /// Null while the review is open, and on reviews completed before the
+  /// snapshot moved onto this row.
+  ///
+  /// Always a WHOLE-PROGRAM document: the scope says what was being looked at,
+  /// not what was copied. That is what lets a session review's snapshot be
+  /// diffed against the program review that followed it.
+  final String? snapshotContent;
+  final String? snapshotHash;
 
   /// The frozen record of what the run achieved, written by `closeRun`
   /// together with [kOutcomeClosed]. The one deliberate exception to deriving
   /// on read: a finished block's record must not change because someone later
   /// corrected a set.
   final String? achievementsJson;
-
-  /// Plain ref (no FK) to the revision this checkpoint cut. Revisions point
-  /// back at their review, so an FK pair would be circular and break upload
-  /// ordering. Neither table is ever deleted.
-  final String? revisionId;
 
   final DateTime createdDate;
 
@@ -86,6 +112,38 @@ class ProgramReview {
 
   bool get isClosed => kind == kReviewKindClose;
 
+  /// What this review examines. Exactly one scope id is ever set, so the
+  /// session wins the check only as a guard against a malformed row.
+  ReviewScopeKind get scopeKind {
+    if (sessionId != null) return ReviewScopeKind.session;
+    if (blockId != null) return ReviewScopeKind.block;
+    return ReviewScopeKind.program;
+  }
+
+  bool get hasSnapshot => snapshotContent != null;
+
+  /// The snapshot, decoded — or null when there is none, or when the stored
+  /// document was written by a newer build than this one. An unreadable
+  /// snapshot renders a placeholder rather than crashing the timeline.
+  ProgramContent? get snapshot {
+    final json = snapshotContent;
+    if (json == null) return null;
+    try {
+      return ProgramContent.decode(json);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// When this review belongs on the timeline: when it was completed, else when
+  /// it was scheduled for, else when it was created.
+  ///
+  /// Reviews used to order by `revision_number`, a per-program counter. Without
+  /// it the date is the order, and this getter is it — one definition, so the
+  /// panel and the digest chain can never disagree about which review came
+  /// first.
+  DateTime get effectiveDate => completedDate ?? scheduledFor ?? createdDate;
+
   /// An open review whose scheduled day has arrived. A review scheduled for
   /// today counts as due from the start of that day — the user asked to be
   /// reminded on the day, not at a particular hour.
@@ -95,34 +153,36 @@ class ProgramReview {
   /// The proposed edit, decoded — or null when there is none, or when the
   /// stored document was written by a newer build than this one. An unreadable
   /// proposal must not crash the sheet that offers it.
-  ProgramRevisionContent? get proposal {
+  ProgramContent? get proposal {
     final json = proposedContent;
     if (json == null) return null;
     try {
-      return ProgramRevisionContent.decode(json);
+      return ProgramContent.decode(json);
     } catch (_) {
       return null;
     }
   }
 
   factory ProgramReview.fromMap(Map<String, dynamic> map) => ProgramReview(
-        reviewId: map['review_id'] as String,
-        userId: map['user_id'] as String,
-        programId: map['program_id'] as String,
-        blockId: map['block_id'] as String?,
-        programRunId: map['program_run_id'] as String?,
-        kind: (map['kind'] as String?) ?? kReviewKindReview,
-        title: map['title'] as String?,
-        notes: map['notes'] as String?,
-        scheduledFor: _toDate(map['scheduled_for']),
-        completedDate: _toDate(map['completed_date']),
-        outcome: map['outcome'] as String?,
-        proposedContent: map['proposed_content'] as String?,
-        proposedHash: map['proposed_hash'] as String?,
-        achievementsJson: map['achievements_json'] as String?,
-        revisionId: map['revision_id'] as String?,
-        createdDate: _toDate(map['created_date']) ?? DateTime.now(),
-      );
+    reviewId: map['review_id'] as String,
+    userId: map['user_id'] as String,
+    programId: map['program_id'] as String,
+    blockId: map['block_id'] as String?,
+    sessionId: map['session_id'] as String?,
+    programRunId: map['program_run_id'] as String?,
+    kind: (map['kind'] as String?) ?? kReviewKindReview,
+    title: map['title'] as String?,
+    notes: map['notes'] as String?,
+    scheduledFor: _toDate(map['scheduled_for']),
+    completedDate: _toDate(map['completed_date']),
+    outcome: map['outcome'] as String?,
+    proposedContent: map['proposed_content'] as String?,
+    proposedHash: map['proposed_hash'] as String?,
+    snapshotContent: map['snapshot_content'] as String?,
+    snapshotHash: map['snapshot_hash'] as String?,
+    achievementsJson: map['achievements_json'] as String?,
+    createdDate: _toDate(map['created_date']) ?? DateTime.now(),
+  );
 }
 
 /// What a review row is. Persisted as text; the DB has a CHECK constraint
@@ -152,21 +212,33 @@ const kReviewOutcomes = <String>[
 
 /// Human label for a review's [ProgramReview.kind] — the chip in the timeline.
 String reviewKindLabel(String kind) => switch (kind) {
-      kReviewKindReview => 'Review',
-      kReviewKindChange => 'Change',
-      kReviewKindClose => 'Close',
-      _ => 'Review',
-    };
+  kReviewKindReview => 'Review',
+  kReviewKindChange => 'Change',
+  kReviewKindClose => 'Close',
+  _ => 'Review',
+};
 
 /// Human label for a review's [ProgramReview.outcome] — what the row shows once
 /// it is completed.
 String reviewOutcomeLabel(String? outcome) => switch (outcome) {
-      kOutcomeReviewed => 'Reviewed',
-      kOutcomeApplied => 'Applied',
-      kOutcomeDismissed => 'Dismissed',
-      kOutcomeClosed => 'Closed',
-      _ => 'Done',
-    };
+  kOutcomeReviewed => 'Reviewed',
+  kOutcomeApplied => 'Applied',
+  kOutcomeDismissed => 'Dismissed',
+  kOutcomeClosed => 'Closed',
+  _ => 'Done',
+};
+
+/// Human label for what a review examines. The caller supplies the block or
+/// workout name — this file has only ids.
+String reviewScopeLabel(
+  ReviewScopeKind kind, {
+  String? blockName,
+  String? sessionName,
+}) => switch (kind) {
+  ReviewScopeKind.program => 'Whole program',
+  ReviewScopeKind.block => blockName ?? 'Block',
+  ReviewScopeKind.session => sessionName ?? 'Workout',
+};
 
 DateTime? _toDate(dynamic v) {
   if (v == null) return null;

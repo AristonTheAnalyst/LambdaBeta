@@ -7,7 +7,6 @@ import 'package:lambda/core/powersync/schema.dart';
 import 'package:lambda/core/utils/block_length.dart';
 import 'package:lambda/data/models/program_history.dart';
 import 'package:lambda/data/models/program_review.dart';
-import 'package:lambda/data/models/program_revision.dart';
 import 'package:lambda/data/repositories/planned_session_repository.dart';
 import 'package:lambda/data/repositories/program_history_repository.dart';
 import 'package:lambda/data/repositories/program_repository.dart';
@@ -195,19 +194,19 @@ void main() {
     );
 
     final achievements = '{"goals":[],"prs":[],"sessions":1}';
-    final revision = await history.closeRun(
+    final close = await history.closeRun(
       userId: userId,
       programId: programId,
       runId: 'r1',
       blockId: blockId,
-      reason: kRevisionBlockEnd,
       achievementsJson: achievements,
     );
 
-    expect(revision.reason, kRevisionBlockEnd,
+    // `blockId` is the whole distinction — it used to be a `reason` string
+    // kept in step with it, which could only ever disagree.
+    expect(close.blockId, blockId,
         reason: 'a block ending is not the program ending');
-    expect(revision.blockId, blockId);
-    expect(revision.blockRunId, 'r1');
+    expect(close.programRunId, 'r1');
 
     // The record is written, not merely returned — a close whose review went
     // missing is the failure the shared transaction exists to prevent.
@@ -227,14 +226,16 @@ void main() {
             'stored once, so the two can never disagree');
     expect(rows.single['completed_date'], isNotNull);
 
-    // The revision it cut is scoped to the block for the history filter, and
-    // still a whole-program snapshot.
-    expect((await history.fetchRevisions(programId, blockId: blockId)).length, 1);
-    expect((await history.fetchRevisions(programId, blockId: 'b2')), isEmpty);
-    expect(revision.sessionCount, 4,
-        reason: 'block_id is context, not scope: the snapshot is always the '
-            'whole program, which is what keeps one document format and one '
-            'diff engine');
+    // Its snapshot is a whole-program document even though the review is
+    // scoped to the block — that is what keeps one document format and one
+    // diff engine, and what lets a block's snapshot be compared against the
+    // program-level one that follows it.
+    expect(close.snapshot, isNotNull);
+    expect(close.snapshot!.sessionCount, 4,
+        reason: 'block_id is scope, not a filter on the document');
+    expect(close.snapshotHash, isNotNull);
+    expect(close.sessionId, isNull,
+        reason: 'a close is a block-or-program review, never a workout one');
   });
 
   test('a block whose weeks have run out asks, and is not ended by a read',

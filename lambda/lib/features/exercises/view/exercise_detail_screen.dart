@@ -1008,11 +1008,22 @@ class _RenameExerciseDialog extends StatefulWidget {
 class _RenameExerciseDialogState extends State<_RenameExerciseDialog> {
   late final TextEditingController _controller;
 
+  /// Whether the field holds a name worth writing: something is there, and it
+  /// is not the name it opened with.
+  bool get _canSave =>
+      _controller.text.trim().isNotEmpty &&
+      _controller.text.trim() != (widget.initialName ?? '').trim();
+
   @override
   void initState() {
     super.initState();
     _controller = TextEditingController(text: widget.initialName);
+    // The Save button draws its enabled state from the field, so the dialog
+    // has to rebuild as it is typed into.
+    _controller.addListener(_onChanged);
   }
+
+  void _onChanged() => setState(() {});
 
   @override
   void dispose() {
@@ -1077,7 +1088,8 @@ class _RenameExerciseDialogState extends State<_RenameExerciseDialog> {
             onPressed: () => Navigator.of(context).pop(),
             child: Text('Cancel', style: AppFonts.ui(color: AppColors.muted))),
         TextButton(
-            onPressed: () => Navigator.of(context).pop(_controller.text),
+            onPressed:
+                _canSave ? () => Navigator.of(context).pop(_controller.text) : null,
             child: Text('Save',
                 style: AppFonts.ui(
                     color: AppColors.accent, fontWeight: FontWeight.w600))),

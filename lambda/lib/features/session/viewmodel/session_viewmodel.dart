@@ -1706,7 +1706,10 @@ class SessionViewModel extends ChangeNotifier {
   ProgramBlock? get finishedBlock {
     if (currentWorkoutId != null) return null;
     final p = programProgress;
-    if (p == null || !p.isBlockRun || !p.isLengthReached) return null;
+    // `isReadyToEnd` is the shared spelling of "done its length, still open";
+    // what this site adds is the block to name, and the quiet while a workout
+    // is open above.
+    if (p == null || !p.isBlockRun || !p.isReadyToEnd) return null;
     return p.block;
   }
 

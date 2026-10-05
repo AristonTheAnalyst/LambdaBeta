@@ -1,21 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import '../../../../core/styles/app_colors.dart';
-import '../../../../core/styles/app_fonts.dart';
-import '../../../../core/styles/app_radius.dart';
-import '../../../../core/styles/app_spacing.dart';
-import '../../../../core/styles/app_text_styles.dart';
-import '../../../../core/utils/session_format.dart';
-import '../../../../data/models/program.dart';
-import '../../../../data/models/program_block.dart';
-import '../../../../data/models/program_history.dart';
-import '../../../../data/models/program_progress.dart';
-import '../../../../shared/widgets/app_card.dart';
-import '../../../../shared/widgets/archived_sheet.dart';
-import '../../../../shared/widgets/glass_button.dart';
-import '../../../../shared/widgets/page_header.dart';
-import '../../../../shared/widgets/slide_up_modal.dart';
-import '../../../../shared/widgets/swipe_actions.dart';
+import '../../../core/styles/app_colors.dart';
+import '../../../core/styles/app_fonts.dart';
+import '../../../core/styles/app_radius.dart';
+import '../../../core/styles/app_spacing.dart';
+import '../../../core/styles/app_text_styles.dart';
+import '../../../core/utils/session_format.dart';
+import '../../../data/models/program.dart';
+import '../../../data/models/program_block.dart';
+import '../../../data/models/program_history.dart';
+import '../../../data/models/program_progress.dart';
+import '../../../shared/widgets/app_card.dart';
+import '../../../shared/widgets/archived_sheet.dart';
+import '../../../shared/widgets/glass_button.dart';
+import '../../../shared/widgets/page_header.dart';
+import '../../../shared/widgets/slide_up_modal.dart';
+import '../../../shared/widgets/status_chip.dart';
+import '../../../shared/widgets/swipe_actions.dart';
+import 'run_confirm_dialog.dart';
 import 'program_wizard_screen.dart';
 import 'run_config_sheet.dart';
 import '../viewmodel/program_library_viewmodel.dart';
@@ -34,7 +36,6 @@ class ProgramLibraryScreen extends StatefulWidget {
 
 class _ProgramLibraryScreenState extends State<ProgramLibraryScreen> {
   final _viewModel = ProgramLibraryViewModel();
-  final _createController = TextEditingController();
   final _searchController = TextEditingController();
   bool _needsRefresh = false;
   String _query = '';
@@ -65,17 +66,21 @@ class _ProgramLibraryScreenState extends State<ProgramLibraryScreen> {
   void dispose() {
     _router.routerDelegate.removeListener(_onRouteChange);
     _viewModel.dispose();
-    _createController.dispose();
     _searchController.dispose();
     super.dispose();
   }
 
-  void _openCreate() {
-    _createController.clear();
-    _viewModel.openCreate();
-    Navigator.of(context, rootNavigator: true).push(
+  /// The only way a program is created — the wizard asks for the shape first,
+  /// which is why nothing here creates one directly.
+  ///
+  /// Reloads on pop: the wizard creates its program on the name step, so a
+  /// wizard that is backed out of half-way still made one, and the list behind
+  /// it has to show what is really there.
+  Future<void> _openCreate() async {
+    await Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(builder: (_) => const ProgramWizardScreen()),
     );
+    if (mounted) await _viewModel.fetchAll();
   }
 
   void _openArchived() {
@@ -138,7 +143,17 @@ class _ProgramLibraryScreenState extends State<ProgramLibraryScreen> {
   /// to be archived before the bin in the archived sheet will take it, and the
   /// copy says "Archive" because that is all this does.
   void _confirmDelete(Program p) {
-    final isCurrent = _viewModel.state.value.currentProgramId == p.programId;
+    final state = _viewModel.state.value;
+    final isCurrent = state.currentProgramId == p.programId;
+    final isPaused = !isCurrent && state.isPaused(p.programId);
+    // Both live runs are ended here, and both are recorded. Saying which one it
+    // is matters: "your current run" over a program that is not running would
+    // describe an archive that is about to do nothing.
+    final runNote = isCurrent
+        ? 'Archiving it will also end your current run.'
+        : isPaused
+            ? 'Archiving it will also end its paused run.'
+            : null;
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -146,12 +161,11 @@ class _ProgramLibraryScreenState extends State<ProgramLibraryScreen> {
         title: Text('Archive Program',
             style: AppFonts.ui(fontWeight: FontWeight.w800, color: AppColors.danger)),
         content: Text(
-            isCurrent
-                ? '${toProperCase(p.name)} is your active program. '
-                    'Archiving it will also end your current run. '
-                    'Sessions logged from it stay intact.'
-                : 'Archive "${toProperCase(p.name)}"? It will disappear from '
-                    'this list, but the sessions logged from it stay intact.',
+            runNote == null
+                ? 'Archive "${toProperCase(p.name)}"? It will disappear from '
+                    'this list, but the sessions logged from it stay intact.'
+                : '${toProperCase(p.name)} is your ${isCurrent ? 'active' : 'paused'} program. '
+                    '$runNote Sessions logged from it stay intact.',
             style: AppFonts.ui(color: AppColors.muted)),
         actions: [
           TextButton(
@@ -172,34 +186,42 @@ class _ProgramLibraryScreenState extends State<ProgramLibraryScreen> {
   }
 
   Future<void> _beginProgram(Program p) async {
-    final currentId = _viewModel.state.value.currentProgramId;
-    final currentProgram = currentId != null && currentId != p.programId
-        ? _viewModel.state.value.programs
-            .where((x) => x.programId == currentId)
-            .firstOrNull
-        : null;
-
-    // The blocks have to be read before the sheet opens so it can offer them —
-    // and starting a block is the reason this screen needs them at all.
-    List<ProgramBlock> blocks = const [];
+    // The next block has to be read before the sheet opens so it can name it —
+    // and starting a block is the reason this screen reads blocks at all.
+    ProgramBlock? block;
     try {
-      blocks = await _viewModel.blocksFor(p.programId);
+      block = await _viewModel.nextBlockFor(p.programId);
     } catch (_) {
-      // Offline or unreadable: the sheet simply has no blocks to offer, and
-      // beginning the whole program still works.
+      // Unreadable. There is no fallback worth inventing: a blocked program
+      // runs a block and this read found none, so the sheet says exactly that
+      // rather than beginning a run with nothing to follow.
     }
     if (!mounted) return;
 
-    // Beginning a program while another is running is a destructive act — the
-    // other run ends here — so it is stated before the config, not after.
+    // The question comes first — before the config, because it is the decision;
+    // "how long" is a detail of an act the user has already chosen. Asked every
+    // time, not only when another program is running: beginning changes which
+    // program you are on, and a gate that is only sometimes there is one the
+    // user has to guess at. The state is read *after* the block fetch above so
+    // the question is asked against what is true now.
+    final state = _viewModel.state.value;
+    final displacedName = state.displacedProgramName(p.programId);
+    final ok = await confirmStartRun(
+      context,
+      entry: RunEntry.begin,
+      programName: p.name,
+      displacesCurrentRun: state.displacesCurrentRun(p.programId),
+      displacedName: displacedName,
+      otherRunPaused: state.otherRunPaused(p.programId),
+    );
+    if (!ok || !mounted) return;
+
     final result = await showRunConfigSheet(
       context,
       programName: p.name,
-      blocks: blocks,
-      warning: currentProgram == null
-          ? null
-          : 'This resets your progress on '
-              '"${toProperCase(currentProgram.name)}".',
+      block: block,
+      usesBlocks: p.usesBlocks,
+      defaultTargetSessions: p.defaultTargetSessions,
     );
     if (result == null || !mounted) return;
     try {
@@ -215,14 +237,63 @@ class _ProgramLibraryScreenState extends State<ProgramLibraryScreen> {
     if (!mounted) return;
     final error = _viewModel.state.value.error;
     if (error != null && context.mounted) {
+      _showError(error);
+    } else if (displacedName != null && context.mounted) {
+      // What just happened to the run you left, said once and non-blockingly.
+      // This is the anti-hopping rule's whole promise — nothing was lost, and
+      // the way back is one tap — so it is said plainly instead of being left
+      // for the user to discover. Only when the program could be named: the
+      // confirmation has already covered the case where it could not, and a
+      // sentence about "another program" is not worth a banner.
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(error),
-          backgroundColor: AppColors.danger,
+          content: Text(
+            'Lambda paused "${toProperCase(displacedName)}" — pick it '
+            'back up any time.',
+            style: AppFonts.ui(fontSize: AppTextStyles.sm),
+          ),
           behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 4),
         ),
       );
     }
+  }
+
+  /// Picks a paused run back up, straight from its card.
+  ///
+  /// No config sheet: the run already has a config, and it is the whole point
+  /// of pausing that it survives. This is the shortest path back into a program
+  /// — one tap from the list you were already looking at — which is what makes
+  /// "stop program hopping" a rule a user can live with rather than a wall.
+  ///
+  /// There is no sheet here to carry a warning, and a resume steps the current
+  /// run aside exactly as a begin does — so it asks the same question, in the
+  /// same words, and asks it every time for the same reason.
+  Future<void> _resumeProgram(Program p) async {
+    final state = _viewModel.state.value;
+    final ok = await confirmStartRun(
+      context,
+      entry: RunEntry.resume,
+      programName: p.name,
+      displacesCurrentRun: state.displacesCurrentRun(p.programId),
+      displacedName: state.displacedProgramName(p.programId),
+      otherRunPaused: state.otherRunPaused(p.programId),
+    );
+    if (!ok || !mounted) return;
+    await _viewModel.resumeProgram(p.programId);
+    if (!mounted) return;
+    final error = _viewModel.state.value.error;
+    if (error != null) _showError(error);
+  }
+
+  void _showError(String error) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(error),
+        backgroundColor: AppColors.danger,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   @override
@@ -312,6 +383,19 @@ class _ProgramLibraryScreenState extends State<ProgramLibraryScreen> {
                       style: AppFonts.ui(
                           color: AppColors.danger, fontSize: AppTextStyles.sm)),
                 ),
+              // Archiving a program ends whatever run it had open — current or
+              // paused; when that run's closing record fails to write, this is
+              // the only place it is ever said.
+              if (state.historyWarning != null)
+                Container(
+                  width: double.infinity,
+                  color: AppColors.dangerBg,
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
+                  child: Text(state.historyWarning!,
+                      style: AppFonts.ui(
+                          color: AppColors.danger, fontSize: AppTextStyles.sm)),
+                ),
               Expanded(
                 child: state.isLoading
                     ? Center(
@@ -357,13 +441,24 @@ class _ProgramLibraryScreenState extends State<ProgramLibraryScreen> {
                               return _ProgramCard(
                                 program: p,
                                 isCurrent: isCurrent,
+                                // Never both: a run that is current is not
+                                // paused, and the card must not have to decide
+                                // which badge wins.
+                                isPaused: !isCurrent && state.isPaused(p.programId),
                                 settingCurrent: settingCurrent,
+                                // A current or paused program is not asking to
+                                // be begun, so the shape rule has nothing to
+                                // say about it.
+                                nothingToRun: !isCurrent &&
+                                    !state.isPaused(p.programId) &&
+                                    state.hasNothingToRun(p.programId),
                                 progress: isCurrent ? state.currentProgress : null,
                                 due: state.dueFor(p.programId),
                                 onOpen: () =>
                                     context.push('/exercises/programs/${p.programId}'),
                                 onSetCurrent: () =>
                                     _beginProgram(p),
+                                onResume: () => _resumeProgram(p),
                                 onDuplicate: () =>
                                     _viewModel.duplicateProgram(p.programId),
                                 onDelete: () => _confirmDelete(p),
@@ -383,9 +478,12 @@ class _ProgramCard extends StatelessWidget {
   const _ProgramCard({
     required this.program,
     required this.isCurrent,
+    required this.isPaused,
     required this.settingCurrent,
+    required this.nothingToRun,
     required this.onOpen,
     required this.onSetCurrent,
+    required this.onResume,
     required this.onDuplicate,
     required this.onDelete,
     this.progress,
@@ -394,9 +492,20 @@ class _ProgramCard extends StatelessWidget {
 
   final Program program;
   final bool isCurrent;
+
+  /// A run of this program was stepped away from — open, resumable, not
+  /// running. Badged, and its card action becomes Resume instead of Begin:
+  /// there is a run to return to, so beginning a new one is not the offer.
+  final bool isPaused;
   final bool settingCurrent;
+
+  /// A blocked program with no blocks: there is nothing for a run to follow.
+  /// Begin greys out and the card says why, rather than offering an act the
+  /// sheet would then refuse.
+  final bool nothingToRun;
   final VoidCallback onOpen;
   final VoidCallback onSetCurrent;
+  final VoidCallback onResume;
   final VoidCallback onDuplicate;
   final VoidCallback onDelete;
 
@@ -448,25 +557,11 @@ class _ProgramCard extends StatelessWidget {
                         ),
                         if (isCurrent) ...[
                           const SizedBox(width: AppSpacing.xs),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: AppColors.accentBg,
-                              borderRadius: BorderRadius.circular(999),
-                              border: Border.all(
-                                color: AppColors.accent.withValues(
-                                  alpha: 0.35,
-                                ),
-                              ),
-                            ),
-                            child: Text('Active',
-                                style: AppFonts.ui(
-                                    fontSize: 14,
-                                    letterSpacing: 0.5,
-                                    fontWeight: FontWeight.w800,
-                                    color: AppColors.accent)),
-                          ),
+                          const StatusChip(label: 'Active'),
+                        ],
+                        if (isPaused) ...[
+                          const SizedBox(width: AppSpacing.xs),
+                          const StatusChip(label: 'Paused', muted: true),
                         ],
                         if (due != null) ...[
                           const SizedBox(width: AppSpacing.xs),
@@ -554,18 +649,42 @@ class _ProgramCard extends StatelessWidget {
               style: AppFonts.mono(fontSize: 13, color: AppColors.muted),
             ),
           ],
+          if (nothingToRun) ...[
+            const SizedBox(height: AppSpacing.sm),
+            Text(
+              'Add a block to run this program.',
+              style: AppFonts.ui(
+                fontSize: AppTextStyles.sm,
+                color: AppColors.muted,
+              ),
+            ),
+          ],
           const SizedBox(height: AppSpacing.sm),
           Divider(color: AppColors.border, height: 1),
           const SizedBox(height: AppSpacing.sm),
           Row(
             children: [
-              if (!isCurrent)
+              // Resume before Begin: a paused program already has a run and a
+              // config, so the shortest path back to it is the one this card
+              // should offer. Beginning a fresh attempt over the top of a
+              // paused one is restarting, which lives on the program screen
+              // where its consequences can be spelled out.
+              if (isPaused)
+                GlassButton(
+                  label: 'Resume',
+                  icon: Icons.play_circle_outline,
+                  compact: true,
+                  loading: settingCurrent,
+                  disabled: settingCurrent,
+                  onPressed: onResume,
+                )
+              else if (!isCurrent)
                 GlassButton(
                   label: 'Begin Program',
                   icon: Icons.play_circle_outline,
                   compact: true,
                   loading: settingCurrent,
-                  disabled: settingCurrent,
+                  disabled: settingCurrent || nothingToRun,
                   onPressed: onSetCurrent,
                 ),
               const Spacer(),

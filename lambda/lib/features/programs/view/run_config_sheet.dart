@@ -34,7 +34,9 @@ class RunConfigRequest {
   /// the length.
   final int? targetSessions;
 
-  /// The block to run, or null for the whole program.
+  /// The block to run, or null when the run is not under a block — a simple
+  /// program's run, or an old run of a blocked program begun before blocks
+  /// became the only way in.
   final String? blockId;
 }
 
@@ -44,8 +46,9 @@ class RunConfigRequest {
 /// library, `_confirmBeginProgram` and `_editRunConfig` in the detail screen)
 /// that had drifted apart in copy and in validation while asking the same
 /// question. The fourth caller — starting a block — is where the extraction
-/// pays for itself: the block picker drops into one sheet instead of being
-/// added to three.
+/// pays for itself: the block a run follows is decided at the call site and
+/// handed here, instead of the "which block" question being threaded through
+/// three separate dialogs.
 ///
 /// Stateful so it owns the [TextEditingController] — disposing one right after
 /// `showDialog` returns crashes, because the field is still mounted and
@@ -61,21 +64,38 @@ Future<RunConfigRequest?> showRunConfigSheet(
   /// The confirm button's label. Defaults to `Begin`, or `Save` when editing.
   String? actionLabel,
 
-  /// Shown above the controls when the run replaces another one — the two
-  /// callers that can interrupt a live run word this differently, so it is
-  /// passed in rather than invented here.
+  /// Shown above the controls when configuring the run is itself the
+  /// confirmation. Restart is the only caller left: the pause warning is asked
+  /// as its own question, on its own dialog, *before* this sheet opens — a
+  /// run that steps another one aside has to be agreed to before "how long"
+  /// is answered.
   String? warning,
 
-  /// The program's active blocks. Empty (the default) hides the picker
-  /// entirely, so a blockless program's sheet is what it always was.
-  List<ProgramBlock> blocks = const [],
+  /// The block this begin will follow — the program's **next** unended block,
+  /// or null on a blocked program that has none to run.
+  ///
+  /// One block, never a list. Blocks are a sequence: a run follows the phase
+  /// the program is on, so a picker here would be offering choices the
+  /// sequencing rule refuses — and the refusal would arrive as a dead Begin
+  /// rather than as a reason. Which block that is comes from [BlockSequence],
+  /// the same answer the program screen and the due prompts use.
+  ProgramBlock? block,
 
-  /// The block selected when the sheet opens.
-  String? initialBlockId,
+  /// Whether this program is made of blocks, from `dim_program.uses_blocks`.
+  ///
+  /// Passed rather than inferred, because "no block to run" cannot tell a
+  /// simple program from a blocked one with nothing in it — and those two owe
+  /// the user opposite answers: a length to type, versus nothing to begin.
+  bool usesBlocks = false,
 
-  /// Non-null = editing this run rather than starting one. Hides the block
-  /// picker: the run is already under way, and repointing it mid-flight would
-  /// silently change which workouts it is counting.
+  /// A simple program's remembered length, which the count field opens on.
+  /// Ignored for a blocked program, whose block owns the length.
+  int? defaultTargetSessions,
+
+  /// Non-null = editing this run rather than starting one. The sheet then
+  /// names the run's own block instead of taking one: the run is already under
+  /// way, and repointing it mid-flight would silently change which workouts it
+  /// is counting.
   ProgramRun? run,
 }) {
   return showLambdaModal<RunConfigRequest>(
@@ -87,8 +107,9 @@ Future<RunConfigRequest?> showRunConfigSheet(
         title: title ?? (run == null ? null : 'Run config'),
         actionLabel: actionLabel ?? (run == null ? 'Begin' : 'Save'),
         warning: warning,
-        blocks: run == null ? blocks : const [],
-        initialBlockId: run == null ? initialBlockId : null,
+        block: run == null ? block : null,
+        usesBlocks: usesBlocks,
+        defaultTargetSessions: defaultTargetSessions,
         run: run,
       ),
     ),
@@ -98,20 +119,25 @@ Future<RunConfigRequest?> showRunConfigSheet(
 class _RunConfigSheet extends StatefulWidget {
   const _RunConfigSheet({
     required this.programName,
-    required this.blocks,
+    required this.usesBlocks,
     required this.run,
+    this.block,
+    this.defaultTargetSessions,
     this.title,
     this.actionLabel,
     this.warning,
-    this.initialBlockId,
   });
 
   final String programName;
   final String? title;
   final String? actionLabel;
   final String? warning;
-  final List<ProgramBlock> blocks;
-  final String? initialBlockId;
+
+  /// The next block to run, on a blocked program. Null when the program has
+  /// none at all, or while editing a run that is not under one.
+  final ProgramBlock? block;
+  final bool usesBlocks;
+  final int? defaultTargetSessions;
   final ProgramRun? run;
 
   @override
@@ -120,28 +146,26 @@ class _RunConfigSheet extends StatefulWidget {
 
 class _RunConfigSheetState extends State<_RunConfigSheet> {
   late final TextEditingController _count;
+
+  /// The block this sheet is about: the next one on a blocked begin, or the
+  /// run's own while editing.
+  ///
+  /// Held as an id rather than the object because the editing case has only
+  /// the id — the run carries `block_id` and nothing else, and the sheet is
+  /// handed no block to look the name up in.
   String? _blockId;
-
-  /// Whether the user has typed into the count field. Until they do, the field
-  /// holds whatever the selected block suggests — so switching blocks updates
-  /// the suggestion instead of fighting the user's own number.
-  bool _countTouched = false;
-
-  ProgramBlock? get _block {
-    for (final b in widget.blocks) {
-      if (b.blockId == _blockId) return b;
-    }
-    return null;
-  }
 
   @override
   void initState() {
     super.initState();
     final run = widget.run;
-    _blockId = widget.initialBlockId ?? run?.blockId;
-    final prefill = run?.targetSessions ?? _suggestedCount();
+    _blockId = widget.block?.blockId ?? run?.blockId;
+    // The run's own count when one is being edited, else what the program
+    // remembers — a simple program should not have to be told its own length
+    // again every time it is begun. A block run is never asked: its block owns
+    // the length, so the field is not shown.
+    final prefill = run?.targetSessions ?? widget.defaultTargetSessions;
     _count = TextEditingController(text: prefill?.toString() ?? '');
-    _countTouched = run != null;
   }
 
   @override
@@ -150,15 +174,23 @@ class _RunConfigSheetState extends State<_RunConfigSheet> {
     super.dispose();
   }
 
-  /// The session count a block declares for itself, so a block run's field
-  /// opens on a sensible number.
-  int? _suggestedCount() => _block?.targetSessions;
-
-  void _selectBlock(String? blockId) {
-    setState(() {
-      _blockId = blockId;
-      if (!_countTouched) _count.text = _suggestedCount()?.toString() ?? '';
-    });
+  /// Whether confirming would write anything.
+  ///
+  /// A block run always can — the block owns the length, so there is nothing
+  /// here to compare. A program run needs a positive count, and when editing,
+  /// a count that differs from the run's own: a confirm button that would
+  /// write nothing should not look pressable. Cancel is the dismissal.
+  bool get _canSubmit {
+    if (_blockId != null) return true;
+    // Beginning a blocked program without a block is the one thing this sheet
+    // must never allow: a blocked program is defined by its blocks, so a run
+    // with none has nothing to walk. Editing an already-running one is
+    // different — a run that predates the shape rule still has to be fixable.
+    if (widget.usesBlocks && widget.run == null) return false;
+    final parsed = int.tryParse(_count.text.trim());
+    if (parsed == null || parsed <= 0) return false;
+    final run = widget.run;
+    return run == null || parsed != run.targetSessions;
   }
 
   void _submit() {
@@ -171,6 +203,9 @@ class _RunConfigSheetState extends State<_RunConfigSheet> {
       Navigator.of(context).pop(RunConfigRequest(blockId: _blockId));
       return;
     }
+    // Belt and braces with [_canSubmit]: the button is disabled, but a submit
+    // that would start a blockless run of a blocked program must not exist.
+    if (widget.usesBlocks && widget.run == null) return;
     final count = int.tryParse(_count.text.trim());
     if (count == null || count <= 0) return;
     Navigator.of(context).pop(RunConfigRequest(targetSessions: count));
@@ -207,62 +242,67 @@ class _RunConfigSheetState extends State<_RunConfigSheet> {
               ),
             ),
           ],
-          if (widget.blocks.isNotEmpty) ...[
+          // A blocked program runs its blocks, so this names the block the run
+          // will follow. Named, not picked: blocks are a sequence, so there is
+          // exactly one block a begin can mean — the next one — and a picker
+          // would be offering choices the sequencing rule refuses.
+          if (widget.run == null && widget.usesBlocks) ...[
             const SizedBox(height: AppSpacing.lg),
             _label('Run'),
             const SizedBox(height: AppSpacing.sm),
-            _BlockOption(
-              title: 'Whole program',
-              subtitle: widget.blocks.length == 1
-                  ? 'the one block, in sequence'
-                  : 'all ${widget.blocks.length} blocks, in sequence',
-              selected: _blockId == null,
-              onTap: () => _selectBlock(null),
-            ),
-            for (var i = 0; i < widget.blocks.length; i++) ...[
-              const SizedBox(height: AppSpacing.sm),
-              _BlockOption(
-                title: widget.blocks[i].name,
-                subtitle: _blockSubtitle(widget.blocks[i], i),
-                selected: _blockId == widget.blocks[i].blockId,
-                onTap: () => _selectBlock(widget.blocks[i].blockId),
-              ),
-            ],
+            if (widget.block == null)
+              Text(
+                'Add a block to run this program — a blocked program runs its '
+                'blocks, and this one has none yet.',
+                style: AppFonts.ui(
+                  fontSize: AppTextStyles.sm,
+                  color: AppColors.muted,
+                ),
+              )
+            else
+              _BlockRow(title: widget.block!.name),
           ],
           const SizedBox(height: AppSpacing.lg),
-          // A block states its own length, so there is nothing to ask for here.
-          // The line below says which length is in force rather than leaving a
-          // duration control that would be overruled the moment the run was
-          // read back.
+          // A block states its own length, so a block run is never asked for a
+          // count — the line below says which length is in force, rather than
+          // leaving a duration control that would be overruled the moment the
+          // run was read back. The one remaining no-count case is a blocked
+          // begin with nothing to run, where the copy above has said why.
           if (_blockId != null) ...[
             _label('Duration'),
             const SizedBox(height: AppSpacing.sm),
             Text(
-              // `_block` is null here in one case only: editing a run that
-              // already follows a block, where the picker is hidden and the
-              // sheet was handed no blocks to look the name up in. The length
-              // is still the block's, so it says so without naming it.
-              _block == null
+              // `widget.block` is null here in one case only: editing a run
+              // that already follows a block. The editing path passes no
+              // block — the run carries just its id, and a run that is under
+              // way must not be repointed — so the length is still the
+              // block's, and the line says so without naming it.
+              widget.block == null
                   ? 'Set by the block this run follows.'
-                  : _blockLengthLine(_block!),
+                  : _blockLengthLine(widget.block!),
               style: AppFonts.ui(
                 fontSize: AppTextStyles.sm,
                 color: AppColors.muted,
               ),
             ),
-          ] else
+          ] else if (widget.run != null || !widget.usesBlocks) ...[
+            // The count field appears only when the count is the run's own: a
+            // simple program's run, or an old run of a blocked program that
+            // predates the shape rule and still has to be editable.
             LambdaInput(
               controller: _count,
               label: 'Number of sessions',
               placeholder: 'e.g. 12',
               keyboardType: TextInputType.number,
               required: true,
-              onChanged: (_) => _countTouched = true,
+              onChanged: (_) => setState(() {}),
             ),
+          ],
           const SizedBox(height: AppSpacing.xl),
           GlassButton(
             label: widget.actionLabel ?? 'Begin',
             solid: true,
+            disabled: !_canSubmit,
             onPressed: _submit,
           ),
         ],
@@ -281,15 +321,6 @@ class _RunConfigSheetState extends State<_RunConfigSheet> {
     return 'Open-ended — end it by hand when the phase is done.';
   }
 
-  /// The block's length, or its position when it declares none.
-  String _blockSubtitle(ProgramBlock b, int index) =>
-      blockLengthPhrase(
-        targetWeeks: b.targetWeeks,
-        targetDays: b.targetDays,
-        targetSessions: b.targetSessions,
-      ) ??
-      'Block ${index + 1}';
-
   Widget _label(String text) => Text(
         text,
         style: AppFonts.ui(
@@ -300,62 +331,29 @@ class _RunConfigSheetState extends State<_RunConfigSheet> {
       );
 }
 
-/// One row of the run-target picker. Selection is a border plus a check rather
-/// than a fill, so the chosen one reads at a glance without the unselected rows
-/// looking disabled.
-class _BlockOption extends StatelessWidget {
-  const _BlockOption({
-    required this.title,
-    required this.subtitle,
-    required this.selected,
-    required this.onTap,
-  });
+/// The block this run will follow, named.
+///
+/// Not a control: there is no choice to make, so nothing here looks pressable.
+/// The length is said below it, which is why this row carries only the name.
+class _BlockRow extends StatelessWidget {
+  const _BlockRow({required this.title});
 
   final String title;
-  final String subtitle;
-  final bool selected;
-  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.lg,
-          vertical: AppSpacing.md,
-        ),
-        decoration: selected
-            ? lambdaBox(ContainerTone.accent, radius: AppRadius.md)
-            : lambdaBox(ContainerTone.ghost, radius: AppRadius.md),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    toProperCase(title),
-                    style: AppFonts.ui(
-                      fontSize: AppTextStyles.sm,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.primary,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    subtitle,
-                    style: AppFonts.mono(
-                      fontSize: AppTextStyles.xs,
-                      color: AppColors.muted,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            if (selected)
-              Icon(Icons.check, size: 18, color: AppColors.accentText),
-          ],
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.lg,
+        vertical: AppSpacing.md,
+      ),
+      decoration: lambdaBox(ContainerTone.ghost, radius: AppRadius.md),
+      child: Text(
+        toProperCase(title),
+        style: AppFonts.ui(
+          fontSize: AppTextStyles.sm,
+          fontWeight: FontWeight.w600,
+          color: AppColors.primary,
         ),
       ),
     );

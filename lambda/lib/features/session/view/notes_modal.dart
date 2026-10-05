@@ -93,6 +93,9 @@ class _NotesModalContentState extends State<_NotesModalContent> {
                 GlassButton(
                   label: widget.readOnly ? 'Done' : 'Save',
                   compact: true,
+                  // Done dismisses whatever the state; Save has nothing to
+                  // write until the note differs from the one it opened with.
+                  disabled: !widget.readOnly && _ctrl.text == widget.initialValue,
                   onPressed: widget.readOnly
                       ? () => Navigator.of(context, rootNavigator: true).pop()
                       : _save,

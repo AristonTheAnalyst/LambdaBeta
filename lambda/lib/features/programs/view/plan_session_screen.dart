@@ -16,6 +16,55 @@ import '../../../shared/widgets/session_exercise_card.dart';
 import '../../../shared/widgets/session_set_row.dart';
 import '../../../shared/widgets/stats_row.dart';
 import '../viewmodel/workout_editor_viewmodel.dart';
+import 'review_container.dart';
+
+/// Asks before opening a workout editor while the program it belongs to is
+/// running.
+///
+/// Informational rather than a guard against loss: an edit applies to every
+/// session logged from now on, while the sets already logged are snapshots
+/// that will not change. Shared by the two ways in — the program's workout
+/// list, and a block's rows — because a second copy of this dialog is a second
+/// place for the wording to drift, and the two screens are the same promise.
+///
+/// Returns true when it is fine to proceed.
+Future<bool> confirmEditWhileRunning(BuildContext context) async {
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      backgroundColor: AppColors.surface,
+      title: Text(
+        'Edit while running?',
+        style: AppFonts.ui(
+          fontWeight: FontWeight.w800,
+          color: AppColors.primary,
+        ),
+      ),
+      content: Text(
+        'This program is active. Changes to the workout apply to future '
+        'sessions; past logged sets and PRs won\'t change.',
+        style: AppFonts.ui(color: AppColors.muted),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(ctx).pop(false),
+          child: Text('Cancel', style: AppFonts.ui(color: AppColors.muted)),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(ctx).pop(true),
+          child: Text(
+            'Edit',
+            style: AppFonts.ui(
+              color: AppColors.accent,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+  return ok == true;
+}
 
 /// Full-screen planned-workout editor that mirrors the active-session UX:
 /// tabbed by exercise, inline editable set grid (PlanSetRow), auto-commit on
@@ -28,6 +77,7 @@ class PlanSessionScreen extends StatefulWidget {
     this.workout,
     this.standalone = false,
     this.standaloneWorkoutId,
+    this.newWorkoutBlockId,
   });
 
   final WorkoutEditorViewModel viewModel;
@@ -38,6 +88,12 @@ class PlanSessionScreen extends StatefulWidget {
 
   /// When set, opens an existing standalone workout for editing.
   final String? standaloneWorkoutId;
+
+  /// The block a brand-new workout is made inside, when the editor was opened
+  /// from one. The link is created with it, so the workout is never briefly
+  /// unfiled — which matters because a blocked program has no Workouts tab for
+  /// an unfiled row to appear in.
+  final String? newWorkoutBlockId;
 
   @override
   State<PlanSessionScreen> createState() => _PlanSessionScreenState();
@@ -85,7 +141,9 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
       } else if (widget.standalone) {
         await widget.viewModel.createStandaloneWorkoutAndOpen();
       } else {
-        await widget.viewModel.createWorkoutAndOpen();
+        await widget.viewModel.createWorkoutAndOpen(
+          blockId: widget.newWorkoutBlockId,
+        );
       }
       // The VM may generate a bumped name ("New Session 2") after open —
       // sync the header controller so the editor shows the real name.
@@ -225,9 +283,13 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
             // the tab shell — re-render the shared nav bar so tab navigation
             // stays available while editing. Tab taps run the unsaved-changes
             // guard before leaving.
-            bottomNavigationBar: BottomNavBar(
-              currentRoute: '/exercises',
-              onTap: _onNavTap,
+            bottomNavigationBar: reviewBottomSlot(
+              context,
+              settle: confirmBack,
+              child: BottomNavBar(
+                currentRoute: '/exercises',
+                onTap: _onNavTap,
+              ),
             ),
             body: Column(
               children: [

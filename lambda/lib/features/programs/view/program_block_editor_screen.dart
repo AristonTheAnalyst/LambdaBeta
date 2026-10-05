@@ -18,12 +18,15 @@ import '../../../shared/widgets/date_picker_sheet.dart';
 import '../../../shared/widgets/exercise_target_picker.dart';
 import '../../../shared/widgets/glass_button.dart';
 import '../../../shared/widgets/lambda_input.dart';
+import '../../../shared/widgets/option_picker_sheet.dart';
 import '../../../shared/widgets/page_header.dart';
 import '../../../shared/widgets/segmented_control.dart';
 import '../../../shared/widgets/swipe_actions.dart';
 import '../viewmodel/program_detail_viewmodel.dart';
 import 'goal_row.dart';
+import 'plan_session_screen.dart';
 import 'program_workout_row.dart';
+import 'review_container.dart';
 
 /// A phase of a program: its name, its targets, its dates, and the workouts
 /// assigned to it in order.
@@ -418,6 +421,17 @@ class _ProgramBlockEditorScreenState extends State<ProgramBlockEditorScreen>
     return buildGuardedScaffold(
       scaffold: Scaffold(
         backgroundColor: AppColors.bg,
+        // The shared nav bar lives here, always: this editor is pushed over
+        // the tab shell, so tab navigation has to be re-drawn on the screen —
+        // and a review running stacks its own bar above it.
+        bottomNavigationBar: reviewBottomSlot(
+          context,
+          settle: confirmBack,
+          child: BottomNavBar(
+            currentRoute: '/exercises',
+            onTap: _onNavTap,
+          ),
+        ),
         body: ValueListenableBuilder<ProgramDetailState>(
           valueListenable: _vm.state,
           builder: (context, state, _) => Column(
@@ -463,6 +477,11 @@ class _ProgramBlockEditorScreenState extends State<ProgramBlockEditorScreen>
                         placeholder: 'e.g. Accumulation',
                         textCapitalization: TextCapitalization.sentences,
                         required: true,
+                        // Save draws its visibility from `hasUnsavedChanges`,
+                        // so these two fields have to rebuild the editor as
+                        // they are typed into. `LambdaInput` owns the text;
+                        // this is only the rebuild signal.
+                        onChanged: (_) => setState(() {}),
                       ),
                       const SizedBox(height: AppSpacing.md),
                       LambdaInput(
@@ -472,6 +491,7 @@ class _ProgramBlockEditorScreenState extends State<ProgramBlockEditorScreen>
                         textCapitalization: TextCapitalization.sentences,
                         minLines: 2,
                         maxLines: 5,
+                        onChanged: (_) => setState(() {}),
                       ),
                       const SizedBox(height: AppSpacing.md),
                       // One length, chosen once. The block is measured in weeks
@@ -584,11 +604,16 @@ class _ProgramBlockEditorScreenState extends State<ProgramBlockEditorScreen>
                         ),
                       ),
                       const SizedBox(height: AppSpacing.lg),
-                      GlassButton(
-                        label: _saving ? 'Saving…' : 'Save',
-                        icon: Icons.check,
-                        onPressed: _saveAndClose,
-                      ),
+                      // Always present for a new block — Save is how the block
+                      // comes into being, and its name may be left to the
+                      // generated one. For an existing block it appears once
+                      // something would actually be written.
+                      if (_isNew || hasUnsavedChanges)
+                        GlassButton(
+                          label: _saving ? 'Saving…' : 'Save',
+                          icon: Icons.check,
+                          onPressed: _saveAndClose,
+                        ),
                       const SizedBox(height: AppSpacing.xl),
                       Row(
                         children: [
@@ -602,12 +627,16 @@ class _ProgramBlockEditorScreenState extends State<ProgramBlockEditorScreen>
                               ),
                             ),
                           ),
+                          // The program's only way to make a workout, for a
+                          // blocked one: there is no Workouts tab, so this
+                          // button is where "add/create workouts from within
+                          // each block" actually lives.
                           if (!_isNew)
                             GlassButton(
                               label: '',
                               icon: Icons.add,
                               compact: true,
-                              onPressed: _addWorkouts,
+                              onPressed: _openAddMenu,
                             ),
                         ],
                       ),
@@ -648,6 +677,9 @@ class _ProgramBlockEditorScreenState extends State<ProgramBlockEditorScreen>
                                 key: ValueKey(_workouts[i].sessionId),
                                 workout: _workouts[i],
                                 dragIndex: i,
+                                // The way into a workout's contents, now that
+                                // there is no Workouts tab to open it from.
+                                onTap: () => _openEditWorkout(_workouts[i]),
                                 swipeActions: [
                                   SwipeAction(
                                     icon: Icons.copy_rounded,
@@ -674,10 +706,6 @@ class _ProgramBlockEditorScreenState extends State<ProgramBlockEditorScreen>
                     ],
                   ),
                 ),
-              ),
-              BottomNavBar(
-                currentRoute: '/exercises',
-                onTap: _onNavTap,
               ),
             ],
           ),
@@ -759,17 +787,15 @@ class _ProgramBlockEditorScreenState extends State<ProgramBlockEditorScreen>
     );
   }
 
-  /// Offers the program's unassigned workouts, and assigns the chosen one here.
-  Future<void> _addWorkouts() async {
-    final unassigned = _vm.blockGroups
-        .where((g) => g.isUnassigned)
-        .expand((g) => g.workouts)
-        .toList();
-    if (unassigned.isEmpty) {
-      _snack('No unassigned workouts to add.');
-      return;
-    }
-    final picked = await showModalBottomSheet<PlannedSession>(
+  /// The block's `+`: the three ways a block gains a workout.
+  ///
+  /// A blocked program has no Workouts tab, so this menu is the program's only
+  /// way to make a workout — which is the shape rule stated as an entry point:
+  /// workouts are made inside the block they belong to, not somewhere else and
+  /// then filed. "Add existing" is the fourth case that is really a move, and
+  /// it lists what the program already has lying unfiled.
+  Future<void> _openAddMenu() async {
+    final choice = await showModalBottomSheet<String>(
       context: context,
       useRootNavigator: true,
       backgroundColor: AppColors.surface,
@@ -777,13 +803,14 @@ class _ProgramBlockEditorScreenState extends State<ProgramBlockEditorScreen>
         borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.lg)),
       ),
       builder: (ctx) => SafeArea(
-        child: ListView(
-          shrinkWrap: true,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Padding(
               padding: const EdgeInsets.all(AppSpacing.lg),
               child: Text(
-                'Add to ${widget.block!.name}',
+                'Add to ${toProperCase(widget.block!.name)}',
                 style: AppFonts.ui(
                   fontSize: AppTextStyles.lg,
                   fontWeight: FontWeight.w800,
@@ -791,24 +818,148 @@ class _ProgramBlockEditorScreenState extends State<ProgramBlockEditorScreen>
                 ),
               ),
             ),
-            for (final w in unassigned)
-              ListTile(
-                title: Text(
-                  toProperCase(w.name),
-                  style: AppFonts.ui(
-                    fontSize: AppTextStyles.md,
-                    color: AppColors.primary,
-                  ),
+            ListTile(
+              leading: Icon(Icons.add, color: AppColors.accent),
+              title: Text(
+                'New workout',
+                style: AppFonts.ui(
+                  fontSize: AppTextStyles.md,
+                  color: AppColors.primary,
                 ),
-                onTap: () => Navigator.of(ctx).pop(w),
               ),
+              onTap: () => Navigator.of(ctx).pop('new'),
+            ),
+            ListTile(
+              leading: Icon(Icons.library_add_outlined, color: AppColors.accent),
+              title: Text(
+                'From library',
+                style: AppFonts.ui(
+                  fontSize: AppTextStyles.md,
+                  color: AppColors.primary,
+                ),
+              ),
+              onTap: () => Navigator.of(ctx).pop('library'),
+            ),
+            ListTile(
+              leading: Icon(
+                Icons.drive_file_move_outline,
+                color: AppColors.accent,
+              ),
+              title: Text(
+                'Add existing',
+                style: AppFonts.ui(
+                  fontSize: AppTextStyles.md,
+                  color: AppColors.primary,
+                ),
+              ),
+              onTap: () => Navigator.of(ctx).pop('existing'),
+            ),
             const SizedBox(height: AppSpacing.md),
           ],
         ),
       ),
     );
-    if (picked == null) return;
-    await _vm.assignWorkoutToBlock(picked.sessionId, widget.block!.blockId);
+    if (!mounted) return;
+    switch (choice) {
+      case 'new':
+        await _createWorkout();
+      case 'library':
+        await _addFromLibrary();
+      case 'existing':
+        await _addExisting();
+    }
+  }
+
+  /// Makes a brand-new workout inside this block: the editor creates it and
+  /// links it to the program with this block already on the link, so it is
+  /// never unfiled even for a moment.
+  Future<void> _createWorkout() async {
+    await Navigator.of(context, rootNavigator: true).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => PlanSessionScreen(
+          viewModel: _vm.editor,
+          newWorkoutBlockId: widget.block!.blockId,
+        ),
+      ),
+    );
+    if (mounted) _refreshAfterEdit();
+  }
+
+  /// Copies a standalone library workout into the program **and** into this
+  /// block. The copy is program-private, the way every added workout is; the
+  /// assignment is what makes it this block's rather than the program's.
+  Future<void> _addFromLibrary() async {
+    final workouts = await _vm.standaloneWorkouts();
+    if (!mounted) return;
+    if (workouts.isEmpty) {
+      _snack('No workouts in your library to copy from.');
+      return;
+    }
+    final chosen = await showOptionPickerSheet(
+      context,
+      title: 'From your library',
+      options: [
+        for (final w in workouts) (id: w.sessionId, label: toProperCase(w.name)),
+      ],
+    );
+    if (chosen == null || !mounted) return;
+    final copy = await _vm.copyWorkoutIntoProgram(chosen);
+    if (copy == null) return;
+    await _vm.assignWorkoutToBlock(copy.sessionId, widget.block!.blockId);
+  }
+
+  /// Offers the program's unfiled workouts, and assigns the chosen one here.
+  /// Adding an existing workout is a MOVE — it is the same workout, being
+  /// filed. Wanting a second copy is what Duplicate is for.
+  Future<void> _addExisting() async {
+    final unassigned = _vm.blockGroups
+        .where((g) => g.isUnassigned)
+        .expand((g) => g.workouts)
+        .toList();
+    if (unassigned.isEmpty) {
+      _snack('No unfiled workouts to move in.');
+      return;
+    }
+    final picked = await showOptionPickerSheet(
+      context,
+      title: 'Add to ${toProperCase(widget.block!.name)}',
+      options: [
+        for (final w in unassigned)
+          (id: w.sessionId, label: toProperCase(w.name)),
+      ],
+    );
+    if (picked == null || !mounted) return;
+    await _vm.assignWorkoutToBlock(picked, widget.block!.blockId);
+  }
+
+  /// Opens one of this block's workouts in the planner — the only way into a
+  /// blocked program's workout contents.
+  Future<void> _openEditWorkout(PlannedSession w) async {
+    if (_vm.state.value.isCurrent && !await confirmEditWhileRunning(context)) {
+      return;
+    }
+    if (!mounted) return;
+    await Navigator.of(context, rootNavigator: true).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => PlanSessionScreen(viewModel: _vm.editor, workout: w),
+      ),
+    );
+    if (mounted) _refreshAfterEdit();
+  }
+
+  /// Re-reads the program once the workout editor has closed.
+  ///
+  /// Deferred past the current frame for the same reason the detail screen
+  /// defers its own: the pop transition is still running, and a load that
+  /// lands mid-transition repaints under it.
+  void _refreshAfterEdit() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final programId =
+          widget.block?.programId ?? _vm.state.value.program?.programId;
+      if (programId == null) return;
+      _vm.load(programId);
+    });
   }
 
   Future<void> _confirmArchive() async {

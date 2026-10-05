@@ -1,5 +1,6 @@
 import 'package:uuid/uuid.dart';
 import '../../core/powersync/database.dart' as ps;
+import '../../core/utils/lambda_exception.dart';
 import '../../shared/utils/unique_name.dart';
 import '../models/planned_session.dart';
 import '../models/planned_session_exercise.dart';
@@ -45,7 +46,7 @@ class PlannedSessionRepository {
     String? excludeSessionId,
   }) async {
     if (await _nameExists(userId, name, excludeSessionId: excludeSessionId)) {
-      throw Exception('A session named "$name" already exists.');
+      throw LambdaException('A session named "$name" already exists.');
     }
   }
 

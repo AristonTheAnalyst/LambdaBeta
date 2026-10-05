@@ -5,6 +5,7 @@ import '../../../../core/styles/app_fonts.dart';
 import '../../../../core/styles/app_radius.dart';
 import '../../../../core/styles/app_spacing.dart';
 import '../../../../core/styles/app_text_styles.dart';
+import '../../../../core/utils/friendly_error.dart';
 import '../../../../core/utils/session_format.dart';
 import '../../../../data/models/planned_session.dart';
 import '../../../../data/repositories/planned_session_repository.dart';
@@ -79,7 +80,7 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
       if (mounted) {
         setState(() {
           _loading = false;
-          _error = e.toString();
+          _error = friendlyError(e);
         });
       }
     }
