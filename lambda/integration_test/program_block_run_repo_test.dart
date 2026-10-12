@@ -43,7 +43,7 @@ void main() {
     dir = await Directory.systemTemp.createTemp('lambda_ps');
     db = PowerSyncDatabase(schema: schema, path: '${dir.path}/test.db');
     await db.initialize();
-    ps.setDatabaseForTesting(db);
+    ps.swapDatabase(db);
     planned = PlannedSessionRepository();
     runs = ProgramRunRepository();
     history = ProgramHistoryRepository();
@@ -274,13 +274,14 @@ void main() {
     expect(rows.single['ended_date'], isNull);
 
     // The prompt names the block, not the program: a finished phase and a
-    // finished program are different things to be told.
+    // finished program are different things to be told. "Length reached", not
+    // "finished" — carrying on is one of the answers the prompt offers.
     final due = await ProgramHistoryRepository().fetchDueItems(userId);
     final finished = due.where((d) => d.kind == kDueRunFinished).toList();
     expect(finished, hasLength(1));
     expect(finished.single.blockId, blockId);
     expect(finished.single.blockName, 'Accumulation');
-    expect(finished.single.label, 'Block finished');
+    expect(finished.single.label, 'Block length reached');
   });
 
   test('a length of weeks and days runs out on its own day, not on the week',

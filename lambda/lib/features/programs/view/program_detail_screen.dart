@@ -13,20 +13,19 @@ import '../../../data/models/program_block.dart';
 import '../../../data/models/program_history.dart';
 import '../../../data/models/program_progress.dart';
 import '../../../data/models/program_run.dart';
+import '../../../shared/router/app_router.dart';
 import '../../../shared/widgets/app_card.dart';
-import '../../../shared/widgets/bottom_nav_bar.dart';
-import '../../../shared/widgets/exercise_target_picker.dart';
 import '../../../shared/widgets/glass_button.dart';
 import '../../../shared/widgets/lambda_input.dart';
 import '../../../shared/widgets/option_picker_sheet.dart';
 import '../../../shared/widgets/page_header.dart';
+import '../../../shared/widgets/scroll_shrink_nav_bar.dart';
 import '../../../shared/mixins/unsaved_changes_guard.dart';
 import '../../../shared/widgets/slide_tab_bar.dart';
 import '../../../shared/widgets/slide_tab_view.dart';
 import '../../../shared/widgets/status_chip.dart';
 import '../../../shared/widgets/swipe_actions.dart';
 import '../viewmodel/program_detail_viewmodel.dart';
-import 'goal_row.dart';
 import 'run_confirm_dialog.dart';
 import 'plan_session_screen.dart';
 import 'program_block_editor_screen.dart';
@@ -34,22 +33,16 @@ import 'program_history_panel.dart';
 import 'program_workout_row.dart';
 import 'review_container.dart';
 import 'run_config_sheet.dart';
-
-/// The whole-program scope in the goal picker's value space.
-///
-/// A sentinel rather than `null` because the option sheet returns `null` for
-/// "dismissed", and the program's own level has to be sayable — a goal scoped
-/// to nothing is a real answer, and one the user picks on purpose.
-const _kScopeProgram = 'program';
+import 'run_finished_sheet.dart';
 
 /// One face of a program.
 ///
 /// Which faces a program has is its shape, decided when it was created: a
 /// simple program is a list of workouts, a blocked program is a sequence of
-/// phases you work through, and both are reviewed. Goals sit beside whichever
-/// of the two the program is made of, because a goal is about the running of
-/// it either way.
-enum _ProgramTab { workouts, blocks, goals, reviews }
+/// phases you work through, and both are reviewed. Goals used to sit here;
+/// they went standalone (2026-10-08) and now live in the Library, because a
+/// goal is nobody's property but the user's.
+enum _ProgramTab { workouts, blocks, reviews }
 
 /// The tabs a program shows, in order — the one list the bar, the page
 /// controller and the bodies all come from, so they cannot drift apart.
@@ -59,14 +52,12 @@ enum _ProgramTab { workouts, blocks, goals, reviews }
 /// lands on Blocks so that the first thing it asks for is a block.
 List<_ProgramTab> _tabsFor({required bool blocked}) => [
       blocked ? _ProgramTab.blocks : _ProgramTab.workouts,
-      _ProgramTab.goals,
       _ProgramTab.reviews,
     ];
 
 String _tabLabel(_ProgramTab tab) => switch (tab) {
       _ProgramTab.workouts => 'Workouts',
       _ProgramTab.blocks => 'Blocks',
-      _ProgramTab.goals => 'Goals',
       _ProgramTab.reviews => 'Reviews',
     };
 
@@ -106,16 +97,6 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
   /// The rename currently in flight, if any. The blur and the back button
   /// both commit, and one rename must not become two writes.
   Future<void>? _nameSave;
-
-  /// Where a newly added goal is scoped: a block id, or null for the program
-  /// itself.
-  ///
-  /// One value rather than a mode plus a block, because the two are a single
-  /// decision — "scoped to a block" with no block named is a state that should
-  /// not be expressible. Only a blocked program offers the choice at all: a
-  /// simple program has no blocks for a goal to belong to, so everything it
-  /// holds is the program's own.
-  String? _goalScope;
 
   /// The tab on screen.
   int _tab = 0;
@@ -185,19 +166,16 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
 
   /// A nav-bar tab tap: run the unsaved-changes guard, then jump to the tab.
   ///
-  /// This screen is reached two ways and they unwind differently. Day to day
-  /// it is a pushed route, which `go` replaces on its way to the tab. During a
-  /// review it is rendered by the review route — a route `go` knows nothing
-  /// about — so that one has to be popped first, or the review would stay up
-  /// over the tab the user just asked for.
-  Future<void> _onNavTap(String route) async {
+  /// Day to day this screen is a shell page and `go` is the whole unwind. It
+  /// brings its own bar only under a review, and then the review route — which
+  /// `go` knows nothing about — has to come down with it, or the review would
+  /// stay up over the tab the user just asked for.
+  Future<void> _onNavTap(int index) async {
     final router = GoRouter.of(context);
     if (!await confirmBack()) return;
     if (!mounted) return;
-    if (ModalRoute.of(context)?.settings.name == kReviewRouteName) {
-      Navigator.of(context, rootNavigator: true).pop();
-    }
-    router.go(route);
+    unwindReview(context);
+    router.go(tabRouteAt(index));
   }
 
   /// Keeps the header's text equal to the draft whenever something other than
@@ -328,12 +306,12 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
   /// What a due item's banner does when it is tapped.
   ///
   /// The three kinds are three different verbs, which is why the banner carries
-  /// the action rather than a fixed destination. A review switches to the
-  /// Reviews tab, where the review, its achievements panel and its proposal all
-  /// live. The two run prompts act here instead: both are yes/no questions
-  /// about the program the user is already looking at, and making them walk to
-  /// another screen to answer is how a question gets postponed forever — which
-  /// is precisely what the old silent auto-end was papering over.
+  /// the action rather than a fixed destination. A due review switches to the
+  /// Reviews tab, where it lives. The two run prompts act here instead: both
+  /// are questions about the program the user is already looking at, and making
+  /// them walk to another screen to answer is how a question gets postponed
+  /// forever — which is precisely what the old silent auto-end was papering
+  /// over.
   Future<void> _actOnDue(DueItem due) async {
     switch (due.kind) {
       case kDueReview:
@@ -342,7 +320,12 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
         // about one phase is how the reason it was opened gets lost.
         _showReviews(blockId: due.review?.blockId);
       case kDueRunFinished:
-        await _confirmEndRun(context);
+        // The review this prompt used to open is retired from this surface —
+        // a review is workouts and goals, not a program — so the banner asks
+        // the run's own question directly. The prompt stands until it is
+        // answered here.
+        final run = _vm.state.value.activeRun;
+        if (run != null) await _answerRunFinished(run);
       case kDueBlockStart:
         // No block handed over: the sheet asks the sequence the same way every
         // other begin does, and the due item is only raised for the block the
@@ -353,6 +336,32 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
         // synced down to an older one. Showing the reviews is the safe wrong
         // answer: it is a read, on the program the user is already looking at.
         _showReviews();
+    }
+  }
+
+  /// The run's own question: continue, change length, or end.
+  ///
+  /// It used to be asked only once the review the prompt opened was finished,
+  /// because that review was the answer to "is the plan still right?". Review
+  /// creation is retired from this surface — a review is workouts and goals,
+  /// not a program — so the banner asks its question outright, and the prompt
+  /// stands until the user answers it here.
+  Future<void> _answerRunFinished(ProgramRun run) async {
+    final answer = await showRunFinishedSheet(
+      context,
+      lengthLabel: _runConfigLabel(run, _vm.state.value.currentProgress?.block),
+    );
+    if (answer == null || !mounted) return;
+    switch (answer) {
+      case RunFinishedAnswer.continueRun:
+        // Nothing to write: the completed review already answered the
+        // prompt, and the run carries on exactly as it was — order-based
+        // runs cycle their sequence, so "keep going" needs no new length.
+        break;
+      case RunFinishedAnswer.changeLength:
+        await _editRunConfig(run);
+      case RunFinishedAnswer.endRun:
+        await _confirmEndRun(context);
     }
   }
 
@@ -776,33 +785,33 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
     });
   }
 
+  /// The review's own chrome, on the one arrangement that needs it.
+  ///
+  /// Day to day this screen is a shell page, and the shell owns the bottom bar
+  /// for the whole branch — drawing another here would stack two. It is the
+  /// review that renders this screen bare, because the review route sits on
+  /// the root navigator over the shell; that is exactly when this screen has
+  /// to bring the bottom bar itself, in whichever form the moment asks for.
+  ///
+  /// Tab taps then run the unsaved-changes guard in `_onNavTap` and take the
+  /// review route down with them — though under a review there is no nav bar
+  /// to tap, and the pass leaves through the editor's own back guard.
+  Widget _reviewChrome(Widget child) {
+    if (ModalRoute.of(context)?.settings.name != kReviewRouteName) return child;
+    return editorNavBar(
+      context,
+      child: child,
+      onTap: _onNavTap,
+      settle: settleForReview,
+      settleForCompare: settleForCompare,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return buildGuardedScaffold(
+    return _reviewChrome(buildGuardedScaffold(
       scaffold: Scaffold(
         backgroundColor: AppColors.bg,
-        // The nav bar belongs here only when this screen is drawn outside the
-        // tab shell. Day to day it is not: the shell owns the bar for this
-        // whole branch, and it keeps drawing it on every page pushed within
-        // the branch — so a bar here would stack a second one on top (the
-        // shell's `_showBottomNav` is gated in the router). It is the review
-        // that renders this screen bare — its route sits on the root
-        // navigator, over the shell — and with the review running, that is
-        // exactly `ReviewScope.maybeOf` being non-null.
-        //
-        // Tab taps then run the unsaved-changes guard in `_onNavTap` and pop
-        // the review route before leaving; a review stacks its own bar above
-        // this one.
-        bottomNavigationBar: reviewBottomSlot(
-          context,
-          settle: confirmBack,
-          child: ReviewScope.maybeOf(context) == null
-              ? null
-              : BottomNavBar(
-                  currentRoute: '/exercises',
-                  onTap: _onNavTap,
-                ),
-        ),
         body: ValueListenableBuilder<ProgramDetailState>(
           valueListenable: _vm.state,
           builder: (context, state, _) {
@@ -948,7 +957,7 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
                   SlideTabView(
                     controller: _tabController,
                     onPageChanged: (i) => setState(() => _tab = i),
-                    tabs: [for (final t in tabs) _bodyFor(t, state)],
+                    tabs: [for (final t in tabs) _bodyFor(context, t, state)],
                   ),
                 ],
               ],
@@ -956,16 +965,19 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
           },
         ),
       ),
-    );
+    ));
   }
 
   /// The body behind a tab. The workouts/blocks split is the shape rule
   /// itself: a simple program's only workout surface is its list, and a
   /// blocked program's is its blocks.
-  Widget _bodyFor(_ProgramTab tab, ProgramDetailState state) => switch (tab) {
-        _ProgramTab.workouts => _workoutsTab(state),
-        _ProgramTab.blocks => _blocksTab(state),
-        _ProgramTab.goals => _goalsTab(state),
+  /// [context] is the builder's, not the State's: the tab bodies measure the
+  /// floating bar's inset, and that only answers from below the chrome this
+  /// screen draws around itself.
+  Widget _bodyFor(BuildContext context, _ProgramTab tab, ProgramDetailState state) =>
+      switch (tab) {
+        _ProgramTab.workouts => _workoutsTab(context, state),
+        _ProgramTab.blocks => _blocksTab(context, state),
         // Keyed by epoch so an edit elsewhere on the screen rebuilds it into
         // a fresh load, and by scope so a due block review opens filtered.
         _ProgramTab.reviews => ProgramHistoryPanel(
@@ -993,9 +1005,18 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
   /// The description and Begin Program live here rather than in a tab of their
   /// own because they are the preamble to the list: what this program is, and
   /// whether you are doing it.
-  Widget _workoutsTab(ProgramDetailState state) {
+  Widget _workoutsTab(BuildContext context, ProgramDetailState state) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(AppSpacing.lg),
+      // The bar the tab has to clear: the shell's, or — under a review — the
+      // pass's own, which this screen draws around itself. The builder's
+      // context answers for both; the State's would answer zero for the
+      // latter.
+      padding: EdgeInsets.fromLTRB(
+        AppSpacing.lg,
+        AppSpacing.lg,
+        AppSpacing.lg,
+        AppSpacing.lg + ScrollShrinkNavBar.contentInset(context),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -1257,7 +1278,7 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
   /// the run block, and the list — with blocks where the flat list would be.
   /// Anything belonging to no block is listed under Unfiled rather than being
   /// invisible, which is where archiving a block puts its workouts.
-  Widget _blocksTab(ProgramDetailState state) {
+  Widget _blocksTab(BuildContext context, ProgramDetailState state) {
     // From the groups rather than `state.blocks`: the groups are in block
     // order and already carry each block's workouts, so this tab and the block
     // editor can never disagree about what is in what.
@@ -1283,7 +1304,16 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
         : null;
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(AppSpacing.lg),
+      // The bar the tab has to clear: the shell's, or — under a review — the
+      // pass's own, which this screen draws around itself. The builder's
+      // context answers for both; the State's would answer zero for the
+      // latter.
+      padding: EdgeInsets.fromLTRB(
+        AppSpacing.lg,
+        AppSpacing.lg,
+        AppSpacing.lg,
+        AppSpacing.lg + ScrollShrinkNavBar.contentInset(context),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -1354,126 +1384,6 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
     await _vm.assignWorkoutToBlock(w.sessionId, picked);
   }
 
-  /// The program's goals, at both levels, with whatever the running window
-  /// says about the ones in force.
-  ///
-  /// Rendered whether or not a run is active: a goal is part of what the
-  /// program is, and setting targets is the natural thing to do before starting
-  /// it — including a phase's targets, which is why the scope choice is offered
-  /// whenever the program has blocks rather than only while one is running.
-  /// A simple program has no blocks, so it is never offered one: every goal it
-  /// holds is the program's own.
-  Widget _goalsTab(ProgramDetailState state) {
-    final goals = state.programGoals;
-    final blocks = state.blocks;
-    final run = state.activeRun;
-    // Read through the current blocks rather than used raw: a block archived
-    // while this screen was open would otherwise still be scoped to, and the
-    // goal would be filed against a phase that no longer exists.
-    final scope =
-        blocks.any((b) => b.blockId == _goalScope) ? _goalScope : null;
-
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(AppSpacing.lg),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (goals.isEmpty)
-            Text(
-              run == null
-                  ? "No goals set — add a PR target you'd like to hit."
-                  : "No goals set — add a PR target you'd like to hit during "
-                      'this run.',
-              style: AppFonts.ui(
-                fontSize: AppTextStyles.sm,
-                color: AppColors.muted,
-              ),
-            ),
-          for (final g in goals) ...[
-            GoalRow(
-              label: goalLabelFor(g, state.exerciseDetailMap),
-              // The scope chip, so a block goal reads as that block's even when
-              // it is listed alongside the program's own.
-              scopeLabel: _blockName(state, g.blockId),
-              // Absent for a goal not in force right now — which is the point
-              // of the keyed map: no entry, no verdict, rather than a false
-              // "missed".
-              outcome: state.goalOutcomes[g.goalId],
-              onDelete: () => _vm.deleteGoal(g.goalId),
-            ),
-            const SizedBox(height: AppSpacing.xs),
-          ],
-          const SizedBox(height: AppSpacing.sm),
-          if (blocks.isNotEmpty) ...[
-            Align(
-              alignment: Alignment.centerLeft,
-              child: GlassButton(
-                label: 'Add to: ${_scopeLabel(blocks, scope)}',
-                compact: true,
-                onPressed: () => _pickGoalScope(blocks),
-              ),
-            ),
-            const SizedBox(height: AppSpacing.sm),
-          ],
-          ExerciseTargetPicker(
-            detailMap: state.exerciseDetailMap,
-            variations: state.allVariations,
-            onAdd: (target) {
-              _vm.addGoal(
-                exerciseId: target.exerciseId,
-                exerciseName: target.exerciseName,
-                variationId: target.variationId,
-                targetWeight: target.weight,
-                targetReps: target.reps,
-                blockId: scope,
-              );
-            },
-          ),
-          const SizedBox(height: AppSpacing.xxl),
-        ],
-      ),
-    );
-  }
-
-  /// Chooses which block — or the program itself — the next goal belongs to.
-  ///
-  /// A picker rather than a segmented control because the list is the program's
-  /// blocks and a program can have any number of them: two fixed segments
-  /// could only ever say "this block" about whichever one happened to be
-  /// running, which is exactly the gate that kept a phase's goals from being
-  /// set before the phase started.
-  Future<void> _pickGoalScope(List<ProgramBlock> blocks) async {
-    final picked = await showOptionPickerSheet(
-      context,
-      title: 'Add goal to…',
-      options: [
-        (id: _kScopeProgram, label: 'Whole program'),
-        for (final b in blocks)
-          (id: b.blockId, label: toProperCase(b.name)),
-      ],
-    );
-    if (picked == null || !mounted) return;
-    setState(() => _goalScope = picked == _kScopeProgram ? null : picked);
-  }
-
-  /// What a scope is called on the button that picks it.
-  String _scopeLabel(List<ProgramBlock> blocks, String? scope) {
-    for (final b in blocks) {
-      if (b.blockId == scope) return toProperCase(b.name);
-    }
-    return 'Whole program';
-  }
-
-  /// The name of the block a goal is scoped to, or null when it is the
-  /// program's own (or the block has since been archived — the chip then falls
-  /// back to naming nothing rather than showing an id).
-  String? _blockName(ProgramDetailState state, String? blockId) {
-    if (blockId == null) return null;
-    for (final b in state.blocks) {
-      if (b.blockId == blockId) return b.name;
-    }
-    return null;
-  }
 }
 
 // ── Rows ─────────────────────────────────────────────────────────────────────
@@ -1494,8 +1404,11 @@ class _DueBanner extends StatelessWidget {
   /// What tapping does, in one word. Reads as the strip's own button — the
   /// whole thing is tappable, this is just the part that says so.
   String get _verb => switch (due.kind) {
-        kDueReview => 'Review',
-        kDueRunFinished => 'End',
+        // Both lead into a review: one already scheduled, one earned by a run
+        // reaching its length. The second is the newer reading of the same
+        // verb — whether the run carries on is decided after the plan has
+        // been looked at, not by tapping the banner.
+        kDueReview || kDueRunFinished => 'Review',
         kDueBlockStart => 'Begin',
         _ => 'Open',
       };

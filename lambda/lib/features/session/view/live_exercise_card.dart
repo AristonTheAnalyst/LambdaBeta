@@ -25,7 +25,6 @@ void showSessionExercisePicker(
   showAddExerciseModal(
     context,
     listenable: vm,
-    title: 'Choose exercise',
     entries: () => [
       for (final e in vm.exercises)
         AddExerciseEntry(
@@ -148,6 +147,7 @@ class LiveExerciseCard extends StatelessWidget {
               exerciseId: exerciseId,
               displayIndex: i + 1,
               isDraft: false,
+              dragIndex: i,
               initialWeightText: set.weight != null ? _fmtNum(set.weight!) : '',
               initialRepsText: set.reps.isNotEmpty ? _fmtNum(set.reps.first) : '',
               initialVariationId: set.variationId,
@@ -165,6 +165,7 @@ class LiveExerciseCard extends StatelessWidget {
                     weight: _parseWeight(v.weight),
                     clearWeight: v.weight == null,
                     reps: _parseReps(v.reps),
+                    clearReps: v.reps == null,
                     // First real commit adopts the planned variation — the
                     // draft path does the same, so a logged row keeps its
                     // template's variation instead of silently losing it.
@@ -272,6 +273,8 @@ class LiveExerciseCard extends StatelessWidget {
           planned: slot.planned,
           rows: rows,
           onAddSet: () => vm.addDraftSet(exerciseId),
+          onReorderSets: (oldIndex, newIndex) =>
+              vm.reorderSets(exerciseId, oldIndex, newIndex),
           history: history,
           // The history viewer is the regular sets grid — shared
           // SessionSetRow rows in history mode, gated by the one-time
@@ -301,6 +304,7 @@ class LiveExerciseCard extends StatelessWidget {
                   weight: _parseWeight(v.weight),
                   clearWeight: v.weight == null,
                   reps: _parseReps(v.reps),
+                  clearReps: v.reps == null,
                 );
               }
             },

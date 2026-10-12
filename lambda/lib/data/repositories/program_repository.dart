@@ -11,8 +11,10 @@ import '../models/planned_session.dart';
 import '../models/planned_session_program.dart';
 import '../models/program.dart';
 import '../models/program_block.dart';
+import '../models/program_usage.dart';
 import '../models/goal.dart';
 import '../../shared/utils/unique_name.dart';
+import 'lab_mode.dart';
 import 'planned_session_repository.dart';
 
 const _uuid = Uuid();
@@ -50,6 +52,25 @@ abstract class ProgramRemote {
   Future<void> insertProgram(Map<String, dynamic> row);
 
   Future<void> insertBlock(Map<String, dynamic> row);
+}
+
+/// The remote the dev flow lab uses: it does nothing, on purpose, and reads
+/// as empty. Every method's local half still runs, so the sandbox is fully
+/// functional — it just never leaves the device. See `lab_mode.dart`.
+class LocalOnlyProgramRemote implements ProgramRemote {
+  const LocalOnlyProgramRemote();
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchPrograms(String userId) async => [];
+
+  @override
+  Future<Map<String, dynamic>?> fetchProgram(String programId) async => null;
+
+  @override
+  Future<void> insertProgram(Map<String, dynamic> row) async {}
+
+  @override
+  Future<void> insertBlock(Map<String, dynamic> row) async {}
 }
 
 /// The real remote: Supabase REST via the ambient client.
@@ -102,7 +123,10 @@ class SupabaseProgramRemote implements ProgramRemote {
 /// dangles. Planned-session reads/writes delegate to [PlannedSessionRepository].
 class ProgramRepository {
   ProgramRepository({ProgramRemote? remote})
-      : _remote = remote ?? const SupabaseProgramRemote();
+      : _remote = remote ??
+            (labMode
+                ? const LocalOnlyProgramRemote()
+                : const SupabaseProgramRemote());
 
   final ProgramRemote _remote;
   final PlannedSessionRepository _plannedRepo = PlannedSessionRepository();
@@ -363,6 +387,43 @@ class ProgramRepository {
       ''', [userId]);
     return {
       for (final r in rows) r['program_id'] as String: (r['n'] as num).toInt(),
+    };
+  }
+
+  /// Per-program training activity, keyed by program id — the Programs list's
+  /// "last used" / "most used" sort. A program with nothing logged is absent
+  /// from the map.
+  ///
+  /// One grouped read, like [fetchActiveBlockCounts]: the sort asks about
+  /// every card at once, and N queries for one ordering is the read that gets
+  /// slower the more the user owns. A session is attributed through the plan
+  /// it was started from (`fact_session.planned_session_id` → the program
+  /// link), so a session logged against a standalone template counts for no
+  /// program — correctly: nothing ties it to one. DISTINCT because a shared
+  /// template's session joins one link row per program it sits in, and a
+  /// session must count once per program, never once per link.
+  Future<Map<String, ProgramUsage>> fetchProgramUsage(String userId) async {
+    final rows = await ps.db.getAll('''
+      SELECT l.program_id AS program_id,
+             MAX(s.created_datetime) AS last_used,
+             COUNT(DISTINCT s.session_id) AS session_count
+      FROM fact_session s
+      JOIN dim_planned_session_program l
+        ON l.planned_session_id = s.planned_session_id
+      WHERE s.user_id = ? AND s.end_datetime IS NOT NULL
+      GROUP BY l.program_id
+      ''', [userId]);
+    return {
+      for (final r in rows)
+        r['program_id'] as String: ProgramUsage(
+          // UTC ISO-8601 in the column, like every other timestamp — parse
+          // as written; the sort only ever compares these among themselves
+          // and the age label is epoch-based.
+          lastUsed: r['last_used'] != null
+              ? DateTime.tryParse(r['last_used'] as String)
+              : null,
+          sessions: (r['session_count'] as num?)?.toInt() ?? 0,
+        ),
     };
   }
 
@@ -840,6 +901,24 @@ class ProgramRepository {
     return ProgramBlock.fromMap(rows.first);
   }
 
+  /// The named **active** blocks — the batch read a standalone review's
+  /// snapshot uses to carry the blocks its workouts sit in, wherever those
+  /// blocks live (a review's set may span programs).
+  ///
+  /// Active only, deliberately: a snapshot reads archived rows as absent
+  /// (archiving is how blocks are deleted), so a phase removed between two
+  /// passes must show up as a removal rather than lingering in the document.
+  Future<List<ProgramBlock>> fetchBlocksByIds(List<String> blockIds) async {
+    if (blockIds.isEmpty) return const [];
+    final placeholders = List.filled(blockIds.length, '?').join(', ');
+    final rows = await ps.db.getAll(
+      'SELECT * FROM dim_program_block WHERE block_id IN ($placeholders) '
+      'AND date_archived IS NULL ORDER BY block_order, block_id',
+      blockIds,
+    );
+    return rows.map((r) => ProgramBlock.fromMap(r)).toList();
+  }
+
   /// Creates a block, appended to the program's order.
   ///
   /// REST-FIRST, like [createProgram], and for the same reason: the server
@@ -1302,6 +1381,62 @@ class ProgramRepository {
     return rows.map((r) => Goal.fromMap(r)).toList();
   }
 
+  /// Every goal [userId] has — any scope — with the names of the program and
+  /// block it hangs off, for the review picker's GOALS section.
+  ///
+  /// Unlike [fetchGoals] there is no scope filter at all, on purpose: the
+  /// picker offers the whole library, because a review may be *about* goals
+  /// from anywhere. The names ride along so a row can say "Block 2 · Base
+  /// Block" without the caller issuing a read per goal.
+  Future<List<({Goal goal, String? programName, String? blockName})>>
+  fetchGoalOptions(String userId) async {
+    final rows = await ps.db.getAll(
+      '''
+      SELECT g.*, p.program_name AS program_name, b.name AS block_name
+      FROM fact_goal g
+      LEFT JOIN dim_program p ON p.program_id = g.program_id
+      LEFT JOIN dim_program_block b ON b.block_id = g.block_id
+      WHERE g.user_id = ?
+      ORDER BY g.goal_created_date
+      ''',
+      [userId],
+    );
+    return rows.map(_goalOption).toList();
+  }
+
+  /// The named goals, same shape as [fetchGoalOptions] — the read a standalone
+  /// review's landing and snapshot use, where the ids are already known and
+  /// re-offering the library would be wrong.
+  ///
+  /// Order is creation order here; a caller that stored an explicit order
+  /// re-orders in Dart (a snapshot's list is part of the stored document, so
+  /// its order must reproduce).
+  Future<List<({Goal goal, String? programName, String? blockName})>>
+  fetchGoalOptionsByIds(List<String> goalIds) async {
+    if (goalIds.isEmpty) return const [];
+    final placeholders = List.filled(goalIds.length, '?').join(', ');
+    final rows = await ps.db.getAll(
+      '''
+      SELECT g.*, p.program_name AS program_name, b.name AS block_name
+      FROM fact_goal g
+      LEFT JOIN dim_program p ON p.program_id = g.program_id
+      LEFT JOIN dim_program_block b ON b.block_id = g.block_id
+      WHERE g.goal_id IN ($placeholders)
+      ORDER BY g.goal_created_date, g.goal_id
+      ''',
+      goalIds,
+    );
+    return rows.map(_goalOption).toList();
+  }
+
+  ({Goal goal, String? programName, String? blockName}) _goalOption(
+    Map<String, dynamic> row,
+  ) => (
+    goal: Goal.fromMap(row),
+    programName: row['program_name'] as String?,
+    blockName: row['block_name'] as String?,
+  );
+
   /// Writes a goal. The goal carries its own scope — program, block, variation
   /// and run link are all on [Goal], so there is no second place for a caller
   /// to pass one that disagrees with the row.
@@ -1310,9 +1445,9 @@ class ProgramRepository {
       '''
       INSERT INTO fact_goal
         (id, goal_id, user_id, program_id, block_id, program_run_id, goal_text,
-         custom_exercise_id, custom_variation_id, target_weight, target_reps,
-         goal_created_date)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         goal_description, custom_exercise_id, custom_variation_id,
+         target_weight, target_reps, goal_created_date)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ''',
       [
         goal.goalId,
@@ -1322,12 +1457,34 @@ class ProgramRepository {
         goal.blockId,
         goal.programRunId,
         goal.text,
+        goal.description,
         goal.exerciseId,
         goal.variationId,
         goal.targetWeight,
         goal.targetReps,
         DateTime.now().toUtc().toIso8601String(),
       ],
+    );
+  }
+
+  /// Rewrites a goal's description — the notes attached to the goal itself,
+  /// typed in the focused goal sheet.
+  ///
+  /// Local-only like every UPDATE here: PowerSync uploads it, there is no REST
+  /// half (the two REST-first paths are creates — see the class doc). Nothing
+  /// bumps a parent date: a description is not a structural change, and a goal
+  /// is not a planned session that anything sorts by.
+  ///
+  /// Blank (or whitespace) clears the column, so "no notes" has one spelling
+  /// on the row and the read side never sees "".
+  Future<void> updateGoalDescription(
+    String goalId,
+    String? description,
+  ) async {
+    final text = description?.trim();
+    await ps.safeExec(
+      'UPDATE fact_goal SET goal_description = ? WHERE goal_id = ?',
+      [text == null || text.isEmpty ? null : text, goalId],
     );
   }
 

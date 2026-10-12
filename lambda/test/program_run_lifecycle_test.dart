@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lambda/data/models/planned_session_program.dart';
 import 'package:lambda/data/models/program_run.dart';
 import 'package:lambda/data/repositories/program_run_repository.dart';
 import 'package:lambda/features/programs/model/achievements_derivation.dart';
@@ -18,16 +19,19 @@ void main() {
   late FakeProgramRunRepository runs;
   late FakeProgramHistoryRepository history;
   late FakeAchievementsDerivation derivation;
+  late FakePlannedSessions planned;
   late ProgramRunLifecycle lifecycle;
 
   setUp(() {
     runs = FakeProgramRunRepository();
     history = FakeProgramHistoryRepository();
     derivation = FakeAchievementsDerivation();
+    planned = FakePlannedSessions();
     lifecycle = ProgramRunLifecycle(
       runRepo: runs,
       historyRepo: history,
       derivation: derivation,
+      plannedSessionRepository: planned,
     );
   });
 
@@ -481,15 +485,20 @@ void main() {
     });
 
     test('scopes the derivation and the record to the run\'s block', () async {
+      planned.links = [
+        _link('w1', blockId: 'b1'),
+        _link('w2', blockId: 'b1'),
+        _link('w3', blockId: 'b2'),
+      ];
       final run = testRun(programRunId: 'run-3', blockId: 'b1');
 
       await lifecycle.close(run, userId: 'u1');
 
-      // The scope reaches the window as well as the derivation: a block's
-      // record opens at that block's last checkpoint, so a program-level
-      // review taken mid-block cannot swallow the block's training into a
-      // report that was about something else.
-      expect(history.scopes.single, 'b1');
+      // The set reaches the window: the block's own workouts, resolved from
+      // the program's links — and only those. A program-level review taken
+      // mid-block cannot swallow the block's training into a report that was
+      // about something else, because its set does not intersect.
+      expect(history.scopes.single, ['w1', 'w2']);
       expect(
         derivation.calls.single.blockId,
         'b1',
@@ -601,9 +610,20 @@ class _ThrowingDerivation implements AchievementsDerivation {
     required String programId,
     DateTime? until,
     String? blockId,
-    String? sessionId,
+    List<String>? sessionIds,
   }) async => throw StateError('derive failed');
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
+
+/// A join row as the close path reads them: the workout's membership, and the
+/// block it sits in.
+PlannedSessionProgram _link(String plannedSessionId, {String? blockId}) =>
+    PlannedSessionProgram(
+      plannedSessionProgramId: 'link-$plannedSessionId',
+      programId: 'p1',
+      plannedSessionId: plannedSessionId,
+      userId: 'u1',
+      blockId: blockId,
+    );

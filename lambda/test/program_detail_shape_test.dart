@@ -96,12 +96,11 @@ void main() {
   }
 
   group('the tabs are the shape', () {
-    testWidgets('a simple program offers Workouts, Goals and Reviews — and no '
-        'Blocks anywhere', (tester) async {
+    testWidgets('a simple program offers Workouts and Reviews — and no Blocks '
+        'anywhere', (tester) async {
       await pumpScreen(tester, usesBlocks: false);
 
       expect(find.text('Workouts'), findsOneWidget);
-      expect(find.text('Goals'), findsOneWidget);
       expect(find.text('Reviews'), findsOneWidget);
       expect(
         find.text('Blocks'),
@@ -111,12 +110,11 @@ void main() {
       );
     });
 
-    testWidgets('a blocked program offers Blocks, Goals and Reviews — and no '
+    testWidgets('a blocked program offers Blocks and Reviews — and no '
         'Workouts', (tester) async {
       await pumpScreen(tester, usesBlocks: true);
 
       expect(find.text('Blocks'), findsOneWidget);
-      expect(find.text('Goals'), findsOneWidget);
       expect(find.text('Reviews'), findsOneWidget);
       expect(
         find.text('Workouts'),
@@ -124,6 +122,19 @@ void main() {
         reason: 'a blocked program\'s workouts only exist inside its blocks — '
             'a second list of them would be a second ordering to disagree with',
       );
+    });
+
+    testWidgets('neither shape offers Goals — goals are not a program\'s', (
+      tester,
+    ) async {
+      // Goals went standalone (2026-10-08) and live in the Library now: a goal
+      // is a set to beat, in force everywhere the exercise is trained, so
+      // filing it under one program was a scope nothing ever asked for.
+      await pumpScreen(tester, usesBlocks: false);
+      expect(find.text('Goals'), findsNothing);
+
+      await pumpScreen(tester, usesBlocks: true);
+      expect(find.text('Goals'), findsNothing);
     });
 
     testWidgets('a blocked program with no blocks still lands on Blocks',

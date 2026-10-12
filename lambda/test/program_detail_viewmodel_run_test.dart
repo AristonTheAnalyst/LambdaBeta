@@ -1,5 +1,4 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:lambda/data/models/goal.dart';
 import 'package:lambda/data/models/program_progress.dart';
 import 'package:lambda/features/programs/viewmodel/program_detail_viewmodel.dart';
 
@@ -92,23 +91,10 @@ void main() {
       expect(history.closeCalls, isEmpty);
     });
 
-    test('the goals window opens at the run\'s start on a first run',
-        () async {
-      // A goal exists and applies (program-scoped), so the run's goals derive
-      // and the window has to come from somewhere real: with no checkpoint,
-      // from the run's own start.
-      programs.goals = [
-        const Goal(goalId: 'g1', userId: 'u1', programId: 'p1'),
-      ];
-
-      await vm.setAsCurrent();
-      // `_loadGoals` is fired without being awaited; let it finish.
-      await pumpEventQueue();
-
-      expect(history.fallbacks.single, runs.starts.single.returned.startedDate,
-          reason: 'the old `now` fallback made a first run\'s window empty, '
-              'so every goal looked unbeaten however much was lifted');
-    });
+    // The goals window that used to open here — at the run's start, when a
+    // first run has no checkpoint — went with the screen's goals: goals are
+    // standalone (2026-10-08) and this screen no longer derives them. The
+    // window is still real, and `program_run_lifecycle_test.dart` holds it.
   });
 
   group('endCurrentRun', () {

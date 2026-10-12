@@ -9,7 +9,9 @@ import '../../../../core/styles/app_spacing.dart';
 import '../../../../core/styles/app_text_styles.dart';
 import '../../../../core/theme/lambda_theme.dart';
 import '../../../../shared/widgets/exercise_selector.dart';
+import '../../../../shared/widgets/lambda_search_field.dart';
 import '../../../../shared/widgets/page_header.dart';
+import '../../../../shared/widgets/scroll_shrink_nav_bar.dart';
 import '../../../../shared/widgets/slide_up_modal.dart';
 
 class ExperimentalScreen extends StatelessWidget {
@@ -40,7 +42,14 @@ class ExperimentalScreen extends StatelessWidget {
               ),
               Expanded(
                 child: ListView(
-                  padding: const EdgeInsets.all(AppSpacing.xl),
+                  // The shell's bar floats over this page, so the last
+                  // section has to be able to scroll clear of it.
+                  padding: EdgeInsets.fromLTRB(
+                    AppSpacing.xl,
+                    AppSpacing.xl,
+                    AppSpacing.xl,
+                    ScrollShrinkNavBar.contentInset(context),
+                  ),
                   children: [
                     Text(
                       'THEME',
@@ -663,24 +672,10 @@ class _ExercisePickerSheetState extends State<_ExercisePickerSheet> {
               ],
             ),
             const SizedBox(height: AppSpacing.lg),
-            TextField(
+            LambdaSearchField(
               autofocus: true,
-              style: AppFonts.ui(fontSize: 14, color: AppColors.primary),
-              decoration: InputDecoration(
-                hintText: 'Search exercises…',
-                hintStyle: AppFonts.ui(color: AppColors.muted),
-                prefixIcon: Icon(
-                  Icons.search,
-                  size: 18,
-                  color: AppColors.muted,
-                ),
-                filled: true,
-                fillColor: AppColors.surfaceHigh,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(AppRadius.md),
-                  borderSide: BorderSide(color: AppColors.border),
-                ),
-              ),
+              showIcon: true,
+              hint: 'Search exercises…',
               onChanged: (v) => setState(() => _query = v),
             ),
             const SizedBox(height: AppSpacing.sm),

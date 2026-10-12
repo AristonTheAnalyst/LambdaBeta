@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lambda/data/models/program_block.dart';
 import 'package:lambda/data/models/program_content.dart';
@@ -12,11 +14,13 @@ import 'support/fake_program_repos.dart';
 /// The Versions tab used to answer "how has this program drifted" by numbering
 /// snapshots along one line. Reviews replaced that, and the property that has
 /// to survive the move is that a diff only ever means **the same question,
-/// asked twice**: a workout review's changes are against the last time *that
-/// workout* was reviewed, never against a block checkpoint that happened to
-/// land in between. Bridging scopes would produce a diff that reads as real
-/// and answers nothing — "Set 1 changed 60 → 65" where the 60 came from a
-/// different workout entirely.
+/// asked twice**. A pass's stream is keyed by the set of workouts it covers,
+/// canonically — so a pass over {A,B} answers the last pass over {A,B}, never
+/// one over {A,B,C} or {A} alone. Bridging sets would produce a diff that
+/// reads as real and answers nothing — "Set 1 changed 60 → 65" where the 60
+/// came from a different workout entirely. A legacy row keeps its old
+/// per-scope key, and a legacy row and a set row of the same ground do not
+/// chain: they are different spellings of different questions.
 ///
 /// These are unit-level: the fake hands the view model already-ordered rows
 /// (newest first, the repository's contract), so the file pins the pairing
@@ -61,10 +65,13 @@ void main() {
   );
 
   /// A checkpoint of [snapshot] at a scope. Completed and carrying its
-  /// snapshot unless a case deliberately says otherwise.
+  /// snapshot unless a case deliberately says otherwise. [sessionIds] is the
+  /// stored set — the scope new rows carry; blockId/sessionId are the legacy
+  /// spelling, kept for the rows that predate it.
   ProgramReview checkpoint(
     String id, {
     ProgramContent? snapshot,
+    List<String>? sessionIds,
     String? blockId,
     String? sessionId,
     DateTime? completed,
@@ -75,6 +82,7 @@ void main() {
     programId: 'p1',
     blockId: blockId,
     sessionId: sessionId,
+    sessionIdsJson: sessionIds == null ? null : jsonEncode(sessionIds),
     kind: kReviewKindReview,
     createdDate: DateTime(2026, 1, 1),
     completedDate: completed ?? DateTime(2026, 1, 1),
@@ -205,6 +213,89 @@ void main() {
     final digests = vm.state.value.digests;
     expect(digests['r3']!.vsPrevious!.changes.single.detail, '60 × 5 → 65 × 5');
     expect(digests['r2']!.vsPrevious, isNull);
+  });
+
+  test('a stored set is the stream, and the set is order-blind: {A,B} twice '
+      'chains however either pass listed its workouts', () async {
+    final vm = await load([
+      // Newest first. The same two workouts both times; the second pass stored
+      // its set in the other order (a set ticked in another order).
+      checkpoint(
+        'r2',
+        sessionIds: ['s2', 's1'],
+        snapshot: content(
+          sessions: [session('s1', weight: '65'), session('s2')],
+        ),
+      ),
+      checkpoint(
+        'r1',
+        sessionIds: ['s1', 's2'],
+        snapshot: content(sessions: [session('s1'), session('s2')]),
+      ),
+    ]);
+
+    final digest = vm.state.value.digestFor('r2');
+    expect(
+      digest.sessionCount,
+      2,
+      reason: 'the digest counts what the pass covers',
+    );
+    expect(
+      digest.vsPrevious!.changes.single.detail,
+      '60 × 5 → 65 × 5',
+      reason: 'same set, same question — the listing order is not part of it',
+    );
+    expect(vm.state.value.digestFor('r1').vsPrevious, isNull);
+  });
+
+  test('a stored set counts only the workouts it covers, however much the '
+      'snapshot holds', () async {
+    // Both snapshots hold s1 AND s2 — the whole program, as completeReview
+    // writes it — but the pass was over s1 alone. Counting the sibling would
+    // say the pass covered ground it never looked at, and diffing it would
+    // report an edit nobody made inside this review.
+    final vm = await load([
+      checkpoint(
+        'r2',
+        sessionIds: ['s1'],
+        snapshot: content(
+          sessions: [session('s1', weight: '65'), session('s2', weight: '90')],
+        ),
+      ),
+      checkpoint(
+        'r1',
+        sessionIds: ['s1'],
+        snapshot: content(
+          sessions: [session('s1'), session('s2')],
+        ),
+      ),
+    ]);
+
+    final digest = vm.state.value.digestFor('r2');
+    expect(digest.sessionCount, 1, reason: 'the set is the scope');
+    final diff = digest.vsPrevious!;
+    expect(
+      diff.changes.single.detail,
+      '60 × 5 → 65 × 5',
+      reason: 's2 changed too, but not inside this review — reporting it '
+          'would answer a question nobody asked',
+    );
+  });
+
+  test('a stored set never chains with a legacy row over the same ground — '
+      'the old spelling is a different question', () async {
+    final vm = await load([
+      checkpoint(
+        'r2',
+        sessionIds: ['s1'],
+        snapshot: content(sessions: [session('s1', weight: '65')]),
+      ),
+      checkpoint('r1', sessionId: 's1', snapshot: content()),
+    ]);
+
+    final digests = vm.state.value.digests;
+    expect(digests['r2']!.vsPrevious, isNull);
+    expect(digests['r1']!.vsPrevious, isNull);
   });
 
   test('a dismissal is not a predecessor — it recorded nothing to compare '

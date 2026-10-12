@@ -1,7 +1,11 @@
+import 'dart:convert';
+
 import 'program_content.dart';
 
-/// What a review examines. Exactly one of the three, decided by which scope id
-/// is set on the row — see [ProgramReview.scopeKind].
+/// What a review examines — on rows written **before** reviews were re-scoped
+/// to a set of workouts (2026-10-06). New rows carry their set in
+/// [ProgramReview.sessionIdsJson] instead, and nothing in the app branches on
+/// this any more; it survives to read the old rows' legacy columns.
 enum ReviewScopeKind { program, block, session }
 
 /// A checkpoint on a program's run (`fact_program_review`).
@@ -18,7 +22,7 @@ class ProgramReview {
   const ProgramReview({
     required this.reviewId,
     required this.userId,
-    required this.programId,
+    this.programId,
     required this.kind,
     required this.createdDate,
     this.blockId,
@@ -33,25 +37,39 @@ class ProgramReview {
     this.proposedHash,
     this.snapshotContent,
     this.snapshotHash,
+    this.baselineContent,
+    this.baselineHash,
+    this.exerciseNotesJson,
     this.achievementsJson,
+    this.sessionIdsJson,
+    this.reviewedSessionsJson,
+    this.goalIdsJson,
+    this.workoutNotesJson,
   });
 
   final String reviewId;
   final String userId;
-  final String programId;
 
-  /// The review's BLOCK scope: null = not a block review, else the block it
-  /// examines. Never set together with [sessionId].
-  ///
-  /// Scope rather than context, and the difference is the window: a
-  /// program-level review's "since last time" is cut by program-level reviews
-  /// only, a block's by the reviews of that same block
-  /// ([ProgramHistoryRepository.checkpointFor]), and the contents and the
-  /// achievements the sheet shows follow the same scope.
+  /// The program this review belongs to, or **null for a standalone review** —
+  /// a pass over a set of workouts and goals that was never one program's to
+  /// own. Standalone is the only sense the app starts reviews in while the
+  /// concept is being settled (the Library's Reviews tab); the program surfaces
+  /// are retired from the UI with their plumbing kept. See [isStandalone].
+  final String? programId;
+
+  /// True when this review was started on its own — workouts and goals picked
+  /// directly, no program in the picture.
+  bool get isStandalone => programId == null;
+
+  /// The review's **legacy** BLOCK scope: null = not a block review, else the
+  /// block it examined. Never set together with [sessionId]. Rows written
+  /// since reviews were re-scoped leave it null and carry a set instead
+  /// ([sessionIdsJson]).
   final String? blockId;
 
-  /// The review's SESSION scope: the `planned_session_id` being examined, or
-  /// null. Never set together with [blockId] — the server has a CHECK for it.
+  /// The review's **legacy** SESSION scope: the `planned_session_id` examined,
+  /// or null. Never set together with [blockId] — the server has a CHECK for
+  /// it. Superseded by [sessionIdsJson].
   ///
   /// This is the plan (a `dim_planned_session`), not a logged session: a review
   /// is a pass over what you intend to do, and what you intend is what you edit.
@@ -96,11 +114,51 @@ class ProgramReview {
   final String? snapshotContent;
   final String? snapshotHash;
 
+  /// The plan **as found** — captured when the review STARTED, so a comparison
+  /// exists even on the first review of a thing, when no previous finished
+  /// snapshot does. Always a whole-program document, same shape as
+  /// [snapshotContent].
+  ///
+  /// Written once and never overwritten: a baseline that moved with the user's
+  /// edits would compare the plan to itself and read "identical" forever.
+  final String? baselineContent;
+  final String? baselineHash;
+
+  /// Per-exercise notes taken DURING the review, keyed by the planned
+  /// exercise's id: `{"<planned_exercise_id>": "<note>"}`.
+  ///
+  /// Part of the review's record only — not written to the exercise, not
+  /// pinned as lessons, and not carried into the next review.
+  final String? exerciseNotesJson;
+
   /// The frozen record of what the run achieved, written by `closeRun`
   /// together with [kOutcomeClosed]. The one deliberate exception to deriving
   /// on read: a finished block's record must not change because someone later
   /// corrected a set.
   final String? achievementsJson;
+
+  /// The **set scope**: the ordered planned-session ids this review covers, as
+  /// a JSON array (`["s1","s2"]`). Null on rows written before reviews were
+  /// re-scoped — those name their one thing the old way and are resolved to a
+  /// set by [sessionsIn].
+  final String? sessionIdsJson;
+
+  /// The workouts finished inside this pass so far, keyed by id:
+  /// `{"<planned_session_id>": "<ISO timestamp>"}`. Written one entry at a
+  /// time as each workout is marked done, and kept after the review completes
+  /// as the record of what the pass actually walked.
+  final String? reviewedSessionsJson;
+
+  /// The **goal set**: the ordered goal ids this review covers, as a JSON
+  /// array (`["g1","g3"]`). Null when the pass picked no goals — and on every
+  /// row written before reviews could carry them.
+  final String? goalIdsJson;
+
+  /// Workout-level notes taken DURING the review, keyed by the planned
+  /// session's id: `{"<planned_session_id>": "<note>"}` — the sibling of
+  /// [exerciseNotesJson]. Part of the review's record only, like the exercise
+  /// notes: not written to the workout, not carried into the next review.
+  final String? workoutNotesJson;
 
   final DateTime createdDate;
 
@@ -112,15 +170,101 @@ class ProgramReview {
 
   bool get isClosed => kind == kReviewKindClose;
 
-  /// What this review examines. Exactly one scope id is ever set, so the
-  /// session wins the check only as a guard against a malformed row.
+  /// How a row written before reviews were re-scoped names its one thing.
+  /// New rows report [ReviewScopeKind.program] — meaningless for them, which
+  /// is why nothing branches on it any more.
   ReviewScopeKind get scopeKind {
     if (sessionId != null) return ReviewScopeKind.session;
     if (blockId != null) return ReviewScopeKind.block;
     return ReviewScopeKind.program;
   }
 
+  /// The ids this review covers **as stored** — the JSON array, or null on a
+  /// legacy row. Unreadable JSON reads as null (a legacy row), which resolves
+  /// from the old columns rather than rendering a review of nothing.
+  List<String>? get storedSessionIds => _decodeIds(sessionIdsJson);
+
+  /// The goals this review covers **as stored** — the ordered id array, or
+  /// null when the pass picked none. Unreadable JSON reads as null (no goals),
+  /// the same contract as [storedSessionIds].
+  List<String>? get storedGoalIds => _decodeIds(goalIdsJson);
+
+  /// The workouts marked done inside this pass, decoded — an id → when.
+  /// Unreadable blobs read as "none done yet".
+  Map<String, DateTime> get reviewedSessions {
+    final json = reviewedSessionsJson;
+    if (json == null) return const {};
+    try {
+      final decoded = jsonDecode(json);
+      if (decoded is! Map) return const {};
+      return {
+        for (final entry in decoded.entries)
+          if (DateTime.tryParse('${entry.value}') case final at?)
+            '${entry.key}': at.toLocal(),
+      };
+    } catch (_) {
+      return const {};
+    }
+  }
+
+  /// The planned-session ids this review covers, resolved against [links] —
+  /// the program's (sessionId, blockId) pairs, read from the live join rows
+  /// for an open review or from the row's own snapshot for a completed one.
+  ///
+  /// Falls through until it has something, so every row ever written
+  /// resolves: the stored set (minus ids the program no longer has), else its
+  /// one session, else its block's sessions, else every session of the
+  /// program — where the close rows, whose scope deliberately is everything,
+  /// land too.
+  ///
+  /// A **standalone** review resolves to its stored set and nothing else. It
+  /// never had a program to fall back to, so an empty or missing stored set
+  /// means an empty pass — falling through would resolve "every session of"
+  /// a program that does not exist.
+  List<String> sessionsIn(List<({String sessionId, String? blockId})> links) {
+    if (isStandalone) return storedSessionIds ?? const [];
+    final known = {for (final l in links) l.sessionId};
+    final stored = storedSessionIds;
+    if (stored != null) {
+      final alive = [for (final id in stored) if (known.contains(id)) id];
+      if (alive.isNotEmpty) return alive;
+    }
+    final single = sessionId;
+    if (single != null) return [single];
+    final block = blockId;
+    if (block != null) {
+      final inBlock = [
+        for (final l in links)
+          if (l.blockId == block) l.sessionId,
+      ];
+      if (inBlock.isNotEmpty) return inBlock;
+    }
+    return [for (final l in links) l.sessionId];
+  }
+
   bool get hasSnapshot => snapshotContent != null;
+
+  bool get hasBaseline => baselineContent != null;
+
+  /// The baseline, decoded — or null when there is none, or when the stored
+  /// document was written by a newer build than this one. Unreadable reads as
+  /// "nothing recorded" rather than crashing the comparison.
+  ProgramContent? get baseline {
+    final json = baselineContent;
+    if (json == null) return null;
+    try {
+      return ProgramContent.decode(json);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// The review notes, decoded. An unreadable blob reads as "no notes".
+  Map<String, String> get exerciseNotes => _decodeNotes(exerciseNotesJson);
+
+  /// The workout-level notes, decoded — same contract as [exerciseNotes],
+  /// keyed by planned-session id instead of planned-exercise id.
+  Map<String, String> get workoutNotes => _decodeNotes(workoutNotesJson);
 
   /// The snapshot, decoded — or null when there is none, or when the stored
   /// document was written by a newer build than this one. An unreadable
@@ -166,7 +310,7 @@ class ProgramReview {
   factory ProgramReview.fromMap(Map<String, dynamic> map) => ProgramReview(
     reviewId: map['review_id'] as String,
     userId: map['user_id'] as String,
-    programId: map['program_id'] as String,
+    programId: map['program_id'] as String?,
     blockId: map['block_id'] as String?,
     sessionId: map['session_id'] as String?,
     programRunId: map['program_run_id'] as String?,
@@ -180,9 +324,42 @@ class ProgramReview {
     proposedHash: map['proposed_hash'] as String?,
     snapshotContent: map['snapshot_content'] as String?,
     snapshotHash: map['snapshot_hash'] as String?,
+    baselineContent: map['baseline_content'] as String?,
+    baselineHash: map['baseline_hash'] as String?,
+    exerciseNotesJson: map['exercise_notes_json'] as String?,
     achievementsJson: map['achievements_json'] as String?,
+    sessionIdsJson: map['session_ids_json'] as String?,
+    reviewedSessionsJson: map['reviewed_sessions_json'] as String?,
+    goalIdsJson: map['goal_ids_json'] as String?,
+    workoutNotesJson: map['workout_notes_json'] as String?,
     createdDate: _toDate(map['created_date']) ?? DateTime.now(),
   );
+}
+
+/// Which checkpoint stream a review answers for: two snapshots compare only
+/// when they answer the same question.
+///
+/// A stored set keys by its canonical (sorted) ids, so a review of {A,B} taken
+/// twice chains; a different set never does — even one that overlaps, because
+/// "what changed across these workouts" is a different question from "what
+/// changed across those". Legacy rows keep their old per-scope keys; an old
+/// pass and a new set review of the same ground do not chain.
+///
+/// A **standalone** pass over {A,B} and a program pass over {A,B} deliberately
+/// share the key and therefore chain: they asked the same question — "what
+/// changed across these workouts" — and the answer should read as one chain,
+/// wherever each pass was started from.
+String reviewScopeKey(ProgramReview review) {
+  final stored = review.storedSessionIds;
+  if (stored != null) {
+    final sorted = [...stored]..sort();
+    return 'set:${sorted.join(',')}';
+  }
+  return switch (review.scopeKind) {
+    ReviewScopeKind.program => 'program',
+    ReviewScopeKind.block => 'block:${review.blockId}',
+    ReviewScopeKind.session => 'session:${review.sessionId}',
+  };
 }
 
 /// What a review row is. Persisted as text; the DB has a CHECK constraint
@@ -243,4 +420,35 @@ String reviewScopeLabel(
 DateTime? _toDate(dynamic v) {
   if (v == null) return null;
   return DateTime.tryParse('$v')?.toLocal();
+}
+
+/// A stored JSON array of ids, decoded — null when absent, empty, or
+/// unreadable. Shared by the session set and the goal set; the two columns
+/// decode identically on purpose, so one can never be read back more
+/// forgivingly than the other.
+List<String>? _decodeIds(String? json) {
+  if (json == null) return null;
+  try {
+    final decoded = jsonDecode(json);
+    if (decoded is! List || decoded.isEmpty) return null;
+    return [for (final id in decoded) '$id'];
+  } catch (_) {
+    return null;
+  }
+}
+
+/// A stored JSON map of id → note, decoded. An unreadable blob reads as "no
+/// notes" — the shared contract of exercise and workout notes.
+Map<String, String> _decodeNotes(String? json) {
+  if (json == null) return const {};
+  try {
+    final decoded = jsonDecode(json);
+    if (decoded is! Map) return const {};
+    return {
+      for (final entry in decoded.entries)
+        if (entry.value is String) '${entry.key}': entry.value as String,
+    };
+  } catch (_) {
+    return const {};
+  }
 }

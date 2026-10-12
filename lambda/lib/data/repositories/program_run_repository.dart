@@ -8,6 +8,7 @@ import '../models/program.dart';
 import '../models/program_block.dart';
 import '../models/program_progress.dart';
 import '../models/program_run.dart';
+import 'lab_mode.dart';
 import 'planned_session_repository.dart';
 import 'program_repository.dart';
 
@@ -71,6 +72,22 @@ class SupabaseProgramRunRemote implements ProgramRunRemote {
   }
 }
 
+/// The remote the dev flow lab uses: nothing goes to the server, and no run
+/// reads back as current — the sandbox's runs are whatever its own database
+/// says. Every method's local half still runs. See `lab_mode.dart`.
+class LocalOnlyProgramRunRemote implements ProgramRunRemote {
+  const LocalOnlyProgramRunRemote();
+
+  @override
+  Future<Map<String, dynamic>?> fetchCurrentRun(String userId) async => null;
+
+  @override
+  Future<void> pauseCurrentRun(String userId) async {}
+
+  @override
+  Future<void> insertRun(Map<String, dynamic> row) async {}
+}
+
 /// Owns "what program is current" and "what's next" — the logic needed by
 /// both the live session (Phase 4) and the standalone progress screen
 /// (Phase 3), kept out of both so neither has to duplicate it.
@@ -79,7 +96,10 @@ class ProgramRunRepository {
     ProgramRepository? programRepository,
     ProgramRunRemote? remote,
   })  : _programRepo = programRepository ?? ProgramRepository(),
-        _remote = remote ?? const SupabaseProgramRunRemote();
+        _remote = remote ??
+            (labMode
+                ? const LocalOnlyProgramRunRemote()
+                : const SupabaseProgramRunRemote());
 
   final ProgramRepository _programRepo;
   final PlannedSessionRepository _plannedRepo = PlannedSessionRepository();

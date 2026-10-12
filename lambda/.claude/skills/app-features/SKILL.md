@@ -37,7 +37,9 @@ progression mode lives on the RUN. Full plan of record:
 | **Sessions** (logging a workout) | `fact_session` + `fact_session_exercise` + `fact_session_exercise_set` | Literal |
 | **Planning sessions** (session templates) | `dim_planned_session` + `dim_planned_session_exercise` + `dim_planned_session_exercise_set` (+ join rows) | Literal |
 | **Programs** | `dim_program` | Literal |
-| **Program runs** | `fact_program_run` (carries `progression_mode`) | Literal |
+| **Program blocks** (phases) | `dim_program_block` | Literal |
+| **Program runs** | `fact_program_run` (carries `progression_mode` + `block_id`) | Literal |
+| **Reviews** (a recorded pass over a set of workouts **and goals** — standalone since 2026-10-07) | `fact_program_review` | Literal |
 | **Lessons** | `dim_lesson` | Literal |
 | **Goals** | `fact_goal` | Literal |
 | **Bodyweight** | `fact_bodyweight` | Literal |
@@ -90,6 +92,13 @@ Sessions are hard-deleted on cancel (facts don't soft-delete).
 `dim_planned_session`: template (`session_id` PK, `name`, `notes`,
 `created_date`, `date_archived` timestamptz NULL = active). Standalone when
 no join row references it.
+**Recency (agreed 2026-10-07)**: there is **no `updated_date`** on this table
+— a workout's "last touched" is `MAX(fact_session.created_datetime)` for its
+`planned_session_id`, i.e. when it was last LOGGED. The review picker orders
+by `last_logged DESC NULLS LAST, created_date DESC, session_id DESC`; a
+workout nobody has ever trained sorts by when it was made. Adding an
+`updated_date` would be a schema change and a second definition of recency —
+don't, without deciding to replace this one.
 `dim_planned_session_exercise`: one group per exercise
 (`planned_exercise_id` PK, `planned_session_id`, `custom_exercise_id`,
 `exercise_order`, `exercise_name` snapshot, `is_archived`).
@@ -111,10 +120,201 @@ sessions.
 Pure blueprint: `program_id` (PK), `user_id`, `program_name`,
 `program_description`, `date_archived` (timestamptz, NULL = active),
 `program_created_date`, `program_updated_date` (v2 — bumped by every
-update). **No progression mode
+update), `uses_blocks` (the program's **shape**, fixed at creation: made of
+blocks or a list of workouts — stored, not inferred, because a blocked
+program with no blocks yet is a real state), and `default_target_sessions`
+(a simple program's remembered length). **No progression mode
 and no length** — how the program is RUN is a property of the run.
-Programs are never hard-deleted (archive only). Duplication deep-copies the
-program + its planned sessions + groups + sets + links.
+Archive is the normal delete; `hardDeleteProgram` exists for programs with
+no sessions and follows a load-bearing dependent-row order (reviews → goals
+→ join rows → run unlinks → runs → blocks → program). Duplication
+deep-copies the program + its blocks + planned sessions + groups + sets +
+links.
+
+### Program blocks — `dim_program_block`
+An ordered, duration-bounded phase of a program: `block_id` (PK), `user_id`,
+`program_id` (FK), `name`, `notes`, `block_order`,
+`target_weeks`/`target_days`/`target_sessions` (length), `start_date`,
+`end_date`, `date_archived` (timestamptz, NULL = active — blocks are named,
+dated and user-visible with their own run/review trail to keep browsable,
+hence the top-level dim treatment). A program either uses blocks or doesn't
+(`dim_program.uses_blocks`), never mixed. Length runs out on its own day —
+weeks × 7 + days, a remainder is not decoration. A run follows one block at
+a time via `fact_program_run.block_id`. Day scheduling (the day picker and
+Frequency progression) is retired from the UI (2026-10-03); the
+`day_of_week`/`week_offset` columns stay on the join rows, dormant.
+
+### Reviews — `fact_program_review`
+A recorded pass over **workouts and goals**, made to decide what to change —
+the successor to the versions timeline. `review_id` (PK), `user_id`,
+`program_id` (**nullable since 2026-10-07 — NULL = standalone**, no program in
+the picture), `program_run_id` (nullable — set when the review answers a
+run), `kind` (`review` | `close`), `title`, `notes`, `scheduled_for`,
+`completed_date` (NULL = **open**; there is no status column), `outcome`,
+`snapshot_content`/`snapshot_hash`, `baseline_content`/`baseline_hash`,
+`exercise_notes_json`, `workout_notes_json`, `achievements_json`,
+`session_ids_json`, `goal_ids_json`, `reviewed_sessions_json`, `created_date`.
+
+**Scope** — `session_ids_json`: the ordered JSON array of the planned-session
+ids the pass covers (ticked in the picker; an empty set is refused
+client-side — a review always has ≥1 workout, because goals cannot be walked).
+`goal_ids_json`: the ordered goal ids, at any scope — a column rather than a
+join table precisely because a goal's scope (program, block, run, or none)
+has no bearing on whether it can be examined. `reviewed_sessions_json` is
+`{"<planned_session_id>": "<ISO timestamp>"}`, one entry per Done — the tick
+map that makes a pass resumable across app exits.
+Legacy rows carry `block_id`/`session_id` instead (never both, server CHECK)
+and are **not migrated**: `ProgramReview.sessionsIn(links)` resolves any row
+into its set — a **standalone** row reads its own stored set and stops there;
+otherwise stored set (minus ids the program no longer has), else its one
+session, else its block's sessions, else the whole program (where close rows,
+whose scope deliberately is everything, land too) — and `reviewScopeKey` is
+the canonical key (sorted ids; legacy triple otherwise) the digest chains and
+the panel both read. A standalone pass over {A,B} and a program pass over
+{A,B} share the `set:` key on purpose: same question, same chain. New rows
+write neither legacy column (both null was always legal), so an old build
+reads one as a "program" review — the acceptable old behavior.
+
+- **Starting one (2026-10-07)**: the **Reviews tab in the Library**
+  (`lib/features/reviews/`) is the only start surface for now — `+` → name
+  sheet → selection screen (workouts by recency, goals in library order, both
+  offering everything the user has whatever program it hangs off) → Start
+  review. The program panel's Review button and the run-finished review
+  creation are retired from the UI with their plumbing kept.
+- **Cancelling one (2026-10-11)**: an open pass swipes left on its IN PROGRESS
+  card in the Reviews list (`SwipeActions`, danger) → confirm dialog
+  (`confirmCancelReview`, "Keep reviewing" / "Cancel review") → `deleteReview`
+  hard-deletes the row, guarded `completed_date IS NULL` so a pass completed
+  on another device is not deleted out from under its record. The drawer only
+  reveals; the dialog decides. Ticks, notes, baseline and snapshot are columns
+  on that one row — nothing else goes with it — and cancelling a *scheduled*
+  pass also removes its `kDueReview` item from `fetchDueItems` (that row is
+  otherwise only dismissable by completing). A completed card has no drawer:
+  a record is not something a list takes back.
+- **Beginning**: `beginReview` = the INSERT plus the "as found" baseline,
+  captured from the live rows at the moment the pass starts and idempotent
+  by construction (the UPDATE only lands where the baseline is NULL, so a
+  resume can never move a live baseline). `scheduleReview` alone is the
+  calendar path: a review dated in the future must not freeze today's plan.
+- **The pass** opens on a landing (`_ReviewLanding`) — **Workouts | Goals**
+  tabs under the header: one card per covered workout on the first, tick +
+  date once Done, one per picked goal on the second (tap → read-only view).
+  A pass with no goals gets no strip at all rather than an empty second tab —
+  the strip is the claim that there is something under it. A workout card
+  pushes the real editor (edit mode) with
+  `ReviewBar` below it in the same `FloatingBar` container: **Note** /
+  **Compare** / **Done** inside a workout, **In Review · N of M** / **Finish**
+  on the landing (Finish is a review-level decision, so it lives where the
+  review does). **Done** is a toggle: the tick on the way in settles the edits
+  first, then `markWorkoutReviewed` read-modify-writes the tick map (guarded on
+  `completed_date IS NULL`); tapping it again calls `unmarkWorkoutReviewed`, the
+  same write with one key leaving. The workout stays open either way — the bar
+  reads the tick back off `ReviewSession.reviewed`, so the notifier's move is
+  the answer ("Review Complete" + green, or the pass's own words back).
+  Scheduling is retired from the UI for now (repo/VM plumbing stays).
+  Notes ride in `exercise_notes_json` (`{"<planned_exercise_id>": "<note>"}`)
+  and `workout_notes_json` (`{"<planned_session_id>": "<note>"}`), written
+  through as they are typed — they are the review's record, not the
+  exercise's or the workout's.
+- **Compare** (per workout) = the newest COMPLETED predecessor whose resolved
+  set **contains** that workout — both sides narrowed to it via
+  `contentInScope(sessionId:)` — else this review's own baseline. "Contains",
+  not "equals": a pass over a set including this workout is a look at it, and
+  a newer pass that skips it is skipped over, not compared against. The pool
+  follows the review's scope: a standalone review walks **every** review the
+  user has (`fetchReviewsForUser`), a program review its own. Legacy rows
+  qualify by their old scope, exactly as their digests always read. **While
+  the eye is up** the plan's own tabs mark the names the record does not hold
+  with a green **plus** (`ExerciseMark`, over `workoutExerciseSlots`) — a
+  dropped exercise is never listed, so a live pass shows **no minus**, and the
+  marks go with the flip: a pass at rest is bare (2026-10-12). The glyph is a
+  plus or minus **inside a filled disc** (`Icons.add_circle`/`remove_circle`):
+  a bare stroke at 14px read as a hyphen against the name it was about.
+- **Finishing** (`completeReview`) writes a `ProgramContent` into
+  `snapshot_content`/`snapshot_hash` and stamps `completed_date` + `outcome`
+  in one transaction. The snapshot is the **whole program** for a program
+  review and the **stored set + picked goals** for a standalone one
+  (`buildContentForSessions`); every read-back narrows it (`contentInScope`,
+  which keeps an explicitly picked goal even when its block holds no reviewed
+  workout). Finish asks once when work is left unticked ("N of M reviewed —
+  finish anyway?"). `kOutcomeDismissed` completes without a snapshot ("not
+  now"; excluded from the achievements window).
+- **Reading a completed one (2026-10-11)**: tapping a COMPLETED card in the
+  Reviews list calls `openCompletedReview` → `ReviewRoute(readOnly: true)`
+  pushed under `kReviewRouteNameRecord` (deliberately NOT `kReviewRouteName`,
+  which is what `unwindReview` pops down to — a record must never be what a
+  live pass unwinds into). The same landing, read only: workout cards with no
+  swipe and no "+ add" tiles, the ticks as recorded, the bar reading "Review
+  Complete" over a green rim, and a third **Summary** tab ("Nothing here yet."
+  — a placeholder, records only; an open pass keeps its two tabs and no
+  Summary). Nothing is published to `reviewSessionNotifier` — a record is not
+  a pass being taken — and nothing writes; the opener refuses with a snackbar
+  while a pass is live. The record route takes a lazy `WorkoutEditorViewModel`
+  (built on first open) so a record never constructs one. The program history
+  panel keeps `showReviewDetailSheet` (the WHAT CHANGED diff the landing
+  never shows).
+- **A record reads (2026-10-12)**: both lists on a record are doors, into
+  readings. A workout card opens `RecordWorkoutScreen` — the **pass's own
+  chrome** (header, shared card, the review's bar at the floor) over the
+  record's two frozen sides: `baseline_content` as `beginReview` found it and
+  `snapshot_content` as the pass completed, both narrowed by `contentInScope`,
+  never the live plan (which keeps being edited). The eye flips between the
+  two, named on a page caption (`BEFORE · 8 Oct 2026` / `AFTER · 9 Oct 2026`)
+  and on the bar's own label, which over a record's workout names the side on
+  screen — `kReviewAfterLabel` / `kReviewBeforeLabel`, green rim and words at
+  rest turning accent as the eye turns, through the label's usual rise —
+  rather than the walk the way a pass's label does ("Review Complete"
+  outranks what is on screen, then "In Review" / "Previously"); a record with
+  only one side offers no eye.
+  **The names carry the sides' disagreement** (2026-10-12): an exercise the
+  side on screen holds and the other does not wears a green **plus** (absent
+  from the base, so the review added it) or a red **minus** (in the base and
+  not on screen, so it dropped it) — `ExerciseMark` on the shared selector
+  (each glyph a plus or minus inside a filled disc), in
+  the field and in every popover row, one membership test over
+  `plannedExerciseId` with two readings so the marks can never disagree across
+  the eye. Names both sides hold stay bare, and a record with one side marks
+  nothing — there is no second document to have read an edit off.
+  The bar is handed the row's `ReviewSession` (`reviewChrome(session:,
+  readOnly: true, loadComparison:)`), never publishing one, so Compare and
+  Changes read those same two documents through the injected comparison; the
+  tick is **drawn wearing the record's answer and disabled** — green
+  (`success`) under `GlassButton`'s half opacity when the record ticks it —
+  and the note glyph stays greyed. Every other callback is null or inert, with
+  exercises switchable because looking is not writing. The review's own notes
+  read back: the exercise's box under its sets (`reviewNoteEmptyText` keeps it
+  drawn, reading "No note" where the review left none — the pass draws that
+  box under every exercise, so the record's furniture does not depend on what
+  was typed) and the workout's above the card when it has one. The row is read on the route (`_openRecordWorkout` → `fetchReview`)
+  and the screen takes plain data, so it loads nothing and holds no loading
+  state; a row with no snapshot (a dismissed completion, a pre-snapshot row)
+  arrives as a null record and says so rather than drawing an empty grid.
+  Exercise and variation names resolve live (`fetchExerciseNameMap`/
+  `fetchVariationNameMap`) — a rename shows through on a record as it does
+  everywhere. A goal row opens
+  the same `showGoalSheet` with `onDescriptionChanged: null` — the sheet's
+  **record** state: no pencil, no tap-to-edit, no "Add a note…", and no NOTES
+  section at all when the record left none. The axes still read the live
+  history: a completed review did not freeze the sets a goal measures.
+- **Due items**: `fetchDueItems` never returns a standalone row
+  (`program_id IS NOT NULL` — `DueItem.programId` is non-nullable, and a pass
+  the user started from the library is asking nothing).
+- **Run close** (`closeRun`) writes the `kind = 'close'` record with
+  `achievements_json` frozen at the run's end.
+- **Length reached** (`kDueRunFinished`): `fetchDueItems` raises it while a run
+  is at its length AND no completed review carries the run's id
+  (`hasCompletedReviewForRun`); the prompt resumes the run's NEWEST open pass
+  (`fetchOpenReviewForRun` — panel-started reviews carry the run id too, so
+  there is no scope column left to narrow by). Since 2026-10-07 the banner
+  answers with **Continue / Change length / End run** directly — so Continue
+  no longer clears the prompt (nothing writes the review that satisfied it).
+  Nothing ends a run by itself.
+- `proposed_content`/`proposed_hash` are **dormant** — the proposal path was
+  deleted 2026-10-06; nothing writes or reads them.
+- Reviews are hard-deleted only with `hardDeleteProgram` (they pin runs via
+  a NO ACTION `program_run_id`, so they go before runs do) — and by
+  `deleteReview` for a cancelled open pass (the `completed_date IS NULL`
+  guard keeps it to passes, never records).
 
 ### Program runs — `fact_program_run`
 The commitment: "I'm doing this program for X." Columns: `program_id` (NO
@@ -122,10 +322,16 @@ ACTION FK), `started_date`, `ended_date` (NULL = running), `is_current`
 (partial unique index — at most one current run per user),
 `progression_mode` ('frequency' | 'order' — chosen at run start, v2;
 backfilled from the old program column), `target_sessions` (order),
-`target_weeks` / `end_date` (frequency). **Frequency** runs schedule by the
-join rows' `day_of_week`/`week_offset` (fortnight week computed from
-`started_date`); **order** runs walk the join rows by `sequence_order` with
-a completed-session cursor. Starting a run ends the previous current one.
+`target_weeks` / `end_date` (frequency), `block_id` (nullable — the block
+being followed; NULL = a blockless run, which is every row from before the
+column existed). **Frequency** was defined to schedule by the join rows'
+`day_of_week`/`week_offset` (fortnight week computed from `started_date`) —
+that scheduling UI is retired (2026-10-03) and the mode is currently
+unreachable from the app, but the column and the machinery stay;
+**order** runs walk the join rows by `sequence_order` with a
+completed-session cursor, and **wrap** (the cursor is
+`completed % sessionCount`), so "keep going" past the length needs no new
+length. Starting a run ends the previous current one.
 **"End program" ends the RUN, not the program.** Runs are history — never
 deleted when the program is archived.
 
@@ -268,13 +474,22 @@ dim_user ──< dim_exercise
   │
   ├──< dim_lesson (per-exercise knowledge, session_id attribution)
   ├──< dim_program >──< dim_planned_session_program >── dim_planned_session
-  │                        (join rows carry sequence_order /
-  │                         day_of_week / week_offset)
-  │                                   │
-  │                                   └──< dim_planned_session_exercise
-  │                                           └──< dim_planned_session_exercise_set
+  │         │              (join rows carry sequence_order /
+  │         │               day_of_week / week_offset)
+  │         │                        │
+  │         │                        └──< dim_planned_session_exercise
+  │         │                                └──< dim_planned_session_exercise_set
+  │         ├──< dim_program_block (ordered, duration-bounded phases)
+  │         └──< fact_program_review (scope: a set of workouts + goals,
+  │                                   legacy block/session; snapshot +
+  │                                   baseline + tick map + notes)
+  ├──< fact_program_review (STANDALONE since 2026-10-07 — program_id NULL:
+  │                        a pass over workouts and goals, started from the
+  │                        Library's Reviews tab)
   ├──< fact_program_run ──< dim_program (one current run per user,
-  │         │                              progression_mode on the run)
+  │         │                              progression_mode on the run,
+  │         │                              block_id = the phase followed)
+  │         ├──< fact_program_review (the review that answered its length)
   │         └──< fact_goal (optional link)
   ├──< fact_session ──< fact_session_exercise ──< fact_session_exercise_set
   │         ├── planned_session_id → dim_planned_session (template link)
@@ -314,7 +529,9 @@ fact_session, ON DELETE SET NULL — which logged session it was created in).
 ### dim_program — program blueprints (owner ALL, coach SELECT)
 `program_id` (PK), `user_id`, `program_name`, `program_description`,
 `date_archived` (timestamptz, NULL = active), `program_created_date`,
-`program_updated_date` (v2).
+`program_updated_date` (v2), `uses_blocks` (bool — the program's shape,
+fixed at creation), `default_target_sessions` (a simple program's
+remembered length; NULL = none set).
 No progression mode, no length — those are run properties.
 
 ### dim_planned_session — session templates (owner ALL, coach SELECT)
@@ -370,7 +587,36 @@ rename flows warn about this). Repos hydrate `exercise_name`/
 `started_date`, `ended_date` (NULL = running), `is_current` (partial
 unique index — at most one current run per user), `progression_mode`
 ('frequency' | 'order', nullable for legacy rows — behaves as 'order'),
-`target_sessions`, `target_weeks`, `end_date`.
+`target_sessions`, `target_weeks`, `end_date`, `block_id` (nullable — the
+block being followed; NULL = a blockless run).
+
+### dim_program_block — ordered phases (owner ALL, coach SELECT)
+`block_id` (PK), `user_id`, `program_id` (FK), `name`, `notes`,
+`block_order`, `target_weeks`, `target_days`, `target_sessions`,
+`start_date`, `end_date`, `date_archived` (timestamptz, NULL = active),
+`created_date`, `updated_date`. A run follows one block at a time
+(`fact_program_run.block_id`); length runs out on its own day
+(weeks × 7 + days).
+
+### fact_program_review — reviews & their snapshots (owner ALL, coach SELECT)
+`review_id` (PK), `user_id`, `program_id` (**nullable since 2026-10-07** —
+NULL = standalone; a program review keeps the FK), `session_ids_json` (scope —
+the ordered planned-session ids a pass covers) / `block_id` / `session_id`
+(legacy scope — never both columns, and new rows write neither),
+`reviewed_sessions_json` (the tick map — one ISO stamp per Done),
+`goal_ids_json` (the goals the pass covers, at any scope — ordered),
+`program_run_id` (nullable), `kind` ('review' | 'close'), `title`, `notes`,
+`scheduled_for`, `completed_date` (NULL = open — there is no status column),
+`outcome`, `snapshot_content` / `snapshot_hash` (written at completion; the
+whole program for a program review, the stored set + picked goals for a
+standalone one — reads narrow by the resolved set), `baseline_content` /
+`baseline_hash` ("as found" at start; idempotent — only ever written where
+NULL), `exercise_notes_json` (keyed by `planned_exercise_id`),
+`workout_notes_json` (keyed by `planned_session_id` — the workout-level
+sibling), `achievements_json` (run close), `created_date`.
+`proposed_content` / `proposed_hash` are dormant (proposal path deleted
+2026-10-06). Indexed on (user_id, created_date desc) since 2026-10-07 — the
+user-wide list the standalone Reviews tab reads.
 
 ### fact_goal — goals (owner ALL, coach SELECT)
 `goal_id` (PK), `user_id`, `goal_text`, `custom_exercise_id` (nullable),
@@ -405,7 +651,7 @@ What actually happens to each table's rows.
 | dim_exercise | session add-exercise modal, exercise library | rename | **archive** (`date_archived = now()`), or hard-delete when never used; reactivate clears the date |
 | dim_variation | same | rename | same |
 | dim_lesson | session / past-session / planner (with `session_id` where a logged session exists) | pin toggle | **archive** |
-| dim_program | REST insert in `createProgram` (authoritative write; deliberately NOT written to local mirror — a local write would queue a CRUD entry that blocks the checkpoint) | name/description (+ `program_updated_date` bump) | **archive** (`date_archived = now()`) + hard-delete its join rows |
+| dim_program | REST insert in `createProgram` (authoritative write; deliberately NOT written to local mirror — a local write would queue a CRUD entry that blocks the checkpoint) | name/description (+ `program_updated_date` bump) | **archive** (`date_archived = now()`) + hard-delete its join rows; `hardDeleteProgram` (no-sessions only) hard-deletes in dependent-row order: reviews → goals → links → run unlinks → runs → blocks → program |
 | dim_planned_session | `createPlannedSession` (local INSERT) | name/notes | **archive** (`date_archived = now()`) + archive its groups/sets, hard-delete join rows |
 | dim_planned_session_program | `createProgramLink` (planner creates + links; wizard; copy-into-program) | slots (day_of_week / week_offset / sequence_order) | **hard DELETE** (unlink — template survives standalone) |
 | dim_planned_session_exercise | `createPlannedExercise` (on add-exercise in the planner) | `exercise_order` via reorder | **archive** + archive its sets |
@@ -413,7 +659,9 @@ What actually happens to each table's rows.
 | fact_session | `createSession` (end_datetime NULL) | `endSession` (end_datetime = now, post_notes, post_feeling), `updateSessionNotes` | **hard DELETE** on `cancelSession` (with its exercise rows + sets) |
 | fact_session_exercise | `insertSessionExercise` (materialization + add-exercise) | `updateSessionExercise` (tab switching), `reorderSessionExercises` | **hard DELETE** (with its sets) |
 | fact_session_exercise_set | `insertSet` | `updateSet`, `reorderSets` | **hard DELETE** |
-| fact_program_run | REST insert in `startProgramRun` (ends previous is_current first — required by the partial unique index; takes progressionMode) | `updateRunConfig` (mode + duration) | never (history) |
+| fact_program_run | REST insert in `startProgramRun` (ends previous is_current first — required by the partial unique index; takes progressionMode) | `updateRunConfig` (mode + duration), `pauseCurrentRun`/`resumeRun` (is_current) | never in the UI (history); hard-deleted only with `hardDeleteProgram` |
+| dim_program_block | `createProgramBlock` (block editor) | `updateBlock`, `reorderBlocks` (block_order) | **archive** (`date_archived = now()`), `reactivateBlock` clears it; hard-deleted only with `hardDeleteProgram` |
+| fact_program_review | `beginReview` (row + "as found" baseline, one move; `program_id` null = standalone) or `scheduleReview` (row only — a dated review must not freeze today's plan) | `captureBaseline` (idempotent — only where NULL), `markWorkoutReviewed` (tick map, read-modify-write, guarded on open), `setExerciseNote` / `setWorkoutNote` (write-through, read-modify-write of the JSON), `completeReview` (snapshot + completed_date + outcome, one transaction), `closeRun` (kind = 'close'), `deleteReview` (hard delete, guarded `completed_date IS NULL` — the Reviews list's cancel) | never in the UI (history); hard-deleted with `hardDeleteProgram` — and before runs, which they pin via NO ACTION — and by `deleteReview` when an open pass is cancelled |
 | fact_goal | run-start prompt, `createGoal` | `achieved_date` set/revoked | **hard DELETE** |
 | fact_bodyweight | profile weight logging | — | hard delete (rarely used) |
 | coaching_relationship | (no UI yet) | — | hard delete |
@@ -444,6 +692,8 @@ Every table has RLS enabled. Two policy shapes:
 | fact_session_exercise | ✅ | ✅ |
 | fact_session_exercise_set | ✅ | ✅ |
 | fact_program_run | ✅ | ✅ |
+| dim_program_block | ✅ | ✅ |
+| fact_program_review | ✅ | ✅ |
 | fact_goal | ✅ | ✅ |
 | fact_bodyweight | ✅ | ✅ |
 | coaching_relationship | coach ALL (coach_user_id = uid) + read SELECT (either side) | — |
@@ -455,7 +705,7 @@ harmless (RLS is the gatekeeper).
 ## Sync wiring
 
 Every synced table must be registered in four places (see the
-`sync-contract` skill for the full contract): server publication (16 tables),
+`sync-contract` skill for the full contract): server publication (19 tables),
 `powersync/sync-streams.yaml` (queries alias the real PK as `id`),
 `lib/core/powersync/schema.dart`, and `lib/core/powersync/database.dart`
 (`_pkColumns` upload mapping). Local-only: `upload_failures`.

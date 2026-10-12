@@ -8,22 +8,20 @@ import '../../../core/styles/app_spacing.dart';
 import '../../../core/styles/app_text_styles.dart';
 import '../../../core/utils/block_length.dart';
 import '../../../core/utils/session_format.dart';
-import '../../../data/models/goal.dart';
 import '../../../data/models/planned_session.dart';
 import '../../../data/models/program_block.dart';
 import '../../../shared/mixins/unsaved_changes_guard.dart';
-import '../../../shared/widgets/bottom_nav_bar.dart';
+import '../../../shared/router/app_router.dart';
 import '../../../shared/widgets/container_styles.dart';
 import '../../../shared/widgets/date_picker_sheet.dart';
-import '../../../shared/widgets/exercise_target_picker.dart';
 import '../../../shared/widgets/glass_button.dart';
 import '../../../shared/widgets/lambda_input.dart';
 import '../../../shared/widgets/option_picker_sheet.dart';
 import '../../../shared/widgets/page_header.dart';
+import '../../../shared/widgets/scroll_shrink_nav_bar.dart';
 import '../../../shared/widgets/segmented_control.dart';
 import '../../../shared/widgets/swipe_actions.dart';
 import '../viewmodel/program_detail_viewmodel.dart';
-import 'goal_row.dart';
 import 'plan_session_screen.dart';
 import 'program_workout_row.dart';
 import 'review_container.dart';
@@ -329,20 +327,43 @@ class _ProgramBlockEditorScreenState extends State<ProgramBlockEditorScreen>
       if (!mounted) return;
     }
     if (!mounted) return;
-    context.go(
+    final router = GoRouter.of(context);
+    // Under a review the route that drew this editor sits over the shell, so
+    // the review has to come down for the history to be visible at all. It
+    // stays open — leaving is not finishing.
+    unwindReview(context);
+    router.go(
       '/exercises/programs/${block.programId}/history?block=${block.blockId}',
     );
   }
 
   /// Tab taps run the unsaved-changes guard before leaving — the same contract
   /// the workout editor honours while it covers the tab shell.
-  Future<void> _onNavTap(String route) async {
+  ///
+  /// Under a review the review route is what covers the shell, and this editor
+  /// is one of its pages — the whole ceremony has to come down, or the tab
+  /// would land behind it. No review means this editor is itself the pushed
+  /// route on top, and it pops alone.
+  Future<void> _onNavTap(int index) async {
     final router = GoRouter.of(context);
     if (!await confirmBack()) return;
     if (!mounted) return;
-    Navigator.of(context, rootNavigator: true).pop();
-    router.go(route);
+    if (!unwindReview(context)) {
+      Navigator.of(context, rootNavigator: true).pop();
+    }
+    router.go(tabRouteAt(index));
   }
+
+  /// This editor's chrome: the app's floating nav bar, which it draws itself
+  /// because it is pushed over the tab shell — or, while a review runs, the
+  /// review's own bar in the same container.
+  Widget _navBar(Widget child) => editorNavBar(
+    context,
+    child: child,
+    onTap: _onNavTap,
+    settle: settleForReview,
+    settleForCompare: settleForCompare,
+  );
 
   /// Copies a workout into this block. The copy lands in the source's slot;
   /// assigning it here is what puts it in THIS block, which is the only way to
@@ -418,20 +439,12 @@ class _ProgramBlockEditorScreenState extends State<ProgramBlockEditorScreen>
 
   @override
   Widget build(BuildContext context) {
-    return buildGuardedScaffold(
+    return _navBar(buildGuardedScaffold(
       scaffold: Scaffold(
         backgroundColor: AppColors.bg,
-        // The shared nav bar lives here, always: this editor is pushed over
-        // the tab shell, so tab navigation has to be re-drawn on the screen —
-        // and a review running stacks its own bar above it.
-        bottomNavigationBar: reviewBottomSlot(
-          context,
-          settle: confirmBack,
-          child: BottomNavBar(
-            currentRoute: '/exercises',
-            onTap: _onNavTap,
-          ),
-        ),
+        // This editor is pushed over the tab shell, so it draws the app's
+        // floating bar itself — or, while a review runs, the pass's own bar in
+        // the same container.
         body: ValueListenableBuilder<ProgramDetailState>(
           valueListenable: _vm.state,
           builder: (context, state, _) => Column(
@@ -467,7 +480,15 @@ class _ProgramBlockEditorScreenState extends State<ProgramBlockEditorScreen>
               ),
               Expanded(
                 child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(AppSpacing.lg),
+                  padding: EdgeInsets.fromLTRB(
+                    AppSpacing.lg,
+                    AppSpacing.lg,
+                    AppSpacing.lg,
+                    // The page scrolls under the floating bar; its end has to
+                    // clear it. The inset answers zero where nothing floats,
+                    // so a full-screen reader of this page needs no flag.
+                    AppSpacing.lg + ScrollShrinkNavBar.contentInset(context),
+                  ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
@@ -701,7 +722,6 @@ class _ProgramBlockEditorScreenState extends State<ProgramBlockEditorScreen>
                           ],
                         ),
                       const SizedBox(height: AppSpacing.lg),
-                      _buildGoalsSection(state),
                       const SizedBox(height: AppSpacing.xxl),
                     ],
                   ),
@@ -711,80 +731,7 @@ class _ProgramBlockEditorScreenState extends State<ProgramBlockEditorScreen>
           ),
         ),
       ),
-    );
-  }
-
-  /// This block's own goals — the targets that are chased while it runs.
-  ///
-  /// Read from the shared state's full goal list rather than queried again: the
-  /// program's goals are already loaded, and a block's are a filter over them,
-  /// not a second source that could disagree about what exists.
-  ///
-  /// Nothing is scoped here — every goal added on this screen is this block's,
-  /// because that is what the screen is. A program-level target belongs on the
-  /// program, where it can be seen to apply to every phase.
-  Widget _buildGoalsSection(ProgramDetailState state) {
-    final block = widget.block;
-    final goals = block == null
-        ? const <Goal>[]
-        : [
-            for (final g in state.programGoals)
-              if (g.blockId == block.blockId) g,
-          ];
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(
-          'Goals',
-          style: AppFonts.ui(
-            fontSize: AppTextStyles.md,
-            fontWeight: FontWeight.w600,
-            color: AppColors.primary,
-          ),
-        ),
-        const SizedBox(height: AppSpacing.sm),
-        if (_isNew)
-          Text(
-            'Save the block first, then set its targets.',
-            style: AppFonts.ui(
-              color: AppColors.muted,
-              fontSize: AppTextStyles.sm,
-            ),
-          )
-        else ...[
-          if (goals.isEmpty)
-            Text(
-              'No targets for this phase yet.',
-              style: AppFonts.ui(
-                color: AppColors.muted,
-                fontSize: AppTextStyles.sm,
-              ),
-            ),
-          for (final g in goals) ...[
-            GoalRow(
-              label: goalLabelFor(g, state.exerciseDetailMap),
-              outcome: state.goalOutcomes[g.goalId],
-              onDelete: () => _vm.deleteGoal(g.goalId),
-            ),
-            const SizedBox(height: AppSpacing.xs),
-          ],
-          const SizedBox(height: AppSpacing.sm),
-          ExerciseTargetPicker(
-            detailMap: state.exerciseDetailMap,
-            variations: state.allVariations,
-            onAdd: (target) => _vm.addGoal(
-              exerciseId: target.exerciseId,
-              exerciseName: target.exerciseName,
-              variationId: target.variationId,
-              targetWeight: target.weight,
-              targetReps: target.reps,
-              blockId: block!.blockId,
-            ),
-          ),
-        ],
-      ],
-    );
+    ));
   }
 
   /// The block's `+`: the three ways a block gains a workout.

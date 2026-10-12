@@ -1,11 +1,9 @@
-import 'dart:ui' show ImageFilter;
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_radius.dart';
-import '../../core/styles/app_spacing.dart';
+import 'floating_bar.dart';
 
 /// One destination on a [ScrollShrinkNavBar].
 class ScrollShrinkNavItem {
@@ -31,39 +29,40 @@ class ScrollShrinkNavItem {
 
 /// An Instagram-style floating bar: a rounded, translucent, blurred pill
 /// that hovers inside the screen's edges and above the bottom safe area. It
-/// shrinks and fades while the content scrolls down, and springs back the
-/// moment the user scrolls up.
+/// shrinks while the content scrolls down and springs back the moment the
+/// user scrolls up, keeping its colour throughout — only the size moves.
+///
+/// The pill itself is [FloatingBar] — the app's bottom chrome, shared with
+/// anything else that sits at the floor of the screen. This widget adds the
+/// shrinking.
 ///
 /// UI only — taps come out of [onTap] and navigation stays with the caller.
-/// Wrap the page body, and have the scrollable and the bar share one
-/// [controller] (that is where the direction is read from):
+/// Wrap the page body; the bar reads direction from the scroll notifications
+/// of whatever scrollable is under it, so no controller has to be threaded
+/// through — which is what lets a shell own one bar for every page:
 ///
 /// ```dart
 /// Scaffold(
 ///   body: ScrollShrinkNavBar(
-///     controller: _controller,
 ///     currentIndex: _index,
 ///     onTap: (i) => setState(() => _index = i),
 ///     items: items,
-///     child: ListView(controller: _controller, …),
+///     child: ListView(…),
 ///   ),
 /// )
 /// ```
 ///
-/// Give the end of the scrollable [contentInset] worth of padding so its last
-/// item can clear the bar.
+/// The bar paints *over* the page, so give the end of the scrollable
+/// [contentInset] worth of padding or its last item ends up underneath.
 class ScrollShrinkNavBar extends StatefulWidget {
   const ScrollShrinkNavBar({
     super.key,
-    required this.controller,
     required this.currentIndex,
     required this.onTap,
     required this.items,
     required this.child,
+    this.aboveBar,
   });
-
-  /// The scroll position the bar follows — the same one the [child] scrolls.
-  final ScrollController controller;
 
   final int currentIndex;
 
@@ -74,8 +73,15 @@ class ScrollShrinkNavBar extends StatefulWidget {
   /// The page body. Painted under the bar, which is what the blur samples.
   final Widget child;
 
-  /// Bar height at full size.
-  static const double expandedHeight = 56;
+  /// A second bar floating above the nav bar — the editor's counts, which
+  /// stand on the same floor. Only the nav bar shrinks with the scroll; what
+  /// is stacked above it stays put.
+  final Widget? aboveBar;
+
+  /// Bar height at full size. The geometry lives on [FloatingBar] — the app's
+  /// bottom chrome shares one container — and is re-exported here because
+  /// every page that clears the bar reads its numbers from the bar.
+  static const double expandedHeight = FloatingBar.barHeight;
 
   /// Bar height when the page is scrolled down.
   static const double collapsedHeight = 42;
@@ -84,22 +90,13 @@ class ScrollShrinkNavBar extends StatefulWidget {
   /// the side margins open up exactly as far as the height drops.
   static double get collapsedScale => collapsedHeight / expandedHeight;
 
-  /// Side margins — the bar floats rather than touching the screen edges.
-  static const double sideMargin = AppSpacing.lg;
-
   /// Gap between the bar and the top of the bottom safe area; the bar never
   /// reaches into the home-indicator strip.
-  static const double floatGap = AppSpacing.sm;
-
-  /// Corner radius of the floating bar.
-  static const double cornerRadius = 24;
+  static const double floatGap = FloatingBar.floatGap;
 
   /// Bottom padding a scrollable needs so its last item clears the bar.
   static double contentInset(BuildContext context) =>
-      expandedHeight +
-      floatGap +
-      MediaQuery.paddingOf(context).bottom +
-      AppSpacing.lg;
+      FloatingBarOverlay.contentInset(context);
 
   @override
   State<ScrollShrinkNavBar> createState() => _ScrollShrinkNavBarState();
@@ -123,52 +120,43 @@ class _ScrollShrinkNavBarState extends State<ScrollShrinkNavBar>
     reverseCurve: Curves.easeInCubic,
   );
 
-  double? _lastOffset;
-
-  @override
-  void initState() {
-    super.initState();
-    widget.controller.addListener(_onScroll);
-  }
-
   @override
   void didUpdateWidget(ScrollShrinkNavBar oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.controller != widget.controller) {
-      oldWidget.controller.removeListener(_onScroll);
-      widget.controller.addListener(_onScroll);
-      _lastOffset = null;
-    }
+    // Swapping tabs is not a scroll: arrive on the new page with the bar at
+    // full size rather than inheriting the last page's collapse.
+    if (oldWidget.currentIndex != widget.currentIndex) _expand();
   }
 
   @override
   void dispose() {
-    widget.controller.removeListener(_onScroll);
     _t.dispose();
     _reveal.dispose();
     super.dispose();
   }
 
-  void _onScroll() {
-    if (!widget.controller.hasClients) return;
-    final position = widget.controller.position;
-    final offset = position.pixels;
-    final last = _lastOffset;
-    _lastOffset = offset;
-    if (last == null) return;
+  /// Follows the page moving up and down. Depth is no use for telling the two
+  /// apart: the Session tab keeps its list inside a horizontal pager, which
+  /// puts every notification it sends at depth 1. The axis is the honest
+  /// question — a sideways scroller is a child the page is not moving for.
+  bool _onScrollNotification(ScrollNotification notification) {
+    if (notification is! ScrollUpdateNotification) return false;
+    if (notification.metrics.axis != Axis.vertical) return false;
 
-    // Waiting on the first sample above, and ignoring bounce: neither is the
-    // user asking the bar to move.
-    if (position.outOfRange) return;
+    // Bounce at either end is the overscroll fighting back, not the user
+    // asking the bar to move.
+    final metrics = notification.metrics;
+    if (metrics.outOfRange) return false;
 
-    final delta = offset - last;
-    if (offset <= position.minScrollExtent + 8) {
+    final delta = notification.scrollDelta ?? 0;
+    if (metrics.pixels <= metrics.minScrollExtent + 8) {
       _expand();
     } else if (delta > 1.5) {
       _collapse();
     } else if (delta < -1.5) {
       _expand();
     }
+    return false;
   }
 
   void _collapse() {
@@ -185,93 +173,48 @@ class _ScrollShrinkNavBarState extends State<ScrollShrinkNavBar>
 
   @override
   Widget build(BuildContext context) {
-    final bottomInset = MediaQuery.paddingOf(context).bottom;
-    return Stack(
-      children: [
-        widget.child,
-        Positioned(
-          left: ScrollShrinkNavBar.sideMargin,
-          right: ScrollShrinkNavBar.sideMargin,
-          bottom: bottomInset + ScrollShrinkNavBar.floatGap,
-          child: AnimatedBuilder(
-            animation: _t,
-            builder: (context, _) {
-              final t = _t.value;
-              return Transform.scale(
-                // Uniform, and anchored at the bottom edge so the bar keeps
-                // floating in place while it recedes.
-                scale: ScrollShrinkNavBar.collapsedScale +
-                    (1 - ScrollShrinkNavBar.collapsedScale) * t,
-                alignment: Alignment.bottomCenter,
-                child: _buildBar(context, t),
-              );
-            },
-          ),
+    return FloatingBarOverlay(
+      above: widget.aboveBar,
+      bar: AnimatedBuilder(
+        animation: _t,
+        // Built once and handed to the builder: the bar inside does not
+        // change with the animation, only the transform over it does.
+        child: FloatingBar(child: _buildItems()),
+        builder: (context, bar) => Transform.scale(
+          // Uniform, and anchored at the bottom edge so the bar keeps
+          // floating in place while it recedes.
+          scale: ScrollShrinkNavBar.collapsedScale +
+              (1 - ScrollShrinkNavBar.collapsedScale) * _t.value,
+          alignment: Alignment.bottomCenter,
+          child: bar,
         ),
-      ],
+      ),
+      child: NotificationListener<ScrollNotification>(
+        onNotification: _onScrollNotification,
+        child: widget.child,
+      ),
     );
   }
 
-  /// Paints the bar at full size: the size change is a [Transform.scale] over
-  /// the finished box, so what is left for [t] here is the bar's *state* —
-  /// tint, border and opacity.
-  Widget _buildBar(BuildContext context, double t) {
-    final radius = BorderRadius.circular(ScrollShrinkNavBar.cornerRadius);
-    return DecoratedBox(
-      // Shadow lives outside the clip — inside it would be cut off.
-      decoration: BoxDecoration(
-        borderRadius: radius,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.20 + 0.08 * t),
-            blurRadius: 24,
-            offset: const Offset(0, 8),
-            spreadRadius: -6,
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: radius,
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              // Semi-transparent, and a little more so when shrunk — the page
-              // showing through is the point of the blur.
-              color: AppColors.bg.withValues(alpha: 0.55 + 0.17 * t),
-              borderRadius: radius,
-              // A light rim, not the house hairline: `border` is all but
-              // invisible against blurred dark content, so the edge is drawn
-              // in the foreground cream instead.
-              border: Border.all(
-                color: AppColors.primary.withValues(alpha: 0.16 + 0.14 * t),
-                width: 1,
-              ),
-            ),
-            child: SizedBox(
-              height: ScrollShrinkNavBar.expandedHeight,
-              child: Opacity(
-                opacity: 0.55 + 0.45 * t,
-                child: Row(
-                  children: [
-                    for (var i = 0; i < widget.items.length; i++)
-                      Expanded(
-                        child: _NavButton(
-                          item: widget.items[i],
-                          selected: i == widget.currentIndex,
-                          onTap: () {
-                            HapticFeedback.selectionClick();
-                            widget.onTap(i);
-                          },
-                        ),
-                      ),
-                  ],
-                ),
-              ),
+  /// The destinations, filling the bar's width. Everything here is a constant
+  /// — the only thing a scroll changes is the [Transform.scale] around the
+  /// bar, so it keeps its full colour and weight as it recedes rather than
+  /// fading out.
+  Widget _buildItems() {
+    return Row(
+      children: [
+        for (var i = 0; i < widget.items.length; i++)
+          Expanded(
+            child: _NavButton(
+              item: widget.items[i],
+              selected: i == widget.currentIndex,
+              onTap: () {
+                HapticFeedback.selectionClick();
+                widget.onTap(i);
+              },
             ),
           ),
-        ),
-      ),
+      ],
     );
   }
 }

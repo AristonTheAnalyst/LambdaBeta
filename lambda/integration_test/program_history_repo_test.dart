@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -24,7 +25,7 @@ import 'package:powersync/powersync.dart';
 /// Host `flutter test` cannot load `libpowersync.dylib`, and `openDatabase()`
 /// is not usable here (it wants a signed-in session and the app container), so
 /// the global DB is pointed at a throwaway database with
-/// [ps.setDatabaseForTesting] — repositories resolve `ps.db` per call, so the
+/// [ps.swapDatabase] — repositories resolve `ps.db` per call, so the
 /// real ones work unmodified. `-d macos` is the cheapest host for this: a
 /// desktop build bundles the dylib, and unlike a device install it leaves the
 /// app on the user's phone and the simulator's bundle alone.
@@ -43,7 +44,7 @@ void main() {
     dir = await Directory.systemTemp.createTemp('lambda_ps');
     db = PowerSyncDatabase(schema: schema, path: '${dir.path}/test.db');
     await db.initialize();
-    ps.setDatabaseForTesting(db);
+    ps.swapDatabase(db);
     planned = PlannedSessionRepository();
     history = ProgramHistoryRepository();
     await _insertProgram(db, userId, programId);
@@ -55,9 +56,18 @@ void main() {
   });
 
   test('a completed review writes its snapshot durably', () async {
+    final push = await planned.createPlannedSession(userId, name: 'Push');
+    await planned.createProgramLink(
+      userId,
+      programId: programId,
+      plannedSessionId: push.sessionId,
+      sequenceOrder: 1,
+    );
+
     final review = await history.scheduleReview(
       userId: userId,
       programId: programId,
+      sessionIds: [push.sessionId],
     );
 
     final completed = await history.completeReview(
@@ -101,16 +111,17 @@ void main() {
     expect(again.snapshotHash, completed.snapshotHash);
   });
 
-  test('an ad-hoc session review persists its scope and no schedule', () async {
-    // The "review this workout now" path, which is not a reminder about
-    // anything: no `scheduled_for`, and a `session_id` that is the plan being
+  test('an ad-hoc set review persists its scope and no schedule', () async {
+    // The "review these workouts now" path, which is not a reminder about
+    // anything: no `scheduled_for`, and a stored set naming the plans being
     // examined rather than a logged session.
     final push = await planned.createPlannedSession(userId, name: 'Push');
+    final pull = await planned.createPlannedSession(userId, name: 'Pull');
 
     final review = await history.scheduleReview(
       userId: userId,
       programId: programId,
-      sessionId: push.sessionId,
+      sessionIds: [push.sessionId, pull.sessionId],
       title: 'Second look at Push',
     );
 
@@ -119,32 +130,44 @@ void main() {
         reason: 'an unscheduled review is never "due" — it is just open');
 
     final rows = await db.getAll(
-      'SELECT block_id, session_id, scheduled_for, completed_date '
-      'FROM fact_program_review WHERE review_id = ?',
+      'SELECT session_ids_json, block_id, session_id, scheduled_for, '
+      'completed_date FROM fact_program_review WHERE review_id = ?',
       [review.reviewId],
     );
     expect(rows.length, 1);
     expect(
-      rows.single['session_id'],
-      push.sessionId,
+      jsonDecode(rows.single['session_ids_json'] as String),
+      [push.sessionId, pull.sessionId],
       reason: 'the scope has to survive the round trip, not just the object',
     );
-    expect(rows.single['block_id'], isNull,
-        reason: 'a session review is not also a block review');
+    expect(
+      review.storedSessionIds,
+      [push.sessionId, pull.sessionId],
+      reason: 'and read back as the same set through the model',
+    );
+    expect(
+      rows.single['block_id'],
+      isNull,
+      reason: 'a set review writes neither legacy scope column — the old '
+          'spelling is only kept for the rows that predate the set',
+    );
+    expect(rows.single['session_id'], isNull);
     expect(rows.single['scheduled_for'], isNull);
     expect(rows.single['completed_date'], isNull);
   });
 
-  test('a review cannot be scoped to a block and a session at once', () async {
-    // The client has to refuse what the server's CHECK refuses. A row that
-    // reached the constraint would quarantine as a `23514` — it can never
-    // succeed, and it stalls that device's upload checkpoint behind it.
-    expect(
-      () => history.scheduleReview(
+  test('a review of nothing is refused — an empty set would claim the whole '
+      'program', () async {
+    // An empty set stores no scope, and a scoped row that stores nothing
+    // resolves to every workout of the program: a look nobody took, recorded
+    // as a checkpoint. The client has to refuse it in Dart, because nothing
+    // in the database can — a row with no set and no legacy column is exactly
+    // the legal shape of an old program review.
+    await expectLater(
+      history.scheduleReview(
         userId: userId,
         programId: programId,
-        blockId: 'b1',
-        sessionId: 's1',
+        sessionIds: const [],
       ),
       throwsArgumentError,
     );
@@ -218,7 +241,13 @@ void main() {
       targetReps: '10',
     );
 
-    final v1 = await _checkpoint(history, userId, programId);
+    // A pass over both workouts — the program's whole ground, ticked as a set.
+    final v1 = await _checkpoint(
+      history,
+      userId,
+      programId,
+      sessionIds: [push.sessionId, pull.sessionId],
+    );
     expect(v1.snapshot!.sessionCount, 2);
     expect(v1.snapshot!.exerciseCount, 3);
     expect(v1.snapshot!.setCount, 3);
@@ -242,7 +271,12 @@ void main() {
       targetReps: '8',
     );
 
-    final v2 = await _checkpoint(history, userId, programId);
+    final v2 = await _checkpoint(
+      history,
+      userId,
+      programId,
+      sessionIds: [push.sessionId, pull.sessionId],
+    );
     expect(
       v2.snapshotHash,
       isNot(v1.snapshotHash),
@@ -282,9 +316,18 @@ void main() {
   });
 
   test('a review comes due, and completing it cuts a snapshot', () async {
+    final push = await planned.createPlannedSession(userId, name: 'Push');
+    await planned.createProgramLink(
+      userId,
+      programId: programId,
+      plannedSessionId: push.sessionId,
+      sequenceOrder: 1,
+    );
+
     final review = await history.scheduleReview(
       userId: userId,
       programId: programId,
+      sessionIds: [push.sessionId],
       title: 'Block 1 check-in',
       notes: 'How did the first four weeks go?',
       // Yesterday, i.e. due now: the prompt appears the moment its day has
@@ -370,6 +413,7 @@ void main() {
     final dismissed = await history.scheduleReview(
       userId: userId,
       programId: programId,
+      sessionIds: [push.sessionId],
       scheduledFor: DateTime.now().subtract(const Duration(days: 2)),
     );
     final answered = await history.completeReview(
@@ -524,7 +568,8 @@ void main() {
   });
 
   test(
-    'completing a review records the live program, never the proposal',
+    'completing a review snapshots the live program — the record never '
+    'writes back to the rows',
     () async {
       final push = await planned.createPlannedSession(userId, name: 'Push');
       await planned.createProgramLink(
@@ -552,49 +597,41 @@ void main() {
         userId: userId,
         programId: programId,
       );
-      final proposal = _withTarget(live, benchSet.plannedSetId, '120');
-      expect(proposal.contentHash, isNot(live.contentHash));
 
       final review = await history.scheduleReview(
         userId: userId,
         programId: programId,
-        title: 'Add load',
-        notes: 'Bench is too easy.',
+        sessionIds: [push.sessionId],
+        title: 'Bench check',
+        notes: 'How is the bench holding up?',
         scheduledFor: DateTime.now(),
-        proposedContent: proposal,
       );
       expect(
         review.kind,
-        kReviewKindChange,
+        kReviewKindReview,
         reason:
-            'a proposal IS the change flavour — the kind is not a '
-            'separate choice the caller could get wrong',
+            'a review is the one kind there is — proposing a change was a '
+            'second way to describe editing the thing in front of you',
       );
-      expect(review.proposedHash, proposal.contentHash);
-      expect(
-        review.proposal!.contentHash,
-        proposal.contentHash,
-        reason: 'the stored proposal decodes back to what was proposed',
-      );
+      expect(review.proposedContent, isNull);
 
-      final applied = await history.completeReview(
+      final finished = await history.completeReview(
         review.reviewId,
         userId: userId,
-        outcome: kOutcomeApplied,
+        outcome: kOutcomeReviewed,
       );
-      expect(applied.snapshot, isNotNull);
+      expect(finished.snapshot, isNotNull);
 
-      // Nothing copied the proposal into the rows it describes. Applying a change
-      // means the user edited the program through the normal editor, and this
-      // records what that produced — so the live program is byte-identical to
-      // what it was before the review was even scheduled.
+      // Finishing records what the plan IS. The review row is a record, not a
+      // writer: the live program is byte-identical to what it was before the
+      // review was even scheduled.
       final afterLive = await history.buildContent(
         userId: userId,
         programId: programId,
       );
       expect(afterLive.contentHash, live.contentHash);
       expect(
-        applied.snapshotHash,
+        finished.snapshotHash,
         live.contentHash,
         reason: 'the snapshot is of the LIVE rows',
       );
@@ -606,7 +643,7 @@ void main() {
       );
       expect(stored.single['target_weight'], '70');
       expect(
-        applied
+        finished
             .snapshot!
             .sessions
             .single
@@ -616,10 +653,69 @@ void main() {
             .single
             .targetWeight,
         '70',
-        reason: 'the proposed 120 appears nowhere in the snapshot that was cut',
+        reason: 'the snapshot carries the live target, read from the rows',
       );
     },
   );
+
+  test('review notes round-trip: keyed to the exercise, clearable, durable',
+      () async {
+    final push = await planned.createPlannedSession(userId, name: 'Push');
+    final bench = await planned.createPlannedExercise(
+      userId,
+      push.sessionId,
+      exerciseId: 'ex-bench',
+      exerciseOrder: 1,
+    );
+
+    final review = await history.beginReview(
+      userId: userId,
+      programId: programId,
+      sessionIds: [push.sessionId],
+    );
+
+    await history.setExerciseNote(
+      review.reviewId,
+      bench.plannedExerciseId,
+      note: '  Drop to 55 if it grinds  ',
+    );
+
+    // Read back through a FRESH repository: the note lives on the row, not in
+    // anything this instance is holding on to.
+    final read = await ProgramHistoryRepository().fetchReview(review.reviewId);
+    expect(
+      read!.exerciseNotes[bench.plannedExerciseId],
+      'Drop to 55 if it grinds',
+      reason: 'trimmed on the way in, the way every note in the app is',
+    );
+
+    // A second note for the same exercise replaces the first — one exercise,
+    // one note.
+    await history.setExerciseNote(
+      review.reviewId,
+      bench.plannedExerciseId,
+      note: 'Sharpened',
+    );
+    var reread = await history.fetchReview(review.reviewId);
+    expect(reread!.exerciseNotes[bench.plannedExerciseId], 'Sharpened');
+    expect(reread.exerciseNotes, hasLength(1));
+
+    // A blank note clears the entry, and the emptied document goes back to
+    // NULL rather than lingering as '{}'.
+    await history.setExerciseNote(
+      review.reviewId,
+      bench.plannedExerciseId,
+      note: '   ',
+    );
+    reread = await history.fetchReview(review.reviewId);
+    expect(reread!.exerciseNotes, isEmpty);
+    final stored = await db.getAll(
+      'SELECT exercise_notes_json FROM fact_program_review '
+      'WHERE review_id = ?',
+      [review.reviewId],
+    );
+    expect(stored.single['exercise_notes_json'], isNull);
+  });
 
   test(
     'a run that has reached its length stays current until it is ended',
@@ -679,6 +775,169 @@ void main() {
       expect(after, isNull, reason: 'no current run left to read');
     },
   );
+
+  test(
+    'a run reaching its length is answered by finishing a review — never by '
+    'the reaching itself',
+    () async {
+      await _insertRun(
+        db,
+        userId,
+        programId,
+        runId: 'r1',
+        progressionMode: 'frequency',
+        endDate: DateTime.now().subtract(const Duration(days: 3)),
+      );
+
+      final due = await history.fetchDueItems(userId);
+      expect(
+        due.where((d) => d.kind == kDueRunFinished).single.label,
+        'Program length reached',
+        reason: 'the question is up while nobody has answered it',
+      );
+
+      // The pass covers a workout that is not in the program yet — adding it
+      // mid-pass is the edit the baseline has to survive.
+      final push = await planned.createPlannedSession(userId, name: 'Push');
+
+      // Opening the prompt begins a review, and the pass opens by recording
+      // the plan as found — the only "before" a first-ever review can have.
+      final opened = await history.beginReview(
+        userId: userId,
+        programId: programId,
+        sessionIds: [push.sessionId],
+        programRunId: 'r1',
+      );
+      expect(opened.hasBaseline, isTrue);
+      expect(opened.programRunId, 'r1');
+      expect(opened.isCompleted, isFalse);
+
+      // The baseline is a freeze-frame of the moment the pass began. Editing
+      // the plan mid-pass and re-capturing must not move it, or the compare
+      // would drift into "compare with yourself".
+      await planned.createProgramLink(
+        userId,
+        programId: programId,
+        plannedSessionId: push.sessionId,
+        sequenceOrder: 1,
+      );
+      final live = await history.buildContent(
+        userId: userId,
+        programId: programId,
+      );
+      expect(
+        live.contentHash,
+        isNot(opened.baselineHash),
+        reason: 'the plan really did change under the pass',
+      );
+      final recaptured = await history.captureBaseline(
+        opened.reviewId,
+        userId: userId,
+      );
+      expect(recaptured!.baselineContent, opened.baselineContent);
+
+      // Prompt twice is one pass: the next visit finds the row it opened.
+      expect(
+        (await history.fetchOpenReviewForRun('r1'))?.reviewId,
+        opened.reviewId,
+      );
+
+      // And an open pass is not an answer — the question is still up.
+      expect(await history.hasCompletedReviewForRun('r1'), isFalse);
+      expect(
+        (await history.fetchDueItems(userId))
+            .where((d) => d.kind == kDueRunFinished),
+        hasLength(1),
+      );
+
+      // Finishing the pass is. The run is untouched: carrying on is one of
+      // the answers, so the question must not end it on the way out.
+      await history.completeReview(
+        opened.reviewId,
+        userId: userId,
+        outcome: kOutcomeReviewed,
+      );
+      expect(await history.hasCompletedReviewForRun('r1'), isTrue);
+      expect(
+        (await history.fetchDueItems(userId))
+            .where((d) => d.kind == kDueRunFinished),
+        isEmpty,
+      );
+      expect(await history.fetchOpenReviewForRun('r1'), isNull);
+
+      final rows = await db.getAll(
+        'SELECT is_current, ended_date FROM fact_program_run '
+        'WHERE program_run_id = ?',
+        ['r1'],
+      );
+      expect(rows.single['is_current'], 1);
+      expect(
+        rows.single['ended_date'],
+        isNull,
+        reason: 'the review answered the prompt; ending the run is the '
+            'user\'s separate decision',
+      );
+    },
+  );
+
+  test('the run prompt resumes the run\'s open pass — the newest one', () async {
+    // A run can carry more than one open pass: a review started from the
+    // panel carries the run id too, and a scope is a set of workouts now, so
+    // there is no scope column left to narrow by. What the prompt must not do
+    // is open a SECOND row for a question that already has one — so it
+    // resumes the newest open pass for the run.
+    await _insertRun(
+      db,
+      userId,
+      programId,
+      runId: 'r1',
+      blockId: 'b1',
+      progressionMode: 'frequency',
+    );
+
+    final push = await planned.createPlannedSession(userId, name: 'Push');
+    final pull = await planned.createPlannedSession(userId, name: 'Pull');
+
+    final first = await history.beginReview(
+      userId: userId,
+      programId: programId,
+      sessionIds: [push.sessionId],
+      programRunId: 'r1',
+    );
+    // The row's created_date is the order, so make the second pass strictly
+    // newer rather than racing the clock.
+    await Future<void>.delayed(const Duration(milliseconds: 2));
+    final second = await history.beginReview(
+      userId: userId,
+      programId: programId,
+      sessionIds: [pull.sessionId],
+      programRunId: 'r1',
+    );
+
+    expect(
+      (await history.fetchOpenReviewForRun('r1'))?.reviewId,
+      second.reviewId,
+      reason: 'the newest open pass is the one the prompt resumes — finishing '
+          'it is the answer, so the question has one row',
+    );
+    expect(
+      await history.fetchOpenReviewForRun('r2'),
+      isNull,
+      reason: 'another run is another question',
+    );
+
+    // Finishing the newest leaves the older one open: the prompt then resumes
+    // that one rather than opening a third.
+    await history.completeReview(
+      second.reviewId,
+      userId: userId,
+      outcome: kOutcomeReviewed,
+    );
+    expect(
+      (await history.fetchOpenReviewForRun('r1'))?.reviewId,
+      first.reviewId,
+    );
+  });
 
   test(
     'a planned start prompts, and only for the block the sequence is on',
@@ -784,12 +1043,20 @@ void main() {
 
       // A completed review is a checkpoint and outranks the run's start: the
       // window opens where the last one ended, so nothing is claimed twice.
+      final push = await planned.createPlannedSession(userId, name: 'Push');
+      await planned.createProgramLink(
+        userId,
+        programId: programId,
+        plannedSessionId: push.sessionId,
+        sequenceOrder: 1,
+      );
       final reviewedAt = DateTime(2026, 5, 20, 12);
       await _insertCompletedReview(
         db,
         userId,
         programId,
         reviewId: 'rev-a',
+        sessionIds: [push.sessionId],
         completedDate: reviewedAt,
       );
       expect(
@@ -807,93 +1074,340 @@ void main() {
     },
   );
 
-  test('a checkpoint answers only for its own scope', () async {
-    // Scope, not partition: the program's checkpoints and each block's are
-    // separate streams. Cross them and a report either claims training nobody
-    // looked at or forgets training that was reviewed somewhere else.
-    final programLevel = DateTime(2026, 5, 10, 9);
-    final blockLevel = DateTime(2026, 5, 20, 9);
+  test('a checkpoint is about ground, not scope labels: a pass over any of it '
+      'opens it', () async {
+    // The re-scope's load-bearing change. Once a pass covers a SET of
+    // workouts, "which reviews open this window" stops being about matching
+    // scope labels and becomes intersection: a pass over any of this ground
+    // is a look at all of it. The program's own window is the one asymmetric
+    // case — it opens only on a pass over the program ENTIRE, because
+    // reviewing part of a plan is not reviewing the plan, and letting a
+    // partial pass cut it would silently swallow what was achieved since the
+    // last full look.
+    final push = await planned.createPlannedSession(userId, name: 'Push');
+    final pull = await planned.createPlannedSession(userId, name: 'Pull');
+    final legs = await planned.createPlannedSession(userId, name: 'Legs');
+    await planned.createProgramLink(
+      userId,
+      programId: programId,
+      plannedSessionId: push.sessionId,
+      sequenceOrder: 1,
+    );
+    await planned.createProgramLink(
+      userId,
+      programId: programId,
+      plannedSessionId: pull.sessionId,
+      sequenceOrder: 2,
+    );
+    await planned.createProgramLink(
+      userId,
+      programId: programId,
+      plannedSessionId: legs.sessionId,
+      sequenceOrder: 3,
+    );
+
+    final pushPass = DateTime(2026, 5, 10, 9);
+    final pullPass = DateTime(2026, 5, 20, 9);
     await _insertCompletedReview(
       db,
       userId,
       programId,
-      reviewId: 'rev-p',
-      completedDate: programLevel,
+      reviewId: 'rev-push',
+      sessionIds: [push.sessionId],
+      completedDate: pushPass,
     );
     await _insertCompletedReview(
       db,
       userId,
       programId,
-      reviewId: 'rev-b',
-      blockId: 'b1',
-      completedDate: blockLevel,
+      reviewId: 'rev-pull',
+      sessionIds: [pull.sessionId],
+      completedDate: pullPass,
     );
 
-    // A block's window opens at that block's last review, untouched by the
-    // program's — which is LATER than the block's, so an unscoped read would
-    // have answered with the wrong date rather than by luck with the right one.
-    expect(await history.checkpointFor(programId, blockId: 'b1'), blockLevel);
-
-    // And the program's opens at the program's own: a block review is not a
-    // program checkpoint, so a program review after several block reviews
-    // reports the whole program since the last program review.
-    expect(await history.checkpointFor(programId), programLevel);
-
-    // The third scope, and the one that catches the missing `session_id IS
-    // NULL` clauses. This review is INSIDE b1 and LATER than the block's own,
-    // so a block read without that clause answers with the session's date —
-    // wrong by luck of the ordering, which is exactly how it would go
-    // unnoticed.
-    final sessionLevel = DateTime(2026, 5, 28, 9);
-    await _insertCompletedReview(
-      db,
-      userId,
-      programId,
-      reviewId: 'rev-s',
-      blockId: 'b1',
-      sessionId: 's1',
-      completedDate: sessionLevel,
-    );
-
+    // Each workout's window opens at the pass that looked at it...
     expect(
-      await history.checkpointFor(programId, blockId: 'b1'),
-      blockLevel,
-      reason: 'a session review inside the block is not the block itself',
+      await history.checkpointFor(programId, sessionIds: [push.sessionId]),
+      pushPass,
     );
     expect(
-      await history.checkpointFor(programId),
-      programLevel,
-      reason: 'nor the program, despite carrying the block id',
+      await history.checkpointFor(programId, sessionIds: [pull.sessionId]),
+      pullPass,
+      reason: 'a pass over push is not a look at pull',
     );
-    // And the session answers for itself.
-    expect(
-      await history.checkpointFor(programId, sessionId: 's1'),
-      sessionLevel,
-    );
-    // A session with no reviews of its own does NOT inherit the block's —
-    // scope is not containment.
-    final sessionStart = DateTime(2026, 6, 1);
+
+    // ...and ground nobody has looked at falls through to the caller's start.
+    final runStart = DateTime(2026, 6, 1);
     expect(
       await history.checkpointFor(
         programId,
-        sessionId: 's2',
-        fallback: sessionStart,
+        sessionIds: [legs.sessionId],
+        fallback: runStart,
       ),
-      sessionStart,
+      runStart,
+      reason: 'no pass has ever looked at this ground',
     );
 
-    // A block that has never been reviewed falls through to its run's start —
-    // the fallback is per scope too, or a first run of a second block would
-    // open at the first block's checkpoint.
-    final blockStart = DateTime(2026, 6, 1);
+    // The program's window: partial passes do not open it.
     expect(
-      await history.checkpointFor(
-        programId,
-        blockId: 'b2',
-        fallback: blockStart,
-      ),
-      blockStart,
+      await history.checkpointFor(programId, fallback: runStart),
+      runStart,
+      reason: 'reviewing part of a plan is not reviewing the plan',
     );
+
+    // A pass over the whole set does — and it becomes the newest look at every
+    // workout in it.
+    final wholePass = DateTime(2026, 5, 28, 9);
+    await _insertCompletedReview(
+      db,
+      userId,
+      programId,
+      reviewId: 'rev-all',
+      sessionIds: [push.sessionId, pull.sessionId, legs.sessionId],
+      completedDate: wholePass,
+    );
+    expect(
+      await history.checkpointFor(programId, fallback: runStart),
+      wholePass,
+    );
+    expect(
+      await history.checkpointFor(programId, sessionIds: [pull.sessionId]),
+      wholePass,
+      reason: 'the pass covers pull, so it is the newest look at it',
+    );
+
+    // A legacy session row still resolves — a workout review of push contains
+    // push — so old rows keep opening the windows they always did.
+    final legacyPass = DateTime(2026, 5, 30, 9);
+    await _insertCompletedReview(
+      db,
+      userId,
+      programId,
+      reviewId: 'rev-legacy',
+      sessionId: push.sessionId,
+      completedDate: legacyPass,
+    );
+    expect(
+      await history.checkpointFor(programId, sessionIds: [push.sessionId]),
+      legacyPass,
+    );
+    expect(
+      await history.checkpointFor(programId, fallback: runStart),
+      wholePass,
+      reason: 'a legacy workout row is not a pass over the program',
+    );
+  });
+
+  test('Done marks a workout in the pass, unmarks it, and the marks survive '
+      'a reopen', () async {
+    // The tick is the pass's progress, stored on the row as it goes: a user
+    // who exits mid-review and comes back must find the workouts they
+    // finished still ticked. Read-modify-write keeps it additive — a second
+    // Done must not drop the first.
+    final push = await planned.createPlannedSession(userId, name: 'Push');
+    final pull = await planned.createPlannedSession(userId, name: 'Pull');
+    await planned.createProgramLink(
+      userId,
+      programId: programId,
+      plannedSessionId: push.sessionId,
+      sequenceOrder: 1,
+    );
+    await planned.createProgramLink(
+      userId,
+      programId: programId,
+      plannedSessionId: pull.sessionId,
+      sequenceOrder: 2,
+    );
+
+    final review = await history.beginReview(
+      userId: userId,
+      programId: programId,
+      sessionIds: [push.sessionId, pull.sessionId],
+    );
+    expect(review.reviewedSessions, isEmpty, reason: 'nothing walked yet');
+
+    await history.markWorkoutReviewed(review.reviewId, push.sessionId);
+    final afterFirst = await history.fetchReview(review.reviewId);
+    expect(afterFirst!.reviewedSessions.keys, [push.sessionId]);
+
+    await history.markWorkoutReviewed(review.reviewId, pull.sessionId);
+
+    // Read back through a FRESH repository: the marks live on the row, not in
+    // anything this instance is holding — which is what "survives a reopen"
+    // means for a user who left the app mid-review.
+    final reopened = await ProgramHistoryRepository().fetchReview(
+      review.reviewId,
+    );
+    expect(
+      reopened!.reviewedSessions.keys,
+      unorderedEquals([push.sessionId, pull.sessionId]),
+    );
+
+    // Re-marking overwrites the stamp rather than adding a second one, so the
+    // map always says when the tick last landed.
+    final at = reopened.reviewedSessions[push.sessionId]!;
+    await history.markWorkoutReviewed(review.reviewId, push.sessionId);
+    final reMarked = await history.fetchReview(review.reviewId);
+    expect(reMarked!.reviewedSessions.keys.length, 2);
+    expect(reMarked.reviewedSessions[push.sessionId]!.isBefore(at), isFalse);
+
+    // The tick comes back off the same way it went on: Done is a toggle, and
+    // one key leaving the map is the whole of it — the other tick stays.
+    await history.unmarkWorkoutReviewed(review.reviewId, push.sessionId);
+    final unticked = await history.fetchReview(review.reviewId);
+    expect(unticked!.reviewedSessions.keys, [pull.sessionId]);
+
+    // And the knob turns both ways: re-marking after an un-mark lands again.
+    await history.markWorkoutReviewed(review.reviewId, push.sessionId);
+
+    // A completed review takes no more marks in either direction: a late Done
+    // or a late un-Done must not mutate a record that has been written.
+    await history.completeReview(
+      review.reviewId,
+      userId: userId,
+      outcome: kOutcomeReviewed,
+    );
+    await history.markWorkoutReviewed(review.reviewId, 'workout-late');
+    await history.unmarkWorkoutReviewed(review.reviewId, push.sessionId);
+    final sealed = await history.fetchReview(review.reviewId);
+    expect(
+      sealed!.reviewedSessions.keys,
+      unorderedEquals([push.sessionId, pull.sessionId]),
+    );
+  });
+
+  test('a workout compares against the newest completed pass that contains it',
+      () async {
+    // "Contains", not "equals": a pass over a set including this workout is a
+    // look at it, so the diff answers what changed in the workout since anyone
+    // last snapshotted it. A newer pass that does NOT contain it must be
+    // skipped over, not compared against — its numbers would read as real and
+    // answer a different workout entirely.
+    final push = await planned.createPlannedSession(userId, name: 'Push');
+    final pull = await planned.createPlannedSession(userId, name: 'Pull');
+    final legs = await planned.createPlannedSession(userId, name: 'Legs');
+    await planned.createProgramLink(
+      userId,
+      programId: programId,
+      plannedSessionId: push.sessionId,
+      sequenceOrder: 1,
+    );
+    await planned.createProgramLink(
+      userId,
+      programId: programId,
+      plannedSessionId: pull.sessionId,
+      sequenceOrder: 2,
+    );
+    await planned.createProgramLink(
+      userId,
+      programId: programId,
+      plannedSessionId: legs.sessionId,
+      sequenceOrder: 3,
+    );
+
+    ContentSession workout(String id, String name) => ContentSession(
+      sessionId: id,
+      userId: userId,
+      name: name,
+      exercises: const [],
+    );
+    ProgramContent contentOf(List<ContentSession> sessions) =>
+        ProgramContent(sessions: sessions);
+
+    await _insertCompletedReview(
+      db,
+      userId,
+      programId,
+      reviewId: 'rev-push',
+      sessionIds: [push.sessionId],
+      snapshot: contentOf([workout(push.sessionId, 'Push')]),
+      completedDate: DateTime(2026, 5, 10),
+    );
+    await _insertCompletedReview(
+      db,
+      userId,
+      programId,
+      reviewId: 'rev-pull',
+      sessionIds: [pull.sessionId],
+      snapshot: contentOf([workout(pull.sessionId, 'Pull')]),
+      completedDate: DateTime(2026, 5, 20),
+    );
+    await _insertCompletedReview(
+      db,
+      userId,
+      programId,
+      reviewId: 'rev-all',
+      sessionIds: [push.sessionId, pull.sessionId],
+      snapshot: contentOf([
+        workout(push.sessionId, 'Push'),
+        workout(pull.sessionId, 'Pull'),
+      ]),
+      completedDate: DateTime(2026, 5, 25),
+    );
+    await _insertCompletedReview(
+      db,
+      userId,
+      programId,
+      reviewId: 'rev-pull2',
+      sessionIds: [pull.sessionId],
+      snapshot: contentOf([workout(pull.sessionId, 'Pull')]),
+      completedDate: DateTime(2026, 5, 28),
+    );
+
+    final current = await history.beginReview(
+      userId: userId,
+      programId: programId,
+      sessionIds: [push.sessionId, pull.sessionId, legs.sessionId],
+    );
+
+    // Pull's newest containing pass is the 28th — "contains" picks the newest
+    // look at THIS workout, not the newest review of anything.
+    final forPull = await history.comparisonBase(
+      current,
+      sessionId: pull.sessionId,
+    );
+    expect(forPull!.completedDate, DateTime(2026, 5, 28));
+    expect(forPull.content.sessions.single.sessionId, pull.sessionId);
+
+    // Push was passed over more often, but the pass over pull (newer) does not
+    // contain it — the walk skips it for the 25th, the newest pass that does.
+    final forPush = await history.comparisonBase(
+      current,
+      sessionId: push.sessionId,
+    );
+    expect(forPush!.completedDate, DateTime(2026, 5, 25));
+    expect(
+      forPush.content.sessions.map((s) => s.sessionId),
+      [push.sessionId, pull.sessionId],
+      reason: 'the base is the whole snapshot — narrowing to one workout is '
+          'the comparison\'s job, not the pairing\'s',
+    );
+
+    // No completed pass has ever contained legs, so it opens on the plan as
+    // found — this review's own baseline.
+    final forLegs = await history.comparisonBase(
+      current,
+      sessionId: legs.sessionId,
+    );
+    expect(forLegs!.completedDate, isNull);
+    expect(forLegs.asFound, isTrue);
+
+    // A legacy session row contains its own workout, exactly as its digests
+    // always read — old rows keep pairing.
+    await _insertCompletedReview(
+      db,
+      userId,
+      programId,
+      reviewId: 'rev-legacy',
+      sessionId: push.sessionId,
+      snapshot: contentOf([workout(push.sessionId, 'Push')]),
+      completedDate: DateTime(2026, 5, 29),
+    );
+    final againForPush = await history.comparisonBase(
+      current,
+      sessionId: push.sessionId,
+    );
+    expect(againForPush!.completedDate, DateTime(2026, 5, 29));
   });
 
   test(
@@ -1289,22 +1803,30 @@ Future<void> _insertSession(
 /// A review that has already been completed — the checkpoint [checkpointFor]
 /// looks for. Written directly because the read under test orders by
 /// `completed_date`, which `completeReview` would stamp with "now".
+///
+/// [sessionIds] writes the stored set (the modern scope); [blockId] and
+/// [sessionId] write the legacy spelling — the sides are mutually exclusive,
+/// as the table's rows treat them. [snapshot] is the document the row
+/// carries, for the reads that compare against it.
 Future<void> _insertCompletedReview(
   PowerSyncDatabase db,
   String userId,
   String programId, {
   required String reviewId,
   required DateTime completedDate,
+  List<String>? sessionIds,
   String? blockId,
   String? sessionId,
+  ProgramContent? snapshot,
 }) async {
   final stamp = completedDate.toIso8601String();
   await db.execute(
     '''
     INSERT INTO fact_program_review
-      (id, review_id, user_id, program_id, block_id, session_id, kind,
-       completed_date, outcome, created_date)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, review_id, user_id, program_id, block_id, session_id,
+       session_ids_json, kind, completed_date, outcome, created_date,
+       snapshot_content, snapshot_hash)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ''',
     [
       reviewId,
@@ -1313,10 +1835,13 @@ Future<void> _insertCompletedReview(
       programId,
       blockId,
       sessionId,
+      sessionIds == null ? null : jsonEncode(sessionIds),
       kReviewKindReview,
       stamp,
       kOutcomeReviewed,
       stamp,
+      snapshot?.encode(),
+      snapshot?.contentHash,
     ],
   );
 }
@@ -1332,15 +1857,13 @@ Future<ProgramReview> _checkpoint(
   ProgramHistoryRepository history,
   String userId,
   String programId, {
-  String? blockId,
-  String? sessionId,
+  required List<String> sessionIds,
   String? notes,
 }) async {
   final review = await history.scheduleReview(
     userId: userId,
     programId: programId,
-    blockId: blockId,
-    sessionId: sessionId,
+    sessionIds: sessionIds,
     notes: notes,
   );
   return history.completeReview(
@@ -1351,54 +1874,3 @@ Future<ProgramReview> _checkpoint(
   );
 }
 
-/// The same document with one set's target changed. A proposal is a document
-/// carrying the same ids it describes, so building one is a copy with one value
-/// replaced rather than a second format to keep in step.
-ProgramContent _withTarget(
-  ProgramContent source,
-  String plannedSetId,
-  String targetWeight,
-) => ProgramContent(
-  blocks: source.blocks,
-  sessions: [
-    for (final session in source.sessions)
-      ContentSession(
-        sessionId: session.sessionId,
-        userId: session.userId,
-        name: session.name,
-        notes: session.notes,
-        createdDate: session.createdDate,
-        sequenceOrder: session.sequenceOrder,
-        dayOfWeek: session.dayOfWeek,
-        weekOffset: session.weekOffset,
-        blockId: session.blockId,
-        exercises: [
-          for (final exercise in session.exercises)
-            ContentExercise(
-              plannedExerciseId: exercise.plannedExerciseId,
-              plannedSessionId: exercise.plannedSessionId,
-              userId: exercise.userId,
-              exerciseId: exercise.exerciseId,
-              exerciseOrder: exercise.exerciseOrder,
-              sets: [
-                for (final set in exercise.sets)
-                  if (set.plannedSetId == plannedSetId)
-                    ContentSet(
-                      plannedSetId: set.plannedSetId,
-                      plannedExerciseId: set.plannedExerciseId,
-                      plannedSessionId: set.plannedSessionId,
-                      userId: set.userId,
-                      variationId: set.variationId,
-                      setNumber: set.setNumber,
-                      targetWeight: targetWeight,
-                      targetReps: set.targetReps,
-                      targetNotes: set.targetNotes,
-                    )
-                  else
-                    set,
-              ],
-            ),
-        ],
-      ),
-  ],
-);

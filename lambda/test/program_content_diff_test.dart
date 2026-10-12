@@ -24,7 +24,7 @@ ContentSet _set(
 
 ContentExercise _exercise(
   String id, {
-  String exerciseId = 'ex1',
+  String? exerciseId = 'ex1',
   int order = 1,
   List<ContentSet>? sets,
 }) =>
@@ -189,14 +189,46 @@ void main() {
       expect(diff.changes.single.detail, 'renamed: Push → Push Day');
     });
 
-    test('a notes change is one edit', () {
-      final before = _content([_session('A', notes: null)]);
+    test('a notes change is one edit, and carries both texts', () {
+      final before = _content([_session('A', notes: 'was: backoff set')]);
       final after = _content([_session('A', notes: 'add a backoff set')]);
 
       final diff = diffContent(before, after);
 
       expect(diff.editedCount, 1);
-      expect(diff.changes.single.detail, 'notes edited');
+      // The row reads the pair; the whole texts ride along for the popup.
+      expect(diff.changes.single.detail, 'was: backoff set → add a backoff set');
+      expect(diff.changes.single.oldText, 'was: backoff set');
+      expect(diff.changes.single.newText, 'add a backoff set');
+    });
+
+    test('a note written where there was none says so on its empty side', () {
+      final before = _content([_session('A', notes: null)]);
+      final after = _content([_session('A', notes: 'add a backoff set')]);
+
+      final diff = diffContent(before, after);
+
+      expect(diff.changes.single.detail, '(none) → add a backoff set');
+      expect(diff.changes.single.oldText, isNull);
+    });
+
+    test('a long note is previewed capped, flattened to one line', () {
+      final before = _content([_session('A', notes: null)]);
+      final after = _content([
+        _session('A', notes: 'line one\nline two ${'x' * 80}'),
+      ]);
+
+      final detail = diffContent(before, after).changes.single.detail!;
+
+      // The row is one line; the newline a note was saved with is not one.
+      expect(detail, contains('line one line two'));
+      expect(detail, contains('…'));
+      expect(detail, isNot(contains('\n')));
+      // The popup gets the whole thing, newline and all.
+      expect(
+        diffContent(before, after).changes.single.newText,
+        contains('line one\nline two'),
+      );
     });
 
     test('an unchanged null notes field is not an edit', () {
@@ -418,6 +450,26 @@ void main() {
       expect(diff.changes.single.detail, '70 × 3');
     });
 
+    test('a set note change carries both texts like a workout note', () {
+      final before = _content([
+        _session('A', exercises: [
+          _exercise('Ae1', sets: [_set('Ae1s1', notes: 'bump to 65')])
+        ])
+      ]);
+      final after = _content([
+        _session('A', exercises: [
+          _exercise('Ae1', sets: [_set('Ae1s1', notes: '65 felt good')])
+        ])
+      ]);
+
+      final diff = diffContent(before, after);
+
+      expect(diff.editedCount, 1);
+      expect(diff.changes.single.detail, 'bump to 65 → 65 felt good');
+      expect(diff.changes.single.oldText, 'bump to 65');
+      expect(diff.changes.single.newText, '65 felt good');
+    });
+
     test('a variation change is its own edit', () {
       final before = _content([
         _session('A', exercises: [
@@ -433,7 +485,30 @@ void main() {
       final diff = diffContent(before, after);
 
       expect(diff.editedCount, 1);
-      expect(diff.changes.single.detail, 'variation changed');
+      expect(diff.changes.single.detail, 'variation: none → a variation',
+          reason: 'the plain exercise is nameable without a map, so only the '
+              'unknown far side falls back to a noun');
+    });
+
+    test('a variation change is named through the live map', () {
+      final before = _content([
+        _session('A', exercises: [
+          _exercise('Ae1', sets: [_set('Ae1s1', variation: 'v1')])
+        ])
+      ]);
+      final after = _content([
+        _session('A', exercises: [
+          _exercise('Ae1', sets: [_set('Ae1s1', variation: 'v2')])
+        ])
+      ]);
+
+      final diff = diffContent(
+        before,
+        after,
+        variationNames: const {'v1': 'Paused', 'v2': 'Tempo'},
+      );
+
+      expect(diff.changes.single.detail, 'variation: Paused → Tempo');
     });
 
     test('set changes carry their workout and exercise context', () {
@@ -685,6 +760,231 @@ void main() {
       expect(diff.addedCount, 1);
       expect(diff.removedCount, 1);
       expect(diff.summary, '+1 −1');
+    });
+  });
+
+  group('contentInScope', () {
+    test('a program scope leaves the document untouched', () {
+      final content = _content(
+        [_session('A'), _session('B', blockId: 'b1')],
+        blocks: const [ContentBlock(blockId: 'b1', name: 'Base', blockOrder: 1)],
+        goals: [_goal('g1'), _goal('g2', blockId: 'b1')],
+      );
+
+      final scoped = contentInScope(content);
+
+      expect(identical(scoped, content), isTrue,
+          reason: 'reviewing the whole program reviews what the document '
+              'already is — indirection here would only cost a copy');
+    });
+
+    test('a workout scope keeps that workout and nothing else', () {
+      final content = _content(
+        [
+          _session('A', exercises: [_exercise('Ae1'), _exercise('Ae2')]),
+          _session('B'),
+        ],
+        blocks: const [ContentBlock(blockId: 'b1', name: 'Base', blockOrder: 1)],
+        goals: [_goal('g1'), _goal('g2', blockId: 'b1')],
+      );
+
+      final scoped = contentInScope(content, sessionId: 'A');
+
+      expect(scoped.sessions.map((s) => s.sessionId), ['A']);
+      expect(scoped.sessions.single.exercises, hasLength(2),
+          reason: 'scoping chooses the workout, not its contents — the '
+              'exercises and sets are the whole point of reviewing it');
+      expect(scoped.blocks, isEmpty);
+      expect(scoped.goals, isEmpty,
+          reason: 'a program-level goal is not part of one workout\'s '
+              'contents, and a report that carried it would read as though '
+              'this pass had touched it');
+    });
+
+    test('a workout that no longer exists scopes to an empty document', () {
+      final scoped = contentInScope(_content([_session('A')]),
+          sessionId: 'deleted');
+
+      expect(scoped.isEmpty, isTrue,
+          reason: 'the honest reading is "everything removed"; widening to '
+              'the full program would report a deletion as no change at all');
+    });
+
+    test('a block scope keeps the block, its workouts, and the goals in force',
+        () {
+      final content = _content(
+        [
+          _session('A', blockId: 'b1'),
+          _session('B', blockId: 'b1'),
+          _session('C', blockId: 'b2'),
+          _session('D'),
+        ],
+        blocks: const [
+          ContentBlock(blockId: 'b1', name: 'Base', blockOrder: 1),
+          ContentBlock(blockId: 'b2', name: 'Peak', blockOrder: 2),
+        ],
+        goals: [
+          _goal('program', text: 'Sleep eight hours'),
+          _goal('inBlock', blockId: 'b1'),
+          _goal('otherBlock', blockId: 'b2'),
+        ],
+      );
+
+      final scoped = contentInScope(content, blockId: 'b1');
+
+      expect(scoped.blocks.map((b) => b.blockId), ['b1']);
+      expect(scoped.sessions.map((s) => s.sessionId), ['A', 'B'],
+          reason: 'workout order within the block survives, so a move inside '
+              'the block still reads as a move');
+      expect(scoped.goals.map((g) => g.goalId), ['program', 'inBlock'],
+          reason: 'a goal with no block is in force everywhere, so it is part '
+              'of what this phase is chasing — the sibling block\'s goal is not');
+    });
+
+    test('a block that no longer exists scopes to an empty document', () {
+      final scoped = contentInScope(
+        _content([_session('A', blockId: 'b1')],
+            blocks: const [
+              ContentBlock(blockId: 'b1', name: 'Base', blockOrder: 1),
+            ],
+            goals: [_goal('g1', blockId: 'b1')]),
+        blockId: 'gone',
+      );
+
+      expect(scoped.isEmpty, isTrue);
+    });
+
+    test('a program-level goal survives even a block that is gone', () {
+      // Deliberate, and the one thing that keeps the empty-scope rule from
+      // being absolute: a goal with no block was never the block's, so the
+      // block's disappearance cannot have removed it.
+      final scoped = contentInScope(
+        _content(const [], goals: [_goal('g1')]),
+        blockId: 'gone',
+      );
+
+      expect(scoped.goals.map((g) => g.goalId), ['g1']);
+    });
+
+    test('scoping both sides keeps a sibling\'s edits out of the report', () {
+      // The point of the helper: at block scope, a workout in another block
+      // changing must not appear — the review never looked at it, and a line
+      // about it would read as though the pass had touched it.
+      final before = _content([
+        _session('mine', blockId: 'b1'),
+        _session('sibling', blockId: 'b2'),
+      ]);
+      final after = _content([
+        _session('mine', blockId: 'b1', notes: 'edited'),
+        _session('sibling', blockId: 'b2', notes: 'also edited'),
+      ]);
+
+      final whole =
+          diffContent(contentInScope(before), contentInScope(after));
+      expect(whole.changes.map((c) => c.sessionId),
+          containsAll(['mine', 'sibling']));
+
+      final phase = diffContent(
+        contentInScope(before, blockId: 'b1'),
+        contentInScope(after, blockId: 'b1'),
+      );
+      expect(phase.changes.map((c) => c.sessionId), ['mine']);
+    });
+
+    test('a set scope keeps those workouts, the blocks that hold them, and '
+        'the goals in force', () {
+      final content = _content(
+        [
+          _session('A', blockId: 'b1'),
+          _session('B', blockId: 'b2'),
+          _session('C', blockId: 'b1'),
+          _session('D'),
+        ],
+        blocks: const [
+          ContentBlock(blockId: 'b1', name: 'Base', blockOrder: 1),
+          ContentBlock(blockId: 'b2', name: 'Peak', blockOrder: 2),
+        ],
+        goals: [
+          _goal('program', text: 'Sleep eight hours'),
+          _goal('inB1', blockId: 'b1'),
+          _goal('inB2', blockId: 'b2'),
+        ],
+      );
+
+      final scoped = contentInScope(content, sessionIds: ['A', 'C']);
+
+      expect(
+        scoped.sessions.map((s) => s.sessionId),
+        ['A', 'C'],
+        reason: 'the set says what to cover; the document still decides how it '
+            'reads, so a move inside the set still reads as a move',
+      );
+      expect(
+        scoped.blocks.map((b) => b.blockId),
+        ['b1'],
+        reason: 'a phase none of the set sits in is not part of the ground the '
+            'pass covered — b2 would report on a block it never looked at',
+      );
+      expect(
+        scoped.goals.map((g) => g.goalId),
+        ['program', 'inB1'],
+        reason: 'the program\'s own goals are chased wherever its workouts '
+            'sit; a dropped block\'s goals are not in force over this set',
+      );
+    });
+
+    test('a set spanning two blocks keeps both, so a multi-workout pass reads '
+        'back as the ground it covered', () {
+      final scoped = contentInScope(
+        _content(
+          [
+            _session('A', blockId: 'b1'),
+            _session('B', blockId: 'b2'),
+            _session('C', blockId: 'b1'),
+          ],
+          blocks: const [
+            ContentBlock(blockId: 'b1', name: 'Base', blockOrder: 1),
+            ContentBlock(blockId: 'b2', name: 'Peak', blockOrder: 2),
+          ],
+        ),
+        sessionIds: ['A', 'B'],
+      );
+
+      expect(scoped.sessions.map((s) => s.sessionId), ['A', 'B']);
+      expect(scoped.blocks.map((b) => b.blockId), ['b1', 'b2']);
+    });
+
+    test('an id the document no longer holds is dropped, not widened to the '
+        'whole program', () {
+      final scoped = contentInScope(
+        _content([_session('A'), _session('B')]),
+        sessionIds: ['A', 'deleted'],
+      );
+
+      expect(
+        scoped.sessions.map((s) => s.sessionId),
+        ['A'],
+        reason: 'a set is a filter over the document, not a promise that every '
+            'id is still there — the alternative is rendering the siblings',
+      );
+    });
+
+    test('scoping both sides by the same set keeps a sibling\'s edits out of '
+        'the report', () {
+      // What scopedSnapshot leans on for every set review: completeReview
+      // freezes the whole program, so without both sides narrowed, a diff
+      // would claim the pass edited workouts it never opened.
+      final before = _content([_session('mine'), _session('sibling')]);
+      final after = _content([
+        _session('mine', notes: 'edited'),
+        _session('sibling', notes: 'also edited'),
+      ]);
+
+      final scoped = diffContent(
+        contentInScope(before, sessionIds: ['mine']),
+        contentInScope(after, sessionIds: ['mine']),
+      );
+      expect(scoped.changes.map((c) => c.sessionId), ['mine']);
     });
   });
 }

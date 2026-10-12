@@ -295,6 +295,8 @@ class _RunConfigSheetState extends State<_RunConfigSheet> {
               placeholder: 'e.g. 12',
               keyboardType: TextInputType.number,
               required: true,
+              // The sheet's default background is a surface ground.
+              elevated: true,
               onChanged: (_) => setState(() {}),
             ),
           ],

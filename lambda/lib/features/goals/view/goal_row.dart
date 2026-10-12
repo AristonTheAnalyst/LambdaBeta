@@ -10,23 +10,28 @@ import '../../../core/utils/session_format.dart';
 import '../../../data/models/exercise_detail.dart';
 import '../../../data/models/goal.dart';
 import '../../../shared/widgets/container_styles.dart';
-import '../../../shared/widgets/exercise_target_picker.dart';
-import '../model/program_achievements.dart';
+import '../../programs/model/program_achievements.dart';
 
-/// A goal's display name as it appears in a list: the exercise's live name,
-/// falling back to the text captured when the goal was written.
+/// A goal's exercise name — the exercise's live name, falling back to the
+/// text captured when the goal was written.
 ///
 /// Live-first is the house rule (`20260826000000_snapshots_out_fks_in`) — a
-/// renamed exercise renames it everywhere, goals included. Shared so the
-/// program's goal list and a block's read identically.
-String goalLabelFor(Goal goal, Map<String, ExerciseDetail> detailMap) =>
-    goalTargetLabel(
-      toProperCase(detailMap[goal.exerciseId]?.name ?? goal.text ?? ''),
-      goal.targetWeight,
-      goal.targetReps,
-    );
+/// renamed exercise renames it everywhere, goals included.
+String goalExerciseNameFor(Goal goal, Map<String, ExerciseDetail> detailMap) =>
+    toProperCase(detailMap[goal.exerciseId]?.name ?? goal.text ?? '');
 
-/// One goal: what it is, what it is scoped to, and how it is going.
+/// One goal: what it is, and how it is going.
+///
+/// The name and the target are the two things a goal is, and the row draws
+/// each as its own — the name left, the target right-aligned — so the targets
+/// line up in a column down the list instead of trailing the names in a dash
+/// string (2026-10-10). The same split the review sheets' rows make, so a
+/// goal reads identically on the library, the landing and the scope sheet.
+///
+/// Goals carry no scope while they are unattached (2026-10-08): the chip that
+/// named a program or block is retired from the UI, along with every way of
+/// writing one. The `program_id`/`block_id` columns and the resolution around
+/// them stay in the data layer, dormant, like day scheduling.
 ///
 /// The outcome line is the reason the panel exists. A goal met shows the set
 /// that met it — often heavier than the target, which is the interesting part.
@@ -36,27 +41,30 @@ String goalLabelFor(Goal goal, Map<String, ExerciseDetail> detailMap) =>
 class GoalRow extends StatelessWidget {
   const GoalRow({
     super.key,
-    required this.label,
-    required this.onDelete,
+    required this.exerciseName,
+    this.target = '',
     this.outcome,
-    this.scopeLabel,
+    required this.onDelete,
   });
 
-  /// Built by the caller with [goalLabelFor], because the caller is the one
-  /// holding the exercise detail map.
-  final String label;
+  /// Built by the caller with [goalExerciseNameFor], because the caller is
+  /// the one holding the exercise detail map.
+  final String exerciseName;
 
-  /// Null when this goal is not in force right now — see
-  /// `ProgramDetailState.goalOutcomes`. A goal with no verdict is not a failed
-  /// one, and the row draws nothing rather than claiming otherwise.
+  /// The target, as its own right-aligned element ("100 kg × 5 reps"), built
+  /// with `goalTargetValue`. Mono, because it is a numeric readout like the
+  /// set grid's cells. Empty = there is no target to state.
+  final String target;
+
+  /// Null when this row has no verdict to show — the review's goal cards pass
+  /// none, and the goals list derives a lifetime one. A goal with no verdict
+  /// is not a failed one, and the row draws nothing rather than claiming
+  /// otherwise.
   final GoalAchievement? outcome;
 
-  /// The block this goal belongs to, when that is worth saying — the program's
-  /// list mixes both scopes, so it names them; a block's own list is all one
-  /// scope and passes nothing.
-  final String? scopeLabel;
-
-  final VoidCallback onDelete;
+  /// Null when the row has nothing to delete — the review's read-only goal
+  /// view, where the × would offer an action the pass does not have.
+  final VoidCallback? onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -82,9 +90,11 @@ class GoalRow extends StatelessWidget {
                       ),
                       const SizedBox(width: 6),
                     ],
-                    Flexible(
+                    Expanded(
                       child: Text(
-                        label,
+                        exerciseName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: AppFonts.ui(
                           fontSize: AppTextStyles.sm,
                           fontWeight: FontWeight.w600,
@@ -92,12 +102,18 @@ class GoalRow extends StatelessWidget {
                         ),
                       ),
                     ),
+                    if (target.isNotEmpty) ...[
+                      const SizedBox(width: 8),
+                      Text(
+                        target,
+                        style: AppFonts.mono(
+                          fontSize: AppTextStyles.xs,
+                          color: AppColors.muted,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
-                if (scopeLabel != null) ...[
-                  const SizedBox(height: AppSpacing.xs),
-                  ScopeChip(label: scopeLabel!),
-                ],
                 if (o != null) ...[
                   const SizedBox(height: AppSpacing.xs),
                   Text(
@@ -111,10 +127,11 @@ class GoalRow extends StatelessWidget {
               ],
             ),
           ),
-          GestureDetector(
-            onTap: onDelete,
-            child: Icon(Icons.close, size: 16, color: AppColors.muted),
-          ),
+          if (onDelete != null)
+            GestureDetector(
+              onTap: onDelete,
+              child: Icon(Icons.close, size: 16, color: AppColors.muted),
+            ),
         ],
       ),
     );
@@ -140,35 +157,6 @@ String outcomeLabel(GoalAchievement o) {
   }
   if (value == null) return 'Not attempted yet';
   return 'Best ${[value, ?when].join(' · ')}';
-}
-
-/// A small scope label — which block a goal belongs to.
-class ScopeChip extends StatelessWidget {
-  const ScopeChip({super.key, required this.label, this.color});
-
-  final String label;
-  final Color? color;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = color ?? AppColors.accent;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      decoration: BoxDecoration(
-        color: c.withAlpha(26),
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(color: c.withAlpha(77)),
-      ),
-      child: Text(
-        label,
-        style: AppFonts.ui(
-          fontSize: AppTextStyles.xs,
-          fontWeight: FontWeight.w600,
-          color: c,
-        ),
-      ),
-    );
-  }
 }
 
 String _fmtNum(num n) =>

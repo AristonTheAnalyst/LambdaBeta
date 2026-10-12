@@ -20,7 +20,6 @@ class NavBarDemoScreen extends StatefulWidget {
 }
 
 class _NavBarDemoScreenState extends State<NavBarDemoScreen> {
-  final _controller = ScrollController();
   int _index = 0;
 
   /// The app's own four tabs, with Social in the slot Dev holds today — icon
@@ -50,12 +49,6 @@ class _NavBarDemoScreenState extends State<NavBarDemoScreen> {
   ];
 
   @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
       listenable: themeNotifier,
@@ -64,7 +57,6 @@ class _NavBarDemoScreenState extends State<NavBarDemoScreen> {
         return Scaffold(
           backgroundColor: c.bg,
           body: ScrollShrinkNavBar(
-            controller: _controller,
             currentIndex: _index,
             onTap: (i) => setState(() => _index = i),
             items: _items,
@@ -85,7 +77,6 @@ class _NavBarDemoScreenState extends State<NavBarDemoScreen> {
                 ),
                 Expanded(
                   child: ListView(
-                    controller: _controller,
                     padding: EdgeInsets.fromLTRB(
                       AppSpacing.xl,
                       AppSpacing.lg,
@@ -223,9 +214,9 @@ class _IntroCard extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.xs),
           Text(
-            'Scroll down — the bar shrinks and fades. Scroll up — it springs '
-            'back. Tap an icon for the pop. The bar blurs whatever passes '
-            'underneath it.',
+            'Scroll down — the bar shrinks. Scroll up — it springs back. Tap '
+            'an icon for the pop. The bar blurs whatever passes underneath '
+            'it.',
             style: TextStyle(
               fontSize: AppTextStyles.sm,
               height: 1.4,

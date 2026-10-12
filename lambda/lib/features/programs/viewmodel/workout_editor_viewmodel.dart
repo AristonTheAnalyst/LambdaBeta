@@ -776,11 +776,19 @@ class WorkoutEditorViewModel {
       workout.sessionId,
     );
 
+    // The removed exercise's drafts leave with it: a draft is keyed to the
+    // group it was added under, and once that group is gone the row is gone
+    // from the card — it has to be gone from the count too, or the pill's
+    // SETS would add up rows nobody can see.
+    final drafts = Map<String, List<int>>.from(s.workoutSetDrafts)
+      ..remove(slot.plannedExerciseId ?? '');
+
     state.value = s.copyWith(
       workoutPlannedExercises: exercises,
       workoutExerciseSlots: _slotsFromExercises(exercises),
       activeSlotIndex: newActive,
       workoutPlannedSessionExerciseSets: plannedSets,
+      workoutSetDrafts: drafts,
       workoutUnsavedChanges: true,
     );
   }
@@ -834,6 +842,66 @@ class WorkoutEditorViewModel {
       workoutExerciseSlots: _slotsFromExercises(exercises),
       workoutPlannedSessionExerciseSets: sets,
     );
+  }
+
+  /// Hold-and-drag reorder of one exercise group's target rows.
+  ///
+  /// [oldIndex] and [newIndex] count that group's REAL rows only, and
+  /// [newIndex] arrives already adjusted for the row being lifted out
+  /// (`onReorderItem`). Draft rows sit past the end and cannot be dropped
+  /// into — they are virtual until saved, and a drop there means "last real
+  /// set".
+  ///
+  /// The renumber lands locally first so the grid settles on the drop's own
+  /// frame, then the write, then a re-read: the read is what proves the new
+  /// numbering is the one stored, which matters here because
+  /// `fetchNormalizedPlannedSets` renumbers from the same column on every
+  /// open.
+  Future<void> reorderPlannedSets(
+    String plannedExerciseId,
+    int oldIndex,
+    int newIndex,
+  ) async {
+    final workout = state.value.editingWorkout;
+    if (workout == null) return;
+    final rows =
+        <PlannedSessionExerciseSet>[
+          for (final s in state.value.workoutPlannedSessionExerciseSets)
+            if (s.plannedExerciseId == plannedExerciseId) s,
+        ]..sort((a, b) => a.setNumber.compareTo(b.setNumber));
+    if (rows.length < 2) return;
+    if (newIndex >= rows.length) newIndex = rows.length - 1;
+    if (oldIndex == newIndex || oldIndex < 0 || oldIndex >= rows.length) {
+      return;
+    }
+
+    rows.insert(newIndex, rows.removeAt(oldIndex));
+    final renumbered = <String, PlannedSessionExerciseSet>{
+      for (var i = 0; i < rows.length; i++)
+        rows[i].plannedSetId: rows[i].copyWith(setNumber: i + 1),
+    };
+    state.value = state.value.copyWith(
+      workoutPlannedSessionExerciseSets: [
+        for (final s in state.value.workoutPlannedSessionExerciseSets)
+          renumbered[s.plannedSetId] ?? s,
+      ],
+      workoutUnsavedChanges: true,
+    );
+
+    try {
+      await _plannedSessionRepo.renumberPlannedSets([
+        for (final s in rows) s.plannedSetId,
+      ]);
+      final sets = await _plannedSessionRepo.fetchPlannedSets(
+        workout.sessionId,
+      );
+      state.value = state.value.copyWith(
+        workoutPlannedSessionExerciseSets: sets,
+        workoutUnsavedChanges: true,
+      );
+    } catch (e) {
+      state.value = state.value.copyWith(error: friendlyError(e));
+    }
   }
 
   // ── Draft (unsaved) planned-set rows ──────────────────────────────────────

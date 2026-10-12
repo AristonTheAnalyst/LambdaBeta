@@ -3,7 +3,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/utils/session_format.dart';
 import '../../../data/models/program_block.dart';
-import '../../../data/models/program_content.dart';
 import '../../../data/models/program_review.dart';
 import '../../../data/models/program_run.dart';
 import '../../../data/repositories/exercise_repository.dart';
@@ -35,46 +34,99 @@ class ReviewDigest {
   final ContentDiff? vsPrevious;
 }
 
-/// One thing a review can be taken **of** — the whole program, one of its
-/// blocks, or one of its workouts.
+/// One workout a review can cover, display-ready for the picker.
 ///
-/// Display-ready on purpose: the three labels come from three different places
-/// (a constant, a block row, a workout row) and the picker, the filter and the
-/// review bar all have to say the same words about the same thing.
-class ScopeOption {
-  const ScopeOption({
-    required this.kind,
+/// A review's unit is the workout, and the picker has to offer them by name —
+/// so this carries what a picker row shows: the workout's name, the block it
+/// sits in (grouping, and the line under the name), and how much is in it.
+class WorkoutOption {
+  const WorkoutOption({
+    required this.sessionId,
     required this.label,
     this.blockId,
-    this.sessionId,
+    this.blockName,
+    this.exerciseCount = 0,
   });
 
-  final ReviewScopeKind kind;
+  final String sessionId;
+
+  /// The workout's own name, proper-cased.
   final String label;
 
-  /// The block a block scope examines — also the block a workout scope's
-  /// workout is filed under, which is what the timeline filter uses to keep a
-  /// session review visible under its own phase.
+  /// The block it sits in, when the program has blocks — also what the
+  /// timeline filter compares a review's set against.
   final String? blockId;
+  final String? blockName;
 
-  final String? sessionId;
+  final int exerciseCount;
 }
 
-/// A review that has just been started: the row that was written, plus the two
-/// facts its ceremony needs to open — where its window begins, and what the
-/// program produced inside it.
+/// Everything a review of [programId] can cover, in the order the picker
+/// offers them: one entry per workout the program contains.
+///
+/// Read from the program's **links**, not from its workouts: a workout's
+/// membership — which block holds it, and where it sits in the order — lives
+/// on the join row, and a workout the program does not contain cannot be
+/// covered by a review of it. Fetched when the picker opens rather than at
+/// load: the exercise counts cost one read per workout, and the timeline that
+/// precedes the picker has no use for them.
+///
+/// A free function rather than a view-model method alone because two screens
+/// open the picker: the Reviews tab through [ProgramHistoryViewModel], and the
+/// run's length-reached prompt, which owns no history view model but asks the
+/// same question. One implementation, so the two lists cannot disagree.
+Future<List<WorkoutOption>> fetchWorkoutOptions({
+  required String userId,
+  required String programId,
+  PlannedSessionRepository? plannedRepository,
+  ProgramRepository? programRepository,
+}) async {
+  final planned = plannedRepository ?? PlannedSessionRepository();
+  final programs = programRepository ?? ProgramRepository();
+  final links = await planned.fetchProgramLinks(programId);
+  final workouts = await planned.fetchPlannedSessions(
+    userId,
+    programId: programId,
+  );
+  final blocks = await programs.fetchBlocks(programId);
+  final blockNames = {for (final b in blocks) b.blockId: toProperCase(b.name)};
+  final byId = {for (final w in workouts) w.sessionId: w};
+
+  return [
+    for (final link in links)
+      if (byId[link.plannedSessionId] case final workout?)
+        WorkoutOption(
+          sessionId: workout.sessionId,
+          label: toProperCase(workout.name),
+          blockId: link.blockId,
+          blockName: blockNames[link.blockId],
+          exerciseCount:
+              (await planned.fetchPlannedExercises(workout.sessionId)).length,
+        ),
+  ];
+}
+
+/// A review that has just been started: the row that was written, the workouts
+/// it covers, and the two facts its ceremony needs to open — where its window
+/// begins, and what the program produced inside it.
 ///
 /// A plain data result rather than a screen object: this layer does not know
-/// what a review bar looks like, and the caller already holds the scope's own
-/// label.
+/// what a review bar looks like. The set travels here because the caller must
+/// never read it back off the row's own columns — those are null on legacy
+/// rows and are only the raw store of what [sessionsIn] resolves.
 class StartedReview {
   const StartedReview({
     required this.review,
+    this.sessionIds = const [],
     this.sinceDate,
     this.achievements,
   });
 
   final ProgramReview review;
+
+  /// The workouts the pass covers, resolved.
+  final List<String> sessionIds;
+
   final DateTime? sinceDate;
   final ProgramAchievements? achievements;
 }
@@ -92,7 +144,8 @@ class ProgramHistoryState {
     this.blocks = const [],
     this.blockFilter,
     this.usesBlocks = false,
-    this.scopes = const [],
+    this.reviewSessions = const {},
+    this.sessionBlocks = const {},
   });
 
   final bool isLoading;
@@ -138,51 +191,35 @@ class ProgramHistoryState {
   /// workout list it does not have.
   final bool usesBlocks;
 
-  /// Everything a review can be scoped to here: the program itself, then one
-  /// entry per active block, then one per workout. Program first because it is
-  /// the default, and workouts after blocks because a workout is the narrower
-  /// thing to say.
-  ///
-  /// A workout in a block carries that block's id, so choosing it can also
-  /// narrow the timeline — the phase and the workout are not two different
-  /// answers to "where does this review sit".
-  final List<ScopeOption> scopes;
+  /// `reviewId → the workouts it covers`, every loaded row resolved once at
+  /// load. Resolution reads the program's live links, so what a pass covers is
+  /// one answer shared by the timeline filter, the digests and the next pass's
+  /// window — and a legacy row's old scope resolves in the same place, so
+  /// nothing downstream ever consults its columns.
+  final Map<String, List<String>> reviewSessions;
 
-  /// [reviews] narrowed to [blockFilter]. Digests are computed over the whole
-  /// list regardless, so "what changed" counts the same changes in both
-  /// views — and the oldest visible row keeps the predecessor it has in the
-  /// full list rather than losing it to the filter.
+  /// `workoutId → blockId` for the program's links. The timeline filter asks
+  /// "does this review touch the block being shown"; a review's set of workout
+  /// ids does not say which block that is on its own.
+  final Map<String, String> sessionBlocks;
+
+  /// [reviews] narrowed to [blockFilter]. A review sits under a block when its
+  /// set touches that block's workouts — a block is no longer a scope, so
+  /// "this block's history" means the passes that walked any of its workouts.
+  /// Digests are computed over the whole list regardless, so "what changed"
+  /// counts the same changes in both views — and the oldest visible row keeps
+  /// the predecessor it has in the full list rather than losing it to the
+  /// filter.
   List<ProgramReview> get visibleReviews {
     final id = blockFilter;
     if (id == null) return reviews;
     return [
       for (final r in reviews)
-        if (r.blockId == id) r,
+        if ((reviewSessions[r.reviewId] ?? const []).any(
+          (s) => sessionBlocks[s] == id,
+        ))
+          r,
     ];
-  }
-
-  /// The block behind [blockFilter], or null when unfiltered (or when the
-  /// block has since been archived — the filter still applies, it just cannot
-  /// be named).
-  ProgramBlock? get filteredBlock {
-    final id = blockFilter;
-    if (id == null) return null;
-    for (final b in blocks) {
-      if (b.blockId == id) return b;
-    }
-    return null;
-  }
-
-  bool get isEmpty => reviews.isEmpty;
-
-  bool get hasOpenReview => openReview != null;
-
-  /// The open checkpoint, or null. At most one in practice.
-  ProgramReview? get openReview {
-    for (final r in reviews) {
-      if (r.isOpen) return r;
-    }
-    return null;
   }
 
   /// What [reviewId]'s checkpoint contains and changed, or an empty digest
@@ -205,7 +242,8 @@ class ProgramHistoryState {
     String? blockFilter,
     bool clearBlockFilter = false,
     bool? usesBlocks,
-    List<ScopeOption>? scopes,
+    Map<String, List<String>>? reviewSessions,
+    Map<String, String>? sessionBlocks,
   }) => ProgramHistoryState(
     isLoading: isLoading ?? this.isLoading,
     isReviewing: isReviewing ?? this.isReviewing,
@@ -218,7 +256,8 @@ class ProgramHistoryState {
     blocks: blocks ?? this.blocks,
     blockFilter: clearBlockFilter ? null : blockFilter ?? this.blockFilter,
     usesBlocks: usesBlocks ?? this.usesBlocks,
-    scopes: scopes ?? this.scopes,
+    reviewSessions: reviewSessions ?? this.reviewSessions,
+    sessionBlocks: sessionBlocks ?? this.sessionBlocks,
   );
 }
 
@@ -279,10 +318,22 @@ class ProgramHistoryViewModel {
       // review sheet's contents view has to know a program with no blocks yet
       // from one that will never have any.
       final program = await _programRepo.fetchProgram(programId);
-      // Loaded even when there is nothing to show yet: a program with no
-      // reviews is exactly when someone starts one, and the picker would
-      // otherwise open empty on the only screen that offers it.
-      final scopes = await _scopesFor(programId, blocks);
+      // Every review answers for a set of workouts, and the set is resolved
+      // against the program's links — read here because the timeline filter,
+      // the digests and the next pass's window all consume the same resolution,
+      // and one read is what keeps them from disagreeing.
+      final links = await _plannedRepo.fetchProgramLinks(programId);
+      final sessionBlocks = {
+        for (final link in links)
+          if (link.blockId != null) link.plannedSessionId: link.blockId!,
+      };
+      final sessionLinks = [
+        for (final link in links)
+          (sessionId: link.plannedSessionId, blockId: link.blockId),
+      ];
+      final reviewSessions = {
+        for (final r in reviews) r.reviewId: r.sessionsIn(sessionLinks),
+      };
       if (_disposed) return;
 
       // A filter naming a block that no longer exists would show an empty
@@ -300,7 +351,8 @@ class ProgramHistoryViewModel {
           digests: const {},
           blocks: blocks,
           usesBlocks: program?.usesBlocks ?? false,
-          scopes: scopes,
+          reviewSessions: const {},
+          sessionBlocks: sessionBlocks,
           clearAchievements: true,
           clearBlockFilter: !filterHolds,
         );
@@ -311,7 +363,12 @@ class ProgramHistoryViewModel {
       final variationNames = await _exerciseRepo.fetchVariationNameMap(_userId);
       if (_disposed) return;
 
-      final achievements = await _achievementsFor(programId, reviews);
+      final achievements = await _achievementsFor(
+        programId,
+        reviews,
+        reviewSessions,
+        sessionBlocks,
+      );
       if (_disposed) return;
 
       state.value = ProgramHistoryState(
@@ -323,7 +380,8 @@ class ProgramHistoryViewModel {
         blocks: blocks,
         blockFilter: filterHolds ? filter : null,
         usesBlocks: program?.usesBlocks ?? false,
-        scopes: scopes,
+        reviewSessions: reviewSessions,
+        sessionBlocks: sessionBlocks,
       );
     } catch (_) {
       if (_disposed) return;
@@ -343,6 +401,8 @@ class ProgramHistoryViewModel {
   Future<ProgramAchievements?> _achievementsFor(
     String programId,
     List<ProgramReview> reviews,
+    Map<String, List<String>> reviewSessions,
+    Map<String, String> sessionBlocks,
   ) async {
     ProgramReview? open;
     for (final r in reviews) {
@@ -353,13 +413,19 @@ class ProgramHistoryViewModel {
     }
     if (open == null) return null;
 
+    // The open pass's own workouts are what both the window question and the
+    // derivation are about — resolved once at load and read here, so the
+    // sheet's numbers and the timeline's cannot disagree about what it covers.
+    final set = reviewSessions[open.reviewId] ?? const <String>[];
+
     // A first-ever run has no previous checkpoint, so the window has to open
     // where the run did — `checkpointFor`'s bare `now` fallback made a first
     // run's window empty and its panel show nothing however much was lifted.
     // The run behind the review answers first; failing that, the current run
-    // when it is this program's AND at this scope — another block's run would
-    // date the window from a phase the review is not about. A review with no
-    // run behind it (scheduled by hand, nothing running) keeps the old empty
+    // when it is this program's AND is running one of these workouts' blocks —
+    // a run of another program, or of a block none of them sit in, would date
+    // the window from a phase the review is not about. A review with no run
+    // behind it (scheduled by hand, nothing running) keeps the old empty
     // window.
     DateTime? runStart;
     try {
@@ -368,8 +434,11 @@ class ProgramHistoryViewModel {
           open.programRunId!,
         ))?.startedDate;
       }
-      runStart ??= (await _currentRunFor(programId, blockId: open.blockId))
-          ?.startedDate;
+      runStart ??= (await _currentRunFor(
+        programId,
+        sessionIds: set,
+        sessionBlocks: sessionBlocks,
+      ))?.startedDate;
     } catch (_) {
       // Unreadable runs fall back to "now" — a diagnostic read must not stop
       // the panel rendering.
@@ -377,91 +446,52 @@ class ProgramHistoryViewModel {
 
     final from = await _historyRepo.checkpointFor(
       programId,
-      blockId: open.blockId,
-      sessionId: open.sessionId,
+      sessionIds: set,
       fallback: runStart,
     );
     return _derivation.derive(
       userId: _userId,
       from: from,
       programId: programId,
-      // The review's scope, threaded through everything it reports: a block's
-      // review shows that block's sessions, PRs and goals plus the program's
-      // goals in force in it, a session's review shows that planned session's
-      // logged sessions, and a program-level one shows every run of the
-      // program in its window.
-      blockId: open.blockId,
-      sessionId: open.sessionId,
+      // The review's workouts, threaded through everything it reports: the
+      // sessions are those of the named plans, and the goals in force are the
+      // program's own plus the goals of every block any of them sits in.
+      sessionIds: set,
     );
   }
 
-  /// The run in progress, but only when it belongs to **this** program AND
-  /// **this** scope.
+  /// The run in progress, but only when it belongs to **this** program AND is
+  /// running one of the **named** workouts' blocks.
   ///
   /// A run is the only thing that can date a first review's window, and a run
-  /// of another program — or of another block — would date it from a phase the
-  /// review is not about. Null rather than a guess: a review with no run behind
-  /// it (started by hand, nothing running) opens its window where
-  /// `checkpointFor` decides.
+  /// of another program — or of a block none of the reviewed workouts sit in —
+  /// would date it from a phase the review is not about. Null rather than a
+  /// guess: a review with no run behind it (started by hand, nothing running)
+  /// opens its window where `checkpointFor` decides.
   Future<ProgramRun?> _currentRunFor(
     String programId, {
-    String? blockId,
+    required Iterable<String> sessionIds,
+    required Map<String, String> sessionBlocks,
   }) async {
     final current = await _runRepo.getCurrentRun(_userId);
     if (current == null) return null;
     if (current.programId != programId) return null;
-    if (current.blockId != blockId) return null;
-    return current;
+    final blocks = {for (final id in sessionIds) sessionBlocks[id]};
+    return blocks.contains(current.blockId) ? current : null;
   }
 
-  /// Everything this program can be reviewed as, in the order the picker
+  /// Everything a review of this program can cover, in the order the picker
   /// offers them.
   ///
-  /// Read from the program's **links**, not from its workouts: a workout's
-  /// membership — which block holds it, and where it sits in the order — lives
-  /// on the join row, and a workout the program does not contain is not a scope
-  /// a review of it can have.
-  Future<List<ScopeOption>> _scopesFor(
-    String programId,
-    List<ProgramBlock> blocks,
-  ) async {
-    final blockNames = {for (final b in blocks) b.blockId: b.name};
-    final links = await _plannedRepo.fetchProgramLinks(programId);
-    final workouts = await _plannedRepo.fetchPlannedSessions(
-      _userId,
-      programId: programId,
-    );
-    final names = {for (final w in workouts) w.sessionId: w.name};
-
-    return [
-      const ScopeOption(
-        kind: ReviewScopeKind.program,
-        label: 'Whole program',
-      ),
-      for (final b in blocks)
-        ScopeOption(
-          kind: ReviewScopeKind.block,
-          label: toProperCase(b.name),
-          blockId: b.blockId,
-        ),
-      for (final link in links)
-        if (names[link.plannedSessionId] case final name?)
-          ScopeOption(
-            kind: ReviewScopeKind.session,
-            // A workout is named with the phase it sits in when it has one:
-            // "Day 1" in two blocks is two different workouts, and a picker
-            // that showed the same words twice would be asking the user to
-            // guess.
-            label: [
-              toProperCase(name),
-              if (blockNames[link.blockId] case final blockName?)
-                toProperCase(blockName),
-            ].join(' · '),
-            blockId: link.blockId,
-            sessionId: link.plannedSessionId,
-          ),
-    ];
-  }
+  /// [fetchWorkoutOptions] does the reading; this is the tab's way in, through
+  /// the same repositories the rest of this view model uses.
+  Future<List<WorkoutOption>> workoutOptions(String programId) =>
+      fetchWorkoutOptions(
+        userId: _userId,
+        programId: programId,
+        plannedRepository: _plannedRepo,
+        programRepository: _programRepo,
+      );
 
   /// Starts a review **now** — the ad-hoc path, as opposed to scheduling one
   /// for a later date.
@@ -476,28 +506,33 @@ class ProgramHistoryViewModel {
   /// know what they found.
   Future<StartedReview?> startReview(
     String programId, {
-    ReviewScopeKind kind = ReviewScopeKind.program,
-    String? blockId,
-    String? sessionId,
+    required List<String> sessionIds,
     String? title,
   }) async {
     try {
-      final run = await _currentRunFor(programId, blockId: blockId);
-      final review = await scheduleReview(
+      final run = await _currentRunFor(
         programId,
-        // Only the scope's own column is set — the two are mutually exclusive
-        // by both this call and the database's CHECK.
-        blockId: kind == ReviewScopeKind.block ? blockId : null,
-        sessionId: kind == ReviewScopeKind.session ? sessionId : null,
+        sessionIds: sessionIds,
+        sessionBlocks: state.value.sessionBlocks,
+      );
+      state.value = state.value.copyWith(isReviewing: true, clearError: true);
+      // The row and its "as found" baseline are written together: a pass that
+      // began without one would have nothing to compare its first edits
+      // against. [ProgramHistoryRepository.beginReview] is that pair; the
+      // reload after it is this view model's own (the load derives the
+      // achievements read back below).
+      final review = await _historyRepo.beginReview(
+        userId: _userId,
+        programId: programId,
+        sessionIds: sessionIds,
         programRunId: run?.programRunId,
         title: title,
       );
-      if (review == null) return null;
+      await load(programId);
 
       final since = await _historyRepo.checkpointFor(
         programId,
-        blockId: review.blockId,
-        sessionId: review.sessionId,
+        sessionIds: sessionIds,
         // The same window `load` just derived achievements over, so the sheet's
         // "since <date>" and the achievements under it cannot disagree.
         fallback: run?.startedDate,
@@ -505,10 +540,10 @@ class ProgramHistoryViewModel {
 
       return StartedReview(
         review: review,
+        sessionIds: sessionIds,
         sinceDate: since,
-        // Read back from state rather than derived again: `scheduleReview`
-        // reloads, and the load is what derives this — over the very review
-        // just written.
+        // Read back from state rather than derived again: the reload above is
+        // what derives this — over the very review just written.
         achievements: state.value.achievements,
       );
     } catch (_) {
@@ -524,15 +559,19 @@ class ProgramHistoryViewModel {
   }
 
   /// Each checkpoint's contents, and its changes against the one before it
-  /// **at the same scope**.
+  /// **covering the same workouts**.
   ///
-  /// [reviews] is newest first, so a review's same-scope predecessor is the
-  /// next entry at that scope — walking from the end keeps the last completed
-  /// review seen per scope, which is exactly that predecessor. Open and
+  /// [reviews] is newest first, so a review's predecessor is the next entry
+  /// with the same [reviewScopeKey] — walking from the end keeps the last
+  /// completed review seen per key, which is exactly that predecessor. Open and
   /// dismissed reviews carry no snapshot: they can never be a predecessor, and
   /// they get a digest with no diff. A document this build can't decode is
   /// skipped the same way rather than treated as empty, which would report the
   /// whole program as removed.
+  ///
+  /// Both sides read through [scopedSnapshot], so a set review's "what changed"
+  /// counts its own workouts — and a predecessor covering the same ids compares
+  /// on the same ground, which is what lets one of them show as removed.
   static Map<String, ReviewDigest> _digestAll(
     List<ProgramReview> reviews,
     Map<String, String> exerciseNames,
@@ -541,12 +580,12 @@ class ProgramHistoryViewModel {
     final lastByScope = <String, ProgramReview>{};
 
     for (final review in reviews.reversed) {
-      final content = review.snapshot;
-      final scope = _scopeKey(review);
+      final content = scopedSnapshot(review);
+      final scope = reviewScopeKey(review);
       final previous = lastByScope[scope];
       if (content != null) lastByScope[scope] = review;
 
-      final before = previous?.snapshot;
+      final before = previous == null ? null : scopedSnapshot(previous);
       digests[review.reviewId] = ReviewDigest(
         sessionCount: content?.sessionCount ?? 0,
         exerciseCount: content?.exerciseCount ?? 0,
@@ -559,57 +598,32 @@ class ProgramHistoryViewModel {
     return digests;
   }
 
-  /// Which checkpoint stream a review answers for. Two snapshots compare only
-  /// when they answer the same question.
-  static String _scopeKey(ProgramReview r) => switch (r.scopeKind) {
-    ReviewScopeKind.program => 'program',
-    ReviewScopeKind.block => 'block:${r.blockId}',
-    ReviewScopeKind.session => 'session:${r.sessionId}',
-  };
-
   // ── Reviews ──────────────────────────────────────────────────────────────
 
   /// Schedules the program's next checkpoint.
   ///
-  /// [blockId] and [sessionId] are the review's **scope** (mutually exclusive;
-  /// both null reviews the program), passed through unchanged.
-  ///
-  /// [withProposal] schedules a **change** rather than a plain review: the
-  /// program's contents are captured alongside the schedule, so the prompt can
-  /// name what it is asking about and show how the program has drifted since
-  /// the change was proposed. [title] and [notes] carry the intent — the
-  /// proposal document is only what the program looked like at the time, and a
-  /// proposal with no rationale is a diff with no story.
+  /// [sessionIds] is the review's **scope**: the workouts it will cover, passed
+  /// through unchanged.
   ///
   /// Returns the new review, or null if it failed.
   Future<ProgramReview?> scheduleReview(
     String programId, {
-    String? blockId,
-    String? sessionId,
+    required List<String> sessionIds,
     String? programRunId,
     String? title,
     String? notes,
     DateTime? scheduledFor,
-    bool withProposal = false,
   }) async {
     state.value = state.value.copyWith(isReviewing: true, clearError: true);
     try {
-      final proposal = withProposal
-          ? await _historyRepo.buildContent(
-              userId: _userId,
-              programId: programId,
-            )
-          : null;
       final review = await _historyRepo.scheduleReview(
         userId: _userId,
         programId: programId,
-        blockId: blockId,
-        sessionId: sessionId,
+        sessionIds: sessionIds,
         programRunId: programRunId,
         title: title,
         notes: notes,
         scheduledFor: scheduledFor,
-        proposedContent: proposal,
       );
       await load(programId);
       return review;
@@ -625,12 +639,53 @@ class ProgramHistoryViewModel {
     }
   }
 
+  /// Reopens [review], which is already open: the same facts [startReview]
+  /// gathers, without writing anything.
+  ///
+  /// A card tap lands in the review that exists rather than in a second row.
+  /// Two rows for one pass would ask the same question twice and cut two
+  /// snapshots, and the timeline could not tell which was the real one.
+  Future<StartedReview?> resumeReview(
+    String programId,
+    ProgramReview review,
+  ) async {
+    try {
+      // The pass's workouts, from the resolution `load` already made — one
+      // answer for the window question, the run match and the ceremony ahead.
+      final set =
+          state.value.reviewSessions[review.reviewId] ?? const <String>[];
+      final run = await _currentRunFor(
+        programId,
+        sessionIds: set,
+        sessionBlocks: state.value.sessionBlocks,
+      );
+      // A review that began before baselines were recorded has none to
+      // compare against, and the moment it is next looked at is the best "as
+      // found" available for it. Idempotent by construction: a review that
+      // has one keeps it, so a resume can never move a live baseline.
+      final current =
+          await _historyRepo.captureBaseline(review.reviewId, userId: _userId) ??
+          review;
+      final since = await _historyRepo.checkpointFor(
+        programId,
+        sessionIds: set,
+        fallback: run?.startedDate,
+      );
+      return StartedReview(
+        review: current,
+        sessionIds: set,
+        sinceDate: since,
+        achievements: state.value.achievements,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Completes [reviewId], writing the snapshot it is a checkpoint of.
   ///
-  /// The snapshot records the **live** program, never the proposal: applying a
-  /// change means the user edited the program through the normal editor, and
-  /// this records what that produced. Nothing copies `proposed_content` into
-  /// live rows.
+  /// The snapshot records the **live** program: reviewing IS editing, and
+  /// finishing records what that produced.
   ///
   /// Returns the completed review, or null when the write failed. A
   /// [kOutcomeDismissed] review is "not now", not a checkpoint: it is closed
@@ -679,24 +734,6 @@ class ProgramHistoryViewModel {
       outcome: kOutcomeDismissed,
       notes: notes,
     );
-  }
-
-  /// The program's contents right now — the other half of a proposal diff.
-  ///
-  /// Built on demand rather than held in state: only the "what would this
-  /// change do?" sheet reads it, and putting it in [ProgramHistoryState] would
-  /// make every timeline open build a document nobody looks at. Null when it
-  /// can't be read, which the diff sheet renders as "unavailable" rather than
-  /// as an empty program.
-  Future<ProgramContent?> liveContent(String programId) async {
-    try {
-      return await _historyRepo.buildContent(
-        userId: _userId,
-        programId: programId,
-      );
-    } catch (_) {
-      return null;
-    }
   }
 
   void dispose() {

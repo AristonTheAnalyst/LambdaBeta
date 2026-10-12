@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../core/styles/app_colors.dart';
 import '../../core/utils/name_limit.dart';
+import 'lambda_input.dart';
 import 'name_limit_counter.dart';
 
 /// "New Variation" name prompt. Owns its [TextEditingController] so the
@@ -39,16 +40,14 @@ class _VariationNameDialogState extends State<VariationNameDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            TextField(
+            LambdaInput(
               controller: _controller,
               autofocus: true,
               textCapitalization: TextCapitalization.words,
               maxLength: kMaxExerciseNameLength,
-              style: TextStyle(color: AppColors.primary),
-              decoration: InputDecoration(
-                  hintText: 'Variation name',
-                  counterText: '',
-                  hintStyle: TextStyle(color: AppColors.muted)),
+              placeholder: 'Variation name',
+              // The dialog's ground is surface.
+              elevated: true,
               onSubmitted: (_) => _submit(),
             ),
             if (value.text.trim().isNotEmpty) ...[

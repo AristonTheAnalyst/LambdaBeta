@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
-import '../../../core/styles/app_radius.dart';
 import '../../../core/styles/app_spacing.dart';
 import '../../../core/styles/app_text_styles.dart';
 import '../../../core/utils/session_format.dart';
@@ -13,14 +12,38 @@ import '../../../data/models/program_progress.dart';
 import '../../../shared/widgets/app_card.dart';
 import '../../../shared/widgets/archived_sheet.dart';
 import '../../../shared/widgets/glass_button.dart';
+import '../../../shared/widgets/lambda_search_field.dart';
 import '../../../shared/widgets/page_header.dart';
+import '../../../shared/widgets/scroll_shrink_nav_bar.dart';
 import '../../../shared/widgets/slide_up_modal.dart';
+import '../../../shared/widgets/sort_button.dart';
 import '../../../shared/widgets/status_chip.dart';
 import '../../../shared/widgets/swipe_actions.dart';
 import 'run_confirm_dialog.dart';
 import 'program_wizard_screen.dart';
 import 'run_config_sheet.dart';
 import '../viewmodel/program_library_viewmodel.dart';
+
+/// The Programs list's sort choices, in sheet order. Everything but A–Z opens
+/// descending — newest or biggest first is what those criteria mean.
+const _programSortOptions = [
+  SortOption(label: 'A–Z', value: ProgramSortCriterion.name),
+  SortOption(
+    label: 'Last used',
+    value: ProgramSortCriterion.lastUsed,
+    naturalDescending: true,
+  ),
+  SortOption(
+    label: 'Last modified',
+    value: ProgramSortCriterion.lastModified,
+    naturalDescending: true,
+  ),
+  SortOption(
+    label: 'Most used',
+    value: ProgramSortCriterion.mostUsed,
+    naturalDescending: true,
+  ),
+];
 
 class ProgramLibraryScreen extends StatefulWidget {
   const ProgramLibraryScreen({super.key, this.showHeader = true});
@@ -332,29 +355,16 @@ class _ProgramLibraryScreenState extends State<ProgramLibraryScreen> {
                   child: Row(
                     children: [
                       Expanded(
-                        child: TextField(
+                        child: LambdaSearchField(
                           controller: _searchController,
-                          style: AppFonts.ui(
-                            fontSize: AppTextStyles.sm,
-                            color: AppColors.primary,
-                          ),
-                          decoration: InputDecoration(
-                            hintText: 'Search…',
-                            hintStyle: AppFonts.ui(color: AppColors.muted),
-                            filled: true,
-                            fillColor: AppColors.surface,
-                            border: OutlineInputBorder(
-                              borderRadius:
-                                  BorderRadius.circular(AppRadius.md),
-                              borderSide: BorderSide.none,
-                            ),
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 8,
-                            ),
-                            isDense: true,
-                          ),
                         ),
+                      ),
+                      const SizedBox(width: AppSpacing.sm),
+                      SortButton<ProgramSortCriterion>(
+                        options: _programSortOptions,
+                        value: state.sort,
+                        descending: state.sortDesc,
+                        onChanged: _viewModel.setSort,
                       ),
                       const SizedBox(width: AppSpacing.sm),
                       GlassButton(
@@ -429,7 +439,14 @@ class _ProgramLibraryScreenState extends State<ProgramLibraryScreen> {
                                 ),
                               )
                             : ListView.separated(
-                            padding: const EdgeInsets.all(AppSpacing.lg),
+                            // The shell's bar floats over this page, so the
+                            // last card has to be able to scroll clear of it.
+                            padding: EdgeInsets.fromLTRB(
+                              AppSpacing.lg,
+                              AppSpacing.lg,
+                              AppSpacing.lg,
+                              ScrollShrinkNavBar.contentInset(context),
+                            ),
                             itemCount: programs.length,
                             separatorBuilder: (_, _) =>
                                 const SizedBox(height: AppSpacing.md),
@@ -454,8 +471,8 @@ class _ProgramLibraryScreenState extends State<ProgramLibraryScreen> {
                                     state.hasNothingToRun(p.programId),
                                 progress: isCurrent ? state.currentProgress : null,
                                 due: state.dueFor(p.programId),
-                                onOpen: () =>
-                                    context.push('/exercises/programs/${p.programId}'),
+                                onOpen: () => context.push(
+                                    '/exercises/programs/${p.programId}'),
                                 onSetCurrent: () =>
                                     _beginProgram(p),
                                 onResume: () => _resumeProgram(p),

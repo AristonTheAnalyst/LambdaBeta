@@ -1,17 +1,24 @@
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/utils/friendly_error.dart';
+import '../../../core/utils/sort_compare.dart';
 import '../../../data/models/block_sequence.dart';
 import '../../../data/models/program.dart';
 import '../../../data/models/program_block.dart';
 import '../../../data/models/program_history.dart';
 import '../../../data/models/program_progress.dart';
 import '../../../data/models/program_run.dart';
+import '../../../data/models/program_usage.dart';
 import '../../../data/repositories/program_history_repository.dart';
 import '../../../data/repositories/program_repository.dart';
 import '../../../data/repositories/program_run_repository.dart';
 import '../model/achievements_derivation.dart';
 import '../model/program_run_lifecycle.dart';
+
+/// What the Programs list orders by — a per-run UI choice, not persisted.
+/// `lastModified` is the default: editing a program is what makes it current
+/// again, and an edited program is what the user is most likely looking for.
+enum ProgramSortCriterion { lastModified, name, lastUsed, mostUsed }
 
 class ProgramLibraryState {
   const ProgramLibraryState({
@@ -25,6 +32,9 @@ class ProgramLibraryState {
     this.historyWarning,
     this.dueItems = const {},
     this.blockedWithoutBlocks = const {},
+    this.usage = const {},
+    this.sort = ProgramSortCriterion.lastModified,
+    this.sortDesc = true,
   });
 
   final bool isLoading;
@@ -65,13 +75,39 @@ class ProgramLibraryState {
   /// is why it is counted here rather than guessed at on the card.
   final Set<String> blockedWithoutBlocks;
 
-  /// The current program pinned to the top, rest by created-date desc.
+  /// Per-program training activity (newest logged session, sessions logged) —
+  /// what the "last used" / "most used" sorts read. Absent = nothing logged.
+  final Map<String, ProgramUsage> usage;
+
+  final ProgramSortCriterion sort;
+  final bool sortDesc;
+
+  /// The current program pinned to the top, the rest by the chosen sort.
   List<Program> get sortedPrograms {
+    final dir = sortDesc ? -1 : 1;
     final sorted = [...programs];
     sorted.sort((a, b) {
       if (a.programId == currentProgramId) return -1;
       if (b.programId == currentProgramId) return 1;
-      return b.createdDate.compareTo(a.createdDate);
+      final byCriterion = switch (sort) {
+        ProgramSortCriterion.name =>
+          a.name.toLowerCase().compareTo(b.name.toLowerCase()) * dir,
+        ProgramSortCriterion.lastUsed => compareNullable(
+          usage[a.programId]?.lastUsed,
+          usage[b.programId]?.lastUsed,
+          dir,
+        ),
+        ProgramSortCriterion.lastModified =>
+          a.updatedDate.compareTo(b.updatedDate) * dir,
+        ProgramSortCriterion.mostUsed =>
+          ((usage[a.programId]?.sessions ?? 0) -
+                  (usage[b.programId]?.sessions ?? 0)) *
+              dir,
+      };
+      // Name breaks every tie — two equal dates must still read A–Z.
+      return byCriterion != 0
+          ? byCriterion
+          : a.name.toLowerCase().compareTo(b.name.toLowerCase());
     });
     return sorted;
   }
@@ -129,6 +165,9 @@ class ProgramLibraryState {
     bool clearHistoryWarning = false,
     Map<String, DueItem>? dueItems,
     Set<String>? blockedWithoutBlocks,
+    Map<String, ProgramUsage>? usage,
+    ProgramSortCriterion? sort,
+    bool? sortDesc,
   }) =>
       ProgramLibraryState(
         isLoading: isLoading ?? this.isLoading,
@@ -149,6 +188,9 @@ class ProgramLibraryState {
             clearHistoryWarning ? null : (historyWarning ?? this.historyWarning),
         dueItems: dueItems ?? this.dueItems,
         blockedWithoutBlocks: blockedWithoutBlocks ?? this.blockedWithoutBlocks,
+        usage: usage ?? this.usage,
+        sort: sort ?? this.sort,
+        sortDesc: sortDesc ?? this.sortDesc,
       );
 }
 
@@ -190,6 +232,10 @@ class ProgramLibraryViewModel {
     await fetchAll();
   }
 
+  /// Change the list's ordering, applied live from the sort sheet.
+  void setSort(ProgramSortCriterion criterion, bool descending) =>
+      state.value = state.value.copyWith(sort: criterion, sortDesc: descending);
+
   /// Sessions that a [hardDeleteProgram] would unlink — see
   /// [ProgramRepository.programSessionCount].
   Future<int> programSessionCount(String programId) =>
@@ -216,6 +262,7 @@ class ProgramLibraryViewModel {
         } catch (_) {}
       }
       final due = await _dueItems();
+      final usage = await _usage();
       state.value = state.value.copyWith(
         isLoading: false,
         programs: programs,
@@ -226,6 +273,7 @@ class ProgramLibraryViewModel {
         clearCurrentProgress: progress == null,
         dueItems: due,
         blockedWithoutBlocks: await _blockedWithoutBlocks(programs),
+        usage: usage,
       );
     } catch (e) {
       state.value = state.value.copyWith(isLoading: false, error: friendlyError(e));
@@ -267,6 +315,19 @@ class ProgramLibraryViewModel {
         out.putIfAbsent(item.programId, () => item);
       }
       return out;
+    } catch (_) {
+      return const {};
+    }
+  }
+
+  /// Per-program training activity, for the sort.
+  ///
+  /// Swallows its failure for the same reason [_dueItems] does: an ordering
+  /// aid that throws must not blank a library that loaded perfectly well —
+  /// the affected criteria just fall back to their name tiebreak.
+  Future<Map<String, ProgramUsage>> _usage() async {
+    try {
+      return await _repo.fetchProgramUsage(_userId);
     } catch (_) {
       return const {};
     }

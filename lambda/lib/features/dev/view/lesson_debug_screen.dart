@@ -5,6 +5,7 @@ import '../../../../core/styles/app_colors.dart';
 import '../../../../core/styles/app_fonts.dart';
 import '../../../../core/styles/app_spacing.dart';
 import '../../../../shared/widgets/page_header.dart';
+import '../../../../shared/widgets/scroll_shrink_nav_bar.dart';
 
 /// Raw ground-truth dump of `fact_lesson` plus the pending PowerSync upload
 /// queue — bypasses every viewmodel/UI layer so we can see exactly how many
@@ -82,7 +83,14 @@ class _LessonDebugScreenState extends State<LessonDebugScreen> {
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
                 : ListView(
-                    padding: const EdgeInsets.all(AppSpacing.lg),
+                    // The shell's bar floats over this page, so the last row
+                    // has to be able to scroll clear of it.
+                    padding: EdgeInsets.fromLTRB(
+                      AppSpacing.lg,
+                      AppSpacing.lg,
+                      AppSpacing.lg,
+                      ScrollShrinkNavBar.contentInset(context),
+                    ),
                     children: [
                       Text('dim_lesson: ${_rows.length} row(s) for this user',
                           style: AppFonts.mono(fontSize: 14, color: AppColors.accent)),

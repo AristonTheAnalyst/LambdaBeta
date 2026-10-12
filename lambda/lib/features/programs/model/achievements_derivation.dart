@@ -1,3 +1,4 @@
+import '../../../data/repositories/planned_session_repository.dart';
 import '../../../data/repositories/program_history_repository.dart';
 import '../../../data/repositories/program_repository.dart';
 import '../../../data/repositories/session_repository.dart';
@@ -16,13 +17,19 @@ class AchievementsDerivation {
     ProgramHistoryRepository? historyRepository,
     ProgramRepository? programRepository,
     SessionRepository? sessionRepository,
+    PlannedSessionRepository? plannedSessionRepository,
   }) : _history = historyRepository ?? ProgramHistoryRepository(),
        _programs = programRepository ?? ProgramRepository(),
-       _sessions = sessionRepository ?? SessionRepository();
+       _sessions = sessionRepository ?? SessionRepository(),
+       _planned = plannedSessionRepository ?? PlannedSessionRepository();
 
   final ProgramHistoryRepository _history;
   final ProgramRepository _programs;
   final SessionRepository _sessions;
+
+  /// Read for one thing only: which block each reviewed workout sits in, so a
+  /// set scope can put the right block goals in force.
+  final PlannedSessionRepository _planned;
 
   /// What the program produced between [from] and [until], at one scope.
   ///
@@ -52,13 +59,20 @@ class AchievementsDerivation {
   /// a single one. Where a run's boundaries still matter they arrive as
   /// [from] — [ProgramHistoryRepository.checkpointFor] falls back to the run's
   /// start on a first run.
+  ///
+  /// [sessionIds] is the same scope in **set** form — a review covers named
+  /// workouts, so it asks by workouts: the sessions are those of the named
+  /// plans, and the goals in force are the program's own plus the goals of
+  /// every block any of them sits in. [blockId] stays for the run-close path,
+  /// whose scope is the run: a block run's logged sessions include freestyle
+  /// ones a set of planned ids could never name.
   Future<ProgramAchievements> derive({
     required String userId,
     required DateTime from,
     required String programId,
     DateTime? until,
     String? blockId,
-    String? sessionId,
+    List<String>? sessionIds,
   }) async {
     final end = until ?? DateTime.now();
 
@@ -68,26 +82,41 @@ class AchievementsDerivation {
       from: from,
       to: end,
       blockId: blockId,
-      sessionId: sessionId,
+      sessionIds: sessionIds,
     );
     // The program's own goals, plus the running block's — a union, because a
     // program-level target is being chased inside every one of its blocks.
-    final goals = (await _programs.fetchGoals(
+    // A set scope asks the same question by workouts: the blocks any of them
+    // sits in.
+    final allGoals = await _programs.fetchGoals(
       userId,
       programId: programId,
-    )).where((g) => g.appliesDuring(blockId)).toList(growable: false);
+    );
+    final goalBlocks = sessionIds == null
+        ? null
+        : {
+            for (final link in await _planned.fetchProgramLinks(programId))
+              if (sessionIds.contains(link.plannedSessionId)) link.blockId,
+          };
+    final goals = allGoals
+        .where(
+          (g) => goalBlocks == null
+              ? g.appliesDuring(blockId)
+              : g.blockId == null || goalBlocks.contains(g.blockId),
+        )
+        .toList(growable: false);
     final weight = await _history.weightWindow(
       userId: userId,
       from: from,
       to: end,
     );
 
-    final sessionIds = sessions.map((s) => s.sessionId).toSet();
+    final loggedIds = sessions.map((s) => s.sessionId).toSet();
     final prs = prsAcrossScopes(
       sets,
       from,
       end,
-    ).where((e) => sessionIds.contains(e.sessionId)).toList(growable: false);
+    ).where((e) => loggedIds.contains(e.sessionId)).toList(growable: false);
 
     return ProgramAchievements(
       from: from,

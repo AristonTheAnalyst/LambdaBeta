@@ -16,6 +16,7 @@ import '../../../shared/widgets/session_exercise_card.dart';
 import '../../../shared/widgets/session_set_row.dart';
 import '../../../shared/widgets/stats_row.dart';
 import 'content_diff_sheet.dart';
+import '../model/program_content_diff.dart';
 import 'review_checkpoint_meta.dart';
 
 /// One checkpoint's frozen snapshot of a program, read-only.
@@ -30,7 +31,11 @@ import 'review_checkpoint_meta.dart';
 /// and the session screen use, with every action callback null — a snapshot
 /// viewer that drifted from the planner would defeat the point of keeping the
 /// three (now four) surfaces on one implementation.
-class ReviewSnapshotScreen extends StatelessWidget {
+///
+/// The one state it holds is which exercise each card is showing — view state,
+/// not document state — because the Changes sheet's exercise cards open the
+/// exercise on this screen (see [_SnapshotBodyState.revealExercise]).
+class ReviewSnapshotScreen extends StatefulWidget {
   const ReviewSnapshotScreen({
     super.key,
     required this.review,
@@ -50,9 +55,23 @@ class ReviewSnapshotScreen extends StatelessWidget {
   final Map<String, String> variationNames;
 
   @override
+  State<ReviewSnapshotScreen> createState() => _ReviewSnapshotScreenState();
+}
+
+class _ReviewSnapshotScreenState extends State<ReviewSnapshotScreen> {
+  /// The body under the changes sheet — what its cards open their exercise on.
+  final _bodyKey = GlobalKey<_SnapshotBodyState>();
+
+  @override
   Widget build(BuildContext context) {
-    final content = review.snapshot;
-    final before = previous?.snapshot;
+    final review = widget.review;
+    // Both sides narrowed to the workouts the checkpoint covers: a review
+    // stores a whole-program snapshot, and a set review read back whole would
+    // report on workouts the pass never looked at. Legacy rows pass through.
+    final content = scopedSnapshot(review);
+    final before = widget.previous == null
+        ? null
+        : scopedSnapshot(widget.previous!);
     return Scaffold(
       backgroundColor: AppColors.bg,
       body: Column(
@@ -74,14 +93,19 @@ class ReviewSnapshotScreen extends StatelessWidget {
                     compact: true,
                     onPressed: () => showContentDiffSheet(
                       context,
-                      title: 'What changed',
+                      title: kReviewChangesTitle,
                       subtitle:
-                          '${DateFormat('MMM d').format(previous!.effectiveDate)}'
+                          '${DateFormat('MMM d').format(widget.previous!.effectiveDate)}'
                           '  ·  '
                           '${DateFormat('MMM d, yyyy').format(review.effectiveDate)}',
                       before: before,
                       after: content,
-                      exerciseNames: exerciseNames,
+                      exerciseNames: widget.exerciseNames,
+                      variationNames: widget.variationNames,
+                      // The body below holds the exercises, so a card can open
+                      // the one it names: the snapshot switches to it.
+                      onExerciseTap: (id) =>
+                          _bodyKey.currentState?.revealExercise(id),
                     ),
                   ),
           ),
@@ -89,10 +113,11 @@ class ReviewSnapshotScreen extends StatelessWidget {
             child: content == null
                 ? const _UnreadableCheckpoint()
                 : _SnapshotBody(
+                    key: _bodyKey,
                     review: review,
                     content: content,
-                    exerciseNames: exerciseNames,
-                    variationNames: variationNames,
+                    exerciseNames: widget.exerciseNames,
+                    variationNames: widget.variationNames,
                   ),
           ),
         ],
@@ -103,9 +128,9 @@ class ReviewSnapshotScreen extends StatelessWidget {
   /// The user's own name for the checkpoint when they gave one; the kind is
   /// the fallback, because a close or a change says more than "Review".
   String get _title {
-    final title = review.title?.trim();
+    final title = widget.review.title?.trim();
     if (title != null && title.isNotEmpty) return title;
-    return reviewKindLabel(review.kind);
+    return reviewKindLabel(widget.review.kind);
   }
 }
 
@@ -147,8 +172,9 @@ class _UnreadableCheckpoint extends StatelessWidget {
   );
 }
 
-class _SnapshotBody extends StatelessWidget {
+class _SnapshotBody extends StatefulWidget {
   const _SnapshotBody({
+    super.key,
     required this.review,
     required this.content,
     required this.exerciseNames,
@@ -161,92 +187,161 @@ class _SnapshotBody extends StatelessWidget {
   final Map<String, String> variationNames;
 
   @override
+  State<_SnapshotBody> createState() => _SnapshotBodyState();
+}
+
+class _SnapshotBodyState extends State<_SnapshotBody> {
+  /// Which exercise each workout card shows, by workout id. A workout the
+  /// reveal has not visited reads as its first exercise.
+  final Map<String, int> _activeIndex = {};
+
+  /// One key per workout card, so a reveal can scroll the card it switched.
+  final Map<String, GlobalKey> _cardKeys = {};
+
+  /// Answers a tap on one of the changes sheet's exercise cards: the workout
+  /// holding [plannedExerciseId] switches to that exercise, and its card
+  /// comes into view.
+  ///
+  /// The id always resolves — the sheet lists this same document — and the
+  /// scroll is deferred a frame because the card may be off-screen at the
+  /// moment of the tap.
+  void revealExercise(String plannedExerciseId) {
+    for (final session in widget.content.sessions) {
+      final index = session.exercises.indexWhere(
+        (e) => e.plannedExerciseId == plannedExerciseId,
+      );
+      if (index < 0) continue;
+      setState(() => _activeIndex[session.sessionId] = index);
+      // The tab switch is done; bring its card to the top, because the point
+      // of the tap is seeing the exercise it landed on.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final card = _cardKeys[session.sessionId]?.currentContext;
+        if (card == null) return;
+        Scrollable.ensureVisible(
+          card,
+          alignment: 0.0,
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeInOut,
+        );
+      });
+      return;
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return ListView(
+    // A scroll view rather than a lazy list: every card is built up front so
+    // a reveal can always scroll to the one it switched — an unmounted card
+    // has no context to bring into view, and a tap that lands invisibly
+    // reads as no tap at all.
+    return SingleChildScrollView(
       padding: const EdgeInsets.only(bottom: AppSpacing.xxl),
-      children: [
-        Padding(
-          padding: const EdgeInsets.all(AppSpacing.lg),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              ReviewCheckpointMeta(review: review),
-              const SizedBox(height: AppSpacing.md),
-              StatsRow(
-                tiles: [
-                  StatsTile(
-                    label: 'WORKOUTS',
-                    value: '${content.sessionCount}',
-                  ),
-                  StatsTile(
-                    label: 'EXERCISES',
-                    value: '${content.exerciseCount}',
-                  ),
-                  StatsTile(label: 'SETS', value: '${content.setCount}'),
-                ],
-              ),
-            ],
-          ),
-        ),
-        if (content.sessions.isEmpty)
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
           Padding(
-            padding: const EdgeInsets.all(AppSpacing.xl),
-            child: Center(
-              child: Text(
-                'This checkpoint had no workouts.',
-                style: AppFonts.ui(
-                  fontSize: AppTextStyles.sm,
-                  color: AppColors.muted,
+            padding: const EdgeInsets.all(AppSpacing.lg),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                ReviewCheckpointMeta(review: widget.review),
+                const SizedBox(height: AppSpacing.md),
+                StatsRow(
+                  tiles: [
+                    StatsTile(
+                      label: 'WORKOUTS',
+                      value: '${widget.content.sessionCount}',
+                    ),
+                    StatsTile(
+                      label: 'EXERCISES',
+                      value: '${widget.content.exerciseCount}',
+                    ),
+                    StatsTile(
+                      label: 'SETS',
+                      value: '${widget.content.setCount}',
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          if (widget.content.sessions.isEmpty)
+            Padding(
+              padding: const EdgeInsets.all(AppSpacing.xl),
+              child: Center(
+                child: Text(
+                  'This checkpoint had no workouts.',
+                  style: AppFonts.ui(
+                    fontSize: AppTextStyles.sm,
+                    color: AppColors.muted,
+                  ),
                 ),
               ),
-            ),
-          )
-        else
-          for (final session in content.sessions) ...[
-            Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.lg,
-                vertical: AppSpacing.md,
+            )
+          else
+            for (final session in widget.content.sessions) ...[
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.lg,
+                  vertical: AppSpacing.md,
+                ),
+                child: SectionDivider(session.name),
               ),
-              child: SectionDivider(session.name),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-              child: _SnapshotWorkoutCard(
-                session: session,
-                exerciseNames: exerciseNames,
-                variationNames: variationNames,
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+                child: _SnapshotWorkoutCard(
+                  key: _cardKeys.putIfAbsent(
+                    session.sessionId,
+                    () => GlobalKey(),
+                  ),
+                  session: session,
+                  activeIndex: _activeIndex[session.sessionId] ?? 0,
+                  onSelect: (i) =>
+                      setState(() => _activeIndex[session.sessionId] = i),
+                  exerciseNames: widget.exerciseNames,
+                  variationNames: widget.variationNames,
+                  // The review's own notes, keyed by planned exercise id — the
+                  // pass's record, shown beside the exercise it was about.
+                  exerciseNotes: widget.review.exerciseNotes,
+                ),
               ),
-            ),
-          ],
-      ],
+            ],
+        ],
+      ),
     );
   }
 }
 
 /// One workout inside a checkpoint — a read-only mirror of the planner's card,
 /// tabbed across that workout's exercises.
-class _SnapshotWorkoutCard extends StatefulWidget {
+///
+/// The tab is the body's, not the card's: the changes sheet reveals an
+/// exercise by moving it, and two owners of one answer is one too many.
+class _SnapshotWorkoutCard extends StatelessWidget {
   const _SnapshotWorkoutCard({
+    super.key,
     required this.session,
+    required this.activeIndex,
+    required this.onSelect,
     required this.exerciseNames,
     required this.variationNames,
+    required this.exerciseNotes,
   });
 
   final ContentSession session;
+
+  /// Which exercise the card shows, owned by [_SnapshotBodyState].
+  final int activeIndex;
+
+  final ValueChanged<int> onSelect;
+
   final Map<String, String> exerciseNames;
   final Map<String, String> variationNames;
-
-  @override
-  State<_SnapshotWorkoutCard> createState() => _SnapshotWorkoutCardState();
-}
-
-class _SnapshotWorkoutCardState extends State<_SnapshotWorkoutCard> {
-  int _activeIndex = 0;
+  final Map<String, String> exerciseNotes;
 
   @override
   Widget build(BuildContext context) {
-    final exercises = widget.session.exercises;
+    final exercises = session.exercises;
     if (exercises.isEmpty) {
       return AppCard(
         child: Text(
@@ -259,7 +354,7 @@ class _SnapshotWorkoutCardState extends State<_SnapshotWorkoutCard> {
       );
     }
 
-    final index = _activeIndex.clamp(0, exercises.length - 1);
+    final index = activeIndex.clamp(0, exercises.length - 1);
     final active = exercises[index];
 
     // The row reads its variation label out of these options, so they must
@@ -268,7 +363,7 @@ class _SnapshotWorkoutCardState extends State<_SnapshotWorkoutCard> {
     // archived-inclusive dim read.
     final variationOptions = <DropdownOption<String?>>[
       const DropdownOption<String?>(label: 'No Variation', value: null),
-      for (final entry in widget.variationNames.entries)
+      for (final entry in variationNames.entries)
         DropdownOption<String?>(label: entry.value, value: entry.key),
     ];
 
@@ -277,7 +372,7 @@ class _SnapshotWorkoutCardState extends State<_SnapshotWorkoutCard> {
         for (final e in exercises) _exerciseLabel(e.exerciseId),
       ],
       activeIndex: index,
-      onSelect: (i) => setState(() => _activeIndex = i),
+      onSelect: onSelect,
       // A snapshot is immutable: no reorder, no add, no delete. Null greys the
       // arrows and greys the Add row, so the card reads as the planner's with
       // its editing affordances switched off.
@@ -293,13 +388,18 @@ class _SnapshotWorkoutCardState extends State<_SnapshotWorkoutCard> {
       ],
       onAddSet: null,
       history: null,
+      // What the review said about the exercise on screen, read-only: no
+      // change callback, so the box is display and nothing else. An exercise
+      // with no note has no box — on a record, an empty one would only take
+      // up the space a note did not earn.
+      reviewNote: exerciseNotes[active.plannedExerciseId],
     );
   }
 
   /// A raw id never reaches the UI: an unresolved exercise means the row is
   /// gone entirely (not merely archived, which the map already covers).
   String _exerciseLabel(String? exerciseId) =>
-      widget.exerciseNames[exerciseId] ?? 'Exercise';
+      exerciseNames[exerciseId] ?? 'Exercise';
 
   Widget _setRow(
     ContentExercise exercise,
@@ -316,7 +416,7 @@ class _SnapshotWorkoutCardState extends State<_SnapshotWorkoutCard> {
       initialWeightText: set.targetWeight ?? '',
       initialRepsText: set.targetReps ?? '',
       initialVariationId: set.variationId,
-      initialVariationName: widget.variationNames[set.variationId],
+      initialVariationName: variationNames[set.variationId],
       initialNotes: set.targetNotes,
       hasNotes: set.targetNotes?.isNotEmpty ?? false,
       readOnly: true,
@@ -329,7 +429,7 @@ class _SnapshotWorkoutCardState extends State<_SnapshotWorkoutCard> {
       onDuplicate: () {},
       variationOptions: variationOptions,
       allVariations: [
-        for (final entry in widget.variationNames.entries)
+        for (final entry in variationNames.entries)
           (id: entry.key, name: entry.value),
       ],
       findSimilarVariations: (_) => const [],

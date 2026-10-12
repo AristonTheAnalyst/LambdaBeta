@@ -45,14 +45,17 @@ class ExerciseUsage {
   bool get hasUsage => sets > 0;
 
   /// Human "last used" label — e.g. "today", "2d ago", "3w ago", "5mo ago".
-  String get lastUsedLabel {
-    final d = lastUsed;
-    if (d == null) return 'never used';
-    final days = DateTime.now().difference(d).inDays;
-    if (days <= 0) return 'today';
-    if (days < 7) return '${days}d ago';
-    if (days < 30) return '${days ~/ 7}w ago';
-    if (days < 365) return '${days ~/ 30}mo ago';
-    return '${days ~/ 365}y ago';
-  }
+  String get lastUsedLabel => lastUsedLabelFor(lastUsed);
+}
+
+/// [ExerciseUsage.lastUsedLabel]'s wording: how old a usage is, in words —
+/// "today", "2d ago", "3w ago", "5mo ago", "2y ago".
+String lastUsedLabelFor(DateTime? at) {
+  if (at == null) return 'never used';
+  final days = DateTime.now().difference(at).inDays;
+  if (days <= 0) return 'today';
+  if (days < 7) return '${days}d ago';
+  if (days < 30) return '${days ~/ 7}w ago';
+  if (days < 365) return '${days ~/ 30}mo ago';
+  return '${days ~/ 365}y ago';
 }

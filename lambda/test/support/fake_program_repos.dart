@@ -1,10 +1,14 @@
+import 'dart:convert';
+
 import 'package:lambda/data/models/custom_variation.dart';
 import 'package:lambda/data/models/exercise_detail.dart';
 import 'package:lambda/data/models/goal.dart';
 import 'package:lambda/data/models/planned_session.dart';
+import 'package:lambda/data/models/planned_session_exercise.dart';
 import 'package:lambda/data/models/planned_session_program.dart';
 import 'package:lambda/data/models/program.dart';
 import 'package:lambda/data/models/program_block.dart';
+import 'package:lambda/data/models/program_content.dart';
 import 'package:lambda/data/models/program_history.dart';
 import 'package:lambda/data/models/program_progress.dart';
 import 'package:lambda/data/models/program_review.dart';
@@ -409,6 +413,28 @@ class CloseRunCall {
   final String? blockId;
 }
 
+/// One call to [ProgramHistoryRepository.beginReview] — the set the row was
+/// written over, the goals the pass picked, and the run it answers for.
+class BeginCall {
+  BeginCall({
+    required this.userId,
+    required this.programId,
+    required this.sessionIds,
+    this.goalIds = const [],
+    this.programRunId,
+    this.title,
+  });
+
+  final String userId;
+
+  /// Null on a standalone review — workouts picked from anywhere.
+  final String? programId;
+  final List<String> sessionIds;
+  final List<String> goalIds;
+  final String? programRunId;
+  final String? title;
+}
+
 class FakeProgramHistoryRepository implements ProgramHistoryRepository {
   /// An existing checkpoint, or null to let [checkpointFor] answer with the
   /// fallback — which is what makes "the window opens at the run's start"
@@ -419,14 +445,11 @@ class FakeProgramHistoryRepository implements ProgramHistoryRepository {
   /// really opens at the run's start and not at "now".
   final fallbacks = <DateTime?>[];
 
-  /// Every scope the window was asked about, in order — so a test can assert a
-  /// block's record was opened at that block's checkpoint rather than the
+  /// Every set the window was asked about, in order — so a test can assert a
+  /// review's record was opened at that set's checkpoint rather than the
   /// program's, which a fake that ignored the argument could not tell apart.
-  final scopes = <String?>[];
-
-  /// Every session scope asked about, in order — a session-scoped window is
-  /// that workout's, and only that workout's.
-  final sessionScopes = <String?>[];
+  /// Null is the program-wide window, never "unknown".
+  final scopes = <List<String>?>[];
 
   /// Set to make [closeRun] throw — the run ended, the record did not.
   bool failClose = false;
@@ -438,17 +461,163 @@ class FakeProgramHistoryRepository implements ProgramHistoryRepository {
   /// model. Empty by default, which is what a fresh program has.
   List<ProgramReview> reviews = const [];
 
+  /// Every review a caller has begun, in order. The real [beginReview] writes
+  /// the row *and* its "as found" baseline as one move, and the row it returns
+  /// carries both — so a test asserting a begin happened has asserted the
+  /// baseline with it.
+  final beginCalls = <BeginCall>[];
+
+  /// Every review whose baseline a caller asked to (re)capture, in order.
+  ///
+  /// Resume heals an open review that began before baselines were recorded, so
+  /// a resume shows up here even when nothing needs healing. What the
+  /// recording proves is that the call is a *capture* — an insert would go
+  /// through [beginCalls] instead, which resume must never touch.
+  final baselineCalls = <String>[];
+
+  /// What [captureBaseline] hands back. Null models a row that could not be
+  /// read, which the caller falls back from.
+  ProgramReview? baselineResult;
+
+  /// Set to make [beginReview] throw — the write the whole start hangs on.
+  bool failBegin = false;
+
+  @override
+  Future<ProgramReview> beginReview({
+    required String userId,
+    String? programId,
+    required List<String> sessionIds,
+    List<String> goalIds = const [],
+    String? programRunId,
+    String? title,
+  }) async {
+    if (failBegin) throw StateError('begin failed');
+    beginCalls.add(
+      BeginCall(
+        userId: userId,
+        programId: programId,
+        sessionIds: sessionIds,
+        goalIds: goalIds,
+        programRunId: programRunId,
+        title: title,
+      ),
+    );
+    const baseline = ProgramContent();
+    final review = ProgramReview(
+      reviewId: 'begin-${beginCalls.length}',
+      userId: userId,
+      programId: programId,
+      // The real INSERT stores the set and the picked goals; the fake does the
+      // same so a caller that resolves the row back through `sessionsIn` or
+      // `storedGoalIds` sees its own scope.
+      sessionIdsJson: jsonEncode(sessionIds),
+      goalIdsJson: goalIds.isEmpty ? null : jsonEncode(goalIds),
+      programRunId: programRunId,
+      kind: kReviewKindReview,
+      title: title,
+      baselineContent: baseline.encode(),
+      baselineHash: baseline.contentHash,
+      createdDate: DateTime(2026, 1, 1),
+    );
+    // The reload that follows a start reads the row back, so the fake applies
+    // it the way the real INSERT does.
+    reviews = [review, ...reviews];
+    return review;
+  }
+
+  @override
+  Future<ProgramReview?> captureBaseline(
+    String reviewId, {
+    required String userId,
+  }) async {
+    baselineCalls.add(reviewId);
+    return baselineResult;
+  }
+
   @override
   Future<DateTime> checkpointFor(
     String programId, {
-    String? blockId,
-    String? sessionId,
+    List<String>? sessionIds,
     DateTime? fallback,
   }) async {
-    scopes.add(blockId);
-    sessionScopes.add(sessionId);
+    scopes.add(sessionIds);
     fallbacks.add(fallback);
     return checkpoint ?? fallback ?? DateTime(2026, 3, 1);
+  }
+
+  /// Every set a standalone window was asked about, in order — the twin of
+  /// [scopes] for [checkpointForSet].
+  final setScopes = <List<String>>[];
+
+  /// What [checkpointForSet] answers with. Null is the honest default: an
+  /// open review that is the first look at its ground has nothing to say
+  /// "since".
+  DateTime? setCheckpoint;
+
+  @override
+  Future<DateTime?> checkpointForSet(
+    String userId, {
+    required List<String> sessionIds,
+    DateTime? fallback,
+  }) async {
+    setScopes.add(sessionIds);
+    return setCheckpoint ?? fallback;
+  }
+
+  /// Every note write a caller made, in order — so a test can assert which
+  /// row was addressed and that a blank note was passed through as a clear.
+  final workoutNoteCalls =
+      <({String reviewId, String plannedSessionId, String? note})>[];
+
+  @override
+  Future<void> setWorkoutNote(
+    String reviewId,
+    String plannedSessionId, {
+    required String? note,
+  }) async {
+    workoutNoteCalls.add((
+      reviewId: reviewId,
+      plannedSessionId: plannedSessionId,
+      note: note,
+    ));
+  }
+
+  /// Every scope rewrite a caller made, in order — the sheet's whole output,
+  /// so a test can assert both halves at once and in the order they were
+  /// handed over.
+  final scopeCalls =
+      <({String reviewId, List<String> sessionIds, List<String> goalIds})>[];
+
+  /// Set to make [setReviewScope] throw — the sheet's rollback path.
+  bool failScopeWrite = false;
+
+  @override
+  Future<void> setReviewScope(
+    String reviewId, {
+    required List<String> sessionIds,
+    required List<String> goalIds,
+  }) async {
+    if (failScopeWrite) throw StateError('scope write failed');
+    scopeCalls.add((
+      reviewId: reviewId,
+      sessionIds: sessionIds,
+      goalIds: goalIds,
+    ));
+  }
+
+  /// Every review a caller asked to cancel, in order — and applied, so the
+  /// reload that follows the write sees the row gone, exactly as the real
+  /// DELETE leaves it.
+  final deletedReviews = <String>[];
+
+  /// Set to make [deleteReview] throw — the cancel's failure path.
+  bool failDelete = false;
+
+  @override
+  Future<void> deleteReview(String reviewId) async {
+    if (failDelete) throw StateError('delete failed');
+    deletedReviews.add(reviewId);
+    reviews = [for (final r in reviews) if (r.reviewId != reviewId) r];
   }
 
   @override
@@ -491,6 +660,24 @@ class FakeProgramHistoryRepository implements ProgramHistoryRepository {
   @override
   Future<List<ProgramReview>> fetchReviews(String programId) async => reviews;
 
+  /// The user-wide list the Reviews tab renders — answered from the same list
+  /// [fetchReviews] serves, because every fixture review belongs to one user.
+  @override
+  Future<List<ProgramReview>> fetchReviewsForUser(String userId) async =>
+      reviews;
+
+  /// One row by id, off the same list — what a record reads its snapshot
+  /// through before it opens. A miss is a miss: [fetchReview] answers null,
+  /// the way the real read does, rather than throwing on an id a test typed
+  /// wrong.
+  @override
+  Future<ProgramReview?> fetchReview(String reviewId) async {
+    for (final review in reviews) {
+      if (review.reviewId == reviewId) return review;
+    }
+    return null;
+  }
+
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
@@ -503,20 +690,20 @@ class DeriveCall {
     required this.from,
     required this.programId,
     this.blockId,
-    this.sessionId,
+    this.sessionIds,
   });
 
   final String userId;
   final DateTime from;
   final String programId;
 
-  /// The scope the caller asked about, which is what decides whether the
-  /// report covers one block, one workout or every run of the program. Null is
-  /// the program's own scope, never "unknown".
+  /// The block scope the caller asked about — kept for the run-close path,
+  /// whose content read stays block-wide (a block run's logged sessions
+  /// include freestyle ones a set of planned ids would drop).
   final String? blockId;
 
-  /// The narrower session scope, when the review examines one workout.
-  final String? sessionId;
+  /// The set scope, when the caller asked about the workouts a review covers.
+  final List<String>? sessionIds;
 }
 
 class FakeAchievementsDerivation implements AchievementsDerivation {
@@ -529,7 +716,7 @@ class FakeAchievementsDerivation implements AchievementsDerivation {
     required String programId,
     DateTime? until,
     String? blockId,
-    String? sessionId,
+    List<String>? sessionIds,
   }) async {
     calls.add(
       DeriveCall(
@@ -537,7 +724,7 @@ class FakeAchievementsDerivation implements AchievementsDerivation {
         from: from,
         programId: programId,
         blockId: blockId,
-        sessionId: sessionId,
+        sessionIds: sessionIds,
       ),
     );
     return ProgramAchievements(from: from);
@@ -549,8 +736,9 @@ class FakeAchievementsDerivation implements AchievementsDerivation {
 
 // ── Programs, workouts, exercises ───────────────────────────────────────────
 
-/// Covers what the two program view models read on load and on a goal/goal-
-/// delete; everything else throws, which is the point.
+/// Covers what the program view models read on load, and the goal writes a
+/// still-open screen makes: create, description, delete; everything else
+/// throws, which is the point.
 class FakeProgramRepository implements ProgramRepository {
   FakeProgramRepository({List<Program>? programs, List<Goal>? goals})
     : programs = programs ?? [testProgram()],
@@ -564,16 +752,29 @@ class FakeProgramRepository implements ProgramRepository {
   /// Every goal a view model has asked to create, in order.
   ///
   /// Recorded rather than applied for the same reason [FakePlannedSessions]
-  /// records its moves: what the screen got right is *which scope it filed the
-  /// goal under*, and a fake that stored the goal itself would hide a caller
-  /// that passed the wrong block. It is applied as well, so the reload that
-  /// follows a create sees the row it just wrote.
+  /// records its moves: what the screen got right is *the set it describes* —
+  /// and, since goals carry no scope while they are unattached (2026-10-08),
+  /// that it filed the goal under no program or block at all. It is applied as
+  /// well, so the reload that follows a create sees the row it just wrote.
   final createdGoals = <Goal>[];
 
   @override
   Future<void> createGoal(String userId, Goal goal) async {
     createdGoals.add(goal);
     goals = [...goals, goal];
+  }
+
+  /// Every goal a view model has asked to delete, in order — and applied, so
+  /// a list that rebuilds after the write shows the row gone.
+  final deletedGoals = <String>[];
+
+  @override
+  Future<void> deleteGoal(String goalId) async {
+    deletedGoals.add(goalId);
+    goals = [
+      for (final g in goals)
+        if (g.goalId != goalId) g,
+    ];
   }
 
   @override
@@ -597,6 +798,48 @@ class FakeProgramRepository implements ProgramRepository {
     String? blockId,
     String? programRunId,
   }) async => goals;
+
+  /// The whole library — the list the goals tab now reads. No scope names
+  /// ride along: goals carry no scope while they are unattached (2026-10-08),
+  /// and nothing renders one.
+  @override
+  Future<List<({Goal goal, String? programName, String? blockName})>>
+  fetchGoalOptions(String userId) async => [
+    for (final goal in goals) (goal: goal, programName: null, blockName: null),
+  ];
+
+  /// The named goals, in the fake's own list order — the real read orders by
+  /// `goal_created_date`, which [Goal] does not carry, so a fixture that cares
+  /// about order writes its list in the order it means.
+  @override
+  Future<List<({Goal goal, String? programName, String? blockName})>>
+  fetchGoalOptionsByIds(List<String> goalIds) async => [
+    for (final goal in goals)
+      if (goalIds.contains(goal.goalId))
+        (goal: goal, programName: null, blockName: null),
+  ];
+
+  /// Every description a view model has written, in order — and applied, so a
+  /// sheet re-opened after a write sees the row it just wrote, exactly as the
+  /// real UPDATE leaves it.
+  final goalDescriptionWrites = <({String goalId, String? description})>[];
+
+  @override
+  Future<void> updateGoalDescription(
+    String goalId,
+    String? description,
+  ) async {
+    goalDescriptionWrites.add((goalId: goalId, description: description));
+    goals = [
+      for (final g in goals)
+        if (g.goalId == goalId)
+          (description == null || description.isEmpty)
+              ? g.copyWith(clearDescription: true)
+              : g.copyWith(description: description)
+        else
+          g,
+    ];
+  }
 
   @override
   Future<void> deleteProgram(String programId) async {
@@ -679,7 +922,61 @@ class FakePlannedSessions implements PlannedSessionRepository {
   Future<List<PlannedSessionProgram>> fetchProgramLinks(
     String programId, {
     String? blockId,
-  }) async => links;
+  }) async => blockId == null
+      ? links
+      : [
+          for (final link in links)
+            if (link.blockId == blockId) link,
+        ];
+
+  @override
+  Future<List<PlannedSessionProgram>> fetchLinksForSessions(
+    List<String> sessionIds,
+  ) async => [
+    for (final link in links)
+      if (sessionIds.contains(link.plannedSessionId)) link,
+  ];
+
+  /// The review picker's rows, in the recency order the caller hands them —
+  /// the fake does not re-sort, because the rule under test IS the sort and a
+  /// fake that applied it would hide the real one failing.
+  List<
+    ({
+      PlannedSession session,
+      DateTime? lastLogged,
+      int finished,
+      DateTime? lastReview,
+    })
+  >
+  reviewableRows = const [];
+
+  @override
+  Future<
+    List<
+      ({
+        PlannedSession session,
+        DateTime? lastLogged,
+        int finished,
+        DateTime? lastReview,
+      })
+    >
+  >
+  fetchReviewableRows(String userId) async => reviewableRows;
+
+  /// Exercises per workout id — what the review picker's counts read.
+  Map<String, List<PlannedSessionExercise>> exercises = const {};
+
+  @override
+  Future<List<PlannedSessionExercise>> fetchPlannedExercises(
+    String plannedSessionId,
+  ) async => exercises[plannedSessionId] ?? const [];
+
+  /// One workout by id — what the review landing resolves its cards through.
+  Map<String, PlannedSession> byId = const {};
+
+  @override
+  Future<PlannedSession?> fetchPlannedSessionById(String sessionId) async =>
+      byId[sessionId];
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -701,14 +998,20 @@ class FakeExercises implements ExerciseRepository {
   Map<String, String> exerciseNames = const {};
   Map<String, String> variationNames = const {};
 
+  /// What the detail map and the variation library resolve to — a goal's
+  /// label reads the first (live-first naming) and the add-target picker the
+  /// second.
+  Map<String, ExerciseDetail> details = const {};
+  List<CustomVariation> variations = const [];
+
   @override
   Future<List<CustomVariation>> fetchVariations(String userId) async =>
-      const [];
+      variations;
 
   @override
   Future<Map<String, ExerciseDetail>> fetchExerciseDetailMap(
     String userId,
-  ) async => const {};
+  ) async => details;
 
   @override
   Future<Map<String, String>> fetchExerciseNameMap(String userId) async =>

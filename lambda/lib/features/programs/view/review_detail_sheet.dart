@@ -78,7 +78,11 @@ class _ReviewDetailSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final content = review.snapshot;
+    // The record this pass left: its snapshot, narrowed to the workouts the
+    // review actually covers. A set review stored a whole-program document, so
+    // rendering it whole would report on workouts the pass never looked at; a
+    // legacy row carries no set and passes through whole.
+    final content = scopedSnapshot(review);
 
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(
@@ -131,12 +135,16 @@ class _ReviewDetailSheet extends StatelessWidget {
             _ContentsPanel(
               content: content,
               usesBlocks: usesBlocks,
-              // The review's own scope decides what it was looking at: a
-              // program-level review lays out all of it, a block's lays out
-              // that block, a workout's lays out that workout.
+              // Already narrowed to the pass's set above; these two are the
+              // LEGACY single-scope fields, so a row written before reviews
+              // were re-scoped still lays out its block or its workout alone.
               blockId: review.blockId,
               sessionId: review.sessionId,
               exerciseNames: exerciseNames,
+              // And the pass's own notes, read back beside the exercises
+              // they were about — the part of a review that is not in the
+              // plan at all.
+              notes: review.exerciseNotes,
             ),
           if (onViewWorkouts != null || onViewChanges != null) ...[
             const SizedBox(height: AppSpacing.lg),
@@ -271,6 +279,7 @@ class _ContentsPanel extends StatelessWidget {
     required this.blockId,
     required this.sessionId,
     required this.exerciseNames,
+    required this.notes,
   });
 
   final ProgramContent content;
@@ -281,6 +290,11 @@ class _ContentsPanel extends StatelessWidget {
   final String? sessionId;
 
   final Map<String, String> exerciseNames;
+
+  /// The review's per-exercise notes, keyed by `planned_exercise_id`. Not
+  /// part of [content] and not derived from it: the plan is what the pass
+  /// produced, the notes are what it thought.
+  final Map<String, String> notes;
 
   @override
   Widget build(BuildContext context) {
@@ -309,6 +323,7 @@ class _ContentsPanel extends StatelessWidget {
             goals: _goalsIn(b.blockId),
             sessions: _sessionsIn(b.blockId),
             exerciseNames: exerciseNames,
+            notes: notes,
           ),
           const SizedBox(height: AppSpacing.sm),
         ],
@@ -332,7 +347,7 @@ class _ContentsPanel extends StatelessWidget {
     children: [
       if (content.sessions.isEmpty) const _Note('No workouts yet.'),
       for (final s in content.sessions)
-        _SessionLine(session: s, exerciseNames: exerciseNames),
+        _SessionLine(session: s, exerciseNames: exerciseNames, notes: notes),
       // No "Whole program" heading: every goal a simple program holds IS the
       // program's own, so the label would invent a distinction it cannot have.
       for (final g in programGoals)
@@ -361,7 +376,7 @@ class _ContentsPanel extends StatelessWidget {
         else
           const _Line('This block', mono: false),
         for (final s in sessions)
-          _SessionLine(session: s, exerciseNames: exerciseNames),
+          _SessionLine(session: s, exerciseNames: exerciseNames, notes: notes),
         if (twoScopes) const _Line('This block', mono: false),
         for (final g in goals) _GoalLine(goal: g, exerciseNames: exerciseNames),
         if (programGoals.isNotEmpty) ...[
@@ -410,7 +425,11 @@ class _ContentsPanel extends StatelessWidget {
         const SizedBox(height: 2),
         if (session.exercises.isEmpty) const _Note('No exercises.'),
         for (final e in session.exercises)
-          _ExerciseTargets(exercise: e, exerciseNames: exerciseNames),
+          _ExerciseTargets(
+            exercise: e,
+            exerciseNames: exerciseNames,
+            note: notes[e.plannedExerciseId],
+          ),
       ],
     );
   }
@@ -445,25 +464,33 @@ class _ContentsPanel extends StatelessWidget {
     return [
       const _Line('Unfiled', mono: false),
       for (final s in unfiled)
-        _SessionLine(session: s, exerciseNames: exerciseNames),
+        _SessionLine(session: s, exerciseNames: exerciseNames, notes: notes),
       const SizedBox(height: AppSpacing.sm),
     ];
   }
 }
 
-/// One exercise inside a workout-scoped review: its name, and what each set
-/// asked for.
+/// One exercise inside a workout-scoped review: its name, what each set asked
+/// for, and what the review said about it.
 class _ExerciseTargets extends StatelessWidget {
-  const _ExerciseTargets({required this.exercise, required this.exerciseNames});
+  const _ExerciseTargets({
+    required this.exercise,
+    required this.exerciseNames,
+    this.note,
+  });
 
   final ContentExercise exercise;
   final Map<String, String> exerciseNames;
+
+  /// The review's note for this exercise, when it left one.
+  final String? note;
 
   @override
   Widget build(BuildContext context) {
     final targets = [
       for (final s in exercise.sets) _setLabel(s),
     ]..removeWhere((t) => t.isEmpty);
+    final note = this.note?.trim() ?? '';
 
     return Padding(
       padding: const EdgeInsets.only(left: 8, top: 3),
@@ -483,6 +510,35 @@ class _ExerciseTargets extends StatelessWidget {
               style: AppFonts.mono(
                 fontSize: AppTextStyles.xs,
                 color: AppColors.muted,
+              ),
+            ),
+          // Nameless here: the exercise's name is the line directly above, so
+          // repeating it would be the layout saying the same thing twice.
+          if (note.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Icon(
+                      Icons.sticky_note_2_outlined,
+                      size: 10,
+                      color: AppColors.accent,
+                    ),
+                  ),
+                  const SizedBox(width: 5),
+                  Expanded(
+                    child: Text(
+                      note,
+                      style: AppFonts.ui(
+                        fontSize: AppTextStyles.xs,
+                        color: AppColors.accent,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
         ],
@@ -550,12 +606,14 @@ class _BlockContents extends StatelessWidget {
     required this.sessions,
     required this.goals,
     required this.exerciseNames,
+    required this.notes,
   });
 
   final ContentBlock block;
   final List<ContentSession> sessions;
   final List<ContentGoal> goals;
   final Map<String, String> exerciseNames;
+  final Map<String, String> notes;
 
   @override
   Widget build(BuildContext context) {
@@ -566,19 +624,25 @@ class _BlockContents extends StatelessWidget {
         if (sessions.isEmpty && goals.isEmpty)
           const _Note('Nothing in this block yet.'),
         for (final s in sessions)
-          _SessionLine(session: s, exerciseNames: exerciseNames),
+          _SessionLine(session: s, exerciseNames: exerciseNames, notes: notes),
         for (final g in goals) _GoalLine(goal: g, exerciseNames: exerciseNames),
       ],
     );
   }
 }
 
-/// One workout: its name, and the exercises it holds.
+/// One workout: its name, the exercises it holds, and anything the review
+/// said about them.
 class _SessionLine extends StatelessWidget {
-  const _SessionLine({required this.session, required this.exerciseNames});
+  const _SessionLine({
+    required this.session,
+    required this.exerciseNames,
+    required this.notes,
+  });
 
   final ContentSession session;
   final Map<String, String> exerciseNames;
+  final Map<String, String> notes;
 
   @override
   Widget build(BuildContext context) {
@@ -607,10 +671,71 @@ class _SessionLine extends StatelessWidget {
                 color: AppColors.muted,
               ),
             ),
+          // The pass's notes, each named for the exercise it was about: the
+          // line above lists the exercises as one run of words, and a bare
+          // note under it would leave the reader guessing whose it is.
+          for (final e in session.exercises)
+            if ((notes[e.plannedExerciseId] ?? '').trim().isNotEmpty)
+              _NoteLine(
+                label: e.exerciseId != null
+                    ? (exerciseNames[e.exerciseId] ?? 'Exercise')
+                    : 'Exercise',
+                text: notes[e.plannedExerciseId]!.trim(),
+              ),
         ],
       ),
     );
   }
+}
+
+/// One review note as the record reads it: whose, and what was said.
+class _NoteLine extends StatelessWidget {
+  const _NoteLine({required this.label, required this.text});
+
+  final String label;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(top: 2),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 2),
+          child: Icon(
+            Icons.sticky_note_2_outlined,
+            size: 10,
+            color: AppColors.accent,
+          ),
+        ),
+        const SizedBox(width: 5),
+        Expanded(
+          child: Text.rich(
+            TextSpan(
+              children: [
+                TextSpan(
+                  text: '$label  ',
+                  style: AppFonts.ui(
+                    fontSize: AppTextStyles.xs,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.accent,
+                  ),
+                ),
+                TextSpan(
+                  text: text,
+                  style: AppFonts.ui(
+                    fontSize: AppTextStyles.xs,
+                    color: AppColors.muted,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 /// One goal, as the target it is.

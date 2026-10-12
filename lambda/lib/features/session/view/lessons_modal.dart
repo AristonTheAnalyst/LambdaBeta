@@ -7,6 +7,7 @@ import '../../../core/styles/app_spacing.dart';
 import '../../../data/models/lesson.dart';
 import '../../../shared/widgets/glass_button.dart';
 import '../../../shared/widgets/container_styles.dart';
+import '../../../shared/widgets/lambda_input.dart';
 import '../../../shared/widgets/slide_up_modal.dart';
 import '../../../shared/widgets/swipe_actions.dart';
 
@@ -155,21 +156,15 @@ class _LessonsModalContentState extends State<_LessonsModalContent> {
                 ),
                 const SizedBox(height: AppSpacing.md),
                 if (_adding) ...[
-                  TextField(
+                  LambdaInput(
                     controller: _draftCtrl,
                     autofocus: true,
+                    minLines: 2,
                     maxLines: 3,
-                    style: AppFonts.ui(fontSize: 14, color: AppColors.primary),
-                    decoration: InputDecoration(
-                      hintText: 'What did you learn? Cues, breakthroughs, adjustments…',
-                      hintStyle: AppFonts.ui(color: AppColors.muted),
-                      filled: true,
-                      fillColor: AppColors.surfaceHigh,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(AppRadius.md),
-                        borderSide: BorderSide(color: AppColors.primary),
-                      ),
-                    ),
+                    placeholder:
+                        'What did you learn? Cues, breakthroughs, adjustments…',
+                    // The sheet's default background is a surface ground.
+                    elevated: true,
                   ),
                   const SizedBox(height: AppSpacing.sm),
                   Row(
@@ -401,21 +396,14 @@ class _LessonRowState extends State<_LessonRow> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        TextField(
+        LambdaInput(
           controller: _editCtrl,
           autofocus: true,
+          minLines: 2,
           maxLines: 3,
-          style: AppFonts.ui(fontSize: 14, color: AppColors.primary),
-          decoration: InputDecoration(
-            hintText: 'Lesson text…',
-            hintStyle: AppFonts.ui(color: AppColors.muted),
-            filled: true,
-            fillColor: AppColors.surfaceHigh,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(AppRadius.md),
-              borderSide: BorderSide(color: AppColors.primary),
-            ),
-          ),
+          placeholder: 'Lesson text…',
+          // The sheet's default background is a surface ground.
+          elevated: true,
         ),
         const SizedBox(height: AppSpacing.sm),
         Row(

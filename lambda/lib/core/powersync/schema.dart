@@ -132,10 +132,12 @@ const schema = Schema([
   // to keep in sync with it. `snapshot_content` is the same `ProgramContent`
   // document the retired revision table held, written when the review completes.
   //
-  // SCOPE — exactly one of: the program's own (`block_id` and `session_id` both
-  // null), a block (`block_id`), or one planned session (`session_id`). The two
-  // ids are never both set; the server enforces it, and `scheduleReview`
-  // refuses it client-side so the row cannot reach the CHECK at all.
+  // SCOPE — a review is a pass over a SET of workouts: `session_ids_json` is
+  // the ordered planned-session ids it covers, and `reviewed_sessions_json`
+  // records the ones marked done inside the pass. Both stay null on rows
+  // written before reviews were re-scoped — those resolved from their legacy
+  // `block_id`/`session_id` (never both set; the server checks it) — and new
+  // rows leave the legacy ids null.
   Table('fact_program_review', [
     Column.text('review_id'),
     Column.text('user_id'),
@@ -153,7 +155,14 @@ const schema = Schema([
     Column.text('proposed_hash'),
     Column.text('snapshot_content'),
     Column.text('snapshot_hash'),
+    Column.text('baseline_content'),
+    Column.text('baseline_hash'),
+    Column.text('exercise_notes_json'),
     Column.text('achievements_json'),
+    Column.text('session_ids_json'),
+    Column.text('reviewed_sessions_json'),
+    Column.text('goal_ids_json'),
+    Column.text('workout_notes_json'),
     Column.text('created_date'),
   ]),
   Table('dim_lesson', [
@@ -227,8 +236,13 @@ const schema = Schema([
     Column.text('program_run_id'),
     Column.text('user_id'),
     Column.text('goal_text'),
+    // Free-form notes about the goal itself (2026-10-08) — the target and its
+    // label are target_* / goal_text, not this. See
+    // 20261008120000_goal_description.sql.
+    Column.text('goal_description'),
     Column.text('custom_exercise_id'),
     // The scope: a program, or a block of one. NULL program = standalone.
+    // Dormant since goals went unattached (2026-10-08) — kept, not dropped.
     Column.text('program_id'),
     Column.text('block_id'),
     // The one variation the goal is scoped to; NULL = the plain exercise,
@@ -239,6 +253,6 @@ const schema = Schema([
     Column.text('goal_created_date'),
     // `achieved_date` is deliberately absent — a goal's outcome is a per-run
     // fact now, frozen into fact_program_review.achievements_json at close.
-    // See 20260927000004_program_goal_scoping.sql.
+    // See 20260928074745_program_goal_scoping.sql.
   ]),
 ]);

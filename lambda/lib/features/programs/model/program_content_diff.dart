@@ -1,4 +1,5 @@
 import '../../../data/models/program_content.dart';
+import '../../../data/models/program_review.dart';
 
 /// What kind of thing changed.
 enum ContentEntity { block, session, exercise, set, goal }
@@ -14,10 +15,13 @@ class ContentChange {
     required this.id,
     required this.label,
     this.detail,
+    this.oldText,
+    this.newText,
     this.sessionId,
     this.sessionName,
     this.exerciseId,
     this.exerciseName,
+    this.plannedExerciseId,
   });
 
   final ContentEntity entity;
@@ -34,11 +38,25 @@ class ContentChange {
   /// where the label says everything.
   final String? detail;
 
+  /// The verbatim texts on either side of a note edit — what `notes edited`
+  /// alone cannot say. [detail] carries each side collapsed to one line and
+  /// capped, so the row reads; these carry the whole thing, for the popup that
+  /// opens on a tap. Null on every change that is not a note.
+  final String? oldText;
+  final String? newText;
+
   // Parent context, so a UI can group nested changes under their workout.
   final String? sessionId;
   final String? sessionName;
   final String? exerciseId;
   final String? exerciseName;
+
+  /// The exercise GROUP the change sits under (a `planned_exercise_id`), set
+  /// on every exercise- and set-level change and null where there is no
+  /// exercise context (blocks, workouts, goals). Lets a reader gather one
+  /// exercise's changes by filtering — and it holds across a lift swap, where
+  /// [exerciseId] itself changes.
+  final String? plannedExerciseId;
 
   @override
   String toString() => '${kind.name} ${entity.name} $label'
@@ -79,15 +97,131 @@ class ContentDiff {
   }
 }
 
+/// The part of a program a review at this scope is looking at.
+///
+/// A comparison has to be scoped the same way the review is, because "what
+/// changed" means nothing without "changed where": a workout review compares
+/// the workout, a block review its block (and the goals in force there), and a
+/// program review the whole shape. A diff that reported the siblings too would
+/// answer a question nobody asked, and read as if the pass had broken things
+/// it never touched.
+///
+/// The rules mirror the read-back (`review_detail_sheet`'s contents panel) —
+/// one answer to "what is being reviewed", so the comparison and the record
+/// cannot disagree about it.
+///
+/// A scope id that matches nothing yields a document with nothing from that
+/// scope rather than the full one: the comparison then reads as "everything
+/// removed", which is the honest rendering of a workout that was deleted
+/// between two checkpoints. Silently widening to the whole program would be a
+/// lie with content in it. (One exception, on purpose: program-level goals
+/// still ride along at block scope — they were never that block's to lose.)
+///
+/// [sessionIds] is the **set** form — a review's own scope, and the shape the
+/// read-back surfaces render: the named workouts, the blocks that hold any of
+/// them, and the goals in force over them (the program's own plus those
+/// blocks'). A set spanning two blocks keeps both, so a multi-workout pass
+/// reads back as the ground it covered rather than as the whole program.
+///
+/// [goalIds] names goals the pass **explicitly picked**. They survive the
+/// narrowing even when their block holds no reviewed workout — a goal chosen
+/// on purpose was part of the pass's question, and dropping it because of
+/// where its block sits would lose the thing the user ticked. Only meaningful
+/// with [sessionIds]; ignored otherwise.
+ProgramContent contentInScope(
+  ProgramContent content, {
+  String? blockId,
+  String? sessionId,
+  List<String>? sessionIds,
+  Set<String>? goalIds,
+}) {
+  if (sessionId != null) {
+    return ProgramContent(
+      sessions: [
+        for (final s in content.sessions)
+          if (s.sessionId == sessionId) s,
+      ],
+    );
+  }
+  final set = sessionIds;
+  if (set != null) {
+    final kept = [
+      for (final s in content.sessions)
+        if (set.contains(s.sessionId)) s,
+    ];
+    final blocks = {
+      for (final s in kept)
+        if (s.blockId != null) s.blockId,
+    };
+    return ProgramContent(
+      blocks: [
+        for (final b in content.blocks)
+          if (blocks.contains(b.blockId)) b,
+      ],
+      sessions: kept,
+      // Same rule the achievements derivation uses: a program goal is chased
+      // wherever its workouts sit, and each kept block's goals ride along —
+      // plus the pass's explicitly picked goals, wherever they live.
+      goals: [
+        for (final g in content.goals)
+          if (g.blockId == null ||
+              blocks.contains(g.blockId) ||
+              (goalIds?.contains(g.goalId) ?? false))
+            g,
+      ],
+    );
+  }
+  final block = blockId;
+  if (block == null) return content;
+  return ProgramContent(
+    blocks: [
+      for (final b in content.blocks)
+        if (b.blockId == block) b,
+    ],
+    sessions: [
+      for (final s in content.sessions)
+        if (s.blockId == block) s,
+    ],
+    // A block's goals plus the program's own: a goal with no block is in force
+    // everywhere, so it is part of what this phase is chasing.
+    goals: [
+      for (final g in content.goals)
+        if (g.blockId == null || g.blockId == block) g,
+    ],
+  );
+}
+
+/// [review]'s stored snapshot as the pass saw it: a set review narrows to the
+/// workouts it covered (plus the goals it explicitly picked), while a legacy
+/// row's whole-program document passes through untouched.
+///
+/// One helper for every read-back surface — the timeline's digests, the detail
+/// sheet, the snapshot screen — so what a pass "changed" always counts the same
+/// ground as what it renders. It narrows by the row's **stored** ids, not by a
+/// live resolution: a workout deleted since the pass must still be able to
+/// read back as removed rather than quietly leaving the record.
+ProgramContent? scopedSnapshot(ProgramReview review) {
+  final content = review.snapshot;
+  if (content == null) return null;
+  final stored = review.storedSessionIds;
+  if (stored == null) return content;
+  return contentInScope(
+    content,
+    sessionIds: stored,
+    goalIds: review.storedGoalIds?.toSet(),
+  );
+}
+
 /// Compares two program contents and reports what changed between them.
 ///
 /// Passing null for [from] means "the first version" — everything in [to] is
 /// reported as added. A null [to] reports everything as removed.
 ///
-/// [exerciseNames] and [blockNames] are optional id→name maps so the diff can
-/// render real nouns without resolving anything itself. The snapshot stores
-/// ids only (names resolve live, like every other surface), so without a map an
-/// exercise falls back to a generic label.
+/// [exerciseNames], [blockNames] and [variationNames] are optional id→name
+/// maps so the diff can render real nouns without resolving anything itself.
+/// The snapshot stores ids only (names resolve live, like every other
+/// surface), so without a map an exercise falls back to a generic label and a
+/// variation change falls back to "variation changed".
 ///
 /// **Move detection is the part that decides whether this reads as signal or
 /// noise.** A move is reported only when an item's position among the items
@@ -101,6 +235,7 @@ ContentDiff diffContent(
   ProgramContent? to, {
   Map<String, String> exerciseNames = const {},
   Map<String, String> blockNames = const {},
+  Map<String, String> variationNames = const {},
 }) {
   final before = from ?? const ProgramContent();
   final after = to ?? const ProgramContent();
@@ -182,7 +317,9 @@ ContentDiff diffContent(
         kind: ContentChangeKind.edited,
         id: session.sessionId,
         label: session.name,
-        detail: 'notes edited',
+        detail: _noteChange(prior.notes, session.notes),
+        oldText: prior.notes,
+        newText: session.notes,
         sessionId: session.sessionId,
         sessionName: session.name,
       ));
@@ -218,6 +355,7 @@ ContentDiff diffContent(
       session: session,
       prior: prior,
       exerciseNames: exerciseNames,
+      variationNames: variationNames,
     ));
   }
 
@@ -430,6 +568,7 @@ List<ContentChange> _compareExercises({
   required ContentSession session,
   required ContentSession prior,
   required Map<String, String> exerciseNames,
+  required Map<String, String> variationNames,
 }) {
   final changes = <ContentChange>[];
 
@@ -465,6 +604,7 @@ List<ContentChange> _compareExercises({
         sessionName: session.name,
         exerciseId: exercise.exerciseId,
         exerciseName: name,
+        plannedExerciseId: id,
       ));
       continue;
     }
@@ -483,6 +623,7 @@ List<ContentChange> _compareExercises({
         sessionName: session.name,
         exerciseId: priorExercise.exerciseId,
         exerciseName: priorName,
+        plannedExerciseId: id,
       ));
       changes.add(ContentChange(
         entity: ContentEntity.exercise,
@@ -494,6 +635,7 @@ List<ContentChange> _compareExercises({
         sessionName: session.name,
         exerciseId: exercise.exerciseId,
         exerciseName: name,
+        plannedExerciseId: id,
       ));
       continue;
     }
@@ -509,6 +651,7 @@ List<ContentChange> _compareExercises({
         sessionName: session.name,
         exerciseId: exercise.exerciseId,
         exerciseName: name,
+        plannedExerciseId: id,
       ));
     }
 
@@ -517,6 +660,7 @@ List<ContentChange> _compareExercises({
       prior: priorExercise,
       session: session,
       exerciseName: name,
+      variationNames: variationNames,
     ));
   }
 
@@ -533,6 +677,7 @@ List<ContentChange> _compareExercises({
       sessionName: session.name,
       exerciseId: exercise.exerciseId,
       exerciseName: name,
+      plannedExerciseId: id,
     ));
   }
 
@@ -544,6 +689,7 @@ List<ContentChange> _compareSets({
   required ContentExercise prior,
   required ContentSession session,
   required String exerciseName,
+  required Map<String, String> variationNames,
 }) {
   final changes = <ContentChange>[];
 
@@ -568,6 +714,8 @@ List<ContentChange> _compareSets({
     ContentSet set,
     String label, {
     String? detail,
+    String? oldText,
+    String? newText,
   }) =>
       ContentChange(
         entity: ContentEntity.set,
@@ -575,10 +723,13 @@ List<ContentChange> _compareSets({
         id: set.plannedSetId,
         label: label,
         detail: detail,
+        oldText: oldText,
+        newText: newText,
         sessionId: session.sessionId,
         sessionName: session.name,
         exerciseId: exercise.exerciseId,
         exerciseName: exerciseName,
+        plannedExerciseId: exercise.plannedExerciseId,
       );
 
   for (var i = 0; i < exercise.sets.length; i++) {
@@ -588,7 +739,7 @@ List<ContentChange> _compareSets({
 
     if (priorSet == null) {
       changes.add(build(ContentChangeKind.added, set, label,
-          detail: _setSummary(set)));
+          detail: _setDetail(set, variationNames)));
       continue;
     }
 
@@ -609,13 +760,27 @@ List<ContentChange> _compareSets({
     }
 
     if (priorSet.variationId != set.variationId) {
-      changes.add(build(ContentChangeKind.edited, set, label,
-          detail: 'variation changed'));
+      final from = _variationName(priorSet.variationId, variationNames);
+      final to = _variationName(set.variationId, variationNames);
+      changes.add(build(
+        ContentChangeKind.edited,
+        set,
+        label,
+        detail: from == 'a variation' && to == 'a variation'
+            ? 'variation changed'
+            : 'variation: $from → $to',
+      ));
     }
 
     if ((priorSet.targetNotes ?? '') != (set.targetNotes ?? '')) {
-      changes.add(build(ContentChangeKind.edited, set, label,
-          detail: 'notes edited'));
+      changes.add(build(
+        ContentChangeKind.edited,
+        set,
+        label,
+        detail: _noteChange(priorSet.targetNotes, set.targetNotes),
+        oldText: priorSet.targetNotes,
+        newText: set.targetNotes,
+      ));
     }
   }
 
@@ -623,10 +788,29 @@ List<ContentChange> _compareSets({
     final set = prior.sets[i];
     if (afterById.containsKey(set.plannedSetId)) continue;
     changes.add(build(ContentChangeKind.removed, set, 'Set ${i + 1}',
-        detail: _setSummary(set)));
+        detail: _setDetail(set, variationNames)));
   }
 
   return changes;
+}
+
+/// A note edit as one line: `was → now`, each side collapsed and capped.
+///
+/// The row cannot hold a note — a note is whatever the user typed, and a diff
+/// row is one line — so each side is flattened (a note saved with newlines
+/// reads as a sentence here) and cut at [_notePreviewLength]. The full texts
+/// ride along on the change for the popup a tap opens.
+String _noteChange(String? before, String? after) =>
+    '${_notePreview(before)} → ${_notePreview(after)}';
+
+const _notePreviewLength = 40;
+
+String _notePreview(String? text) {
+  final collapsed = (text ?? '').replaceAll(RegExp(r'\s+'), ' ').trim();
+  if (collapsed.isEmpty) return '(none)';
+  return collapsed.length <= _notePreviewLength
+      ? collapsed
+      : '${collapsed.substring(0, _notePreviewLength - 1)}…';
 }
 
 String _setSummary(ContentSet set) {
@@ -639,6 +823,17 @@ String _setSummary(ContentSet set) {
   return '$weight × $reps';
 }
 
+/// A set as one line, variation included: `Paused · 70 × 5`.
+///
+/// The line names the variation because a card groups by EXERCISE, not by
+/// exercise × variation — a set that only a variation distinguishes from its
+/// neighbours has to say so on its own line, or the card reads as noise.
+String _setDetail(ContentSet set, Map<String, String> variationNames) {
+  final summary = _setSummary(set);
+  if (set.variationId == null) return summary;
+  return '${_variationName(set.variationId, variationNames)} · $summary';
+}
+
 String _exerciseLabel(String? exerciseId, Map<String, String> names) {
   if (exerciseId == null) return 'Exercise';
   final name = names[exerciseId];
@@ -647,6 +842,16 @@ String _exerciseLabel(String? exerciseId, Map<String, String> names) {
   // (archived exercise, or no map passed) falls back to something readable
   // rather than leaking a raw uuid into the UI.
   return 'Exercise';
+}
+
+/// A variation as a change line names it: "none" for the plain exercise, the
+/// live name when known, and a readable noun — never a uuid — for an id no
+/// map resolves.
+String _variationName(String? variationId, Map<String, String> names) {
+  if (variationId == null) return 'none';
+  final name = names[variationId];
+  if (name != null && name.trim().isNotEmpty) return name;
+  return 'a variation';
 }
 
 String _blockLabel(String? blockId, Map<String, String> names) {

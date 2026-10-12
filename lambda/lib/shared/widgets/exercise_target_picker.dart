@@ -3,7 +3,6 @@ import 'package:flutter/services.dart';
 
 import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_fonts.dart';
-import '../../core/styles/app_radius.dart';
 import '../../core/styles/app_spacing.dart';
 import '../../core/styles/app_text_styles.dart';
 import '../../core/utils/session_format.dart';
@@ -12,6 +11,7 @@ import '../../data/models/exercise_detail.dart';
 import 'container_styles.dart';
 import 'dropdown_select.dart';
 import 'glass_button.dart';
+import 'lambda_search_field.dart';
 
 /// What [ExerciseTargetPicker] produced — an exercise, optionally a variation,
 /// and the weight × reps being chased.
@@ -179,26 +179,13 @@ class _ExerciseTargetPickerState extends State<ExerciseTargetPicker> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        TextField(
+        LambdaSearchField(
           autofocus: true,
-          style: AppFonts.ui(
-            fontSize: AppTextStyles.sm,
-            color: AppColors.primary,
-          ),
-          decoration: InputDecoration(
-            hintText: 'Search exercises…',
-            hintStyle: AppFonts.ui(color: AppColors.muted),
-            prefixIcon: Icon(Icons.search, size: 16, color: AppColors.muted),
-            suffixIcon: GestureDetector(
-              onTap: _collapse,
-              child: Icon(Icons.close, size: 16, color: AppColors.muted),
-            ),
-            filled: true,
-            fillColor: AppColors.surfaceHigh,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(AppRadius.md),
-              borderSide: BorderSide(color: AppColors.border),
-            ),
+          showIcon: true,
+          hint: 'Search exercises…',
+          suffix: GestureDetector(
+            onTap: _collapse,
+            child: Icon(Icons.close, size: 16, color: AppColors.muted),
           ),
           onChanged: (v) => setState(() {
             _query = v;
@@ -346,10 +333,21 @@ class _NumberField extends StatelessWidget {
 /// Shared so the goal list, the block editor and the review sheet describe a
 /// target identically — the same reason [ExerciseTargetPicker] exists.
 String goalTargetLabel(String exerciseName, num? weight, int? reps) {
+  final target = goalTargetValue(weight, reps);
+  return target.isEmpty ? exerciseName : '$exerciseName — $target';
+}
+
+/// The target alone — "100 kg × 1", empty when neither number was recorded —
+/// without the exercise's name.
+///
+/// For the surfaces that draw the name and the target as two elements rather
+/// than glue them into one string with a dash: the review pickers' rows align
+/// the values in their own column (2026-10-10).
+String goalTargetValue(num? weight, int? reps) {
   final parts = <String>[];
   if (weight != null) parts.add('${_fmt(weight)} kg');
   if (reps != null) parts.add('$reps rep${reps == 1 ? '' : 's'}');
-  return parts.isEmpty ? exerciseName : '$exerciseName — ${parts.join(' × ')}';
+  return parts.join(' × ');
 }
 
 String _fmt(num n) => n == n.roundToDouble() ? n.toInt().toString() : '$n';

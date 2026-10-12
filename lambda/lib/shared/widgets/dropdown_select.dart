@@ -5,6 +5,7 @@ import '../../core/styles/app_radius.dart';
 import './container_styles.dart';
 import '../../core/styles/app_spacing.dart';
 import '../../core/styles/app_text_styles.dart';
+import 'lambda_search_field.dart';
 import 'slide_up_modal.dart';
 
 class DropdownOption<T> {
@@ -344,20 +345,13 @@ class _DropdownSheetContentState<T> extends State<_DropdownSheetContent<T>> {
         ),
       ],
     );
-    final search = TextField(
+    final search = LambdaSearchField(
       autofocus: true,
-      style: AppFonts.ui(fontSize: 14, color: AppColors.primary),
-      decoration: InputDecoration(
-        hintText: 'Search variations…',
-        hintStyle: AppFonts.ui(color: AppColors.muted),
-        prefixIcon: Icon(Icons.search, size: 18, color: AppColors.muted),
-        filled: true,
-        fillColor: AppColors.surfaceHigh,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppRadius.md),
-          borderSide: BorderSide(color: AppColors.border),
-        ),
-      ),
+      showIcon: true,
+      hint: 'Search variations…',
+      // The picker's ground is a surface: the standalone sheet's default
+      // background, or the in-modal overlay's own surface container.
+      elevated: true,
       onChanged: (v) => setState(() => _query = v),
     );
 

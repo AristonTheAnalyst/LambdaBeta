@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/styles/app_colors.dart';
 import '../../../../core/styles/app_fonts.dart';
-import '../../../../core/styles/app_radius.dart';
 import '../../../../core/styles/app_spacing.dart';
 import '../../../../core/styles/app_text_styles.dart';
 import '../../../../core/utils/friendly_error.dart';
@@ -14,7 +13,9 @@ import '../../../../shared/widgets/archived_sheet.dart';
 import '../../../../shared/widgets/slide_up_modal.dart';
 import '../../../../shared/widgets/swipe_actions.dart';
 import '../../../../shared/widgets/glass_button.dart';
+import '../../../../shared/widgets/lambda_search_field.dart';
 import '../../../../shared/widgets/page_header.dart';
+import '../../../../shared/widgets/scroll_shrink_nav_bar.dart';
 import '../viewmodel/workout_editor_viewmodel.dart';
 import 'plan_session_screen.dart';
 
@@ -226,30 +227,8 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
                           child: Row(
                             children: [
                               Expanded(
-                                child: TextField(
+                                child: LambdaSearchField(
                                   controller: _searchController,
-                                  style: AppFonts.ui(
-                                    fontSize: AppTextStyles.sm,
-                                    color: AppColors.primary,
-                                  ),
-                                  decoration: InputDecoration(
-                                    hintText: 'Search…',
-                                    hintStyle:
-                                        AppFonts.ui(color: AppColors.muted),
-                                    filled: true,
-                                    fillColor: AppColors.surface,
-                                    border: OutlineInputBorder(
-                                      borderRadius:
-                                          BorderRadius.circular(AppRadius.md),
-                                      borderSide: BorderSide.none,
-                                    ),
-                                    contentPadding:
-                                        const EdgeInsets.symmetric(
-                                      horizontal: 10,
-                                      vertical: 8,
-                                    ),
-                                    isDense: true,
-                                  ),
                                 ),
                               ),
                               const SizedBox(width: AppSpacing.sm),
@@ -287,7 +266,16 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
                                     ),
                                   )
                                 : ListView.separated(
-                        padding: const EdgeInsets.all(AppSpacing.lg),
+                        // Zero unless the shell's bar is floating over this
+                        // list, which is where the Library's Workouts tab
+                        // lives.
+                        padding: EdgeInsets.fromLTRB(
+                          AppSpacing.lg,
+                          AppSpacing.lg,
+                          AppSpacing.lg,
+                          AppSpacing.lg +
+                              ScrollShrinkNavBar.contentInset(context),
+                        ),
                         itemCount: _filtered.length,
                         separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.md),
                         itemBuilder: (context, i) {

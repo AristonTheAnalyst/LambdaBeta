@@ -3,6 +3,7 @@ import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_fonts.dart';
 import '../../core/styles/app_radius.dart';
 import 'container_styles.dart';
+import 'lambda_search_field.dart';
 import '../../core/styles/app_spacing.dart';
 import '../../core/styles/app_text_styles.dart';
 import '../../core/utils/session_format.dart';
@@ -104,28 +105,8 @@ class _ArchivedSheetState extends State<ArchivedSheet> {
               ),
             ),
             const SizedBox(height: AppSpacing.md),
-            TextField(
-              controller: _searchController,
-              style: AppFonts.ui(
-                fontSize: AppTextStyles.sm,
-                color: AppColors.primary,
-              ),
-              decoration: InputDecoration(
-                hintText: 'Search…',
-                hintStyle: AppFonts.ui(color: AppColors.muted),
-                filled: true,
-                fillColor: AppColors.surfaceHigh,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(AppRadius.md),
-                  borderSide: BorderSide.none,
-                ),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 8,
-                ),
-                isDense: true,
-              ),
-            ),
+            // The sheet's default background is a surface ground.
+            LambdaSearchField(controller: _searchController, elevated: true),
             const SizedBox(height: AppSpacing.md),
             if (_loading)
               Center(

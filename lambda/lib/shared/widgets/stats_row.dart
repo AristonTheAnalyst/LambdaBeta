@@ -9,17 +9,12 @@ class StatsTile {
     required this.label,
     required this.value,
     this.accent = false,
-    this.greyed = false,
     this.onTap,
   });
 
   final String label;
   final String value;
   final bool accent;
-
-  /// Disabled look — label and value both muted. The planner's SETS/
-  /// EXERCISES tiles are shown but greyed: planning has no live data.
-  final bool greyed;
 
   final VoidCallback? onTap;
 }
@@ -28,15 +23,40 @@ class StatsTile {
 /// the session screen (4 tiles: Sets/PRs/Exercises/Avg Rest) and the
 /// planned-workout screen (2 tiles: Sets/Exercises).
 class StatsRow extends StatelessWidget {
-  const StatsRow({super.key, required this.tiles});
+  const StatsRow({
+    super.key,
+    required this.tiles,
+    this.inline = false,
+    this.tone = ContainerTone.surface,
+  });
 
   final List<StatsTile> tiles;
 
+  /// Each tile reads on one line — label, then its number — instead of the
+  /// label over the value. How the session's own bar reads its tiles, and
+  /// what a short row has the width for: the planner's two tiles wear it;
+  /// four do not.
+  final bool inline;
+
+  /// The row's own container — the fill and rim it sits in. Null drops it:
+  /// tiles and dividers only, for a row that already has somewhere to sit.
+  /// The planner's counts ride in a floating glass pill, and a box inside a
+  /// glass reads as two containers.
+  ///
+  /// A row with no container paints no tile fill either, and every word in it
+  /// reads at full strength: there is no surface behind the row for a label
+  /// to sit back against.
+  final ContainerTone? tone;
+
   @override
   Widget build(BuildContext context) {
+    final tone = this.tone;
     return Container(
-      decoration: lambdaBox(ContainerTone.surface),
-      clipBehavior: Clip.antiAlias,
+      decoration: tone == null ? null : lambdaBox(tone),
+      // The clip is what rounds the tiles' fills to the container's corners.
+      // With no container there is nothing to round them to — and a clip
+      // without a decoration is not a container at all.
+      clipBehavior: tone == null ? Clip.none : Clip.antiAlias,
       child: Row(
         children: [
           for (var i = 0; i < tiles.length; i++) ...[
@@ -49,25 +69,54 @@ class StatsRow extends StatelessWidget {
   }
 
   Widget _tileWidget(StatsTile tile) {
+    final tone = this.tone;
+    final label = Text(
+        tile.label,
+        textAlign: TextAlign.center,
+        style: AppFonts.mono(
+            // Inline, a label and its number are one reading, so they hold one
+            // size — the label steps up to the number's, never the number down
+            // to the label's. Stacked, the two lines keep their own.
+            fontSize: inline ? 17 : 14,
+            letterSpacing: 0.8,
+            color: tile.accent
+                ? AppColors.accent
+                : (tone == null ? AppColors.primary : AppColors.muted)));
+    final value = Text(
+        tile.value,
+        style: AppFonts.mono(
+            fontSize: 17,
+            fontWeight: FontWeight.w500,
+            color: tile.accent ? AppColors.accent : AppColors.primary));
     final content = Container(
-      color: tile.accent ? AppColors.accentBg : AppColors.surface,
+      // A tile's fill belongs to the row's container: with no container of
+      // its own, the tile paints nothing and whatever the row is standing on
+      // shows through.
+      color: tile.accent
+          ? AppColors.accentBg
+          : (tone == null ? null : AppColors.surface),
       padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
-      child: Column(
-        children: [
-          Text(tile.label,
-              textAlign: TextAlign.center,
-              style: AppFonts.mono(
-                  fontSize: 14, letterSpacing: 0.8, color: tile.accent ? AppColors.accent : AppColors.muted)),
-          const SizedBox(height: 3),
-          Text(tile.value,
-              style: AppFonts.mono(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w500,
-                  color: tile.accent
-                      ? AppColors.accent
-                      : (tile.greyed ? AppColors.muted : AppColors.primary))),
-        ],
-      ),
+      child: inline
+          // A label and its number are one reading, so they sit on one line —
+          // baselined, not centred, because two type sizes centred against
+          // each other float.
+          ? Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              children: [
+                label,
+                const SizedBox(width: 6),
+                value,
+              ],
+            )
+          : Column(
+              children: [
+                label,
+                const SizedBox(height: 3),
+                value,
+              ],
+            ),
     );
     if (tile.onTap == null) return content;
     return GestureDetector(onTap: tile.onTap, child: content);

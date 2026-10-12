@@ -1,15 +1,16 @@
 /// A goal — either free text, or an exercise-specific target
-/// (e.g. "bench 100kg × 1"), scoped to a program or to a block of one.
-///
-/// Scope, not ownership: a program-level goal is chased through every run of
-/// that program, and a block-level goal through every run of that block. That
-/// is the point of the split — "8 weeks of accumulation" is a phase you might
-/// run twice, and the target belongs to the phase, not to one attempt at it.
+/// (e.g. "bench 100kg × 1"). Goals are unattached (2026-10-08): the program
+/// and block columns are dormant, like day scheduling — the scope resolution
+/// around them stays in the data layer, but nothing files a new goal anywhere.
 ///
 /// There is no `achievedDate`. Achievement is a per-run fact, so a single
 /// column could not express "achieved in Block 1, missed in Block 3"; the
 /// outcome is frozen per run into the close review instead. While a run is
 /// open it is derived — see [evaluateGoals].
+///
+/// [description] is the one place free prose lives: notes about the goal
+/// itself, typed in the focused goal sheet. Nothing derives from it — a goal
+/// is still just a set to beat.
 class Goal {
   const Goal({
     required this.goalId,
@@ -18,6 +19,7 @@ class Goal {
     this.blockId,
     this.programRunId,
     this.text,
+    this.description,
     this.exerciseId,
     this.variationId,
     this.targetWeight,
@@ -39,6 +41,11 @@ class Goal {
 
   /// Free-text goal. Set when there's no exercise target.
   final String? text;
+
+  /// Notes about the goal itself — why it matters, what to watch. Free text,
+  /// edited in place from the focused goal sheet; NULL when there are none
+  /// (blank is normalized away on write).
+  final String? description;
 
   /// Exercise-specific target — which exercise, at what weight × reps.
   final String? exerciseId;
@@ -69,6 +76,7 @@ class Goal {
         blockId: map['block_id'] as String?,
         programRunId: map['program_run_id'] as String?,
         text: map['goal_text'] as String?,
+        description: map['goal_description'] as String?,
         exerciseId: map['custom_exercise_id'] as String?,
         variationId: map['custom_variation_id'] as String?,
         targetWeight: _toNum(map['target_weight']),
@@ -94,9 +102,28 @@ class Goal {
         'block_id': blockId,
         'program_run_id': programRunId,
         'goal_text': text,
+        'goal_description': description,
         'custom_exercise_id': exerciseId,
         'custom_variation_id': variationId,
         'target_weight': targetWeight,
         'target_reps': targetReps,
       };
+
+  /// Replaces the description, or clears it — `clearDescription` exists because
+  /// "set this to null" and "leave this alone" cannot both be spelled with a
+  /// nullable parameter. Everything else is carried as-is: the description is
+  /// the only field anything rewrites in place.
+  Goal copyWith({String? description, bool clearDescription = false}) => Goal(
+        goalId: goalId,
+        userId: userId,
+        programId: programId,
+        blockId: blockId,
+        programRunId: programRunId,
+        text: text,
+        description: clearDescription ? null : (description ?? this.description),
+        exerciseId: exerciseId,
+        variationId: variationId,
+        targetWeight: targetWeight,
+        targetReps: targetReps,
+      );
 }

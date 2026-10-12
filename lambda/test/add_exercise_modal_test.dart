@@ -79,6 +79,49 @@ void main() {
         reason: 'among the never-trained, the name decides');
   });
 
+  testWidgets('a ticked exercise rises to the top — live, mid-tap',
+      (tester) async {
+    final added = <String>{};
+    final notifier = ValueNotifier(0);
+
+    await pumpPicker(
+      tester,
+      listenable: notifier,
+      entries: () => _library,
+      isAdded: added.contains,
+      onAdd: (id) async {
+        added.add(id);
+        // What a screen does: mutate, then wake the sheet.
+        notifier.value++;
+      },
+    );
+
+    double y(String label) => tester.getTopLeft(find.text(label)).dy;
+
+    expect(y('Squat'), greaterThan(y('Bench Press')),
+        reason: 'unticked, the never-trained Squat sits at the tail');
+
+    await tester.tap(find.text('Squat'));
+    await tester.pumpAndSettle();
+
+    expect(y('Squat'), lessThan(y('Deadlift')),
+        reason: 'the tick re-sorts on the spot — "what is active" answers '
+            'before "what else could be", even against a trained exercise');
+  });
+
+  testWidgets('the sheet names both directions of the tap', (tester) async {
+    await pumpPicker(
+      tester,
+      listenable: ValueNotifier(0),
+      entries: () => _library,
+      isAdded: (_) => false,
+    );
+
+    expect(find.text('Add/Remove Exercises'), findsOneWidget,
+        reason: 'the sheet adds and removes — a bare "Add" was only ever '
+            'describing half of it');
+  });
+
   testWidgets('typing filters to matching names', (tester) async {
     await pumpPicker(
       tester,

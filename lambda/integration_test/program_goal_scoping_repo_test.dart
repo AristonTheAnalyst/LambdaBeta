@@ -9,9 +9,10 @@ import 'package:lambda/data/repositories/program_repository.dart';
 import 'package:lambda/features/programs/model/achievements_derivation.dart';
 import 'package:powersync/powersync.dart';
 
-/// On-device test of goal SCOPING against the REAL schema and the REAL repos:
-/// `program_id` / `block_id` / `custom_variation_id` on `fact_goal`, the query
-/// that reads them, and the union [AchievementsDerivation] composes from them.
+/// On-device test of goal COLUMNS against the REAL schema and the REAL repos:
+/// `program_id` / `block_id` / `custom_variation_id` on `fact_goal` and the
+/// query that reads them, `goal_description` and the write that carries it,
+/// and the union [AchievementsDerivation] composes from them.
 ///
 ///   flutter test integration_test/program_goal_scoping_repo_test.dart -d DEVICE
 ///
@@ -38,7 +39,7 @@ void main() {
     dir = await Directory.systemTemp.createTemp('lambda_ps');
     db = PowerSyncDatabase(schema: schema, path: '${dir.path}/test.db');
     await db.initialize();
-    ps.setDatabaseForTesting(db);
+    ps.swapDatabase(db);
     programs = ProgramRepository();
     derivation = AchievementsDerivation();
     await _insertProgram(db, userId, programId, 'Scoped');
@@ -67,6 +68,7 @@ void main() {
     num? weight,
     int? reps,
     String? text,
+    String? description,
   }) async {
     final goal = Goal(
       goalId: id,
@@ -74,6 +76,7 @@ void main() {
       programId: program,
       blockId: blockId,
       text: text,
+      description: description,
       exerciseId: exerciseId,
       variationId: variationId,
       targetWeight: weight,
@@ -175,6 +178,43 @@ void main() {
           .toList(),
       ['g-mine'],
     );
+  });
+
+  test('a goal\'s notes round-trip, and blank reads as no notes at all',
+      () async {
+    await addGoal(
+      'g-noted',
+      program: null,
+      exerciseId: 'bench',
+      weight: 100,
+      description: 'Beltless, pause on the chest',
+    );
+
+    final read = (await programs.fetchGoals(userId)).single;
+    expect(read.description, 'Beltless, pause on the chest',
+        reason: 'goal_description has to survive the round trip through the '
+            'client schema — a column missing from schema.dart writes nowhere, '
+            'and the sheet would read back empty every time');
+    expect(
+      (await programs.fetchGoalOptionsByIds(['g-noted']))
+          .single
+          .goal
+          .description,
+      'Beltless, pause on the chest',
+      reason: 'the review ceremony reads goals by id, and its sheet edits the '
+          'same notes',
+    );
+
+    await programs.updateGoalDescription('g-noted', '  Hips slow off the floor ');
+    expect(
+      (await programs.fetchGoals(userId)).single.description,
+      'Hips slow off the floor',
+      reason: 'the update is local-only — PowerSync uploads it — and trims',
+    );
+
+    await programs.updateGoalDescription('g-noted', '   ');
+    expect((await programs.fetchGoals(userId)).single.description, isNull,
+        reason: 'blank is one spelling of "no notes", never an empty string');
   });
 
   test('the derivation reports the goals in force for a block run', () async {

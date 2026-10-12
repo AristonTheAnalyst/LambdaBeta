@@ -37,7 +37,7 @@ void main() {
     dir = await Directory.systemTemp.createTemp('lambda_ps');
     db = PowerSyncDatabase(schema: schema, path: '${dir.path}/test.db');
     await db.initialize();
-    ps.setDatabaseForTesting(db);
+    ps.swapDatabase(db);
     programs = ProgramRepository();
   });
 

@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_fonts.dart';
-import '../../core/styles/app_radius.dart';
 import '../../core/styles/app_spacing.dart';
 import '../../core/utils/name_limit.dart';
 import '../../features/session/model/session_local_state.dart';
 import './container_styles.dart';
+import './lambda_search_field.dart';
 import './name_limit_counter.dart';
 import './slide_up_modal.dart';
 
@@ -69,7 +69,7 @@ void showAddExerciseModal(
   Future<void> Function(String exerciseId)? onRemoveRequest,
   Future<String?> Function(String name)? onCreate,
   bool Function()? isCreating,
-  String title = 'Add exercise',
+  String title = 'Add/Remove Exercises',
 }) {
   showLambdaModal(
     context,
@@ -134,13 +134,18 @@ class _AddExerciseModalContentState extends State<_AddExerciseModalContent> {
   GlobalKey _rowKey(String exerciseId) =>
       _rowKeys.putIfAbsent(exerciseId, () => GlobalKey());
 
-  /// Name-ordered matches for the current query, most recently used first
-  /// (never-used last), then alphabetically.
+  /// Matches for the current query — added exercises first, then most
+  /// recently used (never-used last), then alphabetically.
   List<AddExerciseEntry> get _filtered {
     final q = _query.toLowerCase();
     final matches =
         widget.entries().where((e) => e.name.toLowerCase().contains(q)).toList();
     matches.sort((a, b) {
+      // What is already in the workout rises to the top: the sheet answers
+      // "what is active" before "what else could be".
+      final addedA = widget.isAdded(a.exerciseId);
+      final addedB = widget.isAdded(b.exerciseId);
+      if (addedA != addedB) return addedA ? -1 : 1;
       final da = a.lastUsed;
       final db = b.lastUsed;
       if (da != null && db != null) return db.compareTo(da);
@@ -215,26 +220,17 @@ class _AddExerciseModalContentState extends State<_AddExerciseModalContent> {
               ],
             ),
             const SizedBox(height: AppSpacing.lg),
-            TextField(
+            LambdaSearchField(
               controller: _searchController,
               autofocus: true,
+              showIcon: true,
+              hint: 'Search exercises…',
               // The text *is* the new name when the create row is used, so the
               // field carries the same cap the database does. (Material's own
               // counter is suppressed — it is not the app's type.)
               maxLength: kMaxExerciseNameLength,
-              style: AppFonts.ui(fontSize: 14, color: AppColors.primary),
-              decoration: InputDecoration(
-                counterText: '',
-                hintText: 'Search exercises…',
-                hintStyle: AppFonts.ui(color: AppColors.muted),
-                prefixIcon: Icon(Icons.search, size: 18, color: AppColors.muted),
-                filled: true,
-                fillColor: AppColors.surfaceHigh,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(AppRadius.md),
-                  borderSide: BorderSide(color: AppColors.border),
-                ),
-              ),
+              // The sheet's default background is a surface ground.
+              elevated: true,
               onChanged: (v) => setState(() => _query = v),
             ),
             if (_isNaming) ...[

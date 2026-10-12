@@ -116,6 +116,11 @@ Vertical rhythm inside stacked cards (ReflectionSummary is the reference):
 8 label→first block, 8 name→content, 16 between exercises, 24 between
 sections.
 
+This section is the *rhythm* only. Where a control's edge lands (a boxed
+chip's inset, what "centred" means) is the **spacing-and-alignment** skill —
+insets are measured from a control's box, and centered content centers on
+the screen.
+
 ## 5. Button system — GlassButton for everything
 
 One button widget: `GlassButton`. **Never** Material `FilledButton` /
@@ -144,11 +149,38 @@ sticky-note icon) — the note indicator, not a color.
 - Section divider: centered mono-12 w700 primary label, 1px `border`
   hairlines left and right (the LAST/THIS SESSION divider).
 - Reusable inputs: `LambdaInput` (label + placeholder + error + required +
-  enabled); `DropdownSelect` for pickers; `SegmentedControl` for toggles.
+  enabled + autofocus); `DropdownSelect` for pickers; `SegmentedControl`
+  for toggles.
+- **Text boxes — one rule, two halves (2026-10-07).** Every editable text
+  box is `LambdaInput` — the Pre-Evaluation "Why do you feel that way"
+  field is the reference: label above (ui sm w600 primary + 6px), a fill
+  one tier above its ground (below), `border` hairline, radius 8, 16×14
+  padding, md primary text, muted hint, accent focus. A dense search box
+  is `LambdaSearchField`: the same chrome at toolbar scale (12×10 padding,
+  sm text, optional magnifier, optional trailing control). Every read-only
+  text box — text shown, not written — is `LambdaReadout` — the
+  past-session viewer's display is the reference: the same label slot and
+  style, then a `ghost` container (12 padding, sm primary text, min 64 /
+  max 120 with inner scroll). Never hand-roll an `InputDecoration`, never
+  park a block of text in a bare `Text`, and never style a read-only box
+  as a disabled field.
+  - **The ground rule (2026-10-08):** a box's fill is always one tier
+    above what it stands on — `surface` on the page ground (the reference
+    look), `surfaceHigh` on a `surface` ground (a card, a default modal
+    sheet, the variation picker): pass `elevated: true` on `LambdaInput`
+    or `LambdaSearchField`. A box whose fill matches its ground reads as
+    dead text, however editable it actually is.
+  - **Exceptions:** an inline header title that IS the header (tap-to-
+    rename, chrome-less, centred — the program and workout name fields);
+    numeric cells (set grid, target pickers — mono, centred, their own
+    family); the exercise card's review note box, which copies the
+    session-prep reference field by name — base `surface` fill, no step
+    up, the card's hairline carrying it (2026-10-08).
 
 ## 7. Shared component inventory (`lib/shared/widgets/`)
 
-PageHeader, GlassButton, AppCard, LambdaInput, ExercisePillBar +
+PageHeader, GlassButton, AppCard, LambdaInput + LambdaReadout +
+LambdaSearchField (the text-box trio — §6), ExercisePillBar +
 ExerciseTabChip, StatsRow/StatsTile, SwipeActions/SwipeAction,
 FeelingRating, SegmentedControl, DropdownSelect, SlidePages,
 ReflectionSummary. Anything appearing on 2+ screens belongs here, never
@@ -162,8 +194,9 @@ surfaces specifically).
    monoLight).
 2. Pick a recipe from §2 — never a fresh alpha.
 3. Numbers, dates, stats, uppercase labels → mono; everything else → ui.
-4. New interactive controls → GlassButton/LambdaInput/DropdownSelect,
-   not ad-hoc Material widgets.
+4. New interactive controls → GlassButton/DropdownSelect, not ad-hoc
+   Material widgets; text boxes follow §6's rule (editable →
+   LambdaInput/LambdaSearchField, read-only → LambdaReadout).
 5. Spacing from §4; when unsure, sm=8 between label and content, lg=16
    between cards, xl=24 between sections.
 6. Add the new component to the Style Gallery so it stays discoverable.

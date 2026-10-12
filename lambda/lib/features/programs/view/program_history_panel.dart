@@ -11,13 +11,12 @@ import '../../../data/models/program_block.dart';
 import '../../../data/models/program_review.dart';
 import '../../../shared/widgets/app_card.dart';
 import '../../../shared/widgets/container_styles.dart';
-import '../../../shared/widgets/glass_button.dart';
+import '../../../shared/widgets/scroll_shrink_nav_bar.dart';
 import '../model/program_content_diff.dart';
 import '../viewmodel/program_history_viewmodel.dart';
 import 'content_diff_sheet.dart';
 import 'review_container.dart';
 import 'review_detail_sheet.dart';
-import 'review_setup_sheet.dart';
 import 'review_snapshot_screen.dart';
 
 /// A program's history: the reviews that checkpoint it, newest first, each one
@@ -82,90 +81,47 @@ class _ProgramHistoryPanelState extends State<ProgramHistoryPanel>
     super.dispose();
   }
 
-  /// Sets a review up, then either takes it or leaves it for its date.
-  Future<void> _setup(ProgramHistoryState state) async {
-    final request = await showReviewSetupSheet(
-      context,
-      scopes: state.scopes,
-      usesBlocks: state.usesBlocks,
-      // The timeline's filter is a hint, not a decision — see the sheet.
-      initialBlockId: state.blockFilter,
-    );
-    if (request == null || !mounted) return;
-
-    switch (request.mode) {
-      case ReviewStartMode.now:
-        await _start(request.scope, title: request.title);
-
-      case ReviewStartMode.scheduled:
-        final review = await _vm.scheduleReview(
-          widget.programId,
-          blockId: request.scope.blockId,
-          sessionId: request.scope.sessionId,
-          title: request.title,
-          notes: request.notes,
-          scheduledFor: request.scheduledFor,
-          withProposal: request.isChange,
-        );
-        if (!mounted || review == null) return;
-        final due = request.scheduledFor;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              due == null
-                  ? '${reviewKindLabel(review.kind)} scheduled.'
-                  : '${reviewKindLabel(review.kind)} scheduled for '
-                        '${DateFormat('d MMM').format(due)}.',
-            ),
-            backgroundColor: AppColors.success,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-    }
-  }
-
-  /// Opens the ceremony on [scope].
+  /// Reopens [review] — it was already open, and the card is how it is entered.
   ///
-  /// The review row is written first — the ceremony's whole job is to end in a
-  /// snapshot on it, and a pass that existed only in the UI until Finish would
-  /// lose everything the user did if the app died mid-review.
-  Future<void> _start(ScopeOption scope, {String? title}) async {
-    final started = await _vm.startReview(
-      widget.programId,
-      kind: scope.kind,
-      blockId: scope.blockId,
-      sessionId: scope.sessionId,
-      title: title,
-    );
+  /// Nothing is written: the row exists, and that is the whole difference from
+  /// [_start]. A card tap that inserted a second row would fork one pass into
+  /// two reviews, each asking its own question and cutting its own snapshot.
+  Future<void> _resume(ProgramReview review) async {
+    final resumed = await _vm.resumeReview(widget.programId, review);
     if (!mounted) return;
-    if (started == null) {
+    if (resumed == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Could not start the review.'),
+          content: Text('Could not open the review.'),
           behavior: SnackBarBehavior.floating,
         ),
       );
       return;
     }
+    await _openCeremony(resumed);
+  }
 
+  /// Puts the ceremony up on [started] and reloads the timeline once it ends.
+  Future<void> _openCeremony(StartedReview started) async {
+    if (!mounted) return;
     final finished = await startReview(
       context,
       ReviewSession(
         reviewId: started.review.reviewId,
         programId: widget.programId,
-        scopeKind: scope.kind,
-        // The picker's own words, so the bar names the scope the user chose
-        // rather than a second derivation that could disagree.
-        scopeLabel: scope.label,
-        blockId: started.review.blockId,
-        sessionId: started.review.sessionId,
+        // The resolution's own set, never the row's raw columns — those are
+        // null on legacy rows and stale on none.
+        sessionIds: started.sessionIds,
+        // The ticks already made in this pass: the run prompt and a resume
+        // both land here, and both must show what is already done.
+        reviewed: started.review.reviewedSessions,
         title: started.review.title,
         sinceDate: started.sinceDate,
         achievements: started.achievements,
       ),
     );
     // Only a finish cut a snapshot; backing out left the review open, and the
-    // timeline already shows it from `startReview`'s own reload.
+    // timeline already shows it from the viewmodel's own reload.
     if (finished == true && mounted) await _vm.load(widget.programId);
   }
 
@@ -173,16 +129,21 @@ class _ProgramHistoryPanelState extends State<ProgramHistoryPanel>
   /// snapshot; an open one is a pass still to be taken.
   Future<void> _open(ProgramHistoryState state, ProgramReview review) async {
     if (review.isOpen) {
-      await _start(_optionFor(state, review));
+      await _resume(review);
       return;
     }
     if (!review.hasSnapshot) return;
 
     final previous = _previousCheckpoint(state, review);
-    final before = previous?.snapshot;
-    final content = review.snapshot;
+    final before = previous == null ? null : scopedSnapshot(previous);
+    final content = scopedSnapshot(review);
     final change = before != null && content != null
-        ? diffContent(before, content, exerciseNames: state.exerciseNames)
+        ? diffContent(
+            before,
+            content,
+            exerciseNames: state.exerciseNames,
+            variationNames: state.variationNames,
+          )
         : null;
 
     await showReviewDetailSheet(
@@ -204,14 +165,14 @@ class _ProgramHistoryPanelState extends State<ProgramHistoryPanel>
     ProgramReview review,
     ProgramReview previous,
   ) {
-    final before = previous.snapshot;
-    final after = review.snapshot;
+    final before = scopedSnapshot(previous);
+    final after = scopedSnapshot(review);
     if (before == null || after == null) return;
     showContentDiffSheet(
       context,
       title: review.title?.trim().isNotEmpty == true
           ? review.title!.trim()
-          : 'What changed',
+          : kReviewChangesTitle,
       subtitle:
           '${DateFormat('MMM d').format(previous.effectiveDate)}'
           '  ·  '
@@ -219,6 +180,7 @@ class _ProgramHistoryPanelState extends State<ProgramHistoryPanel>
       before: before,
       after: after,
       exerciseNames: state.exerciseNames,
+      variationNames: state.variationNames,
     );
   }
 
@@ -238,54 +200,23 @@ class _ProgramHistoryPanelState extends State<ProgramHistoryPanel>
     );
   }
 
-  /// The scope picker's entry for a review that already exists — how an open
-  /// one, reached from its card rather than from the sheet, still knows what it
-  /// is a review of.
-  ///
-  /// Falls back to the review's own vocabulary when the picker has no entry for
-  /// it: a workout or block deleted since the review was scheduled still has a
-  /// review, and the bar should name it rather than stay blank.
-  ScopeOption _optionFor(ProgramHistoryState state, ProgramReview review) {
-    for (final s in state.scopes) {
-      if (s.kind == review.scopeKind &&
-          s.blockId == review.blockId &&
-          s.sessionId == review.sessionId) {
-        return s;
-      }
-    }
-    return ScopeOption(
-      kind: review.scopeKind,
-      label: switch (review.scopeKind) {
-        ReviewScopeKind.program => 'Whole program',
-        ReviewScopeKind.block => 'This block',
-        ReviewScopeKind.session => 'This workout',
-      },
-      blockId: review.blockId,
-      sessionId: review.sessionId,
-    );
-  }
-
   /// The completed same-scope checkpoint before [review] that carries a
   /// snapshot — the one its "Changes" sheet diffs against.
   ///
-  /// Same pairing rule as the viewmodel's digests: a session review's
-  /// predecessor is a session review of that workout, a block's is a block
-  /// review of that block, and a program's is a program review. A scope that
-  /// has changed in between is skipped, never bridged.
+  /// Same pairing rule as the viewmodel's digests: two checkpoints compare only
+  /// when they cover the same workouts ([reviewScopeKey] — a legacy row's old
+  /// one-thing scope keys the same way it always did). A scope that has changed
+  /// in between is skipped, never bridged.
   static ProgramReview? _previousCheckpoint(
     ProgramHistoryState state,
     ProgramReview review,
   ) {
     final i = state.reviews.indexWhere((r) => r.reviewId == review.reviewId);
     if (i < 0) return null;
+    final key = reviewScopeKey(review);
     for (var j = i + 1; j < state.reviews.length; j++) {
       final r = state.reviews[j];
-      if (r.hasSnapshot &&
-          r.scopeKind == review.scopeKind &&
-          r.blockId == review.blockId &&
-          r.sessionId == review.sessionId) {
-        return r;
-      }
+      if (r.hasSnapshot && reviewScopeKey(r) == key) return r;
     }
     return null;
   }
@@ -293,6 +224,12 @@ class _ProgramHistoryPanelState extends State<ProgramHistoryPanel>
   @override
   Widget build(BuildContext context) {
     super.build(context); // AutomaticKeepAliveClientMixin
+    // One review at a time. This panel is itself reachable from inside a
+    // program-scope review — the program screen's Reviews tab is part of what
+    // is being reviewed — and the ceremony is a single global session, so a
+    // second review would fight the first for the bar. The container refuses
+    // as the backstop; here the controls go inert.
+    final reviewing = ReviewScope.maybeOf(context) != null;
     return ValueListenableBuilder<ProgramHistoryState>(
       valueListenable: _vm.state,
       builder: (context, state, _) {
@@ -318,13 +255,10 @@ class _ProgramHistoryPanelState extends State<ProgramHistoryPanel>
                       ),
                     ),
                   ),
-                  GlassButton(
-                    label: 'Review',
-                    compact: true,
-                    loading: state.isReviewing,
-                    disabled: state.isReviewing,
-                    onPressed: () => _setup(state),
-                  ),
+                  // No Review button here: starting a pass is the Reviews
+                  // tab's job now — reviews are workouts and goals, not a
+                  // program, so this timeline resumes passes (the cards below)
+                  // and no longer creates them.
                 ],
               ),
             ),
@@ -359,6 +293,7 @@ class _ProgramHistoryPanelState extends State<ProgramHistoryPanel>
                     )
                   : _ReviewList(
                       state: state,
+                      reviewing: reviewing,
                       onOpen: (r) => _open(state, r),
                       onDismiss: (r) => _vm.dismissReview(
                         widget.programId,
@@ -376,11 +311,16 @@ class _ProgramHistoryPanelState extends State<ProgramHistoryPanel>
 class _ReviewList extends StatelessWidget {
   const _ReviewList({
     required this.state,
+    required this.reviewing,
     required this.onOpen,
     required this.onDismiss,
   });
 
   final ProgramHistoryState state;
+
+  /// Whether a review is already running — see the panel's build.
+  final bool reviewing;
+
   final ValueChanged<ProgramReview> onOpen;
   final ValueChanged<ProgramReview> onDismiss;
 
@@ -392,11 +332,19 @@ class _ReviewList extends StatelessWidget {
         'No reviews yet',
         detail:
             'A review is a pass over the plan with a record of what it looked '
-            'like attached. Take one now, or schedule one for later.',
+            'like attached. Start one when you want to look through a workout, '
+            'a block, or the whole program.',
       );
     }
     return ListView.separated(
-      padding: const EdgeInsets.all(AppSpacing.lg),
+      // Zero on the review route, which sits over the shell — the history
+      // panel is read inside the shell's Reviews tab and inside a review.
+      padding: EdgeInsets.fromLTRB(
+        AppSpacing.lg,
+        AppSpacing.lg,
+        AppSpacing.lg,
+        AppSpacing.lg + ScrollShrinkNavBar.contentInset(context),
+      ),
       itemCount: reviews.length,
       separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.md),
       itemBuilder: (context, i) {
@@ -409,7 +357,9 @@ class _ReviewList extends StatelessWidget {
           // What it changed, already derived from consecutive same-scope
           // snapshots — the Versions timeline's question, on the row.
           changeSummary: state.digestFor(review.reviewId).vsPrevious?.summary,
-          onTap: () => onOpen(review),
+          // An open review opens the ceremony, which is occupied. A completed
+          // one only reads back, so it stays reachable.
+          onTap: review.isOpen && reviewing ? null : () => onOpen(review),
           onDismiss: review.isOpen ? () => onDismiss(review) : null,
         );
       },
@@ -431,7 +381,10 @@ class _ReviewCard extends StatelessWidget {
   final ProgramReview review;
   final bool isDue;
   final String? changeSummary;
-  final VoidCallback onTap;
+
+  /// Null when the row is inert — nothing to read back, or an open review whose
+  /// ceremony is already occupied.
+  final VoidCallback? onTap;
 
   /// "Not now" — only an open review can be dismissed, because only an open
   /// one is asking anything.
@@ -446,7 +399,7 @@ class _ReviewCard extends StatelessWidget {
     // One completed without a snapshot (a dismissal, or a record written
     // before the snapshot column existed) has nothing to open.
     return AppCard(
-      onTap: open || review.hasSnapshot ? onTap : null,
+      onTap: (open || review.hasSnapshot) ? onTap : null,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -520,35 +473,24 @@ class _ReviewCard extends StatelessWidget {
               ),
             ),
           ],
-          if (review.hasProposal) ...[
-            const SizedBox(height: AppSpacing.sm),
-            Text(
-              'PROPOSED EDIT ATTACHED',
-              style: AppFonts.mono(
-                fontSize: AppTextStyles.xs,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 0.6,
-                color: AppColors.muted,
-              ),
-            ),
-          ],
         ],
       ),
     );
   }
 
-  /// A closed review reports when it was completed; an open one reports when
-  /// it is due, which is the date the user chose rather than the date the row
-  /// happened to be created.
+  /// A closed review reports when it was completed. An open one has no end
+  /// date yet: it reports when it came due where a date was ever set — rows
+  /// from the scheduling era — and otherwise when it was started, which since
+  /// reviews begin the moment they are set up is every review taken now.
   static String _when(ProgramReview r) {
     if (r.completedDate != null) {
       return 'completed ${DateFormat('MMM d, yyyy').format(r.completedDate!)}';
     }
     final due = r.scheduledFor;
-    if (due == null) {
-      return 'not scheduled';
+    if (due != null) {
+      return 'due ${DateFormat('EEE, d MMM yyyy').format(due)}';
     }
-    return 'due ${DateFormat('EEE, d MMM yyyy').format(due)}';
+    return 'started ${DateFormat('MMM d, yyyy').format(r.createdDate)}';
   }
 }
 

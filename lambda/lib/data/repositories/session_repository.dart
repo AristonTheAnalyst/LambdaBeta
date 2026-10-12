@@ -285,6 +285,7 @@ class SessionRepository {
     String? notes,
     bool clearVariation = false,
     bool clearWeight = false,
+    bool clearReps = false,
     bool clearNotes = false,
   }) async {
     final setClauses = <String>[];
@@ -304,7 +305,12 @@ class SessionRepository {
       setClauses.add('weight = ?');
       params.add(weight);
     }
-    if (reps != null) {
+    if (clearReps) {
+      // `[]`, not NULL: the one empty-reps value (the draft path writes the
+      // same), so every never-filled row reads identically.
+      setClauses.add('reps = ?');
+      params.add(jsonEncode(const []));
+    } else if (reps != null) {
       setClauses.add('reps = ?');
       params.add(jsonEncode(reps));
     }

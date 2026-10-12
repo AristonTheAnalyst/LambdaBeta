@@ -28,6 +28,39 @@
 # `db push` cannot take it early; it lives in `supabase/held_migrations/` with
 # the landing instructions.
 #
+# 2026-10-06 (review baseline + exercise notes): + fact_program_review
+# .baseline_content/.baseline_hash/.exercise_notes_json. No stream change —
+# the row is already `SELECT *` — so deploying this file is only needed to
+# record the columns; the migration alone is enough. If it IS redeployed, it
+# reprocesses like any stream deploy: ship it alongside a build that tolerates
+# a brief resync.
+#
+# 2026-10-06 (review workout sets): + fact_program_review.session_ids_json
+# /.reviewed_sessions_json. No stream change — the row is already `SELECT *` —
+# so deploying this file is only needed to record the columns; the migration
+# alone is enough. Push 20261006130000_review_workout_sets.sql BEFORE shipping
+# a build that writes the columns: against an unmigrated server the write earns
+# PGRST204, which the client retries forever — a stalled upload checkpoint on
+# that device, never an error the user sees.
+#
+# 2026-10-07 (standalone reviews): fact_program_review.program_id becomes
+# NULLABLE (NULL = standalone — a pass over workouts and goals with no program),
+# + fact_program_review.goal_ids_json / .workout_notes_json, + index on
+# (user_id, created_date desc). No stream change — the row is already
+# `SELECT *`. Push 20261007120000_standalone_reviews.sql BEFORE shipping a
+# build that writes the shape: a client ahead of the migration hits PGRST204
+# on the new columns (retried forever), and a null program_id against the old
+# NOT NULL earns 23502 — which IS fatal, so the row lands in upload_failures
+# and the review vanishes from that device's sync.
+#
+# 2026-10-08 (goal description): + fact_goal.goal_description. No stream change —
+# the row is already `SELECT *` — so deploying this file is only needed to
+# record the column; the migration alone is enough. Push
+# 20261008120000_goal_description.sql BEFORE shipping a build that writes it:
+# against an unmigrated server the upload earns PGRST204, which the client
+# retries forever — a stalled upload checkpoint on that device, never an error
+# the user sees.
+#
 # Deploy steps (PowerSync Dashboard → Sync Streams):
 #   1. Replace the current YAML with this file.
 #   2. Bump the app version BEFORE deploying — sync streams attach to app

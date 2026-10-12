@@ -14,6 +14,7 @@ import '../../../../shared/mixins/unsaved_changes_guard.dart';
 import '../../../../shared/widgets/lambda_button.dart';
 import '../../../../shared/widgets/lambda_input.dart';
 import '../../../../shared/widgets/page_header.dart';
+import '../../../../shared/widgets/scroll_shrink_nav_bar.dart';
 import '../viewmodel/profile_viewmodel.dart';
 
 class ProfileDetailScreen extends StatefulWidget {
@@ -255,7 +256,14 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> with UnsavedC
                 Expanded(
                 child: KeyboardDismissOnScroll(
                   child: SingleChildScrollView(
-                    padding: const EdgeInsets.all(AppSpacing.xl),
+                    // The shell's bar floats over this page, so the last row
+                    // has to be able to scroll clear of it.
+                    padding: EdgeInsets.fromLTRB(
+                      AppSpacing.xl,
+                      AppSpacing.xl,
+                      AppSpacing.xl,
+                      ScrollShrinkNavBar.contentInset(context),
+                    ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [

@@ -23,6 +23,7 @@ import '../../../shared/widgets/page_header.dart';
 import '../../../shared/widgets/planned_banner.dart';
 import '../../../shared/widgets/session_log_card.dart';
 import '../../../shared/widgets/reflection_summary.dart';
+import '../../../shared/widgets/scroll_shrink_nav_bar.dart';
 import '../../../shared/widgets/session_bookend.dart';
 import '../../../shared/widgets/session_exercise_card.dart';
 import '../../../shared/widgets/session_set_row.dart';
@@ -58,8 +59,15 @@ class _SessionScreenState extends State<SessionScreen>
 
   late final SessionViewModel _vm;
 
-  final _startNotesCtrl = TextEditingController();
-  final _endNotesCtrl = TextEditingController();
+  /// The questionnaire note fields.
+  ///
+  /// The cached ViewModel outlives this State across tab switches, but a
+  /// controller does not: rebuilt empty, the field would read blank while
+  /// `vm.startNotes` still held the text — notes the user can no longer see,
+  /// which a later Start would still write. So every mount re-seeds the
+  /// controllers from the VM.
+  late final TextEditingController _startNotesCtrl;
+  late final TextEditingController _endNotesCtrl;
 
   @override
   void initState() {
@@ -74,10 +82,16 @@ class _SessionScreenState extends State<SessionScreen>
       // back on Prep — whose header has no Back button. Re-anchor the pager
       // at the wizard step they left, before the new PageView attaches.
       _vm.slidePagesController.restorePageView();
+      // Belt to restorePageView's braces: re-assert the remembered step once
+      // the new PageView is attached, so a mis-anchored attach can never dump
+      // the user back on the wizard's first page. A no-op when the restore
+      // held.
+      final restoredPage = _vm.slidePagesController.currentPage;
       // Returning to the tab: refresh the current program / planned workout so
       // a newly created or begun program shows without a full restart.
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
+          _vm.slidePagesController.slideToPage(restoredPage);
           _vm.refreshCatalog(); // always refresh exercise/variation catalog
           _vm.refreshProgram();
         }
@@ -87,6 +101,8 @@ class _SessionScreenState extends State<SessionScreen>
       _cachedVm = _vm;
       _vm.onWorkoutEnded = _clearCachedVm;
     }
+    _startNotesCtrl = TextEditingController(text: _vm.startNotes);
+    _endNotesCtrl = TextEditingController(text: _vm.endNotes);
     _vm.addListener(_onVmChanged);
   }
 
@@ -536,7 +552,12 @@ class _PreEvaluationPageState extends State<_PreEvaluationPage> {
         Expanded(
           child: Center(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.all(AppSpacing.lg),
+              padding: EdgeInsets.fromLTRB(
+                AppSpacing.lg,
+                AppSpacing.lg,
+                AppSpacing.lg,
+                ScrollShrinkNavBar.contentInset(context),
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -1146,14 +1167,21 @@ class _TrainingPage extends StatelessWidget {
   Widget build(BuildContext context) {
     // The Start Session button lives in the header (top right) while idle;
     // there is no bottom bar on this page.
-    return vm.hasActiveWorkout ? _buildActive() : _buildIdle(context);
+    return vm.hasActiveWorkout ? _buildActive(context) : _buildIdle(context);
   }
 
   /// Idle: template picker + read-only planned-set preview of the selection.
   Widget _buildIdle(BuildContext context) {
     final finishedBlock = vm.finishedBlock;
     return ListView(
-      padding: const EdgeInsets.all(AppSpacing.lg),
+      // The shell's bar floats over the page, so the last card has to be
+      // able to scroll clear of it.
+      padding: EdgeInsets.fromLTRB(
+        AppSpacing.lg,
+        AppSpacing.lg,
+        AppSpacing.lg,
+        ScrollShrinkNavBar.contentInset(context),
+      ),
       children: [
         // The block's last session is logged, and nothing has ended it. Said
         // here — the screen the user lands on after a session — because the
@@ -1181,7 +1209,7 @@ class _TrainingPage extends StatelessWidget {
   /// Active: the exercise card fills the screen; the session stats bar
   /// (PRS/LESSONS) sticks to the very bottom. The pinned lesson lives in
   /// the exercise card, right under the exercise.
-  Widget _buildActive() {
+  Widget _buildActive(BuildContext context) {
     return Column(
       children: [
         Expanded(
@@ -1204,13 +1232,14 @@ class _TrainingPage extends StatelessWidget {
                   ),
           ),
         ),
-        // Sticky bottom: the session stats bar.
+        // Sticky bottom: the session stats bar. It sits above the shell's
+        // floating bar rather than behind it.
         Container(
-          padding: const EdgeInsets.fromLTRB(
+          padding: EdgeInsets.fromLTRB(
             AppSpacing.lg,
             AppSpacing.sm,
             AppSpacing.lg,
-            AppSpacing.sm,
+            ScrollShrinkNavBar.contentInset(context),
           ),
           decoration: BoxDecoration(
             color: AppColors.bg,
@@ -1717,7 +1746,12 @@ class _SummaryPage extends StatelessWidget {
       builder: (context, _) {
         if (!vm.hasActiveWorkout) {
           return ListView(
-            padding: const EdgeInsets.all(AppSpacing.lg),
+            padding: EdgeInsets.fromLTRB(
+              AppSpacing.lg,
+              AppSpacing.lg,
+              AppSpacing.lg,
+              ScrollShrinkNavBar.contentInset(context),
+            ),
             children: [
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxl),
@@ -1738,7 +1772,12 @@ class _SummaryPage extends StatelessWidget {
         // still-active workout is selected, PREVIOUS SESSION once the
         // chevrons page into completed history.
         return ListView(
-          padding: const EdgeInsets.all(AppSpacing.lg),
+          padding: EdgeInsets.fromLTRB(
+            AppSpacing.lg,
+            AppSpacing.lg,
+            AppSpacing.lg,
+            ScrollShrinkNavBar.contentInset(context),
+          ),
           children: [
             SectionDivider(
               vm.reflectionIsCurrent ? 'THIS SESSION' : 'PREVIOUS SESSION',
@@ -1785,7 +1824,12 @@ class _PostQuestionnairePageState extends State<_PostQuestionnairePage> {
             Expanded(
               child: Center(
                 child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(AppSpacing.lg),
+                  padding: EdgeInsets.fromLTRB(
+                    AppSpacing.lg,
+                    AppSpacing.lg,
+                    AppSpacing.lg,
+                    ScrollShrinkNavBar.contentInset(context),
+                  ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [

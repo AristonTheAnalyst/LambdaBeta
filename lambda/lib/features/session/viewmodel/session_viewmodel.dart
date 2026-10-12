@@ -497,9 +497,18 @@ class SessionViewModel extends ChangeNotifier {
       final programId = programProgress?.program.programId;
       if (programId != null) {
         availableWorkouts = await _programRepo.fetchPlannedSessions(programId);
-        selectedPlannedSession =
-            programProgress?.nextPlannedSession ??
-            availableWorkouts.firstOrNull;
+        // An explicit pick survives a tab switch: re-entering refreshes the
+        // list, it does not re-choose. Only an absent (or vanished) selection
+        // falls back to the run's next workout.
+        final picked = selectedPlannedSession;
+        final stillAvailable =
+            picked != null &&
+            availableWorkouts.any((w) => w.sessionId == picked.sessionId);
+        if (!stillAvailable) {
+          selectedPlannedSession =
+              programProgress?.nextPlannedSession ??
+              availableWorkouts.firstOrNull;
+        }
       } else {
         availableWorkouts = [];
         selectedPlannedSession = null;
@@ -511,6 +520,13 @@ class SessionViewModel extends ChangeNotifier {
       standaloneWorkouts = await _plannedSessionRepo.fetchPlannedSessions(
         _userId,
       );
+      // Same pick-persistence rule for a standalone template: only a selection
+      // that no longer exists is dropped.
+      final standalone = selectedStandaloneWorkout;
+      if (standalone != null &&
+          !standaloneWorkouts.any((w) => w.sessionId == standalone.sessionId)) {
+        selectedStandaloneWorkout = null;
+      }
       await _loadSelectedSessionSets();
       notifyListeners();
     } catch (_) {}
@@ -917,6 +933,11 @@ class SessionViewModel extends ChangeNotifier {
         ),
       );
     }
+    // Recency includes the live rows: what was just trained is by definition
+    // the most recent use, and a chooser opened mid-workout has to say so. The
+    // past-sets timeline only sees completed sessions, so the merge happens
+    // here, on every sets change.
+    lastUsedByExercise = lastUsedByEntity(combined);
     final events = prEvents(combined);
     sessionPrEvents = events.where((e) => e.sessionId == id).toList();
     prSetIds = {
@@ -997,6 +1018,62 @@ class SessionViewModel extends ChangeNotifier {
     }
     _persistExerciseOrder();
     notifyListeners();
+  }
+
+  /// Hold-and-drag reorder of one exercise's set rows.
+  ///
+  /// [oldIndex] and [newIndex] count that exercise's REAL rows only, and
+  /// [newIndex] arrives already adjusted for the row being lifted out
+  /// (`onReorderItem`). Draft rows sit past the end and cannot be dropped
+  /// into — they are virtual, and a drop there means "last real set".
+  ///
+  /// The renumber is applied locally first so the grid settles into its new
+  /// order on the drop's own frame; the write follows, and its reload has
+  /// nothing left to change. The rows keep their ids, so ghosts, notes, PR
+  /// events and the draft bindings all stay with the set that moved.
+  void reorderSets(String exerciseId, int oldIndex, int newIndex) {
+    final rows =
+        <SessionExerciseSet>[
+          for (final s in sets)
+            if (s.exerciseId == exerciseId &&
+                !isDraftBoundRow(s.sessionExerciseSetId))
+              s,
+        ]..sort((a, b) => a.setNumber.compareTo(b.setNumber));
+    if (rows.length < 2) return;
+    if (newIndex >= rows.length) newIndex = rows.length - 1;
+    if (oldIndex == newIndex || oldIndex < 0 || oldIndex >= rows.length) {
+      return;
+    }
+
+    rows.insert(newIndex, rows.removeAt(oldIndex));
+
+    // Renumbered in place rather than re-sorted: the exercise's rows keep the
+    // slots they already occupy in `sets`, so nothing that reads that list
+    // positionally — the empty-seed check on restore included — shifts under
+    // the move. Only `set_number` changes, and it is what orders the grid.
+    var number = 0;
+    for (var i = 0; i < sets.length; i++) {
+      final s = sets[i];
+      if (s.exerciseId != exerciseId ||
+          isDraftBoundRow(s.sessionExerciseSetId)) {
+        continue;
+      }
+      sets[i] = rows[number].copyWith(setNumber: ++number);
+    }
+    notifyListeners();
+
+    final workoutId = currentWorkoutId;
+    if (workoutId == null) return;
+    unawaited(
+      _sessionRepo
+          .reorderSets(workoutId, [
+            for (final s in rows) s.sessionExerciseSetId,
+          ])
+          .catchError((Object e) {
+            error = e.toString();
+            notifyListeners();
+          }),
+    );
   }
 
   /// Persists the current tab order to `fact_session_exercise.exercise_order`
@@ -1338,6 +1415,7 @@ class SessionViewModel extends ChangeNotifier {
     double? weight,
     bool clearWeight = false,
     List<num>? reps,
+    bool clearReps = false,
 
     String? variationId,
     bool clearVariation = false,
@@ -1350,6 +1428,7 @@ class SessionViewModel extends ChangeNotifier {
         weight: weight,
         clearWeight: clearWeight,
         reps: reps,
+        clearReps: clearReps,
         variationId: variationId,
         clearVariation: clearVariation,
         notes: notes,
@@ -1371,6 +1450,7 @@ class SessionViewModel extends ChangeNotifier {
     double? weight,
     bool clearWeight = false,
     List<num>? reps,
+    bool clearReps = false,
     String? variationId,
     bool clearVariation = false,
     String? notes,
@@ -1382,6 +1462,7 @@ class SessionViewModel extends ChangeNotifier {
         weight: weight,
         clearWeight: clearWeight,
         reps: reps,
+        clearReps: clearReps,
         variationId: variationId,
         clearVariation: clearVariation,
         notes: notes,

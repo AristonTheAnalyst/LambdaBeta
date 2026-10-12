@@ -7,6 +7,7 @@ import '../../features/auth/view/forgot_password_screen.dart';
 import '../../features/auth/view/login_screen.dart';
 import '../../features/auth/view/reset_password_screen.dart';
 import '../../features/auth/view/signup_screen.dart';
+import '../../features/dev/lab/lab_screen.dart';
 import '../../features/dev/view/dev_screen.dart';
 import '../../features/dev/view/experimental_screen.dart';
 import '../../features/dev/view/gallery_screen.dart';
@@ -24,7 +25,7 @@ import '../../features/programs/view/program_library_screen.dart';
 import '../../features/profile/view/profile_detail_screen.dart';
 import '../../features/profile/view/profile_hub_screen.dart';
 import '../../features/session/view/session_screen.dart';
-import '../widgets/bottom_nav_bar.dart';
+import '../widgets/scroll_shrink_nav_bar.dart';
 import 'auth_notifier.dart';
 
 abstract final class AppRouter {
@@ -106,6 +107,17 @@ abstract final class AppRouter {
         GoRoute(
           path: '/nav-bar-demo',
           builder: (_, _) => const NavBarDemoScreen(),
+        ),
+
+      // The review flow lab. Top-level for a stronger reason than the demos:
+      // it swaps the app onto a sandbox database for as long as it is open, so
+      // the shell — and every tab under it — must not be reachable while it
+      // runs. It has no routes of its own: the review flow pushes what it
+      // needs on the root navigator, exactly as it does outside the lab.
+      if (!kReleaseMode)
+        GoRoute(
+          path: '/dev/lab',
+          builder: (_, _) => const LabScreen(),
         ),
 
       // ── Tab shell ─────────────────────────────────────────────────────────
@@ -194,6 +206,40 @@ bool showBottomNavFor(String location) =>
 
 const _kTabRoots = ['/session', '/exercises', '/profile', '/dev'];
 
+/// One destination on the shell's bar, in tab order.
+class _Tab {
+  const _Tab(this.route, this.item);
+
+  final String route;
+  final ScrollShrinkNavItem item;
+}
+
+/// The shell's tabs. Dev is debug-only, the same rule the old bar used — its
+/// screen can drop server-side tables.
+final _tabs = <_Tab>[
+  const _Tab('/session', ScrollShrinkNavItem(
+    icon: Icons.play_circle_outline,
+    activeIcon: Icons.play_circle,
+    label: 'Session',
+  )),
+  const _Tab('/exercises', ScrollShrinkNavItem(
+    icon: Icons.local_library_outlined,
+    activeIcon: Icons.local_library,
+    label: 'Library',
+  )),
+  const _Tab('/profile', ScrollShrinkNavItem(
+    icon: Icons.person_outline,
+    activeIcon: Icons.person,
+    label: 'Profile',
+  )),
+  if (!kReleaseMode)
+    const _Tab('/dev', ScrollShrinkNavItem(
+      icon: Icons.code,
+      activeIcon: Icons.code,
+      label: 'Dev',
+    )),
+];
+
 class _TabShell extends StatelessWidget {
   const _TabShell({required this.currentRoute, required this.child});
 
@@ -202,16 +248,50 @@ class _TabShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final showNav = showBottomNavFor(currentRoute);
+    if (!showBottomNavFor(currentRoute)) {
+      return Scaffold(backgroundColor: Colors.transparent, body: child);
+    }
+    // The bar paints over the page rather than being laid out beside it, so
+    // content scrolls under the blur. Pages clear it with
+    // [ScrollShrinkNavBar.contentInset].
     return Scaffold(
       backgroundColor: Colors.transparent,
-      body: child,
-      bottomNavigationBar: showNav
-          ? BottomNavBar(
-              currentRoute: currentRoute,
-              onTap: (route) => GoRouter.of(context).go(route),
-            )
-          : null,
+      body: ScrollShrinkNavBar(
+        currentIndex: _tabIndexFor(currentRoute),
+        onTap: (i) => GoRouter.of(context).go(_tabs[i].route),
+        items: [for (final tab in _tabs) tab.item],
+        child: child,
+      ),
     );
   }
+}
+
+/// Which tab a location belongs to. The whole branch counts, so a page pushed
+/// inside a tab keeps that tab lit — the same rule [showBottomNavFor] uses.
+@visibleForTesting
+int tabIndexFor(String location) => _tabIndexFor(location);
+
+/// The shell's bar, handed out for the screens that cover it.
+///
+/// The pushed full-screen editors (a program, a block, a workout) are routes
+/// on the root navigator, so the shell's bar is hidden behind them and they
+/// draw their own copy. They read it from here rather than repeating the list,
+/// so a tab added or reordered once lands everywhere.
+List<ScrollShrinkNavItem> get appTabItems =>
+    [for (final tab in _tabs) tab.item];
+
+/// The route of the tab at [index] — what a bar tap on a pushed editor
+/// navigates to.
+String tabRouteAt(int index) => _tabs[index].route;
+
+/// The tab the plan editors belong to — Library. They are reached from its
+/// branch, and their own bar lights it while they cover the shell.
+final int libraryTabIndex = _tabIndexFor('/exercises');
+
+int _tabIndexFor(String location) {
+  for (var i = 0; i < _tabs.length; i++) {
+    final route = _tabs[i].route;
+    if (location == route || location.startsWith('$route/')) return i;
+  }
+  return 0;
 }

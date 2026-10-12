@@ -2,15 +2,12 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:uuid/uuid.dart';
 import '../../../core/utils/friendly_error.dart';
 import '../../../data/models/block_sequence.dart';
-import '../../../data/models/custom_variation.dart';
 import '../../../data/models/exercise_detail.dart';
 import '../../../data/models/planned_session.dart';
 import '../../../data/models/planned_session_program.dart';
 import '../../../data/models/program.dart';
-import '../../../data/models/goal.dart';
 import '../../../data/models/program_block.dart';
 import '../../../data/models/program_history.dart';
 import '../../../data/models/program_progress.dart';
@@ -23,7 +20,6 @@ import '../../../data/repositories/planned_session_repository.dart';
 import '../../../data/repositories/program_run_repository.dart';
 import '../../../data/repositories/session_repository.dart';
 import '../model/achievements_derivation.dart';
-import '../model/program_achievements.dart';
 import '../model/block_grouping.dart';
 import '../model/program_run_lifecycle.dart';
 import 'workout_editor_viewmodel.dart';
@@ -59,11 +55,6 @@ class ProgramDetailState {
     // Program field drafts
     this.nameDraft = '',
     this.descriptionDraft = '',
-    this.allVariations = const [],
-    // Goals
-    this.programGoals = const [],
-    this.goalOutcomes = const {},
-    this.goalsLoading = false,
     this.due,
   });
 
@@ -152,32 +143,6 @@ class ProgramDetailState {
   final String nameDraft;
   final String descriptionDraft;
 
-  /// The exercise/variation catalog, for the goals panel's target picker. The
-  /// workout editor keeps a copy of its own rather than reaching for this one
-  /// — see [WorkoutEditorState].
-  final List<CustomVariation> allVariations;
-
-  /// Every goal the program owns, at both levels — the program's own and each
-  /// block's. Listed whether or not a run is active, because a goal is part of
-  /// what the program is: it is authored before the first run and still there
-  /// between runs. Which of them are being chased right now is answered by
-  /// [Goal.appliesDuring] against the active run's block, and which of them
-  /// have an outcome by [goalOutcomes].
-  final List<Goal> programGoals;
-
-  /// How each goal currently in force is going, keyed by goal id.
-  ///
-  /// Only the in-force ones appear: a block goal of a block that is not running
-  /// is not failed, it is simply not being chased, and an absent entry says
-  /// exactly that. Keyed rather than positional so a reload that reorders or
-  /// shortens the list cannot paint one goal's outcome onto another. Empty when
-  /// nothing is running — with no run there is no window, and therefore nothing
-  /// achieved. The outcome is derived (see [ProgramAchievements]) until the run
-  /// closes, when it is frozen into the close review.
-  final Map<String, GoalAchievement> goalOutcomes;
-
-  final bool goalsLoading;
-
   /// Something this program is waiting on — a review that has come due, or a
   /// run that has finished but is still marked current. Only ever the item for
   /// THIS program: the detail screen shows one program, and a prompt about
@@ -221,10 +186,6 @@ class ProgramDetailState {
     bool clearHistoryWarning = false,
     String? nameDraft,
     String? descriptionDraft,
-    List<CustomVariation>? allVariations,
-    List<Goal>? programGoals,
-    Map<String, GoalAchievement>? goalOutcomes,
-    bool? goalsLoading,
     DueItem? due,
     bool clearDue = false,
   }) => ProgramDetailState(
@@ -258,10 +219,6 @@ class ProgramDetailState {
         clearHistoryWarning ? null : (historyWarning ?? this.historyWarning),
     nameDraft: nameDraft ?? this.nameDraft,
     descriptionDraft: descriptionDraft ?? this.descriptionDraft,
-    allVariations: allVariations ?? this.allVariations,
-    programGoals: programGoals ?? this.programGoals,
-    goalOutcomes: goalOutcomes ?? this.goalOutcomes,
-    goalsLoading: goalsLoading ?? this.goalsLoading,
     due: clearDue ? null : (due ?? this.due),
   );
 }
@@ -299,6 +256,11 @@ class ProgramDetailViewModel implements WorkoutEditorHost {
       runRepo: _runRepo,
       historyRepo: _historyRepo,
       derivation: _derivation,
+      // The close record resolves a block run's scope to its workout set, so
+      // the lifecycle needs the same planned-session repository this screen
+      // reads through — without it a host test's run close reaches the real
+      // database.
+      plannedSessionRepository: _plannedSessionRepo,
     );
     editor = WorkoutEditorViewModel(
       host: this,
@@ -319,7 +281,6 @@ class ProgramDetailViewModel implements WorkoutEditorHost {
 
   final ProgramRepository _repo;
   final ProgramRunRepository _runRepo;
-  final _uuid = const Uuid();
   final ExerciseRepository _exerciseRepo;
   final PlannedSessionRepository _plannedSessionRepo;
   final ProgramHistoryRepository _historyRepo;
@@ -382,119 +343,6 @@ class ProgramDetailViewModel implements WorkoutEditorHost {
     }
   }
 
-  /// Adds an exercise-target goal (weight × reps for a specific exercise).
-  ///
-  /// [blockId] names the scope: null is a program-level goal, chased through
-  /// every run; set is that phase's own. A goal can be created with no run
-  /// active — planning a program's targets before starting it is the natural
-  /// order, and a scope does not need an attempt at it to exist.
-  Future<void> addGoal({
-    required String exerciseId,
-    required String exerciseName,
-    String? variationId,
-    num? targetWeight,
-    int? targetReps,
-    String? blockId,
-  }) async {
-    final programId = state.value.program?.programId;
-    if (programId == null) return;
-    final goal = Goal(
-      goalId: _uuid.v4(),
-      userId: _userId,
-      programId: programId,
-      blockId: blockId,
-      // NOT linked to the run it happens to be created under: the scope is
-      // what the goal belongs to, and it outlives every attempt at it.
-      text: exerciseName,
-      exerciseId: exerciseId,
-      variationId: variationId,
-      targetWeight: targetWeight,
-      targetReps: targetReps,
-    );
-    try {
-      await _repo.createGoal(_userId, goal);
-      await _loadGoals();
-    } catch (e) {
-      state.value = state.value.copyWith(error: friendlyError(e));
-    }
-  }
-
-  Future<void> deleteGoal(String goalId) async {
-    try {
-      await _repo.deleteGoal(goalId);
-      state.value = state.value.copyWith(
-        programGoals: state.value.programGoals
-            .where((g) => g.goalId != goalId)
-            .toList(),
-        goalOutcomes: {
-          for (final e in state.value.goalOutcomes.entries)
-            if (e.key != goalId) e.key: e.value,
-        },
-      );
-    } catch (e) {
-      state.value = state.value.copyWith(error: friendlyError(e));
-    }
-  }
-
-  /// Loads the program's goals, and how the ones in force are going.
-  ///
-  /// [ProgramDetailState.programGoals] is **every** goal the program owns, not
-  /// just the ones running: a goal is part of what the program is, authored
-  /// before the first run and still there between runs. Only the in-force ones
-  /// get an entry in [ProgramDetailState.goalOutcomes] — a block goal of a
-  /// block that is not running has no verdict, which is not the same as having
-  /// missed one, and the keyed map says so by simply having no entry.
-  ///
-  /// The outcome is the same derivation the review sheet and the close record
-  /// use, narrowed to this run's window — one interpretation of what a goal
-  /// achieved, so the panel and the archive cannot disagree. It costs a
-  /// past-sets read, which is why it is skipped entirely when there is nothing
-  /// to report on: no run, or no goals in force.
-  Future<void> _loadGoals() async {
-    final programId = state.value.program?.programId;
-    if (programId == null) return;
-    final run = state.value.activeRun;
-    state.value = state.value.copyWith(goalsLoading: true);
-    try {
-      final all = await _repo
-          .fetchGoals(_userId, programId: programId)
-          .timeout(const Duration(seconds: 3));
-      final inForce = all
-          .where((g) => g.appliesDuring(run?.blockId))
-          .toList(growable: false);
-
-      var outcomes = const <String, GoalAchievement>{};
-      if (run != null && inForce.isNotEmpty) {
-        // A first-ever run has no previous checkpoint, so the window opens
-        // where the run itself did — `checkpointFor`'s old `now` fallback made
-        // the window empty and every derived goal look unbeaten. The scope is
-        // the run's, so the outcomes match what its close record will say.
-        final from = await _historyRepo.checkpointFor(
-          programId,
-          blockId: run.blockId,
-          fallback: run.startedDate,
-        );
-        final achievements = await _derivation.derive(
-          userId: _userId,
-          from: from,
-          programId: programId,
-          blockId: run.blockId,
-        );
-        outcomes = {
-          for (final g in achievements.goals) g.goal.goalId: g,
-        };
-      }
-
-      state.value = state.value.copyWith(
-        programGoals: all,
-        goalOutcomes: outcomes,
-        goalsLoading: false,
-      );
-    } catch (_) {
-      state.value = state.value.copyWith(goalsLoading: false);
-    }
-  }
-
   /// What this program is waiting on, if anything.
   ///
   /// The repo's due query is user-wide (a review can be due on a program the
@@ -540,9 +388,6 @@ class ProgramDetailViewModel implements WorkoutEditorHost {
             .fetchExerciseDetailMap(_userId)
             .timeout(const Duration(seconds: 4)),
         _runRepo.getCurrentRun(_userId).timeout(const Duration(seconds: 4)),
-        _exerciseRepo
-            .fetchVariations(_userId)
-            .timeout(const Duration(seconds: 4)),
         _repo.fetchBlocks(programId).timeout(const Duration(seconds: 4)),
         _runRepo
             .fetchPausedRun(_userId, programId: programId)
@@ -582,7 +427,7 @@ class ProgramDetailViewModel implements WorkoutEditorHost {
       // cannot be both — pausing is what stepping away does — so the two are
       // read together and only one of them is ever set.
       final pausedRun =
-          isCurrent ? null : results[7] as ProgramRun?;
+          isCurrent ? null : results[6] as ProgramRun?;
       ProgramProgress? pausedProgress;
       if (pausedRun != null) {
         try {
@@ -613,8 +458,8 @@ class ProgramDetailViewModel implements WorkoutEditorHost {
         plannedWorkouts: (results[1] as List<PlannedSession>),
         programLinks: results[2] as List<PlannedSessionProgram>,
         exerciseDetailMap: results[3] as Map<String, ExerciseDetail>,
-        blocks: results[6] as List<ProgramBlock>,
-        programRuns: results[8] as List<ProgramRun>,
+        blocks: results[5] as List<ProgramBlock>,
+        programRuns: results[7] as List<ProgramRun>,
         nameDraft: program?.name ?? '',
         descriptionDraft: program?.description ?? '',
         isCurrent: isCurrent,
@@ -629,11 +474,9 @@ class ProgramDetailViewModel implements WorkoutEditorHost {
         clearPausedRun: pausedRun == null,
         pausedProgress: pausedProgress,
         clearPausedProgress: pausedProgress == null,
-        allVariations: results[5] as List<CustomVariation>,
       );
-      // Goals and the due prompt load independently — neither is critical for
-      // rendering, and a slow one must not blank the screen.
-      _loadGoals();
+      // The due prompt loads independently — it is not critical for
+      // rendering, and a slow read must not blank the screen.
       _loadDueItems();
     } catch (e) {
       if (_disposed) return;
@@ -753,7 +596,6 @@ class ProgramDetailViewModel implements WorkoutEditorHost {
       // program is not left marked "current" when nothing was persisted.
       state.value = s.copyWith(error: friendlyError(e));
     }
-    _loadGoals();
     _loadDueItems();
   }
 
@@ -856,7 +698,6 @@ class ProgramDetailViewModel implements WorkoutEditorHost {
       state.value =
           state.value.copyWith(settingCurrent: false, error: friendlyError(e));
     }
-    _loadGoals();
     _loadDueItems();
   }
 
@@ -934,7 +775,6 @@ class ProgramDetailViewModel implements WorkoutEditorHost {
       state.value =
           state.value.copyWith(settingCurrent: false, error: friendlyError(e));
     }
-    _loadGoals();
     _loadDueItems();
   }
 

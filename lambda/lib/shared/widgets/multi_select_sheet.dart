@@ -1,10 +1,10 @@
 ﻿import 'package:flutter/material.dart';
 import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_fonts.dart';
-import '../../core/styles/app_radius.dart';
 import '../../core/styles/app_spacing.dart';
 import '../../core/styles/app_text_styles.dart';
 import 'glass_button.dart';
+import 'lambda_search_field.dart';
 import 'slide_up_modal.dart';
 
 class MultiSelectOption<T> {
@@ -127,23 +127,10 @@ class _MultiSelectSheetState<T> extends State<_MultiSelectSheet<T>> {
           if (widget.searchable)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-              child: TextField(
-                style: AppFonts.ui(
-                    fontSize: AppTextStyles.md, color: AppColors.primary),
-                decoration: InputDecoration(
-                  hintText: 'Search…',
-                  hintStyle: AppFonts.ui(color: AppColors.muted),
-                  filled: true,
-                  fillColor: AppColors.surfaceHigh,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(AppRadius.md),
-                    borderSide: BorderSide.none,
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 14, vertical: 10),
-                  prefixIcon: Icon(Icons.search,
-                      size: 18, color: AppColors.muted),
-                ),
+              child: LambdaSearchField(
+                showIcon: true,
+                // The sheet's default background is a surface ground.
+                elevated: true,
                 onChanged: (v) => setState(() => _query = v),
               ),
             ),

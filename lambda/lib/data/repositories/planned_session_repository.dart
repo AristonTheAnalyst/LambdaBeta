@@ -88,6 +88,123 @@ class PlannedSessionRepository {
     return rows.map((r) => PlannedSession.fromMap(r)).toList();
   }
 
+  /// Every active workout of [userId]'s — any membership, program-attached or
+  /// not — with when it was last LOGGED and how much of it is finished. This
+  /// is the review picker's list.
+  ///
+  /// "Last logged, then newest created" is the agreed recency rule
+  /// (2026-10-07): the workouts actually trained recently are the ones a
+  /// review is most likely about, and `dim_planned_session` has **no
+  /// updated_date** to sort by — created_date is the only column it carries,
+  /// so it breaks ties rather than leading.
+  ///
+  /// [finished] is the count the picker's rows state: sessions of that workout
+  /// that ended **after the user's last completed review** — [lastReview],
+  /// shared by every row, null when no review has been completed, and then the
+  /// count is every finished session and the row drops the "since". A session
+  /// still open (`end_datetime` null) is not finished and is not counted.
+  ///
+  /// Dates are parsed and compared in Dart, never in SQL: a downloaded row's
+  /// timestamp formatting is not guaranteed to match what the client writes,
+  /// and a lexicographic comparison across two formats silently misorders rows
+  /// (the same rule [ProgramHistoryRepository.checkpointFor] follows).
+  /// Separate reads rather than correlated subqueries, for the same reason —
+  /// MAX() over mixed text forms picks the wrong row.
+  Future<
+    List<
+      ({
+        PlannedSession session,
+        DateTime? lastLogged,
+        int finished,
+        DateTime? lastReview,
+      })
+    >
+  >
+  fetchReviewableRows(String userId) async {
+    final sessionRows = await ps.db.getAll(
+      '''
+      SELECT planned_session_id, created_datetime, end_datetime FROM fact_session
+      WHERE user_id = ? AND planned_session_id IS NOT NULL
+      ''',
+      [userId],
+    );
+    final reviewRows = await ps.db.getAll(
+      '''
+      SELECT completed_date FROM fact_program_review
+      WHERE user_id = ? AND completed_date IS NOT NULL
+      ''',
+      [userId],
+    );
+    DateTime? lastReview;
+    for (final row in reviewRows) {
+      final at = DateTime.tryParse('${row['completed_date']}')?.toLocal();
+      if (at == null) continue;
+      if (lastReview == null || at.isAfter(lastReview)) lastReview = at;
+    }
+
+    final lastLoggedAt = <String, DateTime>{};
+    final finished = <String, int>{};
+    for (final row in sessionRows) {
+      final id = row['planned_session_id'] as String?;
+      if (id == null) continue;
+      final at = DateTime.tryParse('${row['created_datetime']}')?.toLocal();
+      if (at != null) {
+        final current = lastLoggedAt[id];
+        if (current == null || at.isAfter(current)) lastLoggedAt[id] = at;
+      }
+      // Only what has been finished counts, and with a review to measure
+      // from, only what came after it — a session whose date cannot be read
+      // is not provably after, so it counts only when there is no window.
+      if (row['end_datetime'] == null) continue;
+      final review = lastReview;
+      if (review != null && (at == null || !at.isAfter(review))) continue;
+      finished[id] = (finished[id] ?? 0) + 1;
+    }
+
+    final rows = await ps.db.getAll(
+      '''
+      SELECT * FROM dim_planned_session
+      WHERE user_id = ? AND date_archived IS NULL
+      ''',
+      [userId],
+    );
+    final reviewable = [
+      for (final row in rows)
+        (
+          session: PlannedSession.fromMap(row),
+          lastLogged: lastLoggedAt[row['session_id'] as String],
+          finished: finished[row['session_id'] as String] ?? 0,
+          lastReview: lastReview,
+        ),
+    ];
+
+    // Last logged desc (nulls last), then created desc, then id desc — the
+    // id tie-break keeps the order deterministic when two rows share both
+    // dates (Dart's sort is not stable).
+    reviewable.sort((a, b) {
+      final aLogged = a.lastLogged;
+      final bLogged = b.lastLogged;
+      if ((aLogged != null) != (bLogged != null)) {
+        return aLogged != null ? -1 : 1;
+      }
+      if (aLogged != null && bLogged != null) {
+        final byLogged = bLogged.compareTo(aLogged);
+        if (byLogged != 0) return byLogged;
+      }
+      final aCreated = a.session.createdDate;
+      final bCreated = b.session.createdDate;
+      if ((aCreated != null) != (bCreated != null)) {
+        return aCreated != null ? -1 : 1;
+      }
+      if (aCreated != null && bCreated != null) {
+        final byCreated = bCreated.compareTo(aCreated);
+        if (byCreated != 0) return byCreated;
+      }
+      return b.session.sessionId.compareTo(a.session.sessionId);
+    });
+    return reviewable;
+  }
+
   /// Creates a planned session. When [name] is null the app auto-generates one
   /// ("New Session", "New Session 2", …) bumped against the local mirror so it
   /// never throws; when a user-typed [name] is given, it must be unique.
@@ -880,6 +997,30 @@ class PlannedSessionRepository {
     });
   }
 
+  /// Renumbers one exercise group's target rows to the order of
+  /// [orderedSetIds] — first id becomes set 1, and so on.
+  ///
+  /// The rows are addressed by id, so unlike [renumberExerciseOrders] there is
+  /// nothing to collide with and no two-phase shuffle.
+  ///
+  /// Pass ONE group's ids: the numbering restarts at 1, so handing it every
+  /// set in the workout would number them end to end. The numbers have to come
+  /// out a strict 1..N per group, because [fetchNormalizedPlannedSets]
+  /// renumbers by appearance on every open — a tie would let it reorder the
+  /// group behind the user's back.
+  Future<void> renumberPlannedSets(List<String> orderedSetIds) async {
+    for (var i = 0; i < orderedSetIds.length; i++) {
+      await ps.db.execute(
+        '''
+        UPDATE dim_planned_session_exercise_set
+          SET set_number = ?
+        WHERE planned_set_id = ? AND is_archived = 0
+        ''',
+        [i + 1, orderedSetIds[i]],
+      );
+    }
+  }
+
   /// Swaps the exercise_order between two exercise groups in a planned
   /// session (for exercise-tab reordering).
   Future<void> swapExerciseOrders(
@@ -939,6 +1080,28 @@ class PlannedSessionRepository {
           ? 'SELECT * FROM dim_planned_session_program WHERE program_id = ? ORDER BY sequence_order NULLS LAST'
           : 'SELECT * FROM dim_planned_session_program WHERE program_id = ? AND block_id = ? ORDER BY sequence_order NULLS LAST',
       blockId == null ? [programId] : [programId, blockId],
+    );
+    return rows.map((r) => PlannedSessionProgram.fromMap(r)).toList();
+  }
+
+  /// The program links for a set of planned sessions — the batch form of
+  /// [fetchProgramLinks], for callers holding workout ids from anywhere (a
+  /// standalone review's set spans programs, or none).
+  ///
+  /// Ordered by sequence within a program, then by the row id so the result
+  /// is deterministic even when several links of one workout (the workout
+  /// sits in two programs) tie — a caller reads the FIRST link per workout,
+  /// so "which one" must not depend on insertion order.
+  Future<List<PlannedSessionProgram>> fetchLinksForSessions(
+    List<String> sessionIds,
+  ) async {
+    if (sessionIds.isEmpty) return const [];
+    final placeholders = List.filled(sessionIds.length, '?').join(', ');
+    final rows = await ps.db.getAll(
+      'SELECT * FROM dim_planned_session_program '
+      'WHERE planned_session_id IN ($placeholders) '
+      'ORDER BY sequence_order NULLS LAST, planned_session_program_id',
+      sessionIds,
     );
     return rows.map((r) => PlannedSessionProgram.fromMap(r)).toList();
   }

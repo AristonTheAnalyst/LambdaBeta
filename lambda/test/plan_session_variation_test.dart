@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lambda/core/styles/app_colors.dart';
 import 'package:lambda/core/styles/app_fonts.dart';
 import 'package:lambda/data/models/custom_exercise.dart';
 import 'package:lambda/data/models/custom_variation.dart';
@@ -13,6 +14,7 @@ import 'package:lambda/data/repositories/lesson_repository.dart';
 import 'package:lambda/data/repositories/planned_session_repository.dart';
 import 'package:lambda/data/repositories/session_repository.dart';
 import 'package:lambda/features/programs/view/plan_session_screen.dart';
+import 'package:lambda/features/programs/view/review_container.dart';
 import 'package:lambda/features/programs/viewmodel/workout_editor_viewmodel.dart';
 import 'package:lambda/shared/widgets/dropdown_select.dart';
 
@@ -205,6 +207,165 @@ void main() {
     expect(planned.created.single.variationId, pausedVariationId,
         reason: 'the row Save wrote for this draft is the row the user '
             'described, variation included — and there is exactly one of it');
+  });
+
+  /// The same screen, with a review running and this workout open under it.
+  Future<void> pumpEditorInReview(WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1206, 2622);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    reviewSessionNotifier.value = ReviewSession(
+      reviewId: 'rev1',
+      programId: null,
+      sessionIds: const [sessionId],
+      activeSessionId: sessionId,
+      activeWorkoutName: 'Psycho 1',
+    );
+    await tester.pumpWidget(
+      ReviewScope(
+        child: MaterialApp(
+          home: PlanSessionScreen(
+            viewModel: vm,
+            workout: PlannedSession(
+              sessionId: sessionId,
+              userId: userId,
+              name: 'Psycho 1',
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+  }
+
+  // ── The workout's note ───────────────────────────────────────────────────
+  //
+  // A pass's three per-workout verbs are on its bar — the note among them,
+  // beside Compare and Done, because all three are about the workout the pass
+  // has open. The header keeps no Note and, inside a review, no Delete either:
+  // the trash deletes the planned workout, which is not what a pass is doing,
+  // and taking a workout OUT of a review is the landing's swipe. It rides the
+  // same harness as the tests above because the planner screen IS the review's
+  // editor; only the ambient session differs.
+  group('the workout\'s note', () {
+    /// The bar's note glyph. The set rows carry the same icon behind their own
+    /// swipe drawers, so the bar's has to be asked for by where it sits.
+    Finder barNoteGlyph() => find.descendant(
+      of: find.byType(ReviewBar),
+      matching: find.byIcon(Icons.sticky_note_2_outlined),
+    );
+
+    // The session and its notes are process-global, matching the bar's — a
+    // test that left one running would hand it to the next one.
+    setUp(() {
+      reviewSessionNotifier.value = null;
+      reviewWorkoutNotesNotifier.value = const {};
+    });
+    tearDown(() {
+      reviewSessionNotifier.value = null;
+      reviewWorkoutNotesNotifier.value = const {};
+    });
+
+    testWidgets('outside a review the header keeps Delete and there is no '
+        'note door at all', (tester) async {
+      await pumpEditor(tester);
+
+      expect(find.byIcon(Icons.delete_outline), findsOneWidget);
+      expect(
+        find.byIcon(Icons.sticky_note_2_outlined),
+        findsNothing,
+        reason: 'there is no pass to hold a note, so there is no door to one — '
+            'not in the header, and not on the nav bar',
+      );
+    });
+
+    testWidgets('inside a review the header drops Delete, and the bar\'s '
+        'glyph opens the workout\'s own sheet', (tester) async {
+      await pumpEditorInReview(tester);
+
+      expect(
+        find.byIcon(Icons.delete_outline),
+        findsNothing,
+        reason: 'deleting the planned workout is not a verb of the pass — '
+            'removing it from the review is a swipe on the landing',
+      );
+      expect(
+        barNoteGlyph(),
+        findsOneWidget,
+        reason: 'the note is the pass\'s verb for this workout, so it stands '
+            'with Compare and Done on the bar',
+      );
+      expect(
+        tester.widget<Icon>(barNoteGlyph()).color,
+        AppColors.muted,
+        reason: 'nothing is noted yet, so the glyph sits back — not absent',
+      );
+
+      await tester.tap(barNoteGlyph());
+      await tester.pumpAndSettle();
+
+      // The sheet the bar opened is the WORKOUT's: the review-note title, and
+      // the workout the pass has open named as its subject.
+      expect(find.text('Review note'), findsOneWidget);
+      expect(find.text('PSYCHO 1'), findsOneWidget);
+    });
+
+    testWidgets('the glyph goes green once the pass holds a note', (
+      tester,
+    ) async {
+      reviewWorkoutNotesNotifier.value = const {sessionId: 'Felt heavy'};
+      await pumpEditorInReview(tester);
+
+      expect(
+        tester.widget<Icon>(barNoteGlyph()).color,
+        AppColors.success,
+        reason: 'the glyph says what has been recorded, not just what can be — '
+            'in the review bar\'s own green, the colour it lights controls in',
+      );
+    });
+  });
+
+  // ── The counts pill ──────────────────────────────────────────────────────
+  //
+  // The SETS · EXERCISES pill rides the floor while planning. During a pass
+  // it would stack on the review bar in the same floor space — and the
+  // numbers a pass cares about are what CHANGED, which the bar's own Changes
+  // button answers. So the pill is planning furniture: it stands outside a
+  // review and steps aside inside one.
+  group('the counts pill', () {
+    setUp(() => reviewSessionNotifier.value = null);
+    tearDown(() => reviewSessionNotifier.value = null);
+
+    // The pill is the only 'SETS' on this screen; the review bar, the preview
+    // and the set grid say 'Set 2' and 'VARIATION', never this.
+    Finder pill() => find.text('SETS');
+
+    testWidgets('stands over the floor while planning', (tester) async {
+      await pumpEditor(tester);
+
+      expect(pill(), findsOneWidget);
+      expect(find.text('EXERCISES'), findsOneWidget,
+          reason: 'outside a pass there is no comparison to read, so these '
+              'counts are the only counts there are');
+    });
+
+    testWidgets('steps aside for the pass\'s own bar', (tester) async {
+      await pumpEditorInReview(tester);
+
+      expect(
+        pill(),
+        findsNothing,
+        reason: 'the review bar is the floor during a pass — a second bar '
+            'above it stacks two floors on one screen',
+      );
+      expect(find.text('EXERCISES'), findsNothing);
+      expect(
+        find.byType(ReviewBar),
+        findsOneWidget,
+        reason: 'and the bar that took its place is up',
+      );
+    });
   });
 }
 

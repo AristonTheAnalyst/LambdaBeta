@@ -11,7 +11,10 @@ import '../../../../shared/widgets/exercise_tab_chip.dart';
 import '../../../../shared/widgets/feeling_rating.dart';
 import '../../../../shared/widgets/glass_button.dart';
 import '../../../../shared/widgets/lambda_input.dart';
+import '../../../../shared/widgets/lambda_readout.dart';
+import '../../../../shared/widgets/lambda_search_field.dart';
 import '../../../../shared/widgets/page_header.dart';
+import '../../../../shared/widgets/scroll_shrink_nav_bar.dart';
 import '../../../../shared/widgets/segmented_control.dart';
 import '../../../../shared/widgets/stats_row.dart';
 import '../../../../shared/widgets/swipe_actions.dart';
@@ -34,12 +37,14 @@ class _GalleryScreenState extends State<GalleryScreen> {
   final _inputCtrl = TextEditingController();
   final _requiredCtrl = TextEditingController();
   final _errorCtrl = TextEditingController();
+  final _searchCtrl = TextEditingController();
 
   @override
   void dispose() {
     _inputCtrl.dispose();
     _requiredCtrl.dispose();
     _errorCtrl.dispose();
+    _searchCtrl.dispose();
     super.dispose();
   }
 
@@ -68,7 +73,14 @@ class _GalleryScreenState extends State<GalleryScreen> {
               ),
               Expanded(
                 child: ListView(
-                  padding: const EdgeInsets.all(AppSpacing.xl),
+                  // The shell's bar floats over this page, so the last
+                  // section has to be able to scroll clear of it.
+                  padding: EdgeInsets.fromLTRB(
+                    AppSpacing.xl,
+                    AppSpacing.xl,
+                    AppSpacing.xl,
+                    ScrollShrinkNavBar.contentInset(context),
+                  ),
                   children: [
                     _Section(
                       label: 'Colors',
@@ -272,6 +284,33 @@ class _GalleryScreenState extends State<GalleryScreen> {
                                 controller: _inputCtrl,
                                 label: 'Disabled field',
                                 enabled: false,
+                              ),
+                              // The text-box rule's other halves: a dense
+                              // search box, and a box that is read rather
+                              // than written (frontend-design §6).
+                              const SizedBox(height: AppSpacing.md),
+                              LambdaSearchField(
+                                controller: _searchCtrl,
+                                showIcon: true,
+                              ),
+                              const SizedBox(height: AppSpacing.md),
+                              const LambdaReadout(
+                                label: 'Read-only box',
+                                value: 'Text that is shown rather than '
+                                    'written wears this.',
+                              ),
+                              // The ground rule: the fill is always one tier
+                              // above what the box stands on, so the same
+                              // field on a surface card steps up
+                              // (frontend-design §6).
+                              const SizedBox(height: AppSpacing.md),
+                              AppCard(
+                                child: LambdaInput(
+                                  controller: _inputCtrl,
+                                  label: 'Field on a card',
+                                  placeholder: 'Steps up on surface…',
+                                  elevated: true,
+                                ),
                               ),
                             ],
                           ),

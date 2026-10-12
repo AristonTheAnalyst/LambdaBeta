@@ -653,6 +653,8 @@ class _DetailCardBuilder extends StatelessWidget {
           exerciseId: exerciseId,
           displayIndex: i + 1,
           isDraft: false,
+          // Only edit mode moves rows — view mode is a record.
+          dragIndex: state.isEditing ? i : null,
           initialWeightText: set.weight != null ? _fmtNum(set.weight!) : '',
           initialRepsText: set.reps.isNotEmpty ? _fmtNum(set.reps.first) : '',
           initialVariationId: set.variationId,
@@ -668,6 +670,7 @@ class _DetailCardBuilder extends StatelessWidget {
                 weight: _parseWeight(v.weight),
                 clearWeight: v.weight == null,
                 reps: _parseReps(v.reps),
+                clearReps: v.reps == null,
               );
             }
           },
@@ -768,6 +771,10 @@ class _DetailCardBuilder extends StatelessWidget {
       planned: false,
       rows: rows,
       onAddSet: state.isEditing ? () => viewModel.addDraftSet(order) : null,
+      onReorderSets: state.isEditing
+          ? (oldIndex, newIndex) =>
+                viewModel.reorderSets(order, oldIndex, newIndex)
+          : null,
       history: history,
       // The history viewer is the regular sets grid — read-only here (the
       // screen's own edit mode is the logs' editing surface), so the rows

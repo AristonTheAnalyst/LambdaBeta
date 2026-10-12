@@ -6,6 +6,7 @@ import '../../../core/styles/app_radius.dart';
 import '../../../core/styles/app_spacing.dart';
 import '../../../core/styles/app_text_styles.dart';
 import '../../../shared/widgets/glass_button.dart';
+import '../../../shared/widgets/lambda_input.dart';
 import '../../../shared/widgets/slide_up_modal.dart';
 import 'achievements_panel.dart';
 import 'review_container.dart';
@@ -21,22 +22,28 @@ import 'review_container.dart';
 /// Returns the notes (possibly empty, for a review finished without any) or
 /// null when the sheet was dismissed — the caller must not treat those the
 /// same, since one finishes the review and the other leaves it open.
+///
+/// [label] is what the pass covers, shown on the scope line — a single
+/// workout's name when the caller knows it. Without one the sheet falls back
+/// to the set's own count, which is true of every review.
 Future<String?> showReviewNotesSheet(
   BuildContext context, {
   required ReviewSession session,
+  String? label,
 }) {
   return showLambdaModal<String>(
     context,
     fitContent: true,
     keyboardAware: true,
-    child: _ReviewNotesSheet(session: session),
+    child: _ReviewNotesSheet(session: session, label: label),
   );
 }
 
 class _ReviewNotesSheet extends StatefulWidget {
-  const _ReviewNotesSheet({required this.session});
+  const _ReviewNotesSheet({required this.session, this.label});
 
   final ReviewSession session;
+  final String? label;
 
   @override
   State<_ReviewNotesSheet> createState() => _ReviewNotesSheetState();
@@ -69,7 +76,7 @@ class _ReviewNotesSheetState extends State<_ReviewNotesSheet> {
               ),
             ),
             const SizedBox(height: AppSpacing.sm),
-            _ScopeLine(session: widget.session),
+            _ScopeLine(session: widget.session, label: widget.label),
             // What the window produced, when there is one to show. It is here
             // rather than on the review because it is the context for the notes
             // below: "why did I change this?" is answered by what happened.
@@ -98,26 +105,15 @@ class _ReviewNotesSheetState extends State<_ReviewNotesSheet> {
               ),
             ),
             const SizedBox(height: AppSpacing.md),
-            TextField(
+            LambdaInput(
               controller: _ctrl,
               autofocus: true,
               minLines: 4,
               maxLines: 8,
               textCapitalization: TextCapitalization.sentences,
-              style: AppFonts.ui(
-                fontSize: AppTextStyles.sm,
-                color: AppColors.primary,
-              ),
-              decoration: InputDecoration(
-                hintText: 'Why you changed it, what to watch, how it went…',
-                hintStyle: AppFonts.ui(color: AppColors.muted),
-                filled: true,
-                fillColor: AppColors.surfaceHigh,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(AppRadius.md),
-                  borderSide: BorderSide(color: AppColors.border),
-                ),
-              ),
+              placeholder: 'Why you changed it, what to watch, how it went…',
+              // The sheet's default background is a surface ground.
+              elevated: true,
             ),
             const SizedBox(height: AppSpacing.lg),
             GlassButton(
@@ -137,13 +133,19 @@ class _ReviewNotesSheetState extends State<_ReviewNotesSheet> {
 /// What is being reviewed, and since when — the two facts that make the notes
 /// below make sense a month later.
 class _ScopeLine extends StatelessWidget {
-  const _ScopeLine({required this.session});
+  const _ScopeLine({required this.session, this.label});
 
   final ReviewSession session;
+
+  /// What the pass covers, when the caller knows it — a single workout's name.
+  /// The fallback is the set's own count, which is always true of it.
+  final String? label;
 
   @override
   Widget build(BuildContext context) {
     final since = session.sinceDate;
+    final total = session.sessionIds.length;
+    final covers = label ?? (total == 1 ? '1 workout' : '$total workouts');
     return Container(
       padding: const EdgeInsets.all(AppSpacing.sm),
       decoration: BoxDecoration(
@@ -155,7 +157,7 @@ class _ScopeLine extends StatelessWidget {
         children: [
           Expanded(
             child: Text(
-              session.scopeLabel,
+              covers,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: AppFonts.ui(

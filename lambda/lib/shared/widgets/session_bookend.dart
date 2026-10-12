@@ -1,12 +1,11 @@
 import 'package:flutter/material.dart';
 import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_fonts.dart';
-import '../../core/styles/app_radius.dart';
-import './container_styles.dart';
 import '../../core/styles/app_spacing.dart';
 import '../../core/styles/app_text_styles.dart';
 import 'feeling_rating.dart';
 import 'lambda_input.dart';
+import 'lambda_readout.dart';
 
 /// One pre/post bookend section — the session questionnaire read back with
 /// the same wording/styling as the live form: [question] above the rating
@@ -116,28 +115,13 @@ class _SessionBookendState extends State<SessionBookend> {
             placeholder: widget.emptyNotes,
             minLines: 2,
             maxLines: 6,
+            // The editable bookend lives on surface grounds (the viewer's
+            // AppCards); the fill steps up so the field reads as one.
+            elevated: true,
             onChanged: widget.onNotesChanged,
           )
         else if (widget.notes != null)
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(AppSpacing.md),
-            decoration: lambdaBox(ContainerTone.ghost, radius: AppRadius.md),
-            child: ConstrainedBox(
-              // Roomier than one line so short notes still read as a box;
-              // long notes scroll inside it instead of stretching the card.
-              constraints: const BoxConstraints(minHeight: 64, maxHeight: 120),
-              child: SingleChildScrollView(
-                child: Text(
-                  widget.notes!,
-                  style: AppFonts.ui(
-                    fontSize: AppTextStyles.sm,
-                    color: AppColors.primary,
-                  ),
-                ),
-              ),
-            ),
-          )
+          LambdaReadout(value: widget.notes!)
         else
           Text(
             widget.emptyNotes,

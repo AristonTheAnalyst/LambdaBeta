@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../../../data/models/program_run.dart';
+import '../../../data/repositories/planned_session_repository.dart';
 import '../../../data/repositories/program_history_repository.dart';
 import '../../../data/repositories/program_run_repository.dart';
 import 'achievements_derivation.dart';
@@ -23,13 +24,19 @@ class ProgramRunLifecycle {
     ProgramRunRepository? runRepo,
     ProgramHistoryRepository? historyRepo,
     AchievementsDerivation? derivation,
+    PlannedSessionRepository? plannedSessionRepository,
   }) : _runRepo = runRepo ?? ProgramRunRepository(),
        _historyRepo = historyRepo ?? ProgramHistoryRepository(),
-       _derivation = derivation ?? AchievementsDerivation();
+       _derivation = derivation ?? AchievementsDerivation(),
+       _plannedRepo = plannedSessionRepository ?? PlannedSessionRepository();
 
   final ProgramRunRepository _runRepo;
   final ProgramHistoryRepository _historyRepo;
   final AchievementsDerivation _derivation;
+
+  /// Read for one thing only: turning a run's block into the set of workouts
+  /// a window question is asked about.
+  final PlannedSessionRepository _plannedRepo;
 
   /// Begins a run and **pauses** whatever it replaced.
   ///
@@ -177,9 +184,23 @@ class ProgramRunLifecycle {
       // belongs to it, and a program-level review cut in between does not open
       // a block's window: they are different scopes, and neither answers for
       // the other.
+      //
+      // A block run's scope is the workouts of its block, resolved here
+      // because checkpoints are asked for by set: the close record must open
+      // its window on the same ground a review of that block would. A
+      // blockless run's scope is the program's own — null ids.
+      final sessionIds = run.blockId == null
+          ? null
+          : [
+              for (final link in await _plannedRepo.fetchProgramLinks(
+                run.programId,
+                blockId: run.blockId,
+              ))
+                link.plannedSessionId,
+            ];
       final from = await _historyRepo.checkpointFor(
         run.programId,
-        blockId: run.blockId,
+        sessionIds: sessionIds,
         fallback: run.startedDate,
       );
       final achievements = await _derivation.derive(

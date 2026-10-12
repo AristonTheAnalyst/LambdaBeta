@@ -13,6 +13,7 @@ class LambdaInput extends StatelessWidget {
     this.error,
     this.enabled = true,
     this.obscureText = false,
+    this.autofocus = false,
     this.keyboardType,
     this.textCapitalization = TextCapitalization.none,
     this.textInputAction,
@@ -22,6 +23,7 @@ class LambdaInput extends StatelessWidget {
     this.minLines,
     this.maxLines,
     this.maxLength,
+    this.elevated = false,
   });
 
   final TextEditingController controller;
@@ -31,6 +33,7 @@ class LambdaInput extends StatelessWidget {
   final String? error;
   final bool enabled;
   final bool obscureText;
+  final bool autofocus;
   final TextInputType? keyboardType;
   final TextCapitalization textCapitalization;
   final TextInputAction? textInputAction;
@@ -52,6 +55,14 @@ class LambdaInput extends StatelessWidget {
   /// which the screens render from their state listener; two counters under one
   /// field would be two spellings of the same number.
   final int? maxLength;
+
+  /// Whether the box stands on a `surface` ground — a card, or a modal sheet
+  /// on its default background. The usual fill ([AppColors.surface]) only
+  /// separates from the page ground ([AppColors.bg]); against surface the box
+  /// would vanish into it, so on a surface ground it steps up to
+  /// [AppColors.surfaceHigh] — the fill is always one tier above what the box
+  /// stands on.
+  final bool elevated;
 
   @override
   Widget build(BuildContext context) {
@@ -87,6 +98,7 @@ class LambdaInput extends StatelessWidget {
           focusNode: focusNode,
           obscureText: obscureText,
           enabled: enabled,
+          autofocus: autofocus,
           keyboardType: keyboardType,
           textCapitalization: textCapitalization,
           textInputAction: textInputAction,
@@ -113,7 +125,7 @@ class LambdaInput extends StatelessWidget {
               fontSize: AppTextStyles.md,
             ),
             filled: true,
-            fillColor: AppColors.surface,
+            fillColor: elevated ? AppColors.surfaceHigh : AppColors.surface,
             contentPadding:
                 const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             border: OutlineInputBorder(

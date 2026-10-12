@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -65,6 +67,7 @@ void main() {
   Future<void> pumpSheet(
     WidgetTester tester, {
     required ProgramContent content,
+    List<String>? sessionIds,
     String? blockId,
     String? sessionId,
     bool usesBlocks = false,
@@ -86,6 +89,7 @@ void main() {
                   review: completedReview(
                     blockId: blockId,
                     sessionId: sessionId,
+                    sessionIds: sessionIds,
                     content: content,
                   ),
                   usesBlocks: usesBlocks,
@@ -343,6 +347,46 @@ void main() {
     expect(find.text('This block'), findsNothing);
   });
 
+  testWidgets('a set review is read as the workouts it covered — the snapshot '
+      'holds the whole program, the pass did not', (tester) async {
+    await pumpSheet(
+      tester,
+      sessionIds: const ['s2'],
+      content: ProgramContent(
+        sessions: [session('s1', 'Push A'), session('s2', 'Pull A')],
+      ),
+    );
+
+    // `completeReview` freezes the whole program, so every set review's
+    // document holds its siblings. Rendering it whole would report on
+    // workouts the pass never opened.
+    expect(find.text('Pull A'), findsOneWidget);
+    expect(find.text('Push A'), findsNothing);
+    expect(find.text('WHAT IT WAS'), findsOneWidget);
+  });
+
+  testWidgets('a set of several reads as those workouts, in the program\'s own '
+      'order — the stored set says what to cover, not how to read it', (
+    tester,
+  ) async {
+    await pumpSheet(
+      tester,
+      sessionIds: const ['s2', 's1'],
+      content: ProgramContent(
+        sessions: [session('s1', 'Push A'), session('s2', 'Pull A')],
+      ),
+    );
+
+    expect(find.text('Push A'), findsOneWidget);
+    expect(find.text('Pull A'), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.text('Push A')).dy,
+      lessThan(tester.getTopLeft(find.text('Pull A')).dy),
+      reason: 'the record reads in the order the program trains, however the '
+          'set was ticked',
+    );
+  });
+
   testWidgets('a workout no block holds still shows, because an archived phase '
       'must not shrink the program', (tester) async {
     await pumpSheet(
@@ -463,8 +507,11 @@ void main() {
 }
 
 /// A completed checkpoint of [content] — the only kind the detail sheet reads.
+/// [sessionIds] is the modern stored set; [blockId]/[sessionId] are the legacy
+/// spelling, so rows from before the re-scope still render.
 ProgramReview completedReview({
   required ProgramContent content,
+  List<String>? sessionIds,
   String? blockId,
   String? sessionId,
 }) => ProgramReview(
@@ -473,6 +520,7 @@ ProgramReview completedReview({
   programId: 'p1',
   blockId: blockId,
   sessionId: sessionId,
+  sessionIdsJson: sessionIds == null ? null : jsonEncode(sessionIds),
   kind: kReviewKindReview,
   createdDate: DateTime(2026, 10, 1),
   completedDate: DateTime(2026, 10, 5),

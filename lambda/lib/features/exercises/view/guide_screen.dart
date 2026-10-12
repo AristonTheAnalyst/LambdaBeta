@@ -5,6 +5,7 @@ import '../../../../core/styles/app_spacing.dart';
 import '../../../../core/styles/app_text_styles.dart';
 import '../../../../shared/widgets/app_card.dart';
 import '../../../../shared/widgets/page_header.dart';
+import '../../../../shared/widgets/scroll_shrink_nav_bar.dart';
 
 class GuideScreen extends StatelessWidget {
   const GuideScreen({super.key});
@@ -25,7 +26,14 @@ class GuideScreen extends StatelessWidget {
           ),
           Expanded(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.all(AppSpacing.xl),
+              // The shell's bar floats over this page, so the last section
+              // has to be able to scroll clear of it.
+              padding: EdgeInsets.fromLTRB(
+                AppSpacing.xl,
+                AppSpacing.xl,
+                AppSpacing.xl,
+                ScrollShrinkNavBar.contentInset(context),
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: const [

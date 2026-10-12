@@ -62,6 +62,20 @@ mixin UnsavedChangesGuard<T extends StatefulWidget> on State<T> {
     return !hasUnsavedChanges;
   }
 
+  /// Settles ahead of a read of the record (Compare, Changes), asking nothing.
+  ///
+  /// Unlike [settleForReview], no dialog: reading the record is a READ, and
+  /// reading the plan as it currently stands — pending edits included — is the
+  /// whole point of the button. "Save first?" would put a decision in front of
+  /// an operation that changes nothing. A save that fails leaves
+  /// [hasUnsavedChanges] true, and false comes back rather than a comparison
+  /// against state the user cannot see.
+  Future<bool> settleForCompare() async {
+    if (!hasUnsavedChanges) return true;
+    await onSave();
+    return !hasUnsavedChanges;
+  }
+
   void _confirmAndPop() async {
     if (!hasUnsavedChanges) {
       if (mounted) Navigator.of(context).pop();

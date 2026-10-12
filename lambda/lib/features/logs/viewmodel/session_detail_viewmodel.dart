@@ -597,6 +597,48 @@ class SessionDetailViewModel {
 
   // ── Draft set rows ─────────────────────────────────────────────────────────
 
+  /// Hold-and-drag reorder of one exercise group's logged sets.
+  ///
+  /// [oldIndex] and [newIndex] count that group's REAL rows only, and
+  /// [newIndex] arrives already adjusted for the row being lifted out
+  /// (`onReorderItem`). Draft rows sit past the end and cannot be dropped
+  /// into — a drop there means "last real set".
+  ///
+  /// The renumber is local only, like [reorderExercises]: nothing is re-read,
+  /// because the values are untouched and the only thing that changed is the
+  /// column the read already sorts by. Renumbering is also what makes the new
+  /// order real — the group renders in `set_number` order, so a reorder that
+  /// left the numbers alone would undo itself on the next rebuild.
+  void reorderSets(int groupOrder, int oldIndex, int newIndex) {
+    final group = [
+      ...state.value.setsFor(groupOrder),
+    ]..sort((a, b) => a.setNumber.compareTo(b.setNumber));
+    if (group.length < 2) return;
+    if (newIndex >= group.length) newIndex = group.length - 1;
+    if (oldIndex == newIndex || oldIndex < 0 || oldIndex >= group.length) {
+      return;
+    }
+
+    group.insert(newIndex, group.removeAt(oldIndex));
+    // The group list becomes the new order — this viewer has no sort of its
+    // own, it draws `setsFor` exactly as it finds it.
+    final ordered = [
+      for (var i = 0; i < group.length; i++) group[i].copyWith(setNumber: i + 1),
+    ];
+    final byOrder = Map<int, List<SessionExerciseSet>>.from(
+      state.value.setsByOrder,
+    );
+    byOrder[groupOrder] = ordered;
+    state.value = state.value.copyWith(setsByOrder: byOrder);
+
+    final w = state.value.session;
+    if (w != null) {
+      _sessionRepo.reorderSets(w.sessionId, [
+        for (final s in ordered) s.sessionExerciseSetId,
+      ]);
+    }
+  }
+
   /// "+ ADD SET" in edit mode pre-creates an empty set in the DB so it
   /// survives hot restarts. Empty sets are NOT purged here — they were
   /// intentionally added by the user editing a finished workout.
@@ -677,6 +719,7 @@ class SessionDetailViewModel {
     double? weight,
     bool clearWeight = false,
     List<num>? reps,
+    bool clearReps = false,
     String? variationId,
     bool clearVariation = false,
     String? notes,
@@ -690,6 +733,7 @@ class SessionDetailViewModel {
         weight: weight,
         clearWeight: clearWeight,
         reps: reps,
+        clearReps: clearReps,
         variationId: variationId,
         clearVariation: clearVariation,
         notes: notes,

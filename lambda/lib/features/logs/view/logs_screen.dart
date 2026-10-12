@@ -12,6 +12,7 @@ import '../../../../data/models/session_exercise_set.dart';
 import '../../../../shared/widgets/confirm_delete_session_dialog.dart';
 import '../../../../shared/widgets/logs_filter_bar.dart';
 import '../../../../shared/widgets/page_header.dart';
+import '../../../../shared/widgets/scroll_shrink_nav_bar.dart';
 import '../../../../core/utils/date_range.dart';
 import '../../../../shared/widgets/date_range_selector.dart';
 import '../../../../shared/widgets/session_log_card.dart';
@@ -314,7 +315,14 @@ class _WorkoutsPanel extends StatelessWidget {
       onRefresh: onRefresh,
       color: AppColors.accent,
       child: ListView.builder(
-        padding: const EdgeInsets.all(AppSpacing.lg),
+        // Zero unless this list is the Session tab's Home, where the shell's
+        // bar floats over it.
+        padding: EdgeInsets.fromLTRB(
+          AppSpacing.lg,
+          AppSpacing.lg,
+          AppSpacing.lg,
+          AppSpacing.lg + ScrollShrinkNavBar.contentInset(context),
+        ),
         itemCount: workouts.length,
         itemBuilder: (_, i) {
           final w = workouts[i];
@@ -363,7 +371,14 @@ class _SetsPanel extends StatelessWidget {
       onRefresh: onRefresh,
       color: AppColors.accent,
       child: ListView.builder(
-        padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+        // Zero unless this list is the Session tab's Home, where the shell's
+        // bar floats over it.
+        padding: EdgeInsets.fromLTRB(
+          0,
+          AppSpacing.sm,
+          0,
+          AppSpacing.sm + ScrollShrinkNavBar.contentInset(context),
+        ),
         itemCount: pastSets.length,
         itemBuilder: (_, i) {
           final row = pastSets[i];

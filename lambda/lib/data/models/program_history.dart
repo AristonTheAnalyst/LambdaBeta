@@ -47,7 +47,9 @@ class AchievementSession {
 /// the pair about runs: a block's length running out used to end the run by
 /// itself ([kDueRunFinished] only ever appeared over an already-closed run);
 /// now it raises the question and waits, and [kDueBlockStart] is the same
-/// courtesy at the other end of the phase.
+/// courtesy at the other end of the phase. [kDueRunFinished] comes down when
+/// a review over that run is completed — that is the answer the prompt asks
+/// for — or when the run ends, whichever the user gets to first.
 const kDueReview = 'review';
 const kDueRunFinished = 'run_finished';
 const kDueBlockStart = 'block_start';
@@ -106,9 +108,12 @@ class DueItem {
   /// Short label for a chip or badge.
   String get label => switch (kind) {
         kDueReview => 'Review due',
-        // A block and a program are not the same thing to finish, and the user
-        // is looking straight at the one this is about.
-        kDueRunFinished => isBlockScoped ? 'Block finished' : 'Program finished',
+        // "Reached its length", not "finished": carrying on is one of the
+        // answers the prompt offers, and a chip that called the run over
+        // would be announcing a decision the user has not made. A block and a
+        // program are not the same thing to reach, either.
+        kDueRunFinished =>
+          isBlockScoped ? 'Block length reached' : 'Program length reached',
         kDueBlockStart => 'Block ready',
         _ => 'Due',
       };
@@ -119,9 +124,14 @@ class DueItem {
   /// sitting over a run that was still going.
   String get prompt => switch (kind) {
         kDueReview => 'A review is due.',
-        kDueRunFinished => isBlockScoped
-            ? 'This block has run its length — end it to record what it produced.'
-            : 'This program has finished — review what it produced.',
+        // The prompt leads into the review, and the run's fate — continue,
+        // change length, end — is decided after it, on the far side of
+        // looking at the plan. Wording that promised an ending would be
+        // describing the request the old flow made, not this one.
+        kDueRunFinished =>
+          isBlockScoped
+              ? 'This block has reached its length — review it before deciding what is next.'
+              : 'This program has reached its length — review it before deciding what is next.',
         kDueBlockStart => blockName == null
             ? 'A block is ready to begin.'
             : '$blockName is ready to begin.',
