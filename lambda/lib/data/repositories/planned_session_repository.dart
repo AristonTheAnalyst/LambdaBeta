@@ -612,6 +612,35 @@ class PlannedSessionRepository {
     return fetchPlannedSets(plannedSessionId);
   }
 
+  /// The same normalizing read as [fetchNormalizedPlannedSets] minus the
+  /// repair writes — a pure read for the OPEN paths (the editor, the session
+  /// preview). Stored numbers that are already sequential — the steady
+  /// state — read identically, and the writing variant still repairs
+  /// genuinely broken numbering on save (2026-10-13).
+  Future<List<PlannedSessionExerciseSet>> readNormalizedPlannedSession(
+    String plannedSessionId,
+  ) async {
+    final sets = await fetchPlannedSets(plannedSessionId);
+    final exercises = await fetchPlannedExercises(plannedSessionId);
+    final exerciseOrder = {
+      for (var i = 0; i < exercises.length; i++)
+        exercises[i].plannedExerciseId: i + 1,
+    };
+
+    final nextSetNumber = <String, int>{};
+    final out = <PlannedSessionExerciseSet>[];
+    for (final s in sets) {
+      if (!exerciseOrder.containsKey(s.plannedExerciseId)) {
+        out.add(s);
+        continue;
+      }
+      final number = nextSetNumber.putIfAbsent(s.plannedExerciseId, () => 1);
+      nextSetNumber[s.plannedExerciseId] = number + 1;
+      out.add(s.copyWith(setNumber: number));
+    }
+    return out;
+  }
+
   /// Deep-copies a planned session with all its exercise groups and sets
   /// (standalone). When [sourceLink] is given, the copy is also linked into
   /// the same program right after the source's slot (sequence bump included).

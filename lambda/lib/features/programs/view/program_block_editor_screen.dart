@@ -704,13 +704,13 @@ class _ProgramBlockEditorScreenState extends State<ProgramBlockEditorScreen>
                                 swipeActions: [
                                   SwipeAction(
                                     icon: Icons.copy_rounded,
-                                    label: 'Duplicate',
+                                    
                                     color: AppColors.accent,
                                     onTap: () => _duplicateWorkout(_workouts[i]),
                                   ),
                                   SwipeAction(
                                     icon: Icons.remove_circle_outline,
-                                    label: 'Remove',
+                                    
                                     color: AppColors.danger,
                                     onTap: () => _vm.assignWorkoutToBlock(
                                       _workouts[i].sessionId,

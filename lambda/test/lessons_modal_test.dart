@@ -16,6 +16,12 @@ class FakeLessonRepo implements LessonRepository {
       List.of(lessons);
 
   @override
+  Future<Map<String, List<Lesson>>> fetchLessonsForExercises(
+    String userId,
+    List<String> exerciseIds,
+  ) async => {};
+
+  @override
   Future<Lesson> createLesson(String userId, String exerciseId, String text, {String? sessionId}) async {
     final lesson = Lesson(
       lessonId: 'l${++_calls}',

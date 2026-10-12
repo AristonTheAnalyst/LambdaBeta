@@ -300,7 +300,7 @@ class _LessonRowState extends State<_LessonRow> {
       actions: [
         SwipeAction(
           icon: Icons.delete_outline,
-          label: 'Delete',
+          
           color: AppColors.danger,
           onTap: widget.onDelete,
         ),

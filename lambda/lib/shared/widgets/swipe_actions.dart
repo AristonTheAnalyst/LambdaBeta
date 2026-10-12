@@ -1,18 +1,17 @@
 import 'package:flutter/material.dart';
-import '../../core/styles/app_fonts.dart';
 import '../../core/styles/app_radius.dart';
 
-/// One action button exposed in a [SwipeActions] drawer.
+/// One action button exposed in a [SwipeActions] drawer. Icon only — the
+/// glyph alone is the reading; a label under it read as clutter the user
+/// asked to drop (2026-10-13).
 class SwipeAction {
   const SwipeAction({
     required this.icon,
-    required this.label,
     required this.color,
     required this.onTap,
   });
 
   final IconData icon;
-  final String label;
   final Color color;
   final VoidCallback onTap;
 }
@@ -161,22 +160,7 @@ class _SwipeActionsState extends State<SwipeActions>
         child: Container(
           color: action.color,
           alignment: Alignment.center,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(action.icon, size: 16, color: Colors.white),
-              const SizedBox(height: 2),
-              Text(
-                action.label,
-                style: AppFonts.ui(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white,
-                ),
-              ),
-            ],
-          ),
+          child: Icon(action.icon, size: 20, color: Colors.white),
         ),
       ),
     );

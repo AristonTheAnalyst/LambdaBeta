@@ -6,6 +6,7 @@ import 'package:powersync/powersync.dart';
 
 import '../../../core/powersync/database.dart' as ps;
 import '../../../core/powersync/schema.dart';
+import '../../../data/cache/past_sets_timeline_cache.dart';
 import '../../../data/repositories/lab_mode.dart';
 
 /// The flow lab's sandbox: its own PowerSync database, and the swap that puts
@@ -95,6 +96,9 @@ class LabDatabase {
     if (labMode) return; // the other enter finished while this one awaited
     _appDatabase = ps.swapDatabase(sandbox);
     labMode = true;
+    // The timeline cache may hold rows read from the real database — a
+    // sandboxed screen must never be served those (2026-10-13).
+    PastSetsTimelineCache.instance.invalidate();
   }
 
   /// The swap-back itself. [leave]'s last-holder path, and the forced step at
@@ -106,6 +110,9 @@ class LabDatabase {
     ps.swapDatabase(app);
     _appDatabase = null;
     labMode = false;
+    // Same in the other direction — sandbox rows must not serve the real
+    // app after the hand-back (2026-10-13).
+    PastSetsTimelineCache.instance.invalidate();
   }
 
   /// Empties the sandbox: throws the file away and opens a fresh one —

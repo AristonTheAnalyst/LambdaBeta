@@ -37,18 +37,27 @@ const schema = Schema([
     Column.text('program_run_id'),
     Column.integer('post_feeling'),
     Column.integer('pre_feeling'),
+  ], indexes: [
+    Index('user_end_idx', [
+      IndexedColumn.ascending('user_id'),
+      IndexedColumn.ascending('end_datetime'),
+    ]),
   ]),
   Table('dim_exercise', [
     Column.text('custom_exercise_id'),
     Column.text('user_id'),
     Column.text('exercise_name'),
     Column.text('date_archived'),
+  ], indexes: [
+    Index('user_idx', [IndexedColumn.ascending('user_id')]),
   ]),
   Table('dim_variation', [
     Column.text('custom_variation_id'),
     Column.text('user_id'),
     Column.text('variation_name'),
     Column.text('date_archived'),
+  ], indexes: [
+    Index('user_idx', [IndexedColumn.ascending('user_id')]),
   ]),
   Table('fact_bodyweight', [
     Column.text('user_weight_id'),
@@ -64,6 +73,8 @@ const schema = Schema([
     Column.text('custom_exercise_id'),
     Column.integer('exercise_order'),
     Column.text('planned_exercise_id'),
+  ], indexes: [
+    Index('session_idx', [IndexedColumn.ascending('session_id')]),
   ]),
   Table('fact_session_exercise_set', [
     Column.text('session_exercise_set_id'),
@@ -75,6 +86,8 @@ const schema = Schema([
     Column.text('reps'),
     Column.text('notes'),
     Column.text('planned_set_id'),
+  ], indexes: [
+    Index('se_idx', [IndexedColumn.ascending('session_exercise_id')]),
   ]),
   Table('dim_program', [
     Column.text('program_id'),
@@ -174,6 +187,11 @@ const schema = Schema([
     Column.integer('is_archived'),
     Column.text('lesson_created_date'),
     Column.text('session_id'),
+  ], indexes: [
+    Index('user_ex_idx', [
+      IndexedColumn.ascending('user_id'),
+      IndexedColumn.ascending('custom_exercise_id'),
+    ]),
   ]),
   Table('coaching_relationship', [
     Column.text('coach_user_id'),
@@ -191,6 +209,8 @@ const schema = Schema([
     // is a program copy of the library workout it names. Plain ref (no FK):
     // an offline create→import must not be able to fail an FK on upload.
     Column.text('base_session_id'),
+  ], indexes: [
+    Index('user_idx', [IndexedColumn.ascending('user_id')]),
   ]),
   Table('dim_pr_view_setting', [
     Column.text('pr_view_setting_id'),
@@ -211,6 +231,8 @@ const schema = Schema([
     // server enforces (program_id, block_id) as a composite FK, so a workout
     // can only join a block of its own program.
     Column.text('block_id'),
+  ], indexes: [
+    Index('ps_idx', [IndexedColumn.ascending('planned_session_id')]),
   ]),
   Table('dim_planned_session_exercise', [
     Column.text('planned_exercise_id'),
@@ -219,6 +241,8 @@ const schema = Schema([
     Column.text('custom_exercise_id'),
     Column.integer('exercise_order'),
     Column.integer('is_archived'),
+  ], indexes: [
+    Index('session_idx', [IndexedColumn.ascending('planned_session_id')]),
   ]),
   Table('dim_planned_session_exercise_set', [
     Column.text('planned_set_id'),
@@ -230,6 +254,8 @@ const schema = Schema([
     Column.text('target_reps'),
     Column.text('target_notes'),
     Column.integer('is_archived'),
+  ], indexes: [
+    Index('pe_idx', [IndexedColumn.ascending('planned_exercise_id')]),
   ]),
   Table('fact_goal', [
     Column.text('goal_id'),

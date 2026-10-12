@@ -225,21 +225,46 @@ class ExerciseState {
 }
 
 class ExerciseViewModel {
-  ExerciseViewModel({ExerciseRepository? repo})
-    : _repo = repo ?? ExerciseRepository();
+  ExerciseViewModel({ExerciseRepository? repo, String? userId})
+    : _repo = repo ?? ExerciseRepository(),
+      _userIdOverride = userId;
 
   final ExerciseRepository _repo;
   final state = ValueNotifier(const ExerciseState());
 
-  String get _userId => Supabase.instance.client.auth.currentUser!.id;
+  /// The host-test seam's answer; null reads the live Supabase session.
+  final String? _userIdOverride;
 
+  String get _userId => _userIdOverride ?? Supabase.instance.client.auth.currentUser!.id;
+
+  /// Load-once guard: the hub embeds ONE screen instance now (2026-10-13),
+  /// so a second fetch on an already-loaded catalog is a no-op. Mutations
+  /// patch state in place and never go through this; the reactivate paths,
+  /// which genuinely need a re-read, call [_fetchAllFull].
   Future<void> fetchAll() async {
+    if (state.value.exercises.isNotEmpty) return;
+    await _fetchAllFull();
+  }
+
+  Future<void> _fetchAllFull() async {
     state.value = state.value.copyWith(isLoading: true, clearError: true);
     try {
-      final exercises = await _repo.fetchExercises(_userId);
-      final variations = await _repo.fetchVariations(_userId);
-      final detailMap = await _repo.fetchExerciseDetailMap(_userId);
-      final usage = await _repo.fetchUsage(_userId);
+      final results = await Future.wait([
+        _repo.fetchExercises(_userId),
+        _repo.fetchVariations(_userId),
+      ]);
+      final exercises = results[0] as List<CustomExercise>;
+      final variations = results[1] as List<CustomVariation>;
+      // The detail map is exactly "one detail per exercise" — derived from
+      // the list, not a third read (2026-10-13).
+      final detailMap = {
+        for (final ex in exercises) ex.exerciseId: ExerciseDetail(exercise: ex),
+      };
+      final usage = await _repo.fetchUsage(
+        _userId,
+        exercises: exercises,
+        variations: variations,
+      );
       state.value = state.value.copyWith(
         isLoading: false,
         exercises: exercises,
@@ -249,6 +274,23 @@ class ExerciseViewModel {
       );
     } catch (e) {
       state.value = state.value.copyWith(isLoading: false, error: e.toString());
+    }
+  }
+
+  /// The light pop-reload the exercise detail's caller needs: renames and
+  /// archives made on the detail page show in the list without a full
+  /// catalog + timeline rescan (2026-10-13).
+  Future<void> refreshExercisesOnly() async {
+    try {
+      final exercises = await _repo.fetchExercises(_userId);
+      state.value = state.value.copyWith(
+        exercises: exercises,
+        exerciseDetailMap: {
+          for (final ex in exercises) ex.exerciseId: ExerciseDetail(exercise: ex),
+        },
+      );
+    } catch (e) {
+      state.value = state.value.copyWith(error: e.toString());
     }
   }
 
@@ -303,9 +345,21 @@ class ExerciseViewModel {
         s.editExercise!.exerciseId,
         s.editExName.trim(),
       );
-
-      state.value = state.value.copyWith(isSaving: false, clearEditEx: true);
-      await fetchAll();
+      // Patch in place — a rename must not rescan the catalog and the whole
+      // timeline (2026-10-13).
+      final renamed = s.editExercise!.copyWith(name: s.editExName.trim());
+      state.value = s.copyWith(
+        isSaving: false,
+        clearEditEx: true,
+        exercises: [
+          for (final e in s.exercises)
+            if (e.exerciseId == renamed.exerciseId) renamed else e,
+        ],
+        exerciseDetailMap: {
+          ...s.exerciseDetailMap,
+          renamed.exerciseId: ExerciseDetail(exercise: renamed),
+        },
+      );
     } catch (e) {
       state.value = state.value.copyWith(isSaving: false, error: e.toString());
     }
@@ -314,13 +368,24 @@ class ExerciseViewModel {
   /// Deletes a never-used exercise outright; archives a used one so history
   /// keeps it. Screens use [exerciseUsageCount] to pick their dialog copy.
   Future<void> deleteExercise(String exerciseId) async {
-    state.value = state.value.copyWith(clearEditEx: true);
+    final s = state.value;
+    state.value = s.copyWith(clearEditEx: true);
     if (await _repo.exerciseUsageCount(exerciseId) > 0) {
       await _repo.deactivateExercise(exerciseId);
     } else {
       await _repo.hardDeleteExercise(exerciseId);
     }
-    await fetchAll();
+    // Remove locally — the delete does not rescan the catalog (2026-10-13).
+    state.value = state.value.copyWith(
+      exercises: [
+        for (final e in state.value.exercises)
+          if (e.exerciseId != exerciseId) e,
+      ],
+      exerciseDetailMap: {
+        for (final e in state.value.exerciseDetailMap.entries)
+          if (e.key != exerciseId) e.key: e.value,
+      },
+    );
   }
 
   Future<int> exerciseUsageCount(String exerciseId) =>
@@ -331,7 +396,9 @@ class ExerciseViewModel {
 
   Future<void> reactivateExercise(String exerciseId) async {
     await _repo.reactivateExercise(exerciseId);
-    await fetchAll();
+    // A row is coming back from the archive — the lists must re-read rather
+    // than patch (2026-10-13).
+    await _fetchAllFull();
   }
 
   /// Renames an exercise directly (used by the per-exercise detail page,
@@ -341,7 +408,20 @@ class ExerciseViewModel {
     if (trimmed.isEmpty) return;
     if (nameTooLong(trimmed)) return;
     await _repo.updateExercise(exerciseId, trimmed);
-    await fetchAll();
+    final s = state.value;
+    final renamed = s.exercises
+        .firstWhere((e) => e.exerciseId == exerciseId)
+        .copyWith(name: trimmed);
+    state.value = s.copyWith(
+      exercises: [
+        for (final e in s.exercises)
+          if (e.exerciseId == exerciseId) renamed else e,
+      ],
+      exerciseDetailMap: {
+        ...s.exerciseDetailMap,
+        exerciseId: ExerciseDetail(exercise: renamed),
+      },
+    );
   }
 
   // ── Open edit variation ────────────────────────────────────────────────────
@@ -389,7 +469,12 @@ class ExerciseViewModel {
     } else {
       await _repo.hardDeleteVariation(variationId);
     }
-    await fetchAll();
+    state.value = state.value.copyWith(
+      variations: [
+        for (final v in state.value.variations)
+          if (v.variationId != variationId) v,
+      ],
+    );
   }
 
   Future<int> variationUsageCount(String variationId) =>
@@ -400,7 +485,7 @@ class ExerciseViewModel {
 
   Future<void> reactivateVariation(String variationId) async {
     await _repo.reactivateVariation(variationId);
-    await fetchAll();
+    await _fetchAllFull();
   }
 
   // ── Create exercise ────────────────────────────────────────────────────────
@@ -420,23 +505,34 @@ class ExerciseViewModel {
     state.value = s.copyWith(isCreatingEx: true);
     try {
       final existing = await _repo.findExerciseByName(_userId, name);
-      String id;
+      final newEx = existing != null
+          // Creating a name that matches an archived exercise restores it —
+          // exercises are per-user, and a soft-deleted name must not block
+          // re-creation (reactivating an active row is a no-op). The local
+          // insert carries the ACTIVE spelling (archived date null).
+          ? CustomExercise(
+              exerciseId: existing.exerciseId,
+              userId: existing.userId,
+              name: existing.name,
+            )
+          : await _repo.createExercise(_userId, name);
       if (existing != null) {
-        // Creating a name that matches an archived exercise restores it —
-        // exercises are per-user, and a soft-deleted name must not block
-        // re-creation (reactivating an active row is a no-op).
         await _repo.reactivateExercise(existing.exerciseId);
-        id = existing.exerciseId;
-      } else {
-        final created = await _repo.createExercise(_userId, name);
-        id = created.exerciseId;
       }
-      state.value = state.value.copyWith(
+      final s2 = state.value;
+      state.value = s2.copyWith(
         isCreatingEx: false,
         showCreateEx: false,
+        // Insert locally — a create must not rescan the catalog + timeline
+        // (2026-10-13). A fresh row has no usage, so it sorts last either way.
+        exercises: [...s2.exercises, newEx],
+        exerciseDetailMap: {
+          ...s2.exerciseDetailMap,
+          newEx.exerciseId: ExerciseDetail(exercise: newEx),
+        },
+        usage: {...s2.usage, newEx.exerciseId: const ExerciseUsage()},
       );
-      await fetchAll();
-      return id;
+      return newEx.exerciseId;
     } catch (e) {
       state.value = state.value.copyWith(
         isCreatingEx: false,
@@ -465,22 +561,28 @@ class ExerciseViewModel {
     state.value = s.copyWith(isCreatingVar: true);
     try {
       final existing = await _repo.findVariationByName(_userId, name);
-      String id;
+      final newVar = existing != null
+          // Creating a name that matches an archived variation restores it —
+          // per-user soft-deletes must not block re-creation. The local
+          // insert carries the ACTIVE spelling (archived date null).
+          ? CustomVariation(
+              variationId: existing.variationId,
+              userId: existing.userId,
+              name: existing.name,
+            )
+          : await _repo.createVariation(_userId, name);
       if (existing != null) {
-        // Creating a name that matches an archived variation restores it —
-        // per-user soft-deletes must not block re-creation.
         await _repo.reactivateVariation(existing.variationId);
-        id = existing.variationId;
-      } else {
-        final created = await _repo.createVariation(_userId, name);
-        id = created.variationId;
       }
-      state.value = state.value.copyWith(
+      final s2 = state.value;
+      state.value = s2.copyWith(
         isCreatingVar: false,
         showCreateVar: false,
+        // Insert locally — a create must not rescan the catalog + timeline
+        // (2026-10-13).
+        variations: [...s2.variations, newVar],
       );
-      await fetchAll();
-      return id;
+      return newVar.variationId;
     } catch (e) {
       state.value = state.value.copyWith(
         isCreatingVar: false,

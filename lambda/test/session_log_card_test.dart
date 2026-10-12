@@ -70,9 +70,9 @@ void main() {
 
     expect(find.byType(SwipeActions), findsOneWidget);
 
-    // At rest the drawer sits behind the card at zero opacity: its Delete
+    // At rest the drawer sits behind the card at zero opacity: its delete
     // button is in the tree, but the card owns that hit area.
-    await tester.tap(find.text('Delete'), warnIfMissed: false);
+    await tester.tap(find.byIcon(Icons.delete_outline), warnIfMissed: false);
     await tester.pumpAndSettle();
     expect(tapped, 1, reason: 'the card owns the hit area while shut');
     expect(deleted, 0, reason: 'the drawer stays shut until swiped');
@@ -82,7 +82,7 @@ void main() {
 
     // Drop the at-rest tap so the assertions below read against the swipe.
     tapped = 0;
-    await tester.tap(find.text('Delete'));
+    await tester.tap(find.byIcon(Icons.delete_outline));
     await tester.pumpAndSettle();
 
     expect(deleted, 1, reason: 'the drawer action runs onDelete');

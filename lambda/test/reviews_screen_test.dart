@@ -103,7 +103,7 @@ void main() {
 
     await tester.drag(find.text('Mid block'), const Offset(-120, 0));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Cancel'));
+    await tester.tap(find.byIcon(Icons.delete_outline));
     await tester.pumpAndSettle();
 
     expect(find.text('Cancel this review?'), findsOneWidget);
@@ -124,7 +124,7 @@ void main() {
 
     await tester.drag(find.text('Mid block'), const Offset(-120, 0));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Cancel'));
+    await tester.tap(find.byIcon(Icons.delete_outline));
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(TextButton, 'Cancel review'));
     await tester.pumpAndSettle();

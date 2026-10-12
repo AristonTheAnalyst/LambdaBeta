@@ -34,12 +34,20 @@ class SessionViewModel extends ChangeNotifier {
     ProgramRunRepository? programRunRepo,
     LessonRepository? lessonRepo,
     PlannedSessionRepository? plannedSessionRepo,
+    Future<void> Function()? waitForFirstSync,
+    String? userId,
   }) : _sessionRepo = sessionRepo ?? SessionRepository(),
        _exerciseRepo = exerciseRepo ?? ExerciseRepository(),
        _programRepo = programRepo ?? ProgramRepository(),
        _programRunRepo = programRunRepo ?? ProgramRunRepository(),
        _lessonRepo = lessonRepo ?? LessonRepository(),
-       _plannedSessionRepo = plannedSessionRepo ?? PlannedSessionRepository() {
+       _plannedSessionRepo = plannedSessionRepo ?? PlannedSessionRepository(),
+       // Seam for host tests, which have no live PowerSync database (or
+       // Supabase session) to wait on — the defaults are the real ones
+       // (2026-10-13).
+       _waitForFirstSync =
+           waitForFirstSync ?? (() => ps.db.waitForFirstSync()),
+       _userIdOverride = userId {
     slidePagesController = SlidePagesController();
     _init();
   }
@@ -62,7 +70,10 @@ class SessionViewModel extends ChangeNotifier {
   static const int kSummaryPage = 3;
   static const int kPostQuestionnairePage = 4;
 
-  String get _userId => Supabase.instance.client.auth.currentUser!.id;
+  /// The host-test seam's answer; null reads the live Supabase session.
+  final String? _userIdOverride;
+
+  String get _userId => _userIdOverride ?? Supabase.instance.client.auth.currentUser!.id;
 
   // ── Startup ─────────────────────────────────────────────────────────────────
   bool initLoading = true;
@@ -131,10 +142,23 @@ class SessionViewModel extends ChangeNotifier {
 
   /// setId → planned row, for matching a logged set to its template row by
   /// [SessionExerciseSet.plannedSetId] — id-anchored, never positional.
-  Map<String, PlannedSessionExerciseSet> get plannedSetById => {
-        for (final list in plannedSetsByExercise.values)
-          for (final p in list) p.plannedSetId: p,
-      };
+  /// Memoized on the source map's identity: the card rebuilds on every
+  /// notify, and rebuilding the full map per rebuild was pure churn
+  /// (2026-10-13).
+  Map<String, PlannedSessionExerciseSet>? _plannedSetByIdCache;
+  Map<String, List<PlannedSessionExerciseSet>>? _plannedSetByIdSource;
+
+  Map<String, PlannedSessionExerciseSet> get plannedSetById {
+    if (identical(_plannedSetByIdSource, plannedSetsByExercise) &&
+        _plannedSetByIdCache != null) {
+      return _plannedSetByIdCache!;
+    }
+    _plannedSetByIdSource = plannedSetsByExercise;
+    return _plannedSetByIdCache = {
+      for (final list in plannedSetsByExercise.values)
+        for (final p in list) p.plannedSetId: p,
+    };
+  }
 
   // ── Exercise tabs ──────────────────────────────────────────────────────────
   List<SessionExerciseSlot> exerciseSlots = [];
@@ -171,6 +195,35 @@ class SessionViewModel extends ChangeNotifier {
   /// lands (last tap wins).
   String? _addSetQueuedExercise;
 
+  // ── Debounced set writes ───────────────────────────────────────────────────
+  /// How long a typed value waits before its write lands. Keystrokes merge
+  /// into one write per settle; every flush point (blur, tab switch, wizard
+  /// page change, lifecycle, session end) cancels the wait and commits
+  /// immediately, so navigation can never lose a value — the one softening
+  /// from the old per-keystroke commit is a hard kill within this window of
+  /// the last keystroke (2026-10-13).
+  static const kAutoCommitDebounce = Duration(milliseconds: 250);
+
+  /// setId → the merged, not-yet-written field values. Only the latest
+  /// value per field survives; clear flags accumulate so a later clearing
+  /// keystroke still empties the column.
+  final Map<String, _PendingSetWrite> _pendingSetWrites = {};
+
+  /// setId → its debounce timer, armed while a merge waits for more
+  /// keystrokes.
+  final Map<String, Timer> _setDebounceTimers = {};
+
+  /// setId → the write chain — per-set serialization so overlapping settles
+  /// land in order (only the latest merged values matter, but ordering keeps
+  /// a slow first write from clobbering a newer one).
+  final Map<String, Future<void>> _setWriteChains = {};
+
+  /// Live stream subscriptions for the active session's rows — the
+  /// authoritative reads that replaced per-edit `_loadSets` pulls. Subscribed
+  /// on start/restore, cancelled when the session ends or the VM disposes.
+  StreamSubscription<List<SessionExerciseSet>>? _setsSub;
+  StreamSubscription<List<SessionExercise>>? _exercisesSub;
+
   bool isDraftBoundRow(String setId) => _draftRowIds.containsValue(setId);
 
   // ── Lessons (persisted — per-exercise, cross-session) ─────────────────────
@@ -178,6 +231,16 @@ class SessionViewModel extends ChangeNotifier {
 
   // ── History / PR baseline (read-only reuse of past-sets timeline) ────────
   List<PastSetRow> _pastSets = [];
+
+  /// The same timeline sorted oldest-first (the PR engine's walk order),
+  /// built once per timeline load — `_recomputePRs` runs on every sets
+  /// change and must not pay the O(N log N) sort per run (2026-10-13).
+  List<PastSetRow> _pastSetsAsc = [];
+
+  /// `lastUsedByEntity(_pastSets)` computed at load time — the per-run
+  /// recompute merges only the live rows over it.
+  Map<String, DateTime> _timelineLastUsed = {};
+
   bool pastSetsLoaded = false;
 
   /// exerciseId → most recent workout date, for "most recently used" ordering.
@@ -191,9 +254,25 @@ class SessionViewModel extends ChangeNotifier {
 
   /// All active variations, most recently used first — the set-row picker
   /// order. Variations are a flat per-user library (no exercise assignment
-  /// since schema v2).
-  List<CustomVariation> get variationsByRecency =>
-      CustomVariation.sortByLastUsed(allVariations, lastUsedByExercise);
+  /// since schema v2). Memoized on the identity of its two inputs — both are
+  /// replaced wholesale (catalog refresh, PR recompute), so a per-rebuild
+  /// full sort was pure churn (2026-10-13).
+  List<CustomVariation>? _variationsByRecencyCache;
+  List<CustomVariation>? _vrAllVariations;
+  Map<String, DateTime>? _vrLastUsed;
+
+  List<CustomVariation> get variationsByRecency {
+    final lastUsed = lastUsedByExercise;
+    if (identical(_vrAllVariations, allVariations) &&
+        identical(_vrLastUsed, lastUsed) &&
+        _variationsByRecencyCache != null) {
+      return _variationsByRecencyCache!;
+    }
+    _vrAllVariations = allVariations;
+    _vrLastUsed = lastUsed;
+    return _variationsByRecencyCache =
+        CustomVariation.sortByLastUsed(allVariations, lastUsed);
+  }
 
   /// PR events for the ACTIVE session, oldest first — one per set that
   /// extended its pair's best-ever frontier (see pr_engine.dart). The
@@ -258,13 +337,15 @@ class SessionViewModel extends ChangeNotifier {
 
   int get totalPRsThisSession => sessionPrEvents.length;
 
+  /// On a cold start after login, PowerSync may not have finished its first
+  /// sync yet — the local DB would read as empty. Wait briefly so the session
+  /// reflects the user's real data instead of a stale/blank state. Falls back
+  /// to the existing guarded stages if the wait times out or sync is offline.
+  final Future<void> Function() _waitForFirstSync;
+
   Future<void> _init() async {
-    // On a cold start after login, PowerSync may not have finished its first
-    // sync yet — the local DB would read as empty. Wait briefly so the session
-    // reflects the user's real data instead of a stale/blank state. Falls back
-    // to the existing guarded stages if the wait times out or sync is offline.
     try {
-      await ps.db.waitForFirstSync().timeout(const Duration(seconds: 10));
+      await _waitForFirstSync().timeout(const Duration(seconds: 10));
     } catch (_) {}
     // Each stage is individually guarded so one transient failure (e.g.
     // PowerSync not synced on cold start) doesn't block the others.
@@ -381,7 +462,7 @@ class SessionViewModel extends ChangeNotifier {
     if (selectedStandaloneWorkout != null) {
       // The preview reads through the same normalizing read the planner uses,
       // so both count the same sets in the same order.
-      final sets = await _plannedSessionRepo.fetchNormalizedPlannedSets(
+      final sets = await _plannedSessionRepo.readNormalizedPlannedSession(
         selectedStandaloneWorkout!.sessionId,
       );
       plannedSetsByExercise = _plannedMapFromSets(sets);
@@ -395,7 +476,7 @@ class SessionViewModel extends ChangeNotifier {
       return;
     }
     try {
-      final plannedSets = await _plannedSessionRepo.fetchNormalizedPlannedSets(
+      final plannedSets = await _plannedSessionRepo.readNormalizedPlannedSession(
         pw.sessionId,
       );
       plannedSetsByExercise = _plannedMapFromSets(plannedSets);
@@ -434,7 +515,7 @@ class SessionViewModel extends ChangeNotifier {
   Future<void> selectStandaloneWorkout(PlannedSession w) async {
     selectedStandaloneWorkout = w;
     selectedPlannedSession = null;
-    final sets = await _plannedSessionRepo.fetchNormalizedPlannedSets(
+    final sets = await _plannedSessionRepo.readNormalizedPlannedSession(
       w.sessionId,
     );
     plannedSetsByExercise = _plannedMapFromSets(sets);
@@ -535,6 +616,11 @@ class SessionViewModel extends ChangeNotifier {
   Future<void> _loadPastSets({bool keepReflectionPosition = false}) async {
     try {
       _pastSets = await _sessionRepo.loadPastSetsTimeline(_userId);
+      _pastSetsAsc = [..._pastSets]..sort((a, b) {
+        final d = a.sessionCreatedDate.compareTo(b.sessionCreatedDate);
+        return d != 0 ? d : a.setNumber.compareTo(b.setNumber);
+      });
+      _timelineLastUsed = lastUsedByEntity(_pastSets);
       historyByExercise = groupHistoryByExercise(_pastSets);
       lastUsedByExercise = lastUsedByEntity(_pastSets);
     } catch (_) {}
@@ -653,7 +739,7 @@ class SessionViewModel extends ChangeNotifier {
   /// all-sessions picker sheet's cards' trophy badges.
   Map<String, Map<String, int>> prCountsByCompletedSession() {
     final out = <String, Map<String, int>>{};
-    for (final e in prEvents(_pastSets)) {
+    for (final e in prEventsSorted(_pastSetsAsc)) {
       final byExercise = out.putIfAbsent(e.sessionId, () => {});
       byExercise[e.exerciseId] = (byExercise[e.exerciseId] ?? 0) + 1;
     }
@@ -771,7 +857,7 @@ class SessionViewModel extends ChangeNotifier {
     // Events carry their own before-facts, so nothing extra to compute —
     // just the completed session's events.
     final sessionPrs =
-        prEvents(_pastSets).where((r) => r.sessionId == id).toList();
+        prEventsSorted(_pastSetsAsc).where((r) => r.sessionId == id).toList();
 
     // Exercise order = first appearance in the session (set-number order);
     // names prefer the current catalog, falling back to the logged snapshot
@@ -841,6 +927,7 @@ class SessionViewModel extends ChangeNotifier {
       slidePagesController.resetToPage(kTrainingPage);
       await _loadSets();
       _seedExerciseSlots(seedDrafts: false);
+      _subscribeToSessionStreams();
     }
   }
 
@@ -876,7 +963,7 @@ class SessionViewModel extends ChangeNotifier {
       selectedPlannedSession = null;
     }
     try {
-      final plannedSets = await _plannedSessionRepo.fetchNormalizedPlannedSets(
+      final plannedSets = await _plannedSessionRepo.readNormalizedPlannedSession(
         parentId,
       );
       plannedSetsByExercise = _plannedMapFromSets(plannedSets);
@@ -897,11 +984,70 @@ class SessionViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// The same pull as [_loadSets] minus the loading toggles and notifies —
+  /// an authoritative refresh for the moments that must read the DB before
+  /// the watch stream's next emission (the pre-prune read at session end).
+  Future<void> _pullCurrentSession() async {
+    final id = currentWorkoutId;
+    if (id == null) return;
+    try {
+      sets = await _sessionRepo.loadSetsForSession(id);
+      sessionExercises = await _sessionRepo.loadSessionExercises(id);
+      _recomputePRs();
+    } catch (_) {}
+  }
+
+  /// Subscribes to the active session's row streams. From here on, every
+  /// write (debounced or discrete, local or synced) re-emits the
+  /// authoritative rows and the listener recomputes PRs — no per-edit
+  /// pulls. Subscribed AFTER the initial [_loadSets] so start/restore can
+  /// seed slots from loaded rows first.
+  void _subscribeToSessionStreams() {
+    final id = currentWorkoutId;
+    if (id == null) return;
+    _cancelSessionStreams();
+    _setsSub = _sessionRepo.watchSetsForSession(id).listen(
+      (rows) {
+        sets = rows;
+        setsLoading = false;
+        _recomputePRs();
+        notifyListeners();
+      },
+      onError: (Object e) {
+        error = e.toString();
+        notifyListeners();
+      },
+    );
+    _exercisesSub = _sessionRepo.watchSessionExercises(id).listen(
+      (rows) {
+        sessionExercises = rows;
+        notifyListeners();
+      },
+      onError: (Object e) {
+        error = e.toString();
+        notifyListeners();
+      },
+    );
+  }
+
+  void _cancelSessionStreams() {
+    _setsSub?.cancel();
+    _setsSub = null;
+    _exercisesSub?.cancel();
+    _exercisesSub = null;
+  }
+
   /// Recomputes which sets are PRs using the engine's frontier semantics —
   /// history first, then this session's sets in set-number order, so any
   /// set that extends its pair's best-ever frontier highlights. One event
   /// per PR set; the same events feed counts, accents, and before/after
   /// values, so the surfaces can never disagree.
+  ///
+  /// Runs on every sets change (each debounced write settle, each stream
+  /// emission), so the hot parts are pre-sorted and pre-merged: the timeline
+  /// walks in load-time order and `lastUsedByExercise` merges the live rows
+  /// over the load-time map instead of re-walking the whole history
+  /// (2026-10-13).
   void _recomputePRs() {
     final id = currentWorkoutId;
     if (id == null) {
@@ -910,7 +1056,10 @@ class SessionViewModel extends ChangeNotifier {
       prEventsBySetId = {};
       return;
     }
-    final combined = <PastSetRow>[..._pastSets.where((s) => s.sessionId != id)];
+    final combined = <PastSetRow>[
+      for (final s in _pastSetsAsc)
+        if (s.sessionId != id) s,
+    ];
     final sessionDate = workoutStartedAt ?? DateTime.now();
     final ordered = [...sets]
       ..sort((a, b) => a.setNumber.compareTo(b.setNumber));
@@ -936,9 +1085,23 @@ class SessionViewModel extends ChangeNotifier {
     // Recency includes the live rows: what was just trained is by definition
     // the most recent use, and a chooser opened mid-workout has to say so. The
     // past-sets timeline only sees completed sessions, so the merge happens
-    // here, on every sets change.
-    lastUsedByExercise = lastUsedByEntity(combined);
-    final events = prEvents(combined);
+    // here — as an overwrite of the load-time map, not a full re-walk.
+    lastUsedByExercise = Map.of(_timelineLastUsed);
+    for (final s in ordered) {
+      final exId = s.exerciseId;
+      if (exId != null && sessionDate.isAfter(
+        lastUsedByExercise[exId] ?? DateTime.fromMillisecondsSinceEpoch(0),
+      )) {
+        lastUsedByExercise[exId] = sessionDate;
+      }
+      final vid = s.variationId;
+      if (vid != null && sessionDate.isAfter(
+        lastUsedByExercise[vid] ?? DateTime.fromMillisecondsSinceEpoch(0),
+      )) {
+        lastUsedByExercise[vid] = sessionDate;
+      }
+    }
+    final events = prEventsSorted(combined);
     sessionPrEvents = events.where((e) => e.sessionId == id).toList();
     prSetIds = {
       for (final e in sessionPrEvents)
@@ -1410,6 +1573,89 @@ class SessionViewModel extends ChangeNotifier {
     }
   }
 
+  /// Merges one set-edit call into that set's pending write. The debounced
+  /// path ([immediate] false — keystrokes) arms a [kAutoCommitDebounce]
+  /// timer and returns without touching the DB or notifying; the timer (or
+  /// an [immediate] caller) flushes the merged values as one write. The
+  /// authoritative read after a live flush comes from the watch stream —
+  /// nothing is patched by hand.
+  Future<void> _queueSetWrite(
+    String setId, {
+    required bool historical,
+    required bool immediate,
+    double? weight,
+    bool clearWeight = false,
+    List<num>? reps,
+    bool clearReps = false,
+    String? variationId,
+    bool clearVariation = false,
+    String? notes,
+    bool clearNotes = false,
+  }) {
+    final pending = _pendingSetWrites.putIfAbsent(setId, _PendingSetWrite.new);
+    pending.merge(
+      weight: weight,
+      clearWeight: clearWeight,
+      reps: reps,
+      clearReps: clearReps,
+      variationId: variationId,
+      clearVariation: clearVariation,
+      notes: notes,
+      clearNotes: clearNotes,
+    );
+    pending.historical |= historical;
+    _setDebounceTimers.remove(setId)?.cancel();
+    if (immediate) return _flushSetWrite(setId);
+    _setDebounceTimers[setId] = Timer(kAutoCommitDebounce, () {
+      _setDebounceTimers.remove(setId);
+      unawaited(_flushSetWrite(setId));
+    });
+    return Future.value();
+  }
+
+  /// Writes the merged pending values for [setId] — one UPDATE for however
+  /// many keystrokes fed it — chained per set so overlapping settles land in
+  /// order. A failed write leaves the DB unchanged and the watch stream
+  /// still delivering the authoritative rows, so no rollback is needed: the
+  /// error surface says what happened.
+  Future<void> _flushSetWrite(String setId) async {
+    final pending = _pendingSetWrites.remove(setId);
+    if (pending == null) return;
+    final previous = _setWriteChains[setId];
+    final run = (previous ?? Future<void>.value()).then(
+      (_) => _writePendingSet(setId, pending),
+    );
+    _setWriteChains[setId] = run;
+    await run;
+    if (identical(_setWriteChains[setId], run)) _setWriteChains.remove(setId);
+  }
+
+  Future<void> _writePendingSet(String setId, _PendingSetWrite p) async {
+    try {
+      await _sessionRepo.updateSet(
+        setId,
+        weight: p.weight,
+        clearWeight: p.clearWeight,
+        reps: p.reps,
+        clearReps: p.clearReps,
+        variationId: p.variationId,
+        clearVariation: p.clearVariation,
+        notes: p.notes,
+        clearNotes: p.clearNotes,
+      );
+      if (p.historical) {
+        // A completed session's row lives in the timeline — reload it so the
+        // history viewer and PR baseline read the edit.
+        await _loadPastSets();
+      }
+      // Live rows: no reload, no patch — the session watch stream re-emits
+      // the authoritative rows and recomputes.
+    } catch (e) {
+      error = e.toString();
+      notifyListeners();
+    }
+  }
+
   Future<void> updateSetField(
     SessionExerciseSet set, {
     double? weight,
@@ -1421,30 +1667,30 @@ class SessionViewModel extends ChangeNotifier {
     bool clearVariation = false,
     String? notes,
     bool clearNotes = false,
-  }) async {
-    try {
-      await _sessionRepo.updateSet(
-        set.sessionExerciseSetId,
-        weight: weight,
-        clearWeight: clearWeight,
-        reps: reps,
-        clearReps: clearReps,
-        variationId: variationId,
-        clearVariation: clearVariation,
-        notes: notes,
-        clearNotes: clearNotes,
-      );
-      await _loadSets();
-    } catch (e) {
-      error = e.toString();
-      notifyListeners();
-    }
+    bool immediate = false,
+  }) {
+    if (currentWorkoutId == null) return Future.value();
+    return _queueSetWrite(
+      set.sessionExerciseSetId,
+      historical: false,
+      immediate: immediate,
+      weight: weight,
+      clearWeight: clearWeight,
+      reps: reps,
+      clearReps: clearReps,
+      variationId: variationId,
+      clearVariation: clearVariation,
+      notes: notes,
+      clearNotes: clearNotes,
+    );
   }
 
   /// Edits a set from a *completed* workout — the history viewer's editable
   /// grid. Reuses the same `updateSet` write as the live session (it isn't
   /// gated by workout status), but reloads past-sets/PR-baseline state
   /// instead of the live `sets` list, since the edited row lives there.
+  /// Keystrokes debounce exactly like live rows; discrete edits (variation
+  /// pick, notes save) pass `immediate: true`.
   Future<void> updateHistoricalSetField(
     PastSetRow set, {
     double? weight,
@@ -1455,24 +1701,22 @@ class SessionViewModel extends ChangeNotifier {
     bool clearVariation = false,
     String? notes,
     bool clearNotes = false,
-  }) async {
-    try {
-      await _sessionRepo.updateSet(
-        set.sessionExerciseSetId,
-        weight: weight,
-        clearWeight: clearWeight,
-        reps: reps,
-        clearReps: clearReps,
-        variationId: variationId,
-        clearVariation: clearVariation,
-        notes: notes,
-        clearNotes: clearNotes,
-      );
-      await _loadPastSets();
-    } catch (e) {
-      error = e.toString();
-      notifyListeners();
-    }
+    bool immediate = false,
+  }) {
+    if (currentWorkoutId == null) return Future.value();
+    return _queueSetWrite(
+      set.sessionExerciseSetId,
+      historical: true,
+      immediate: immediate,
+      weight: weight,
+      clearWeight: clearWeight,
+      reps: reps,
+      clearReps: clearReps,
+      variationId: variationId,
+      clearVariation: clearVariation,
+      notes: notes,
+      clearNotes: clearNotes,
+    );
   }
 
   Future<void> deleteSetById(String setId) async {
@@ -1481,8 +1725,15 @@ class SessionViewModel extends ChangeNotifier {
   }
 
   /// Inserts a new set copying [set]'s weight/reps/variation/notes — the
-  /// grid row's swipe-action "Duplicate" button.
-  Future<void> duplicateSet(SessionExerciseSet set) async {
+  /// grid row's swipe-action "Duplicate" button. The row passes the text on
+  /// screen as [weight]/[reps] overrides: the copy must carry what the user
+  /// just typed, which a debounced write may not have settled into [set]
+  /// yet (2026-10-13).
+  Future<void> duplicateSet(
+    SessionExerciseSet set, {
+    double? weight,
+    List<num>? reps,
+  }) async {
     if (currentWorkoutId == null) return;
     final exerciseId = set.exerciseId;
     if (exerciseId == null) return;
@@ -1493,8 +1744,8 @@ class SessionViewModel extends ChangeNotifier {
         userId: _userId,
         variationId: set.variationId,
         setNumber: _nextSetNumberFor(exerciseId),
-        weight: set.weight,
-        reps: set.reps,
+        weight: weight ?? set.weight,
+        reps: reps ?? set.reps,
         notes: set.notes,
       );
       await _loadSets();
@@ -1626,6 +1877,15 @@ class SessionViewModel extends ChangeNotifier {
         await handle();
       } catch (_) {}
     }
+    // Belt-and-braces: any queued debounced write with no live row handle
+    // left (a timer that fired between row disposal and this flush) still
+    // lands before the caller prunes, snapshots, or navigates.
+    for (final id in List.of(_pendingSetWrites.keys)) {
+      _setDebounceTimers.remove(id)?.cancel();
+      try {
+        await _flushSetWrite(id);
+      } catch (_) {}
+    }
   }
 
   // ── Start / end / cancel workout ──────────────────────────────────────────
@@ -1667,6 +1927,8 @@ class SessionViewModel extends ChangeNotifier {
       // the freshly materialized planned rows.
       await _loadSets();
       _seedExerciseSlots();
+      // Live updates from here on — the streams re-emit after every write.
+      _subscribeToSessionStreams();
     } catch (e) {
       error = e.toString();
     }
@@ -1738,6 +2000,10 @@ class SessionViewModel extends ChangeNotifier {
       // Flush any in-flight row edits (typed but not yet blurred) so nothing
       // is pruned or finalized before the last keystroke lands.
       await flushPendingCommits();
+      // One authoritative pull before pruning: the prune reads `sets` in
+      // memory, and the watch stream's next emission may not have landed
+      // yet — a freshly typed value must never look like an untouched row.
+      await _pullCurrentSession();
       await _pruneUntouchedPlannedRows();
       // Capture BEFORE the reset wipes sets/sessionPrEvents/currentWorkoutId —
       // the post-questionnaire write target and the home congrats stats.
@@ -1898,6 +2164,15 @@ class SessionViewModel extends ChangeNotifier {
     activeSlotIndex = 0;
     draftSlotsByExercise = {};
     _draftRowIds.clear();
+    // A late debounce timer firing after cancel/end would write into a
+    // session that no longer exists (or was pruned) — kill them all, and the
+    // stream subscriptions with them.
+    for (final t in _setDebounceTimers.values) {
+      t.cancel();
+    }
+    _setDebounceTimers.clear();
+    _pendingSetWrites.clear();
+    _cancelSessionStreams();
     // lessonsByExercise is intentionally NOT cleared — lessons are durable,
     // cross-session data now, not reset per workout.
     historyEditConfirmed = false;
@@ -2014,6 +2289,11 @@ class SessionViewModel extends ChangeNotifier {
 
   @override
   void dispose() {
+    for (final t in _setDebounceTimers.values) {
+      t.cancel();
+    }
+    _setDebounceTimers.clear();
+    _cancelSessionStreams();
     slidePagesController.dispose();
     super.dispose();
   }
@@ -2025,5 +2305,52 @@ extension _FirstWhereOrNull<T> on List<T> {
       if (test(e)) return e;
     }
     return null;
+  }
+}
+
+/// One set's merged, not-yet-written edits — the debounce holder. Only the
+/// latest value per field survives; a later clearing keystroke sets the
+/// clear flag, which outlives any earlier value merge.
+class _PendingSetWrite {
+  double? weight;
+  bool clearWeight = false;
+  List<num>? reps;
+  bool clearReps = false;
+  String? variationId;
+  bool clearVariation = false;
+  String? notes;
+  bool clearNotes = false;
+
+  /// True when the set lives in a COMPLETED session — the flush then
+  /// reloads the past-sets timeline instead of relying on the live
+  /// session's watch stream.
+  bool historical = false;
+
+  void merge({
+    double? weight,
+    bool clearWeight = false,
+    List<num>? reps,
+    bool clearReps = false,
+    String? variationId,
+    bool clearVariation = false,
+    String? notes,
+    bool clearNotes = false,
+  }) {
+    if (weight != null || clearWeight) {
+      this.weight = weight;
+      this.clearWeight = clearWeight;
+    }
+    if (reps != null || clearReps) {
+      this.reps = reps;
+      this.clearReps = clearReps;
+    }
+    if (variationId != null || clearVariation) {
+      this.variationId = variationId;
+      this.clearVariation = clearVariation;
+    }
+    if (notes != null || clearNotes) {
+      this.notes = notes;
+      this.clearNotes = clearNotes;
+    }
   }
 }

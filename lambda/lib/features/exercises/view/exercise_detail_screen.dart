@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/styles/app_colors.dart';
+import '../../../data/cache/past_sets_timeline_cache.dart';
 import '../../../core/styles/app_fonts.dart';
 import '../../../core/styles/app_radius.dart';
 import '../../../core/styles/app_spacing.dart';
@@ -11,7 +12,6 @@ import '../../../core/utils/name_limit.dart';
 import '../../../data/models/session_exercise_set.dart';
 import '../../../data/repositories/lesson_repository.dart';
 import '../../../data/repositories/pr_view_setting_repository.dart';
-import '../../../data/repositories/session_repository.dart';
 import '../../../shared/widgets/glass_button.dart';
 import '../../../shared/widgets/lambda_input.dart';
 import '../../../shared/widgets/name_limit_counter.dart';
@@ -46,7 +46,6 @@ class ExerciseDetailScreen extends StatefulWidget {
 
 class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
   final _viewModel = ExerciseViewModel();
-  final _sessionRepo = SessionRepository();
   final _lessonRepo = LessonRepository();
   String? _name;
   List<PastSetRow> _sets = const [];
@@ -92,7 +91,10 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
       _error = null;
     });
     try {
-      final sets = await _sessionRepo.loadPastSetsTimeline(_userId);
+      // The shared timeline cache — the first reader pays the query, every
+      // later detail-screen push rides it until a write or sync round
+      // invalidates (2026-10-13).
+      final sets = await PastSetsTimelineCache.instance.get(_userId);
       final hidden = await PrViewSettingRepository().fetchHidden(
         _userId,
         widget.exerciseId,

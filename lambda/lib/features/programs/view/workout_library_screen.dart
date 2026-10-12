@@ -284,13 +284,13 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
                             actions: [
                               SwipeAction(
                                 icon: Icons.copy_rounded,
-                                label: 'Duplicate',
+                                
                                 color: AppColors.accent,
                                 onTap: () => _duplicate(w),
                               ),
                               SwipeAction(
                                 icon: Icons.delete_outline,
-                                label: 'Delete',
+                                
                                 color: AppColors.danger,
                                 onTap: () => _delete(w),
                               ),

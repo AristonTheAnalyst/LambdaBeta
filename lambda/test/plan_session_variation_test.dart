@@ -451,6 +451,12 @@ class _FakePlanned implements PlannedSessionRepository {
       sets.map(_hydrate).toList();
 
   @override
+  Future<List<PlannedSessionExerciseSet>> readNormalizedPlannedSession(
+    String plannedSessionId,
+  ) async =>
+      sets.map(_hydrate).toList();
+
+  @override
   Future<PlannedSessionExerciseSet> createPlannedSet(
     String userId,
     String plannedExerciseId, {

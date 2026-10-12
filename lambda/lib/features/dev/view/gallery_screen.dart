@@ -732,13 +732,13 @@ class _GalleryScreenState extends State<GalleryScreen> {
                             actions: [
                               SwipeAction(
                                 icon: Icons.copy_rounded,
-                                label: 'Duplicate',
+                                
                                 color: c.accent,
                                 onTap: () {},
                               ),
                               SwipeAction(
                                 icon: Icons.delete_outline,
-                                label: 'Delete',
+                                
                                 color: c.danger,
                                 onTap: () {},
                               ),

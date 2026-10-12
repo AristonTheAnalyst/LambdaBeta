@@ -331,7 +331,7 @@ class WorkoutEditorViewModel {
       // The planner reads its sets through the same normalizing read the
       // session preview uses, so the two cannot disagree about a template's
       // shape — how many sets a group has, or what order the groups are in.
-      final sets = await _plannedSessionRepo.fetchNormalizedPlannedSets(
+      final sets = await _plannedSessionRepo.readNormalizedPlannedSession(
         w.sessionId,
       );
       final exercises = await _plannedSessionRepo.fetchPlannedExercises(
@@ -349,9 +349,7 @@ class WorkoutEditorViewModel {
         activeSlotIndex: 0,
         workoutSetsLoading: false,
       );
-      for (final slot in state.value.workoutExerciseSlots) {
-        loadLessonsFor(slot.exerciseId);
-      }
+      await loadLessonsForSlots();
     } catch (e) {
       state.value = state.value.copyWith(
         workoutSetsLoading: false,
@@ -364,8 +362,9 @@ class WorkoutEditorViewModel {
   /// notes, and planned sets into the editor.
   Future<void> openStandaloneWorkout(String sessionId) async {
     await _ensureCatalog();
-    final workouts = await _plannedSessionRepo.fetchPlannedSessions(_userId);
-    final w = workouts.where((x) => x.sessionId == sessionId).firstOrNull;
+    // One row by id — the old path read the ENTIRE standalone list to find
+    // a single session (2026-10-13).
+    final w = await _plannedSessionRepo.fetchPlannedSessionById(sessionId);
     if (w == null) {
       // Surfacing the failure keeps the editor from hanging on its loading
       // spinner when a just-created row hasn't synced back yet.
@@ -384,7 +383,7 @@ class WorkoutEditorViewModel {
     try {
       // Same normalizing read as openEditWorkout — the planner and the session
       // preview agree because they read a template the same way.
-      final sets = await _plannedSessionRepo.fetchNormalizedPlannedSets(
+      final sets = await _plannedSessionRepo.readNormalizedPlannedSession(
         sessionId,
       );
       final exercises = await _plannedSessionRepo.fetchPlannedExercises(
@@ -402,9 +401,7 @@ class WorkoutEditorViewModel {
         activeSlotIndex: 0,
         workoutSetsLoading: false,
       );
-      for (final slot in state.value.workoutExerciseSlots) {
-        loadLessonsFor(slot.exerciseId);
-      }
+      await loadLessonsForSlots();
     } catch (e) {
       state.value = state.value.copyWith(
         workoutSetsLoading: false,
@@ -1072,9 +1069,15 @@ class WorkoutEditorViewModel {
     }
   }
 
+  /// Inserts a new planned set copying [ps] — the grid row's swipe
+  /// Duplicate. The row passes the text on screen as [targetWeight] /
+  /// [targetReps] overrides (targets are free text, and the copy must carry
+  /// what the user just typed, not the stale row values — 2026-10-13).
   Future<void> duplicatePlannedSessionExerciseSet(
-    PlannedSessionExerciseSet ps,
-  ) async {
+    PlannedSessionExerciseSet ps, {
+    String? targetWeight,
+    String? targetReps,
+  }) async {
     final workout = state.value.editingWorkout;
     if (workout == null) return;
     final exerciseId = ps.exerciseId ?? '';
@@ -1089,8 +1092,8 @@ class WorkoutEditorViewModel {
         exerciseId: exerciseId,
         variationId: ps.variationId,
         setNumber: setNumber,
-        targetWeight: ps.targetWeight,
-        targetReps: ps.targetReps,
+        targetWeight: targetWeight ?? ps.targetWeight,
+        targetReps: targetReps ?? ps.targetReps,
         targetNotes: ps.targetNotes,
       );
       final sets = await _plannedSessionRepo.fetchPlannedSets(
@@ -1268,10 +1271,27 @@ class WorkoutEditorViewModel {
   Future<void> loadLessonsFor(String exerciseId) async {
     try {
       final lessons = await _lessonRepo.fetchLessons(_userId, exerciseId);
-      debugPrint('lessons loadLessonsFor($exerciseId) → ${lessons.length}');
       final map = Map<String, List<Lesson>>.from(state.value.lessonsByExercise);
       map[exerciseId] = lessons;
       state.value = state.value.copyWith(lessonsByExercise: map);
+    } catch (e) {
+      state.value = state.value.copyWith(error: friendlyError(e));
+    }
+  }
+
+  /// One batch lessons read for the open workout's exercise slots — the
+  /// per-slot loop's replacement on open (2026-10-13).
+  Future<void> loadLessonsForSlots() async {
+    final ids = [
+      for (final slot in state.value.workoutExerciseSlots) slot.exerciseId,
+    ];
+    if (ids.isEmpty) return;
+    try {
+      final byExercise = await _lessonRepo.fetchLessonsForExercises(
+        _userId,
+        ids,
+      );
+      state.value = state.value.copyWith(lessonsByExercise: byExercise);
     } catch (e) {
       state.value = state.value.copyWith(error: friendlyError(e));
     }
