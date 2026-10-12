@@ -38,6 +38,24 @@ class SessionExerciseSet {
   /// set was materialized from — the ghost-hint anchor.
   final String? plannedSetId;
 
+  /// The same set, renumbered. Everything but the row's position is
+  /// untouched — a reorder moves sets, it never edits them.
+  SessionExerciseSet copyWith({int? setNumber}) => SessionExerciseSet(
+        sessionExerciseSetId: sessionExerciseSetId,
+        sessionExerciseId: sessionExerciseId,
+        sessionId: sessionId,
+        userId: userId,
+        setNumber: setNumber ?? this.setNumber,
+        reps: reps,
+        exerciseId: exerciseId,
+        variationId: variationId,
+        weight: weight,
+        notes: notes,
+        exerciseName: exerciseName,
+        variationName: variationName,
+        plannedSetId: plannedSetId,
+      );
+
   factory SessionExerciseSet.fromMap(Map<String, dynamic> map) =>
       SessionExerciseSet(
         sessionExerciseSetId: map['session_exercise_set_id'] as String,

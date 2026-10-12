@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/styles/app_colors.dart';
 import '../../../../core/styles/app_fonts.dart';
-import '../../../../core/styles/app_radius.dart';
 import '../../../../core/styles/app_spacing.dart';
 import '../../../../core/styles/app_text_styles.dart';
+import '../../../../core/utils/friendly_error.dart';
 import '../../../../core/utils/session_format.dart';
 import '../../../../data/models/planned_session.dart';
 import '../../../../data/repositories/planned_session_repository.dart';
@@ -13,8 +13,10 @@ import '../../../../shared/widgets/archived_sheet.dart';
 import '../../../../shared/widgets/slide_up_modal.dart';
 import '../../../../shared/widgets/swipe_actions.dart';
 import '../../../../shared/widgets/glass_button.dart';
+import '../../../../shared/widgets/lambda_search_field.dart';
 import '../../../../shared/widgets/page_header.dart';
-import '../viewmodel/program_detail_viewmodel.dart';
+import '../../../../shared/widgets/scroll_shrink_nav_bar.dart';
+import '../viewmodel/workout_editor_viewmodel.dart';
 import 'plan_session_screen.dart';
 
 /// Library of standalone planned workouts (a single session, no program).
@@ -79,14 +81,14 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
       if (mounted) {
         setState(() {
           _loading = false;
-          _error = e.toString();
+          _error = friendlyError(e);
         });
       }
     }
   }
 
   Future<void> _create() async {
-    final vm = ProgramDetailViewModel();
+    final vm = WorkoutEditorViewModel();
     await Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(
           builder: (_) => PlanSessionScreen(viewModel: vm, standalone: true)),
@@ -96,7 +98,7 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
   }
 
   Future<void> _edit(PlannedSession w) async {
-    final vm = ProgramDetailViewModel();
+    final vm = WorkoutEditorViewModel();
     await Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(
           builder: (_) => PlanSessionScreen(
@@ -225,30 +227,8 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
                           child: Row(
                             children: [
                               Expanded(
-                                child: TextField(
+                                child: LambdaSearchField(
                                   controller: _searchController,
-                                  style: AppFonts.ui(
-                                    fontSize: AppTextStyles.sm,
-                                    color: AppColors.primary,
-                                  ),
-                                  decoration: InputDecoration(
-                                    hintText: 'Search…',
-                                    hintStyle:
-                                        AppFonts.ui(color: AppColors.muted),
-                                    filled: true,
-                                    fillColor: AppColors.surface,
-                                    border: OutlineInputBorder(
-                                      borderRadius:
-                                          BorderRadius.circular(AppRadius.md),
-                                      borderSide: BorderSide.none,
-                                    ),
-                                    contentPadding:
-                                        const EdgeInsets.symmetric(
-                                      horizontal: 10,
-                                      vertical: 8,
-                                    ),
-                                    isDense: true,
-                                  ),
                                 ),
                               ),
                               const SizedBox(width: AppSpacing.sm),
@@ -286,7 +266,16 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
                                     ),
                                   )
                                 : ListView.separated(
-                        padding: const EdgeInsets.all(AppSpacing.lg),
+                        // Zero unless the shell's bar is floating over this
+                        // list, which is where the Library's Workouts tab
+                        // lives.
+                        padding: EdgeInsets.fromLTRB(
+                          AppSpacing.lg,
+                          AppSpacing.lg,
+                          AppSpacing.lg,
+                          AppSpacing.lg +
+                              ScrollShrinkNavBar.contentInset(context),
+                        ),
                         itemCount: _filtered.length,
                         separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.md),
                         itemBuilder: (context, i) {

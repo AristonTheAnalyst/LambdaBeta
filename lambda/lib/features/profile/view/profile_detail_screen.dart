@@ -6,6 +6,7 @@ import '../../../../core/styles/app_colors.dart';
 import '../../../../core/styles/app_fonts.dart';
 import '../../../../core/styles/app_spacing.dart';
 import '../../../../core/styles/app_text_styles.dart';
+import '../../../../core/utils/block_length.dart';
 import '../../../../shared/widgets/dob_picker.dart';
 import '../../../../shared/widgets/dropdown_select.dart';
 import '../../../../shared/widgets/glass_button.dart';
@@ -13,6 +14,7 @@ import '../../../../shared/mixins/unsaved_changes_guard.dart';
 import '../../../../shared/widgets/lambda_button.dart';
 import '../../../../shared/widgets/lambda_input.dart';
 import '../../../../shared/widgets/page_header.dart';
+import '../../../../shared/widgets/scroll_shrink_nav_bar.dart';
 import '../viewmodel/profile_viewmodel.dart';
 
 class ProfileDetailScreen extends StatefulWidget {
@@ -34,8 +36,25 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> with UnsavedC
 
   // ── UnsavedChangesGuard overrides ─────────────────────────────────────────
 
+  /// Whether the form holds something different from what is stored.
+  ///
+  /// "In edit mode" is not the same as "changed": entering edit mode and
+  /// pressing Save wrote the loaded values straight back. The guard asks this
+  /// question on the way out, and the Save button draws its visibility from it,
+  /// so one comparison answers both.
   @override
-  bool get hasUnsavedChanges => _viewModel.state.value.isEditing;
+  bool get hasUnsavedChanges {
+    if (!_viewModel.state.value.isEditing) return false;
+    final p = _viewModel.state.value.profile;
+    return _firstNameController.text.trim() != (p?.userName ?? '').trim() ||
+        _lastNameController.text.trim() != (p?.userLastname ?? '').trim() ||
+        // Parsed, not compared as text: "180" and "180.0" are one weight.
+        double.tryParse(_heightController.text) != p?.userHeightCm ||
+        double.tryParse(_weightController.text) != p?.userWeightKg ||
+        !sameCalendarDay(_editDob, p?.userDateOfBirth) ||
+        // '' and null are one answer — "not specified".
+        (_editGender ?? '') != (p?.userGender ?? '');
+  }
 
   @override
   Future<void> onSave() async => await _handleSave();
@@ -54,7 +73,21 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> with UnsavedC
   void initState() {
     super.initState();
     _viewModel.loadProfile();
+    // Save's visibility is a comparison against the stored profile, so the
+    // form has to rebuild as it is typed into.
+    for (final c in _formControllers) {
+      c.addListener(_onFormChanged);
+    }
   }
+
+  List<TextEditingController> get _formControllers => [
+        _firstNameController,
+        _lastNameController,
+        _heightController,
+        _weightController,
+      ];
+
+  void _onFormChanged() => setState(() {});
 
   void _populateEditFields() {
     final p = _viewModel.state.value.profile;
@@ -150,6 +183,8 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> with UnsavedC
 
   @override
   void dispose() {
+    // The controllers carry the rebuild listeners while the form is alive;
+    // disposing them releases both.
     _firstNameController.dispose();
     _lastNameController.dispose();
     _heightController.dispose();
@@ -221,7 +256,14 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> with UnsavedC
                 Expanded(
                 child: KeyboardDismissOnScroll(
                   child: SingleChildScrollView(
-                    padding: const EdgeInsets.all(AppSpacing.xl),
+                    // The shell's bar floats over this page, so the last row
+                    // has to be able to scroll clear of it.
+                    padding: EdgeInsets.fromLTRB(
+                      AppSpacing.xl,
+                      AppSpacing.xl,
+                      AppSpacing.xl,
+                      ScrollShrinkNavBar.contentInset(context),
+                    ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
@@ -406,14 +448,18 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> with UnsavedC
                                 ),
                               ),
                               const SizedBox(width: AppSpacing.sm),
-                              Expanded(
-                                child: LambdaButton(
-                                  label: 'Save',
-                                  onPressed: _handleSave,
-                                  loading: state.isSaving,
-                                  disabled: state.isBusy,
+                              // Only once there is something to save —
+                              // Cancel alone is the row's honest state on an
+                              // untouched form.
+                              if (hasUnsavedChanges)
+                                Expanded(
+                                  child: LambdaButton(
+                                    label: 'Save',
+                                    onPressed: _handleSave,
+                                    loading: state.isSaving,
+                                    disabled: state.isBusy,
+                                  ),
                                 ),
-                              ),
                             ],
                           ),
                           const SizedBox(height: AppSpacing.md),

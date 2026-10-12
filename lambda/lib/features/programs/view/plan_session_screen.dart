@@ -8,25 +8,67 @@ import '../../../core/styles/app_spacing.dart';
 import '../../../core/styles/app_text_styles.dart';
 import '../../../core/utils/session_format.dart';
 import '../../../data/models/planned_session.dart';
+import '../../../data/models/program_content.dart';
 import '../../../shared/mixins/unsaved_changes_guard.dart';
-import '../../../shared/widgets/bottom_nav_bar.dart';
+import '../../../shared/router/app_router.dart';
+import '../../../shared/widgets/add_exercise_modal.dart';
 import '../../../shared/widgets/dropdown_select.dart';
-import '../../../shared/widgets/segmented_control.dart';
+import '../../../shared/widgets/exercise_selector.dart';
+import '../../../shared/widgets/floating_bar.dart';
+import '../../../shared/widgets/scroll_shrink_nav_bar.dart';
 import '../../../shared/widgets/session_exercise_card.dart';
 import '../../../shared/widgets/session_set_row.dart';
-import '../../../shared/widgets/slide_up_modal.dart';
 import '../../../shared/widgets/stats_row.dart';
-import '../viewmodel/program_detail_viewmodel.dart';
+import '../viewmodel/workout_editor_viewmodel.dart';
+import 'review_container.dart';
 
-const _dayOfWeekOptions = [
-  SegmentOption<int?>(label: 'Mon', value: 1),
-  SegmentOption<int?>(label: 'Tue', value: 2),
-  SegmentOption<int?>(label: 'Wed', value: 3),
-  SegmentOption<int?>(label: 'Thu', value: 4),
-  SegmentOption<int?>(label: 'Fri', value: 5),
-  SegmentOption<int?>(label: 'Sat', value: 6),
-  SegmentOption<int?>(label: 'Sun', value: 7),
-];
+/// Asks before opening a workout editor while the program it belongs to is
+/// running.
+///
+/// Informational rather than a guard against loss: an edit applies to every
+/// session logged from now on, while the sets already logged are snapshots
+/// that will not change. Shared by the two ways in — the program's workout
+/// list, and a block's rows — because a second copy of this dialog is a second
+/// place for the wording to drift, and the two screens are the same promise.
+///
+/// Returns true when it is fine to proceed.
+Future<bool> confirmEditWhileRunning(BuildContext context) async {
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      backgroundColor: AppColors.surface,
+      title: Text(
+        'Edit while running?',
+        style: AppFonts.ui(
+          fontWeight: FontWeight.w800,
+          color: AppColors.primary,
+        ),
+      ),
+      content: Text(
+        'This program is active. Changes to the workout apply to future '
+        'sessions; past logged sets and PRs won\'t change.',
+        style: AppFonts.ui(color: AppColors.muted),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(ctx).pop(false),
+          child: Text('Cancel', style: AppFonts.ui(color: AppColors.muted)),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(ctx).pop(true),
+          child: Text(
+            'Edit',
+            style: AppFonts.ui(
+              color: AppColors.accent,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+  return ok == true;
+}
 
 /// Full-screen planned-workout editor that mirrors the active-session UX:
 /// tabbed by exercise, inline editable set grid (PlanSetRow), auto-commit on
@@ -39,9 +81,10 @@ class PlanSessionScreen extends StatefulWidget {
     this.workout,
     this.standalone = false,
     this.standaloneWorkoutId,
+    this.newWorkoutBlockId,
   });
 
-  final ProgramDetailViewModel viewModel;
+  final WorkoutEditorViewModel viewModel;
   final PlannedSession? workout; // null = new workout
 
   /// When true, a new workout is a standalone workout (no program).
@@ -50,20 +93,51 @@ class PlanSessionScreen extends StatefulWidget {
   /// When set, opens an existing standalone workout for editing.
   final String? standaloneWorkoutId;
 
+  /// The block a brand-new workout is made inside, when the editor was opened
+  /// from one. The link is created with it, so the workout is never briefly
+  /// unfiled — which matters because a blocked program has no Workouts tab for
+  /// an unfiled row to appear in.
+  final String? newWorkoutBlockId;
+
   @override
   State<PlanSessionScreen> createState() => _PlanSessionScreenState();
 }
 
 class _PlanSessionScreenState extends State<PlanSessionScreen>
-    with UnsavedChangesGuard<PlanSessionScreen> {
+    with UnsavedChangesGuard<PlanSessionScreen>, WidgetsBindingObserver {
   late final TextEditingController _nameCtrl;
   late final TextEditingController _notesCtrl;
   final _nameFocus = FocusNode();
   final _notesFocus = FocusNode();
 
+  /// The comparison taken mid-pass, held for as long as it is on screen.
+  /// Non-null means the editor is showing the workout as the record has it
+  /// rather than as the plan holds it — Compare toggles it, and the plan is
+  /// untouched underneath, so leaving is only forgetting the record.
+  ReviewComparison? _original;
+
+  /// The open workout as the record holds it — non-null while Compare is up.
+  /// The comparison is already narrowed to this workout, so there is exactly
+  /// one session to read, when there is one at all.
+  ContentSession? get _originalSession {
+    final sessions = _original?.before?.sessions;
+    return (sessions == null || sessions.isEmpty) ? null : sessions.first;
+  }
+
+  /// The plan's own set count: every real row, and every draft.
+  ///
+  /// A draft is an open set — added, not yet given a target, "do anything" —
+  /// and a set the user can see is a set the count has to own. Drafts
+  /// materialize as rows on input or on Save, so the number never moves when
+  /// one becomes a row.
+  int _planSetCount(WorkoutEditorState state) =>
+      state.workoutPlannedSessionExerciseSets.length +
+      state.workoutSetDrafts.values.fold(0, (count, ids) => count + ids.length);
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     // Initialize controllers from the workout param directly, NOT from the
     // viewmodel state (which may be stale from a previous closeWorkoutEditor).
     // This ensures the TextField shows the correct text from the start.
@@ -95,7 +169,9 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
       } else if (widget.standalone) {
         await widget.viewModel.createStandaloneWorkoutAndOpen();
       } else {
-        await widget.viewModel.createWorkoutAndOpen();
+        await widget.viewModel.createWorkoutAndOpen(
+          blockId: widget.newWorkoutBlockId,
+        );
       }
       // The VM may generate a bumped name ("New Session 2") after open —
       // sync the header controller so the editor shows the real name.
@@ -108,7 +184,20 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // The live session's rule, which the planner was missing: a draft row
+    // commits on blur alone, so backgrounding the app — or a kill right after
+    // — would drop the variation and note the row is holding for it.
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.detached) {
+      widget.viewModel.flushPendingCommits();
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     // Final commit on dispose in case the user navigates back without blurring.
     // Must happen before controller disposal — commit methods can trigger state
     // updates that rebuild widgets referencing these controllers.
@@ -144,19 +233,73 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
     widget.viewModel.discardWorkoutChanges();
   }
 
-  /// A nav-bar tab tap: run the unsaved-changes guard, then leave the
-  /// editor and jump to the tapped tab.
-  Future<void> _onNavTap(String route) async {
+  /// A nav-bar tab tap: run the unsaved-changes guard, then leave the editor
+  /// and jump to the tapped tab.
+  ///
+  /// Under a review the review route is what covers the shell, and this editor
+  /// is one of its pages — the whole ceremony has to come down, or the tab
+  /// would land behind it. No review means this editor is itself the pushed
+  /// route on top, and it pops alone.
+  Future<void> _onNavTap(int index) async {
     final router = GoRouter.of(context);
     if (!await confirmBack()) return;
     if (!mounted) return;
-    Navigator.of(context, rootNavigator: true).pop();
-    router.go(route);
+    if (!unwindReview(context)) {
+      Navigator.of(context, rootNavigator: true).pop();
+    }
+    router.go(tabRouteAt(index));
   }
+
+  /// Opens one exercise of the open workout — where the review bar's changes
+  /// sheet taps through to. The sheet closes itself first, so the switch lands
+  /// on the card the user asked for. A group with no slot left (an exercise
+  /// removed since the record) has nowhere to land and nothing happens — its
+  /// card offers no tap in the first place.
+  void _openExercise(String plannedExerciseId) {
+    final slots = widget.viewModel.state.value.workoutExerciseSlots;
+    final index = slots.indexWhere(
+      (slot) => slot.plannedExerciseId == plannedExerciseId,
+    );
+    if (index < 0) return;
+    widget.viewModel.tapTab(index);
+  }
+
+  /// This editor's chrome: the app's floating nav bar, which it draws itself
+  /// because it is pushed over the tab shell — or, while a review runs, the
+  /// review's own bar in the same container.
+  ///
+  /// [aboveBar] is the counts pill, stacked on the same floor — passed only
+  /// outside a review, where there is no review bar to carry the numbers. It
+  /// rides in the chrome rather than the page body because the two are one
+  /// stack: the floor of this screen is glass, however many bars are standing
+  /// on it.
+  ///
+  /// Compare is wired here because the record lives here: the bar loads a
+  /// comparison and hands it back, and what this screen does with it is swap
+  /// its own sets for it — and hand back null when the bar's button is tapped
+  /// again.
+  Widget _navBar(Widget child, {Widget? aboveBar}) => editorNavBar(
+    context,
+    child: child,
+    aboveBar: aboveBar,
+    onTap: _onNavTap,
+    settle: settleForReview,
+    settleForCompare: settleForCompare,
+    comparing: _original != null,
+    onExerciseTap: _openExercise,
+    onComparison: (comparison) {
+      // Rows re-seed their cells when the flip happens, and deliberately leave
+      // a focused cell alone — a commit reload must never eat what is being
+      // typed. Comparing is not a commit reload: the keyboard goes with it, so
+      // the record can never land under a half-updated, still-focused cell.
+      if (comparison != null) FocusScope.of(context).unfocus();
+      setState(() => _original = comparison);
+    },
+  );
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<ProgramDetailState>(
+    return ValueListenableBuilder<WorkoutEditorState>(
       valueListenable: widget.viewModel.state,
       builder: (context, state, _) {
         final workout = state.editingWorkout;
@@ -165,44 +308,51 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
           if (err != null) {
             // A failed open must never hang on the loading spinner — show the
             // reason and a way out instead.
+            // A review can open onto this: the pass keeps its way out even
+            // when the editor underneath never arrived. No Finish — nothing
+            // has been examined, so there is nothing to record.
             return Scaffold(
               backgroundColor: AppColors.bg,
-              body: Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(AppSpacing.xl),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        'Could not open workout',
-                        style: AppFonts.ui(
-                          fontSize: AppTextStyles.lg,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.primary,
-                        ),
-                      ),
-                      const SizedBox(height: AppSpacing.sm),
-                      Text(
-                        err,
-                        style: AppFonts.ui(
-                          fontSize: AppTextStyles.sm,
-                          color: AppColors.danger,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: AppSpacing.lg),
-                      TextButton(
-                        onPressed: () =>
-                            Navigator.of(context, rootNavigator: true).pop(),
-                        child: Text(
-                          'Close',
+              body: reviewChrome(
+                context,
+                settle: null,
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(AppSpacing.xl),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Could not open workout',
                           style: AppFonts.ui(
-                            color: AppColors.accent,
-                            fontWeight: FontWeight.w600,
+                            fontSize: AppTextStyles.lg,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.primary,
                           ),
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: AppSpacing.sm),
+                        Text(
+                          err,
+                          style: AppFonts.ui(
+                            fontSize: AppTextStyles.sm,
+                            color: AppColors.danger,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: AppSpacing.lg),
+                        TextButton(
+                          onPressed: () =>
+                              Navigator.of(context, rootNavigator: true).pop(),
+                          child: Text(
+                            'Close',
+                            style: AppFonts.ui(
+                              color: AppColors.accent,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -210,22 +360,43 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
           }
           return Scaffold(
             backgroundColor: AppColors.bg,
-            body: Center(
-              child: CircularProgressIndicator(color: AppColors.accent),
+            body: reviewChrome(
+              context,
+              settle: null,
+              child: Center(
+                child: CircularProgressIndicator(color: AppColors.accent),
+              ),
             ),
           );
         }
-        return buildGuardedScaffold(
+        // The record, when Compare is up. Read once here: it decides what the
+        // body shows, and the exercise card draws from it.
+        final original = _originalSession;
+        // The counts, in the app's own floating container — the same glass the
+        // nav bar wears, standing on the same floor one gap above it. They
+        // ride the chrome rather than the page because that is what they are:
+        // a readout about the page, at the floor, not a part of it. The page
+        // scrolls under them.
+        //
+        // Not during a pass (2026-10-10): there the review bar owns the floor
+        // and carries the numbers that matter — what CHANGED — so the pill
+        // stands down with the nav bar, and the page's inset shrinks with it
+        // ([FloatingBarOverlay] measures whatever is actually above the floor).
+        final statsBar = ReviewScope.maybeOf(context) == null
+            ? FloatingBar(
+                child: _PlanStatsBar(
+                  setCount: _planSetCount(state),
+                  exerciseCount: state.workoutExerciseSlots.length,
+                ),
+              )
+            : null;
+        return _navBar(buildGuardedScaffold(
           scaffold: Scaffold(
             backgroundColor: AppColors.bg,
             // The editor is pushed full-screen (root navigator), which covers
-            // the tab shell — re-render the shared nav bar so tab navigation
-            // stays available while editing. Tab taps run the unsaved-changes
-            // guard before leaving.
-            bottomNavigationBar: BottomNavBar(
-              currentRoute: '/exercises',
-              onTap: _onNavTap,
-            ),
+            // the tab shell — so it draws the app's floating bar itself. Tab
+            // taps run the unsaved-changes guard before leaving; while a
+            // review runs, the pass's own bar takes that bar's place.
             body: Column(
               children: [
                 _editableHeader(
@@ -249,132 +420,121 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
                     ),
                   ),
                 Expanded(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(
-                      AppSpacing.lg,
-                      AppSpacing.md,
-                      AppSpacing.lg,
-                      AppSpacing.xxl,
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        // Session Notes is hidden from the frontend for now
-                        // (the VM plumbing stays — see initState). The
-                        // day-of-week assignment lives on the program link
-                        // row, so it only applies to program workouts
-                        // (standalone templates have no schedule).
-                        if (!widget.viewModel.isStandaloneMode) ...[
-                          Text(
-                            'Day of week',
-                            style: AppFonts.ui(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w500,
-                              color: AppColors.primary,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          SegmentedControl<int?>(
-                            options: _dayOfWeekOptions,
-                            value: state.workoutDayOfWeekDraft,
-                            onChange: (v) =>
-                                widget.viewModel.commitWorkoutDayOfWeek(v),
-                          ),
-                          const SizedBox(height: AppSpacing.lg),
-                        ],
-                        if (state.workoutSetsLoading)
-                          Center(
-                            child: Padding(
-                              padding: const EdgeInsets.all(AppSpacing.lg),
-                              child: CircularProgressIndicator(
-                                color: AppColors.accent,
-                              ),
-                            ),
-                          )
-                        else if (state.workoutExerciseSlots.isEmpty) ...[
-                          const SizedBox(height: AppSpacing.xl),
-                          GestureDetector(
-                            onTap: _showAddExercise,
-                            child: Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.symmetric(
-                                vertical: AppSpacing.xxl,
-                              ),
-                              decoration: lambdaBox(ContainerTone.surface, radius: 
-                                  AppRadius.lg,
+                  // The page runs UNDER the floor: the nav or review bar and
+                  // the counts above it all paint over the page instead of
+                  // taking a band of it, so the scroll's own end has to clear
+                  // the whole stack.
+                  //
+                  // The Builder is load-bearing: this page draws those bars
+                  // around itself (`_navBar` below), so the inset only answers
+                  // from a context INSIDE that wrapper — measured from the
+                  // page's own build context it reads zero and the last set
+                  // ends up under the glass instead of clear of it.
+                  child: Builder(
+                    builder: (context) => SingleChildScrollView(
+                      padding: EdgeInsets.fromLTRB(
+                        AppSpacing.lg,
+                        AppSpacing.md,
+                        AppSpacing.lg,
+                        ScrollShrinkNavBar.contentInset(context),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          // Session Notes is hidden from the frontend for now
+                          // (the VM plumbing stays — see initState). Day-of-week
+                          // scheduling is retired for now: a workout is a list
+                          // of exercises, and nothing assigns it to a weekday.
+                          //
+                          // Compare does not change the page: the same card
+                          // draws the same workout, with the record's rows in
+                          // place of the plan's (`original` below). The card's
+                          // tabs and buttons hold their places — the flip is
+                          // values only — and the note box flips its words
+                          // with them: the record's own note, labelled as the
+                          // record's, while the record is up. Which is what
+                          // the bar's label is there to tell apart.
+                          if (state.workoutSetsLoading)
+                            Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(AppSpacing.lg),
+                                child: CircularProgressIndicator(
+                                  color: AppColors.accent,
                                 ),
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    Icons.fitness_center_outlined,
-                                    size: 32,
-                                    color: AppColors.muted,
+                              ),
+                            )
+                          else if (state.workoutExerciseSlots.isEmpty) ...[
+                            const SizedBox(height: AppSpacing.xl),
+                            GestureDetector(
+                              onTap: _showAddExercise,
+                              child: Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: AppSpacing.xxl,
+                                ),
+                                decoration: lambdaBox(ContainerTone.surface, radius:
+                                    AppRadius.lg,
                                   ),
-                                  const SizedBox(height: AppSpacing.sm),
-                                  Text(
-                                    'Tap to add an exercise',
-                                    style: AppFonts.ui(
-                                      fontSize: AppTextStyles.md,
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.fitness_center_outlined,
+                                      size: 32,
                                       color: AppColors.muted,
                                     ),
-                                  ),
-                                  const SizedBox(height: AppSpacing.xs),
-                                  Text(
-                                    'A workout needs at least one exercise',
-                                    style: AppFonts.ui(
-                                      fontSize: AppTextStyles.xs,
-                                      color: AppColors.muted,
+                                    const SizedBox(height: AppSpacing.sm),
+                                    Text(
+                                      'Tap to add an exercise',
+                                      style: AppFonts.ui(
+                                        fontSize: AppTextStyles.md,
+                                        color: AppColors.muted,
+                                      ),
                                     ),
-                                  ),
-                                ],
+                                    const SizedBox(height: AppSpacing.xs),
+                                    Text(
+                                      'A workout needs at least one exercise',
+                                      style: AppFonts.ui(
+                                        fontSize: AppTextStyles.xs,
+                                        color: AppColors.muted,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
-                          ),
-                        ] else if (state.activeSlot != null)
-                          _PlanExerciseCard(
-                            viewModel: widget.viewModel,
-                            slot: state.activeSlot!,
-                            onAddExercise: _showAddExercise,
-                            onRemoveExercise: () =>
-                                _confirmRemoveExercise(state.activeSlotIndex),
-                          ),
-                      ],
+                          ] else if (state.activeSlot != null)
+                            _PlanExerciseCard(
+                              viewModel: widget.viewModel,
+                              slot: state.activeSlot!,
+                              onAddExercise: _showAddExercise,
+                              original: original,
+                              originalNotes: _original?.beforeNotes ?? const {},
+                            ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
-                // Sticky bottom: SETS/EXERCISES, greyed — mirrors the live
-                // session's bottom stats bar; greyed because planning has no
-                // live data to summarize.
-                Container(
-                  padding: const EdgeInsets.fromLTRB(
-                    AppSpacing.lg,
-                    AppSpacing.sm,
-                    AppSpacing.lg,
-                    AppSpacing.sm,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppColors.bg,
-                    border: Border(
-                      top: BorderSide(color: AppColors.border, width: 0.5),
-                    ),
-                  ),
-                  child: _PlanStatsBar(
-                    setCount: state.workoutPlannedSessionExerciseSets.length,
-                    exerciseCount: state.workoutExerciseSlots.length,
-                    greyed: true,
-                  ),
-                ),
+                // The counts used to be a strip of their own here, pinned over
+                // a painted band. They are a floating bar now (`statsBar`,
+                // above) — the whole floor of this screen is glass, and the
+                // page scrolls under all of it.
               ],
             ),
           ),
-        );
+        ), aboveBar: statsBar);
       },
     );
   }
 
   Widget _editableHeader(bool unsaved, bool noExercises) {
     final topPadding = MediaQuery.of(context).padding.top;
+    // Inside a review the header keeps no Delete: the trash deletes the
+    // planned workout, which is not what a pass is doing — taking a workout
+    // OUT of a review is the landing's swipe. The pass's own verbs (the
+    // workout's note among them) are on its bar, at the floor.
+    final review = ReviewScope.maybeOf(context);
     return Container(
       padding: EdgeInsets.only(top: topPadding),
       decoration: BoxDecoration(
@@ -405,6 +565,9 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
               ),
             ),
             Positioned(
+              // The symmetric 88-band every header uses (PageHeader's), so
+              // the name is centred on the SCREEN — not on the gap left
+              // between the back chevron and the chips.
               left: 88,
               right: 88,
               top: 0,
@@ -431,11 +594,15 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
               ),
             ),
             Positioned(
-              right: 6,
+              // The bare trash keeps the tighter 6 that its glyph's own side
+              // bearing already answers for; the boxed Save reads to the edge
+              // of its border, so it takes the inset the header's other
+              // controls use.
+              right: unsaved && !noExercises ? 16 : 6,
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (unsaved && !noExercises)
+                  if (unsaved && !noExercises) ...[
                     GestureDetector(
                       onTap: () => widget.viewModel.saveWorkout(),
                       child: Container(
@@ -448,22 +615,24 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
                         child: Text(
                           'Save',
                           style: AppFonts.ui(
-                            fontSize: 12,
+                            fontSize: 14,
                             fontWeight: FontWeight.w700,
                             color: AppColors.success,
                           ),
                         ),
                       ),
                     ),
-                  const SizedBox(width: 10),
-                  GestureDetector(
-                    onTap: _confirmDelete,
-                    child: Icon(
-                      Icons.delete_outline,
-                      size: 20,
-                      color: AppColors.danger,
+                    if (review == null) const SizedBox(width: 10),
+                  ],
+                  if (review == null)
+                    GestureDetector(
+                      onTap: _confirmDelete,
+                      child: Icon(
+                        Icons.delete_outline,
+                        size: 20,
+                        color: AppColors.danger,
+                      ),
                     ),
-                  ),
                 ],
               ),
             ),
@@ -568,11 +737,36 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
   }
 
   void _showAddExercise() {
-    showLambdaModal(
+    final vm = widget.viewModel;
+    showAddExerciseModal(
       context,
-      fitContent: true,
-      keyboardAware: true,
-      child: _AddExerciseContent(viewModel: widget.viewModel),
+      listenable: vm.state,
+      entries: () {
+        final s = vm.state.value;
+        return [
+          for (final e in s.exerciseDetailMap.values)
+            AddExerciseEntry(
+              exerciseId: e.exerciseId,
+              name: toProperCase(e.name),
+              lastUsed: lastUsedFromHistory(
+                s.historyByExercise,
+                e.exerciseId,
+              ),
+            ),
+        ];
+      },
+      isAdded: (id) => vm.state.value.workoutExerciseSlots.any(
+        (slot) => slot.exerciseId == id,
+      ),
+      onAdd: vm.addPlannedExerciseGroup,
+      onRemoveRequest: (id) async {
+        final i = vm.state.value.workoutExerciseSlots.indexWhere(
+          (slot) => slot.exerciseId == id,
+        );
+        if (i >= 0) _confirmRemoveExercise(i);
+      },
+      onCreate: vm.submitNewExercise,
+      isCreating: () => vm.state.value.newExCreating,
     );
   }
 }
@@ -580,22 +774,25 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
 // ── Stats Bar ────────────────────────────────────────────────────────────────
 
 class _PlanStatsBar extends StatelessWidget {
-  const _PlanStatsBar({
-    required this.setCount,
-    required this.exerciseCount,
-    this.greyed = false,
-  });
+  const _PlanStatsBar({required this.setCount, required this.exerciseCount});
 
   final int setCount;
   final int exerciseCount;
-  final bool greyed;
 
   @override
   Widget build(BuildContext context) {
     return StatsRow(
+      // Two tiles, read across: SETS 25 · EXERCISES 4 — the way the live
+      // session's own bar reads the same kinds of count.
+      inline: true,
+      // No container of its own: this row is the CONTENT of the floating
+      // glass pill it rides in ([FloatingBar]), and a box inside a glass
+      // reads as two containers. Bare, its words sit straight on the glass at
+      // full strength.
+      tone: null,
       tiles: [
-        StatsTile(label: 'SETS', value: '$setCount', greyed: greyed),
-        StatsTile(label: 'EXERCISES', value: '$exerciseCount', greyed: greyed),
+        StatsTile(label: 'SETS', value: '$setCount'),
+        StatsTile(label: 'EXERCISES', value: '$exerciseCount'),
       ],
     );
   }
@@ -613,22 +810,71 @@ class _PlanExerciseCard extends StatelessWidget {
     required this.viewModel,
     required this.slot,
     required this.onAddExercise,
-    required this.onRemoveExercise,
+    this.original,
+    this.originalNotes = const {},
   });
 
-  final ProgramDetailViewModel viewModel;
+  final WorkoutEditorViewModel viewModel;
   final PlanExerciseSlot slot;
   final VoidCallback onAddExercise;
-  final VoidCallback onRemoveExercise;
+
+  /// The open workout as the record holds it, while Compare is up — the same
+  /// workout drawn through this same card, with the record's rows in place of
+  /// the plan's.
+  ///
+  /// The tabs and `+ ADD SET` do not move — the flip is values only, so the
+  /// grid must not change height — but the names do carry the record's
+  /// reading while it is up: a tab the record does not hold wears a green
+  /// plus ([ExerciseMark.added]), which is a fact about the plan that only
+  /// the record can reveal. The note box flips with the values: it
+  /// reads the record's own note ([originalNotes]), labelled as the record's,
+  /// because the pass's note is about the plan and the plan is not what is on
+  /// screen. The rows themselves are read-only and draggable by nobody: the
+  /// record is immutable, and the plan underneath is untouched.
+  final ContentSession? original;
+
+  /// [original]'s exercise notes, keyed by `planned_exercise_id` — the
+  /// record's own words, carried by the comparison that loaded it. Empty for
+  /// a record that left none (and for a baseline: the plan as found had no
+  /// notes of its own).
+  final Map<String, String> originalNotes;
 
   @override
   Widget build(BuildContext context) {
+    final review = ReviewScope.maybeOf(context);
+    if (review == null) return _card(context, null, const {});
+    // The note bar is the pass's record in flight: a save from any card has
+    // to land under its exercise without the screen being reloaded.
+    return ValueListenableBuilder<Map<String, String>>(
+      valueListenable: reviewNotesNotifier,
+      builder: (context, notes, _) => _card(context, review, notes),
+    );
+  }
+
+  /// The card itself. [review] is the review this card is being drawn inside,
+  /// when there is one; [notes] the exercise notes it carries so far.
+  Widget _card(
+    BuildContext context,
+    ReviewSession? review,
+    Map<String, String> notes,
+  ) {
     final vm = viewModel;
     final s = vm.state.value;
     final exerciseId = slot.exerciseId;
     final plannedExerciseId = slot.plannedExerciseId ?? '';
     final sets = s.plannedSetsFor(plannedExerciseId);
     final draftIds = s.workoutSetDrafts[plannedExerciseId] ?? const <int>[];
+    // The record's own entry for the exercise on screen, when Compare is up.
+    // No entry means the record held no sets for it — a fact worth showing
+    // plainly, so the grid is drawn empty rather than the plan leaking back.
+    final record = original == null
+        ? null
+        : _recordExercise(original!, plannedExerciseId);
+    // A record names its variation by id; names live in the library, and a
+    // rename shows through here as it does everywhere else.
+    final recordVariationNames = {
+      for (final v in s.allVariations) v.variationId: v.name,
+    };
 
     final variationOptions = [
       const DropdownOption<String?>(label: 'No Variation', value: null),
@@ -641,90 +887,140 @@ class _PlanExerciseCard extends StatelessWidget {
     ];
 
     List<Widget> rows = [];
-    for (var i = 0; i < sets.length; i++) {
-      final set = sets[i];
-      rows.add(
-        SessionSetRow(
-          key: ValueKey(set.plannedSetId),
-          mode: SetRowMode.planned,
-          exerciseId: exerciseId,
-          displayIndex: i + 1,
-          isDraft: false,
-          initialWeightText: set.targetWeight ?? '',
-          initialRepsText: set.targetReps ?? '',
-          initialVariationId: set.variationId,
-          initialVariationName: set.variationName,
-          initialNotes: set.targetNotes,
-          hasNotes: set.targetNotes?.isNotEmpty ?? false,
-          onCommit: (isDraft, v) async {
-            if (!isDraft) {
-              await vm.quickUpdatePlannedSessionExerciseSet(
-                set,
-                weight: v.weight,
-                clearWeight: v.weight == null,
-                reps: v.reps,
-                clearReps: v.reps == null,
-              );
-            }
-          },
-          onVariationChanged: (id) => vm.quickUpdatePlannedSessionExerciseSet(
-            set,
-            variationId: id,
-            clearVariation: id == null,
+    if (original != null) {
+      // The record's rows, and only its rows: no drafts, no drag handles, no
+      // callback that could write. Keyed by the same `planned_set_id` the live
+      // row carries, so the flip reuses each element and changes only its
+      // values.
+      final recordSets = record?.sets ?? const <ContentSet>[];
+      for (var i = 0; i < recordSets.length; i++) {
+        rows.add(
+          recordSetRow(
+            set: recordSets[i],
+            index: i,
+            exerciseId: record?.exerciseId ?? exerciseId,
+            variationNames: recordVariationNames,
+            variationOptions: variationOptions,
+            allVariations: allVariations,
           ),
-          onNotesSave: (v) => vm.quickUpdatePlannedSessionExerciseSet(
-            set,
-            notes: v.trim().isEmpty ? null : v.trim(),
-            clearNotes: v.trim().isEmpty,
+        );
+      }
+    } else {
+      for (var i = 0; i < sets.length; i++) {
+        final set = sets[i];
+        rows.add(
+          SessionSetRow(
+            key: ValueKey(set.plannedSetId),
+            mode: SetRowMode.planned,
+            exerciseId: exerciseId,
+            displayIndex: i + 1,
+            isDraft: false,
+            dragIndex: i,
+            initialWeightText: set.targetWeight ?? '',
+            initialRepsText: set.targetReps ?? '',
+            initialVariationId: set.variationId,
+            initialVariationName: set.variationName,
+            initialNotes: set.targetNotes,
+            hasNotes: set.targetNotes?.isNotEmpty ?? false,
+            onRegisterCommit: vm.registerCommitHandle,
+            onUnregisterCommit: vm.unregisterCommitHandle,
+            onCommit: (isDraft, v) async {
+              if (!isDraft) {
+                await vm.quickUpdatePlannedSessionExerciseSet(
+                  set,
+                  weight: v.weight,
+                  clearWeight: v.weight == null,
+                  reps: v.reps,
+                  clearReps: v.reps == null,
+                );
+              }
+            },
+            onVariationChanged: (id) => vm.quickUpdatePlannedSessionExerciseSet(
+              set,
+              variationId: id,
+              clearVariation: id == null,
+            ),
+            onNotesSave: (v) => vm.quickUpdatePlannedSessionExerciseSet(
+              set,
+              notes: v.trim().isEmpty ? null : v.trim(),
+              clearNotes: v.trim().isEmpty,
+            ),
+            onDelete: () => vm.deletePlannedSessionExerciseSet(set.plannedSetId),
+            onDuplicate: () => vm.duplicatePlannedSessionExerciseSet(set),
+            variationOptions: variationOptions,
+            allVariations: allVariations,
+            findSimilarVariations: vm.findSimilarVariations,
+            submitNewVariation: vm.submitNewVariation,
           ),
-          onDelete: () => vm.deletePlannedSessionExerciseSet(set.plannedSetId),
-          onDuplicate: () => vm.duplicatePlannedSessionExerciseSet(set),
-          variationOptions: variationOptions,
-          allVariations: allVariations,
-          findSimilarVariations: vm.findSimilarVariations,
-          submitNewVariation: vm.submitNewVariation,
-        ),
-      );
+        );
+      }
+      for (var i = 0; i < draftIds.length; i++) {
+        final draftId = draftIds[i];
+        rows.add(
+          SessionSetRow(
+            key: ValueKey('draft-$draftId'),
+            mode: SetRowMode.planned,
+            exerciseId: exerciseId,
+            displayIndex: sets.length + i + 1,
+            isDraft: true,
+            initialWeightText: '',
+            initialRepsText: '',
+            initialVariationId: null,
+            hasNotes: false,
+            // Registered like a real row's: a draft's variation and notes live
+            // in the row until it commits, and the commit that saves them is
+            // whatever destroys or flushes the row — the exercise switch above
+            // all, since only the active card is built.
+            onRegisterCommit: vm.registerCommitHandle,
+            onUnregisterCommit: vm.unregisterCommitHandle,
+            onCommit: (isDraft, v) async {
+              if (isDraft) {
+                await vm.quickCreatePlannedSessionExerciseSet(
+                  exerciseId: exerciseId,
+                  plannedExerciseId: plannedExerciseId,
+                  draftId: draftId,
+                  variationId: v.variationId,
+                  weight: v.weight,
+                  reps: v.reps,
+                  notes: v.notes,
+                );
+              }
+            },
+            onVariationChanged: (_) {},
+            onNotesSave: (_) {},
+            onDelete: () async => vm.removeDraftPlannedSessionExerciseSet(
+              plannedExerciseId,
+              draftId,
+            ),
+            onDuplicate: () {},
+            variationOptions: variationOptions,
+            allVariations: allVariations,
+            findSimilarVariations: vm.findSimilarVariations,
+            submitNewVariation: vm.submitNewVariation,
+          ),
+        );
+      }
     }
-    for (var i = 0; i < draftIds.length; i++) {
-      final draftId = draftIds[i];
-      rows.add(
-        SessionSetRow(
-          key: ValueKey('draft-$draftId'),
-          mode: SetRowMode.planned,
-          exerciseId: exerciseId,
-          displayIndex: sets.length + i + 1,
-          isDraft: true,
-          initialWeightText: '',
-          initialRepsText: '',
-          initialVariationId: null,
-          hasNotes: false,
-          onCommit: (isDraft, v) async {
-            if (isDraft) {
-              await vm.quickCreatePlannedSessionExerciseSet(
-                exerciseId: exerciseId,
-                plannedExerciseId: plannedExerciseId,
-                draftId: draftId,
-                variationId: v.variationId,
-                weight: v.weight,
-                reps: v.reps,
-                notes: v.notes,
-              );
-            }
-          },
-          onVariationChanged: (_) {},
-          onNotesSave: (_) {},
-          onDelete: () async => vm.removeDraftPlannedSessionExerciseSet(
-            plannedExerciseId,
-            draftId,
-          ),
-          onDuplicate: () {},
-          variationOptions: variationOptions,
-          allVariations: allVariations,
-          findSimilarVariations: vm.findSimilarVariations,
-          submitNewVariation: vm.submitNewVariation,
-        ),
-      );
+
+    // The record's side of the eye, on the plan's own names: while Compare is
+    // up, a tab the record does not hold wears a green plus — it is an
+    // exercise this pass added. There is no mirror-image minus, and none is
+    // missing: the flip is values only, so the tabs are the plan's slots, and
+    // an exercise the record held and the plan dropped has no tab to sit on
+    // (2026-10-12 — the completed review's own screen, which lists each side's
+    // exercises, is where both marks can be read).
+    final exerciseMarks = <ExerciseMark?>[];
+    if (original != null) {
+      for (final slot in s.workoutExerciseSlots) {
+        final id = slot.plannedExerciseId;
+        // A slot with no planned row yet — being created right now — cannot
+        // be in a frozen record either.
+        exerciseMarks.add(
+          id != null && _recordExercise(original!, id) != null
+              ? null
+              : ExerciseMark.added,
+        );
+      }
     }
 
     return SessionExerciseCard(
@@ -732,225 +1028,97 @@ class _PlanExerciseCard extends StatelessWidget {
         for (final slot in s.workoutExerciseSlots)
           toProperCase(vm.exerciseDisplayName(slot.exerciseId)),
       ],
+      exerciseMarks: exerciseMarks,
       activeIndex: s.activeSlotIndex,
+      // Switching tabs is looking, and stays: the record is read one exercise
+      // at a time. Reordering and adding are writing, and grey out — the plan
+      // underneath is not what is on screen.
       onSelect: (i) => vm.tapTab(i),
-      onMove: (i, dir) => vm.reorderExercises(i, i + dir),
-      onAdd: onAddExercise,
-      onDeleteRequest: onRemoveExercise,
+      onMove: original == null
+          ? (i, dir) => vm.reorderExercises(i, i + dir)
+          : null,
+      onAdd: original == null ? onAddExercise : null,
       lessonsCount: 0,
       onLessonsTap: null,
       prCount: 0,
       onPrTap: null,
       rows: rows,
-      onAddSet: () => vm.addDraftPlannedSessionExerciseSet(plannedExerciseId),
+      // While the record is up there is nothing to add a set to, and nothing
+      // to drag: the row is drawn dead to hold the card's height, and the
+      // grid stops being reorderable — both are the card's own height and
+      // order staying put across the flip.
+      onAddSet: original == null
+          ? () => vm.addDraftPlannedSessionExerciseSet(plannedExerciseId)
+          : null,
+      reserveAddSet: original != null,
+      onReorderSets: original == null
+          ? (oldIndex, newIndex) =>
+                vm.reorderPlannedSets(plannedExerciseId, oldIndex, newIndex)
+          : null,
       history: null,
+      // Inside a review the card also carries that review's note for this
+      // exercise — the box is shown even with none yet, because an empty box
+      // is the way in. Outside one the note never existed and the box is not
+      // drawn; a slot with no planned row has nothing to key a note to.
+      //
+      // While the record is up the box reads the RECORD's note instead —
+      // read-only (no change callback is wired, so the box is display and
+      // nothing else) and labelled as the record's, because the pass's note
+      // is about the plan and the plan is not what is on screen. An exercise
+      // the record left nothing about keeps the box anyway, reading
+      // [kNoPreviousNoteText]: the flip changes values, never furniture, and
+      // the absence of a note is itself an answer.
+      reviewNote: original != null
+          ? originalNotes[plannedExerciseId]
+          : review == null
+          ? null
+          : notes[plannedExerciseId],
+      reviewNoteLabel: original == null
+          ? kReviewNoteLabel
+          : kPreviousReviewNoteLabel,
+      reviewNoteEmptyText: original == null ? null : kNoPreviousNoteText,
+      onReviewNoteChanged:
+          original != null || review == null || plannedExerciseId.isEmpty
+          ? null
+          : (note) =>
+                _writeReviewNote(context, review, plannedExerciseId, note),
     );
   }
-}
 
-class _AddExerciseContent extends StatefulWidget {
-  const _AddExerciseContent({required this.viewModel});
-
-  final ProgramDetailViewModel viewModel;
-
-  @override
-  State<_AddExerciseContent> createState() => _AddExerciseContentState();
-}
-
-class _AddExerciseContentState extends State<_AddExerciseContent> {
-  String _query = '';
-
-  List<MapEntry<String, String>> get _filtered {
-    final s = widget.viewModel.state.value;
-    final entries = s.exerciseDetailMap.entries
-        .where(
-          (e) => toProperCase(
-            e.value.name,
-          ).toLowerCase().contains(_query.toLowerCase()),
-        )
-        .map((e) => MapEntry(e.key, toProperCase(e.value.name)))
-        .toList();
-    // Most recently used first (newest history session per exercise, nulls
-    // last), then name.
-    final lastUsed = <String, DateTime>{};
-    for (final sessions in s.historyByExercise.values) {
-      if (sessions.isNotEmpty) {
-        final exId = sessions.first.sets.first.exerciseId;
-        if (exId != null) lastUsed[exId] = sessions.first.date;
-      }
+  /// The record's own entry for one exercise. Null when the record holds no
+  /// such exercise — the workout had no sets for it then, which the empty grid
+  /// then says plainly.
+  ContentExercise? _recordExercise(ContentSession session, String plannedExerciseId) {
+    for (final exercise in session.exercises) {
+      if (exercise.plannedExerciseId == plannedExerciseId) return exercise;
     }
-    entries.sort((a, b) {
-      final da = lastUsed[a.key];
-      final db = lastUsed[b.key];
-      if (da != null && db != null) return db.compareTo(da);
-      if (da != null) return -1;
-      if (db != null) return 1;
-      return a.value.toLowerCase().compareTo(b.value.toLowerCase());
-    });
-    return entries;
+    return null;
   }
 
-  bool get _canCreate =>
-      _query.trim().length > 1 &&
-      !widget.viewModel.state.value.exerciseDetailMap.values.any(
-        (e) => e.name.toLowerCase() == _query.trim().toLowerCase(),
+  /// Writes the note this exercise's box now holds, one keystroke at a time.
+  ///
+  /// There is no Save to press and no sheet to close: the box is the whole of
+  /// the note's life, and the house rule for typed values applies — write as
+  /// it is typed, so leaving the screen can never lose a word. The write goes
+  /// row-first through [saveReviewExerciseNote]; a failure says so, and the
+  /// box keeps what was typed (the next keystroke carries it again).
+  Future<void> _writeReviewNote(
+    BuildContext context,
+    ReviewSession review,
+    String plannedExerciseId,
+    String note,
+  ) async {
+    try {
+      await saveReviewExerciseNote(
+        reviewId: review.reviewId,
+        plannedExerciseId: plannedExerciseId,
+        note: note,
       );
-
-  void _pick(String exerciseId) {
-    widget.viewModel.addPlannedExerciseGroup(exerciseId);
-    Navigator.of(context, rootNavigator: true).pop();
-  }
-
-  Future<void> _createNew() async {
-    final id = await widget.viewModel.submitNewExercise(_query);
-    if (id == null || !mounted) return;
-    _pick(id);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(
-          AppSpacing.xl,
-          AppSpacing.xl,
-          AppSpacing.xl,
-          AppSpacing.xl,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'Add exercise',
-                    style: AppFonts.ui(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.primary,
-                    ),
-                  ),
-                ),
-                GestureDetector(
-                  onTap: () => Navigator.of(context, rootNavigator: true).pop(),
-                  child: Icon(Icons.close, size: 20, color: AppColors.muted),
-                ),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.lg),
-            TextField(
-              autofocus: true,
-              style: AppFonts.ui(fontSize: 14, color: AppColors.primary),
-              decoration: InputDecoration(
-                hintText: 'Search exercises…',
-                hintStyle: AppFonts.ui(color: AppColors.muted),
-                prefixIcon: Icon(
-                  Icons.search,
-                  size: 18,
-                  color: AppColors.muted,
-                ),
-                filled: true,
-                fillColor: AppColors.surfaceHigh,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(AppRadius.md),
-                  borderSide: BorderSide(color: AppColors.border),
-                ),
-              ),
-              onChanged: (v) => setState(() => _query = v),
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 260),
-              child: ValueListenableBuilder<ProgramDetailState>(
-                valueListenable: widget.viewModel.state,
-                builder: (context, state, _) => ListView(
-                  shrinkWrap: true,
-                  children: [
-                    ..._filtered.map(
-                      // Exercises are unique per session — already-added
-                      // ones are marked, and picking one just switches to
-                      // its existing tab (no second group is created).
-                      (e) => _resultRow(
-                        e.value,
-                        () => _pick(e.key),
-                        added: state.workoutExerciseSlots.any(
-                          (sl) => sl.exerciseId == e.key,
-                        ),
-                      ),
-                    ),
-                    if (_canCreate)
-                      _resultRow(
-                        '+ Create "${_query.trim()}"',
-                        state.newExCreating ? null : _createNew,
-                        accent: true,
-                      ),
-                    if (_filtered.isEmpty &&
-                        !_canCreate &&
-                        _query.trim().isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(
-                          vertical: AppSpacing.lg,
-                        ),
-                        child: Center(
-                          child: Text(
-                            'No exercises found',
-                            style: AppFonts.ui(
-                              fontSize: 13,
-                              color: AppColors.muted,
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _resultRow(String label, VoidCallback? onTap, {bool accent = false, bool added = false}) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          // Pressable rows — the glass recipe in their semantic color.
-          decoration: glassBox(accent ? AppColors.accent : AppColors.primary),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  label,
-                  style: AppFonts.ui(
-                    fontSize: 14,
-                    fontWeight: accent ? FontWeight.w700 : FontWeight.w600,
-                    color: accent ? AppColors.accent : AppColors.primary,
-                  ),
-                ),
-              ),
-              if (added) ...[
-                const SizedBox(width: 8),
-                Icon(Icons.check_circle, size: 14, color: AppColors.success),
-                const SizedBox(width: 4),
-                Text(
-                  'Added',
-                  style: AppFonts.mono(
-                    fontSize: 9,
-                    letterSpacing: 0.4,
-                    color: AppColors.success,
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        SnackBar(content: Text('Could not save the note: $e')),
+      );
+    }
   }
 }

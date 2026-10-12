@@ -1,5 +1,6 @@
 import 'package:uuid/uuid.dart';
 import '../../core/powersync/database.dart' as ps;
+import '../../core/utils/lambda_exception.dart';
 import '../../shared/utils/unique_name.dart';
 import '../models/planned_session.dart';
 import '../models/planned_session_exercise.dart';
@@ -45,15 +46,22 @@ class PlannedSessionRepository {
     String? excludeSessionId,
   }) async {
     if (await _nameExists(userId, name, excludeSessionId: excludeSessionId)) {
-      throw Exception('A session named "$name" already exists.');
+      throw LambdaException('A session named "$name" already exists.');
     }
   }
 
   /// Fetches planned sessions — standalone (no program link) or attached to
   /// [programId] via the join table.
+  /// Program workouts (when [programId] is given) or library workouts.
+  ///
+  /// [blockId] narrows a program listing to one block. A null [blockId] with a
+  /// non-null [programId] returns the WHOLE program, blocks included — the
+  /// ordered block view groups that list in Dart rather than issuing a query
+  /// per block.
   Future<List<PlannedSession>> fetchPlannedSessions(
     String userId, {
     String? programId,
+    String? blockId,
   }) async {
     final rows = await ps.db.getAll(
       programId != null
@@ -63,6 +71,7 @@ class PlannedSessionRepository {
             JOIN dim_planned_session_program psp
               ON psp.planned_session_id = dps.session_id
             WHERE dps.user_id = ? AND psp.program_id = ? AND dps.date_archived IS NULL
+              ${blockId != null ? 'AND psp.block_id = ?' : ''}
             ORDER BY psp.sequence_order NULLS LAST, dps.created_date
             '''
           : '''
@@ -74,9 +83,126 @@ class PlannedSessionRepository {
               )
             ORDER BY dps.created_date DESC
             ''',
-      programId != null ? [userId, programId] : [userId],
+      programId != null ? [userId, programId, ?blockId] : [userId],
     );
     return rows.map((r) => PlannedSession.fromMap(r)).toList();
+  }
+
+  /// Every active workout of [userId]'s — any membership, program-attached or
+  /// not — with when it was last LOGGED and how much of it is finished. This
+  /// is the review picker's list.
+  ///
+  /// "Last logged, then newest created" is the agreed recency rule
+  /// (2026-10-07): the workouts actually trained recently are the ones a
+  /// review is most likely about, and `dim_planned_session` has **no
+  /// updated_date** to sort by — created_date is the only column it carries,
+  /// so it breaks ties rather than leading.
+  ///
+  /// [finished] is the count the picker's rows state: sessions of that workout
+  /// that ended **after the user's last completed review** — [lastReview],
+  /// shared by every row, null when no review has been completed, and then the
+  /// count is every finished session and the row drops the "since". A session
+  /// still open (`end_datetime` null) is not finished and is not counted.
+  ///
+  /// Dates are parsed and compared in Dart, never in SQL: a downloaded row's
+  /// timestamp formatting is not guaranteed to match what the client writes,
+  /// and a lexicographic comparison across two formats silently misorders rows
+  /// (the same rule [ProgramHistoryRepository.checkpointFor] follows).
+  /// Separate reads rather than correlated subqueries, for the same reason —
+  /// MAX() over mixed text forms picks the wrong row.
+  Future<
+    List<
+      ({
+        PlannedSession session,
+        DateTime? lastLogged,
+        int finished,
+        DateTime? lastReview,
+      })
+    >
+  >
+  fetchReviewableRows(String userId) async {
+    final sessionRows = await ps.db.getAll(
+      '''
+      SELECT planned_session_id, created_datetime, end_datetime FROM fact_session
+      WHERE user_id = ? AND planned_session_id IS NOT NULL
+      ''',
+      [userId],
+    );
+    final reviewRows = await ps.db.getAll(
+      '''
+      SELECT completed_date FROM fact_program_review
+      WHERE user_id = ? AND completed_date IS NOT NULL
+      ''',
+      [userId],
+    );
+    DateTime? lastReview;
+    for (final row in reviewRows) {
+      final at = DateTime.tryParse('${row['completed_date']}')?.toLocal();
+      if (at == null) continue;
+      if (lastReview == null || at.isAfter(lastReview)) lastReview = at;
+    }
+
+    final lastLoggedAt = <String, DateTime>{};
+    final finished = <String, int>{};
+    for (final row in sessionRows) {
+      final id = row['planned_session_id'] as String?;
+      if (id == null) continue;
+      final at = DateTime.tryParse('${row['created_datetime']}')?.toLocal();
+      if (at != null) {
+        final current = lastLoggedAt[id];
+        if (current == null || at.isAfter(current)) lastLoggedAt[id] = at;
+      }
+      // Only what has been finished counts, and with a review to measure
+      // from, only what came after it — a session whose date cannot be read
+      // is not provably after, so it counts only when there is no window.
+      if (row['end_datetime'] == null) continue;
+      final review = lastReview;
+      if (review != null && (at == null || !at.isAfter(review))) continue;
+      finished[id] = (finished[id] ?? 0) + 1;
+    }
+
+    final rows = await ps.db.getAll(
+      '''
+      SELECT * FROM dim_planned_session
+      WHERE user_id = ? AND date_archived IS NULL
+      ''',
+      [userId],
+    );
+    final reviewable = [
+      for (final row in rows)
+        (
+          session: PlannedSession.fromMap(row),
+          lastLogged: lastLoggedAt[row['session_id'] as String],
+          finished: finished[row['session_id'] as String] ?? 0,
+          lastReview: lastReview,
+        ),
+    ];
+
+    // Last logged desc (nulls last), then created desc, then id desc — the
+    // id tie-break keeps the order deterministic when two rows share both
+    // dates (Dart's sort is not stable).
+    reviewable.sort((a, b) {
+      final aLogged = a.lastLogged;
+      final bLogged = b.lastLogged;
+      if ((aLogged != null) != (bLogged != null)) {
+        return aLogged != null ? -1 : 1;
+      }
+      if (aLogged != null && bLogged != null) {
+        final byLogged = bLogged.compareTo(aLogged);
+        if (byLogged != 0) return byLogged;
+      }
+      final aCreated = a.session.createdDate;
+      final bCreated = b.session.createdDate;
+      if ((aCreated != null) != (bCreated != null)) {
+        return aCreated != null ? -1 : 1;
+      }
+      if (aCreated != null && bCreated != null) {
+        final byCreated = bCreated.compareTo(aCreated);
+        if (byCreated != 0) return byCreated;
+      }
+      return b.session.sessionId.compareTo(a.session.sessionId);
+    });
+    return reviewable;
   }
 
   /// Creates a planned session. When [name] is null the app auto-generates one
@@ -436,35 +562,32 @@ class PlannedSessionRepository {
     );
   }
 
-  /// Consolidates a template to the "exercises are unique per session" rule:
-  /// archives no-target rows (the old keep-alive stubs from group creation,
-  /// which carry no information), then renumbers exercise_order per group and
-  /// set_number within groups by first appearance so the planner's counts
-  /// agree with the session preview. Rows with target data are never deleted,
-  /// so the user can prune unwanted ones in one place afterwards. Idempotent.
-  Future<List<PlannedSessionExerciseSet>> consolidateDuplicateExerciseGroups(
+  /// A template's active sets, in the order the planner and the session
+  /// preview both read them, with that order repaired on the way out:
+  /// `exercise_order` across the groups and `set_number` within each, both
+  /// renumbered by first appearance so the planner's counts and the preview's
+  /// rows can never disagree about a template's shape. Idempotent — in steady
+  /// state it writes nothing.
+  ///
+  /// **Nothing is archived here, and that is the point.** An empty planned set
+  /// is a value the user saved: `WorkoutEditorViewModel.saveWorkout` writes one
+  /// per untouched draft so that an exercise added to a workout survives a
+  /// save/reopen before any target is entered. A row with no target data is
+  /// indistinguishable from one an earlier version of this pass pruned as a
+  /// keep-alive stub — so pruning here deleted exactly what Save had just
+  /// written, and an exercise whose sets were all empty vanished on the next
+  /// open. Only an explicit user action (`deletePlannedSet`,
+  /// `deletePlannedExercise`) archives a row.
+  Future<List<PlannedSessionExerciseSet>> fetchNormalizedPlannedSets(
     String plannedSessionId,
   ) async {
-    final exercises = await fetchPlannedExercises(plannedSessionId);
     final sets = await fetchPlannedSets(plannedSessionId);
-    for (final s in sets) {
-      final noTargetData = s.targetWeight == null &&
-          s.targetReps == null &&
-          (s.targetNotes?.isEmpty ?? true) &&
-          s.variationId == null;
-      if (noTargetData) {
-        await deletePlannedSet(s.plannedSetId);
-      }
-    }
-    final remaining = await fetchPlannedSets(plannedSessionId);
-    final orderByExercise = <String, int>{};
+    final exercises = await fetchPlannedExercises(plannedSessionId);
+
     final nextSetNumber = <String, int>{};
-    var nextOrder = 0;
-    for (final s in remaining) {
-      final key = s.plannedExerciseId;
-      orderByExercise.putIfAbsent(key, () => ++nextOrder);
-      final number = nextSetNumber.putIfAbsent(key, () => 1);
-      nextSetNumber[key] = number + 1;
+    for (final s in sets) {
+      final number = nextSetNumber.putIfAbsent(s.plannedExerciseId, () => 1);
+      nextSetNumber[s.plannedExerciseId] = number + 1;
       if (number != s.setNumber) {
         await ps.db.execute(
           'UPDATE dim_planned_session_exercise_set SET set_number = ? WHERE planned_set_id = ?',
@@ -472,15 +595,17 @@ class PlannedSessionRepository {
         );
       }
     }
+
+    // Groups are numbered by their own order, not by the sets that follow them:
+    // a group with no sets is still a group, and leaving it out of the
+    // renumbering would let it collide with one that was renumbered.
+    var nextOrder = 0;
     for (final e in exercises) {
-      final order = orderByExercise[e.plannedExerciseId];
-      if (order == null) {
-        // Every set of the group was pruned — archive the group itself.
-        await deletePlannedExercise(e.plannedExerciseId);
-      } else if (order != e.exerciseOrder) {
+      nextOrder++;
+      if (nextOrder != e.exerciseOrder) {
         await ps.db.execute(
           'UPDATE dim_planned_session_exercise SET exercise_order = ? WHERE planned_exercise_id = ?',
-          [order, e.plannedExerciseId],
+          [nextOrder, e.plannedExerciseId],
         );
       }
     }
@@ -508,72 +633,22 @@ class PlannedSessionRepository {
     final newId = _uuid.v4();
     final createdDate = DateTime.now().toUtc();
 
-    await ps.db.writeTransaction((tx) async {
-      await tx.execute(
-        '''
-        INSERT INTO dim_planned_session
-          (id, session_id, user_id, name, notes, date_archived, created_date)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-        ''',
-        [
-          newId,
-          newId,
-          userId,
-          copyName,
-          source.notes,
-          null,
-          createdDate.toIso8601String(),
-        ],
+    await ps.safeWriteTransaction((tx) async {
+      await _insertCopy(
+        tx,
+        userId,
+        source: source,
+        exercises: exercises,
+        sets: sets,
+        newId: newId,
+        name: copyName,
+        // A copy of a program workout inherits its base; a copy of a library
+        // workout points at it. Either way the lineage names the original
+        // rather than the last intermediate.
+        baseSessionId: source.baseSessionId ??
+            (sourceLink == null ? source.sessionId : null),
+        createdDate: createdDate,
       );
-
-      for (final exercise in exercises) {
-        final newExerciseId = _uuid.v4();
-        await tx.execute(
-          '''
-          INSERT INTO dim_planned_session_exercise
-            (id, planned_exercise_id, planned_session_id, user_id,
-             custom_exercise_id, exercise_order, is_archived)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
-          ''',
-          [
-            newExerciseId,
-            newExerciseId,
-            newId,
-            userId,
-            exercise.exerciseId,
-            exercise.exerciseOrder,
-            0,
-          ],
-        );
-
-        final exerciseSets = sets
-            .where((s) => s.plannedExerciseId == exercise.plannedExerciseId)
-            .toList();
-        for (final set in exerciseSets) {
-          final newSetId = _uuid.v4();
-          await tx.execute(
-            '''
-            INSERT INTO dim_planned_session_exercise_set
-              (id, planned_set_id, planned_exercise_id, user_id,
-               custom_variation_id, set_number, target_weight, target_reps,
-               target_notes, is_archived)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''',
-            [
-              newSetId,
-              newSetId,
-              newExerciseId,
-              userId,
-              set.variationId,
-              set.setNumber,
-              set.targetWeight,
-              set.targetReps,
-              set.targetNotes,
-              0,
-            ],
-          );
-        }
-      }
 
       if (sourceLink != null) {
         // Bump later slots so the copy doesn't clobber sequence order.
@@ -608,6 +683,342 @@ class PlannedSessionRepository {
     });
 
     return newId;
+  }
+
+  /// Copies a library workout into [programId] as a program-local workout.
+  ///
+  /// This is how a workout enters a program from outside it. The library is a
+  /// SOURCE, not a shared dependency: the copy is independent forever, editing
+  /// it never touches the original, and the original is left exactly as it was.
+  ///
+  /// The name is kept verbatim — provenance lives in `base_session_id`, not in
+  /// a "(Copy)" suffix, because importing is the normal path and suffix noise
+  /// would land on every workout of every program. There is no name-uniqueness
+  /// check for the same reason: a program may hold several workouts sharing a
+  /// name, and the library original sharing the name is the expected case.
+  ///
+  /// [sequenceOrder] defaults to the end of the program's order. [blockId]
+  /// places the copy straight into a block; null leaves it in the program's
+  /// unassigned group.
+  Future<String> copySessionIntoProgram(
+    String userId, {
+    required PlannedSession source,
+    required String programId,
+    int? sequenceOrder,
+    String? blockId,
+  }) async {
+    final exercises = await fetchPlannedExercises(source.sessionId);
+    final sets = await fetchPlannedSets(source.sessionId);
+
+    final newId = _uuid.v4();
+    final createdDate = DateTime.now().toUtc();
+
+    await ps.safeWriteTransaction((tx) async {
+      await _insertCopy(
+        tx,
+        userId,
+        source: source,
+        exercises: exercises,
+        sets: sets,
+        newId: newId,
+        name: source.name,
+        // The source is a library workout by construction; inheriting its base
+        // if it somehow has one keeps a chain of copies pointing home.
+        baseSessionId: source.baseSessionId ?? source.sessionId,
+        createdDate: createdDate,
+      );
+
+      // Append rather than count the list the caller happens to be holding:
+      // sequence_order is program-global and need not be dense, so the only
+      // reliable "last place" is the column itself.
+      var order = sequenceOrder;
+      if (order == null) {
+        final rows = await tx.getAll(
+          'SELECT MAX(sequence_order) AS max_order FROM dim_planned_session_program WHERE program_id = ?',
+          [programId],
+        );
+        order = (_toInt(rows.isEmpty ? null : rows.first['max_order']) ?? 0) + 1;
+      }
+
+      final newLinkId = _uuid.v4();
+      await tx.execute(
+        '''
+        INSERT INTO dim_planned_session_program
+          (id, planned_session_program_id, program_id, planned_session_id,
+           user_id, sequence_order, day_of_week, week_offset, block_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''',
+        [
+          newLinkId,
+          newLinkId,
+          programId,
+          newId,
+          userId,
+          order,
+          null,
+          null,
+          blockId,
+        ],
+      );
+    });
+
+    return newId;
+  }
+
+  /// A single deep copy inside a transaction the CALLER owns.
+  ///
+  /// The children are passed in rather than read here, deliberately: a caller
+  /// holding a write transaction must not query `ps.db` (it contends with the
+  /// write lock the transaction holds), so the read happens before the
+  /// transaction opens and the already-read rows arrive as arguments. Same
+  /// contract as `_insertCopy`, exposed for callers outside this file —
+  /// [ProgramRepository.duplicateBlock] copies a whole block's worth of
+  /// workouts in one transaction.
+  ///
+  /// Returns the new session id.
+  Future<String> insertCopyIn(
+    dynamic tx,
+    String userId, {
+    required PlannedSession source,
+    required List<PlannedSessionExercise> exercises,
+    required List<PlannedSessionExerciseSet> sets,
+    required String? baseSessionId,
+  }) async {
+    final newId = _uuid.v4();
+    await _insertCopy(
+      tx,
+      userId,
+      source: source,
+      exercises: exercises,
+      sets: sets,
+      newId: newId,
+      name: source.name,
+      baseSessionId: baseSessionId,
+      createdDate: DateTime.now().toUtc(),
+    );
+    return newId;
+  }
+
+  /// The one deep-copy body: a session row plus its exercise groups and target
+  /// sets, all under fresh ids.
+  ///
+  /// Takes a transaction the CALLER owns so the copy and whatever attaches it
+  /// (a program link, a slot bump) commit together — a half-copied workout
+  /// already attached to a program is worse than no copy at all.
+  Future<void> _insertCopy(
+    dynamic tx,
+    String userId, {
+    required PlannedSession source,
+    required List<PlannedSessionExercise> exercises,
+    required List<PlannedSessionExerciseSet> sets,
+    required String newId,
+    required String name,
+    required String? baseSessionId,
+    required DateTime createdDate,
+  }) async {
+    await tx.execute(
+      '''
+      INSERT INTO dim_planned_session
+        (id, session_id, user_id, name, notes, date_archived, created_date,
+         base_session_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ''',
+      [
+        newId,
+        newId,
+        userId,
+        name,
+        source.notes,
+        null,
+        createdDate.toIso8601String(),
+        baseSessionId,
+      ],
+    );
+
+    await _insertChildren(
+      tx,
+      userId,
+      exercises: exercises,
+      sets: sets,
+      sessionId: newId,
+    );
+  }
+
+  /// Writes [exercises] and [sets] as fresh rows under [sessionId].
+  Future<void> _insertChildren(
+    dynamic tx,
+    String userId, {
+    required List<PlannedSessionExercise> exercises,
+    required List<PlannedSessionExerciseSet> sets,
+    required String sessionId,
+  }) async {
+    for (final exercise in exercises) {
+      final newExerciseId = _uuid.v4();
+      await tx.execute(
+        '''
+        INSERT INTO dim_planned_session_exercise
+          (id, planned_exercise_id, planned_session_id, user_id,
+           custom_exercise_id, exercise_order, is_archived)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''',
+        [
+          newExerciseId,
+          newExerciseId,
+          sessionId,
+          userId,
+          exercise.exerciseId,
+          exercise.exerciseOrder,
+          0,
+        ],
+      );
+
+      final exerciseSets = sets
+          .where((s) => s.plannedExerciseId == exercise.plannedExerciseId)
+          .toList();
+      for (final set in exerciseSets) {
+        final newSetId = _uuid.v4();
+        await tx.execute(
+          '''
+          INSERT INTO dim_planned_session_exercise_set
+            (id, planned_set_id, planned_exercise_id, user_id,
+             custom_variation_id, set_number, target_weight, target_reps,
+             target_notes, is_archived)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ''',
+          [
+            newSetId,
+            newSetId,
+            newExerciseId,
+            userId,
+            set.variationId,
+            set.setNumber,
+            set.targetWeight,
+            set.targetReps,
+            set.targetNotes,
+            0,
+          ],
+        );
+      }
+    }
+  }
+
+  /// Creates a standalone (library) workout holding a copy of [source]'s
+  /// contents. Returns the new workout's id.
+  ///
+  /// Used when a workout authored inside a program is promoted to the library:
+  /// it has no original to push to, so this is where its contents land. The
+  /// name is kept verbatim and no uniqueness check runs — the workout it was
+  /// copied from is usually right there in the program with the same name.
+  ///
+  /// [linkedCopyId] is the program workout that prompted the promotion. It is
+  /// repointed at the new original in the SAME transaction, so "push to
+  /// library" leaves either both facts or neither. Without that link the
+  /// relationship would be invisible, and pushing twice would mint a second
+  /// library workout instead of updating the first.
+  Future<String> createLibraryFrom(
+    String userId,
+    PlannedSession source, {
+    String? linkedCopyId,
+  }) async {
+    final exercises = await fetchPlannedExercises(source.sessionId);
+    final sets = await fetchPlannedSets(source.sessionId);
+    final newId = _uuid.v4();
+
+    await ps.safeWriteTransaction((tx) async {
+      await _insertCopy(
+        tx,
+        userId,
+        source: source,
+        exercises: exercises,
+        sets: sets,
+        newId: newId,
+        name: source.name,
+        // A library workout has no base: it is the origin, not a copy.
+        baseSessionId: null,
+        createdDate: DateTime.now().toUtc(),
+      );
+
+      if (linkedCopyId != null) {
+        await tx.execute(
+          'UPDATE dim_planned_session SET base_session_id = ? WHERE session_id = ?',
+          [newId, linkedCopyId],
+        );
+      }
+    });
+
+    return newId;
+  }
+
+  /// Overwrites a library workout's contents with [source]'s — the write
+  /// behind "push this back to the library".
+  ///
+  /// The target's existing groups are ARCHIVED rather than deleted, matching
+  /// how every other dim child goes away. Logged sessions hold plain refs to
+  /// `planned_exercise_id` / `planned_set_id` for their ghost hints, and a hard
+  /// delete would leave those refs pointing at nothing; the replacement rows
+  /// carry fresh ids, so a past session's hint still resolves to the target it
+  /// was planned from.
+  Future<void> replaceContentsFrom(
+    String userId, {
+    required String targetSessionId,
+    required PlannedSession source,
+  }) async {
+    final exercises = await fetchPlannedExercises(source.sessionId);
+    final sets = await fetchPlannedSets(source.sessionId);
+
+    await ps.safeWriteTransaction((tx) async {
+      await tx.execute(
+        '''
+        UPDATE dim_planned_session_exercise_set SET is_archived = 1
+        WHERE planned_exercise_id IN (
+          SELECT planned_exercise_id FROM dim_planned_session_exercise
+          WHERE planned_session_id = ?
+        )
+        ''',
+        [targetSessionId],
+      );
+      await tx.execute(
+        'UPDATE dim_planned_session_exercise SET is_archived = 1 WHERE planned_session_id = ?',
+        [targetSessionId],
+      );
+      // Name and notes travel with the contents: the point of pushing back is
+      // that the library original now reads like the workout the user improved.
+      await tx.execute(
+        'UPDATE dim_planned_session SET name = ?, notes = ? WHERE session_id = ?',
+        [source.name, source.notes, targetSessionId],
+      );
+      await _insertChildren(
+        tx,
+        userId,
+        exercises: exercises,
+        sets: sets,
+        sessionId: targetSessionId,
+      );
+    });
+  }
+
+  /// Renumbers one exercise group's target rows to the order of
+  /// [orderedSetIds] — first id becomes set 1, and so on.
+  ///
+  /// The rows are addressed by id, so unlike [renumberExerciseOrders] there is
+  /// nothing to collide with and no two-phase shuffle.
+  ///
+  /// Pass ONE group's ids: the numbering restarts at 1, so handing it every
+  /// set in the workout would number them end to end. The numbers have to come
+  /// out a strict 1..N per group, because [fetchNormalizedPlannedSets]
+  /// renumbers by appearance on every open — a tie would let it reorder the
+  /// group behind the user's back.
+  Future<void> renumberPlannedSets(List<String> orderedSetIds) async {
+    for (var i = 0; i < orderedSetIds.length; i++) {
+      await ps.db.execute(
+        '''
+        UPDATE dim_planned_session_exercise_set
+          SET set_number = ?
+        WHERE planned_set_id = ? AND is_archived = 0
+        ''',
+        [i + 1, orderedSetIds[i]],
+      );
+    }
   }
 
   /// Swaps the exercise_order between two exercise groups in a planned
@@ -654,10 +1065,43 @@ class PlannedSessionRepository {
 
   // ── Program links (join table) ─────────────────────────────────────────────
 
-  Future<List<PlannedSessionProgram>> fetchProgramLinks(String programId) async {
+  /// A program's join rows, in program-global `sequence_order`.
+  ///
+  /// [blockId] filters to one block. NULL means UNFILTERED, not "blockless" —
+  /// a blockless program is simply every link carrying a null `block_id`, and
+  /// callers that care filter in Dart (`l.blockId == null`), which reads better
+  /// than a second, sentinel-flavoured parameter.
+  Future<List<PlannedSessionProgram>> fetchProgramLinks(
+    String programId, {
+    String? blockId,
+  }) async {
     final rows = await ps.db.getAll(
-      'SELECT * FROM dim_planned_session_program WHERE program_id = ? ORDER BY sequence_order NULLS LAST',
-      [programId],
+      blockId == null
+          ? 'SELECT * FROM dim_planned_session_program WHERE program_id = ? ORDER BY sequence_order NULLS LAST'
+          : 'SELECT * FROM dim_planned_session_program WHERE program_id = ? AND block_id = ? ORDER BY sequence_order NULLS LAST',
+      blockId == null ? [programId] : [programId, blockId],
+    );
+    return rows.map((r) => PlannedSessionProgram.fromMap(r)).toList();
+  }
+
+  /// The program links for a set of planned sessions — the batch form of
+  /// [fetchProgramLinks], for callers holding workout ids from anywhere (a
+  /// standalone review's set spans programs, or none).
+  ///
+  /// Ordered by sequence within a program, then by the row id so the result
+  /// is deterministic even when several links of one workout (the workout
+  /// sits in two programs) tie — a caller reads the FIRST link per workout,
+  /// so "which one" must not depend on insertion order.
+  Future<List<PlannedSessionProgram>> fetchLinksForSessions(
+    List<String> sessionIds,
+  ) async {
+    if (sessionIds.isEmpty) return const [];
+    final placeholders = List.filled(sessionIds.length, '?').join(', ');
+    final rows = await ps.db.getAll(
+      'SELECT * FROM dim_planned_session_program '
+      'WHERE planned_session_id IN ($placeholders) '
+      'ORDER BY sequence_order NULLS LAST, planned_session_program_id',
+      sessionIds,
     );
     return rows.map((r) => PlannedSessionProgram.fromMap(r)).toList();
   }
@@ -669,14 +1113,15 @@ class PlannedSessionRepository {
     int? sequenceOrder,
     int? dayOfWeek,
     int? weekOffset,
+    String? blockId,
   }) async {
     final id = _uuid.v4();
     await ps.db.execute(
       '''
       INSERT INTO dim_planned_session_program
         (id, planned_session_program_id, program_id, planned_session_id,
-         user_id, sequence_order, day_of_week, week_offset)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         user_id, sequence_order, day_of_week, week_offset, block_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       ''',
       [
         id,
@@ -687,6 +1132,7 @@ class PlannedSessionRepository {
         sequenceOrder,
         dayOfWeek,
         weekOffset,
+        blockId,
       ],
     );
     return PlannedSessionProgram(
@@ -697,6 +1143,7 @@ class PlannedSessionRepository {
       sequenceOrder: sequenceOrder,
       dayOfWeek: dayOfWeek,
       weekOffset: weekOffset,
+      blockId: blockId,
     );
   }
 
@@ -707,6 +1154,8 @@ class PlannedSessionRepository {
     bool clearDayOfWeek = false,
     int? weekOffset,
     bool clearWeekOffset = false,
+    String? blockId,
+    bool clearBlockId = false,
   }) async {
     final updates = <String, dynamic>{};
     if (sequenceOrder != null) updates['sequence_order'] = sequenceOrder;
@@ -721,11 +1170,36 @@ class PlannedSessionRepository {
         updates['week_offset'] = weekOffset;
       }
     }
+    if (clearBlockId) {
+      updates['block_id'] = null;
+    } else if (blockId != null) {
+      updates['block_id'] = blockId;
+    }
     if (updates.isEmpty) return;
     final setClause = updates.keys.map((k) => '$k = ?').join(', ');
     await ps.db.execute(
       'UPDATE dim_planned_session_program SET $setClause WHERE planned_session_program_id = ?',
       [...updates.values, plannedSessionProgramId],
+    );
+  }
+
+  /// Moves a set of the program's workouts into a block — or out of any block,
+  /// when [blockId] is null.
+  ///
+  /// One statement for the whole batch: assigning a workout to a block and
+  /// removing it from another must not be able to half-happen, or a workout
+  /// could end up in two blocks.
+  Future<void> assignLinksToBlock(
+    String programId,
+    List<String> linkIds,
+    String? blockId,
+  ) async {
+    if (linkIds.isEmpty) return;
+    final placeholders = List.filled(linkIds.length, '?').join(', ');
+    await ps.db.execute(
+      'UPDATE dim_planned_session_program SET block_id = ? '
+      'WHERE program_id = ? AND planned_session_program_id IN ($placeholders)',
+      [blockId, programId, ...linkIds],
     );
   }
 
@@ -735,4 +1209,10 @@ class PlannedSessionRepository {
       [plannedSessionProgramId],
     );
   }
+}
+
+int? _toInt(dynamic v) {
+  if (v == null) return null;
+  if (v is int) return v;
+  return int.tryParse('$v');
 }

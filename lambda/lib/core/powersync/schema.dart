@@ -84,6 +84,12 @@ const schema = Schema([
     Column.text('date_archived'),
     Column.text('program_created_date'),
     Column.text('program_updated_date'),
+    // The program's shape, fixed at creation: 1 = made of blocks, 0 = a list
+    // of workouts. Stored, not inferred — a blocked program with no blocks yet
+    // is a real state and must not read as a simple one.
+    Column.integer('uses_blocks'),
+    // A simple program's remembered length; NULL = none set yet.
+    Column.integer('default_target_sessions'),
   ]),
   Table('fact_program_run', [
     Column.text('program_run_id'),
@@ -96,6 +102,68 @@ const schema = Schema([
     Column.text('ended_date'),
     Column.integer('is_current'),
     Column.text('progression_mode'),
+    // The block being followed; NULL = a blockless run. Every run before this
+    // column existed is NULL, so blockless rendering is byte-identical.
+    Column.text('block_id'),
+  ]),
+  // An ordered, duration-bounded phase of a program, holding workouts and (from
+  // the goals phase) goals. A program either uses blocks or doesn't — never
+  // mixed. `date_archived` rather than `is_archived` because a block is named,
+  // dated and user-visible with its own run/review trail to keep browsable.
+  Table('dim_program_block', [
+    Column.text('block_id'),
+    Column.text('user_id'),
+    Column.text('program_id'),
+    Column.text('name'),
+    Column.text('notes'),
+    Column.integer('block_order'),
+    Column.integer('target_weeks'),
+    Column.integer('target_days'),
+    Column.integer('target_sessions'),
+    Column.text('start_date'),
+    Column.text('end_date'),
+    Column.text('date_archived'),
+    Column.text('created_date'),
+    Column.text('updated_date'),
+  ]),
+  // The checkpoints a program's run passes through — one row per review, per
+  // proposed change, and per run close — AND the snapshot each one cut.
+  // `completed_date` NULL is what makes a review open; there is no status column
+  // to keep in sync with it. `snapshot_content` is the same `ProgramContent`
+  // document the retired revision table held, written when the review completes.
+  //
+  // SCOPE — a review is a pass over a SET of workouts: `session_ids_json` is
+  // the ordered planned-session ids it covers, and `reviewed_sessions_json`
+  // records the ones marked done inside the pass. Both stay null on rows
+  // written before reviews were re-scoped — those resolved from their legacy
+  // `block_id`/`session_id` (never both set; the server checks it) — and new
+  // rows leave the legacy ids null.
+  Table('fact_program_review', [
+    Column.text('review_id'),
+    Column.text('user_id'),
+    Column.text('program_id'),
+    Column.text('block_id'),
+    Column.text('session_id'),
+    Column.text('program_run_id'),
+    Column.text('kind'),
+    Column.text('title'),
+    Column.text('notes'),
+    Column.text('scheduled_for'),
+    Column.text('completed_date'),
+    Column.text('outcome'),
+    Column.text('proposed_content'),
+    Column.text('proposed_hash'),
+    Column.text('snapshot_content'),
+    Column.text('snapshot_hash'),
+    Column.text('baseline_content'),
+    Column.text('baseline_hash'),
+    Column.text('exercise_notes_json'),
+    Column.text('achievements_json'),
+    Column.text('session_ids_json'),
+    Column.text('reviewed_sessions_json'),
+    Column.text('goal_ids_json'),
+    Column.text('workout_notes_json'),
+    Column.text('created_date'),
   ]),
   Table('dim_lesson', [
     Column.text('lesson_id'),
@@ -119,6 +187,10 @@ const schema = Schema([
     Column.text('notes'),
     Column.text('date_archived'),
     Column.text('created_date'),
+    // Copy-on-add provenance. NULL = this workout originated here; set = this
+    // is a program copy of the library workout it names. Plain ref (no FK):
+    // an offline create→import must not be able to fail an FK on upload.
+    Column.text('base_session_id'),
   ]),
   Table('dim_pr_view_setting', [
     Column.text('pr_view_setting_id'),
@@ -135,6 +207,10 @@ const schema = Schema([
     Column.integer('sequence_order'),
     Column.integer('day_of_week'),
     Column.integer('week_offset'),
+    // The block this workout belongs to; NULL = a blockless program. The
+    // server enforces (program_id, block_id) as a composite FK, so a workout
+    // can only join a block of its own program.
+    Column.text('block_id'),
   ]),
   Table('dim_planned_session_exercise', [
     Column.text('planned_exercise_id'),
@@ -160,10 +236,23 @@ const schema = Schema([
     Column.text('program_run_id'),
     Column.text('user_id'),
     Column.text('goal_text'),
+    // Free-form notes about the goal itself (2026-10-08) — the target and its
+    // label are target_* / goal_text, not this. See
+    // 20261008120000_goal_description.sql.
+    Column.text('goal_description'),
     Column.text('custom_exercise_id'),
+    // The scope: a program, or a block of one. NULL program = standalone.
+    // Dormant since goals went unattached (2026-10-08) — kept, not dropped.
+    Column.text('program_id'),
+    Column.text('block_id'),
+    // The one variation the goal is scoped to; NULL = the plain exercise,
+    // which is a scope of its own rather than a wildcard.
+    Column.text('custom_variation_id'),
     Column.text('target_weight'),
     Column.integer('target_reps'),
     Column.text('goal_created_date'),
-    Column.text('achieved_date'),
+    // `achieved_date` is deliberately absent — a goal's outcome is a per-run
+    // fact now, frozen into fact_program_review.achievements_json at close.
+    // See 20260928074745_program_goal_scoping.sql.
   ]),
 ]);

@@ -1,5 +1,6 @@
 import 'package:uuid/uuid.dart';
 import '../../core/powersync/database.dart' as ps;
+import '../../core/utils/name_limit.dart';
 import '../models/custom_exercise.dart';
 import '../models/custom_variation.dart';
 import '../models/exercise_detail.dart';
@@ -124,6 +125,43 @@ class ExerciseRepository {
     };
   }
 
+  /// `custom_exercise_id → exercise_name` for EVERY exercise, archived ones
+  /// included.
+  ///
+  /// [fetchExercises] filters `date_archived IS NULL`, which is right for the
+  /// library and wrong for anything historical: a version cut while an exercise
+  /// was active must still name it after that exercise has been archived, and
+  /// blanking the label defeats the point of a screen whose whole job is
+  /// showing what the program used to contain.
+  Future<Map<String, String>> fetchExerciseNameMap(String userId) async {
+    final rows = await ps.db.getAll(
+      'SELECT custom_exercise_id, exercise_name FROM dim_exercise WHERE user_id = ?',
+      [userId],
+    );
+    return {
+      for (final r in rows)
+        if (r['custom_exercise_id'] != null)
+          r['custom_exercise_id'] as String:
+              (r['exercise_name'] as String?) ?? '',
+    };
+  }
+
+  /// `custom_variation_id → variation_name` for EVERY variation, archived ones
+  /// included. Same reasoning as [fetchExerciseNameMap] — a target that named a
+  /// variation must keep naming it after the variation is retired.
+  Future<Map<String, String>> fetchVariationNameMap(String userId) async {
+    final rows = await ps.db.getAll(
+      'SELECT custom_variation_id, variation_name FROM dim_variation WHERE user_id = ?',
+      [userId],
+    );
+    return {
+      for (final r in rows)
+        if (r['custom_variation_id'] != null)
+          r['custom_variation_id'] as String:
+              (r['variation_name'] as String?) ?? '',
+    };
+  }
+
   Future<CustomExercise?> findExerciseByName(
       String userId, String name) async {
     final rows = await ps.db.getAll(
@@ -144,7 +182,25 @@ class ExerciseRepository {
     return CustomVariation.fromMap(rows.first);
   }
 
+  /// Refuses an over-long name rather than shortening it.
+  ///
+  /// The PowerSync mirror is a plain `Column.text` with no CHECK support, so a
+  /// 25-character name would write locally, render in the picker, survive a
+  /// restart — and then fail to upload (`23514`, quarantined in
+  /// `upload_failures`) with nothing shown to the user. Clamping is worse than
+  /// failing: it would store a different name than the user typed.
+  void _assertNameFits(String name) {
+    if (nameTooLong(name)) {
+      throw ArgumentError.value(
+        name,
+        'name',
+        'exceeds $kMaxExerciseNameLength characters',
+      );
+    }
+  }
+
   Future<CustomExercise> createExercise(String userId, String name) async {
+    _assertNameFits(name);
     final id = _uuid.v4();
     await ps.db.execute(
       'INSERT INTO dim_exercise (id, custom_exercise_id, user_id, exercise_name) VALUES (?, ?, ?, ?)',
@@ -161,6 +217,7 @@ class ExerciseRepository {
   }
 
   Future<CustomVariation> createVariation(String userId, String name) async {
+    _assertNameFits(name);
     final id = _uuid.v4();
     await ps.db.execute(
       'INSERT INTO dim_variation (id, custom_variation_id, user_id, variation_name) VALUES (?, ?, ?, ?)',
@@ -253,6 +310,7 @@ class ExerciseRepository {
   }
 
   Future<void> updateExercise(String exerciseId, String name) async {
+    _assertNameFits(name);
     await ps.db.execute(
       'UPDATE dim_exercise SET exercise_name = ? WHERE custom_exercise_id = ?',
       [name, exerciseId],
@@ -260,6 +318,7 @@ class ExerciseRepository {
   }
 
   Future<void> updateVariation(String variationId, String name) async {
+    _assertNameFits(name);
     await ps.db.execute(
       'UPDATE dim_variation SET variation_name = ? WHERE custom_variation_id = ?',
       [name, variationId],

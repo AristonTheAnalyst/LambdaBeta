@@ -3,7 +3,10 @@ import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
 import '../../../core/styles/app_radius.dart';
 import '../../../core/styles/app_spacing.dart';
+import '../../../core/styles/app_text_styles.dart';
 import '../../../shared/widgets/glass_button.dart';
+import '../../../shared/widgets/lambda_input.dart';
+import '../../../shared/widgets/lambda_readout.dart';
 import '../../../shared/widgets/slide_up_modal.dart';
 
 void showNotesModal(
@@ -93,6 +96,9 @@ class _NotesModalContentState extends State<_NotesModalContent> {
                 GlassButton(
                   label: widget.readOnly ? 'Done' : 'Save',
                   compact: true,
+                  // Done dismisses whatever the state; Save has nothing to
+                  // write until the note differs from the one it opened with.
+                  disabled: !widget.readOnly && _ctrl.text == widget.initialValue,
                   onPressed: widget.readOnly
                       ? () => Navigator.of(context, rootNavigator: true).pop()
                       : _save,
@@ -116,7 +122,7 @@ class _NotesModalContentState extends State<_NotesModalContent> {
                     Text(
                       'PLANNED  ',
                       style: AppFonts.mono(
-                        fontSize: 9,
+                        fontSize: 13,
                         fontWeight: FontWeight.w700,
                         color: AppColors.planned,
                       ),
@@ -135,25 +141,28 @@ class _NotesModalContentState extends State<_NotesModalContent> {
               ),
               const SizedBox(height: AppSpacing.sm),
             ],
-            TextField(
-              controller: _ctrl,
-              readOnly: widget.readOnly,
-              autofocus: !widget.readOnly,
-              maxLines: 5,
-              style: AppFonts.ui(fontSize: 14, color: AppColors.primary),
-              decoration: InputDecoration(
-                hintText:
-                    widget.plannedNote ??
-                    'Form cues, how it felt, adjustments…',
-                hintStyle: AppFonts.ui(color: AppColors.muted),
-                filled: true,
-                fillColor: AppColors.surfaceHigh,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(AppRadius.md),
-                  borderSide: BorderSide(color: AppColors.border),
-                ),
+            if (widget.readOnly)
+              if (widget.initialValue.trim().isEmpty)
+                Text(
+                  widget.plannedNote ?? 'Form cues, how it felt, adjustments…',
+                  style: AppFonts.ui(
+                    fontSize: AppTextStyles.sm,
+                    color: AppColors.muted,
+                  ),
+                )
+              else
+                LambdaReadout(value: widget.initialValue)
+            else
+              LambdaInput(
+                controller: _ctrl,
+                autofocus: true,
+                minLines: 2,
+                maxLines: 5,
+                placeholder:
+                    widget.plannedNote ?? 'Form cues, how it felt, adjustments…',
+                // The sheet's default background is a surface ground.
+                elevated: true,
               ),
-            ),
             if (_ctrl.text.trim().isNotEmpty && !widget.readOnly) ...[
               const SizedBox(height: AppSpacing.sm),
               GlassButton(

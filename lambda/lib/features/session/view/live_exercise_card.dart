@@ -1,13 +1,52 @@
 import 'package:flutter/material.dart';
 import '../../../core/utils/session_format.dart';
 import '../../../data/models/lesson.dart';
+import '../../../shared/widgets/add_exercise_modal.dart';
 import '../../../shared/widgets/dropdown_select.dart';
 import '../../../shared/widgets/session_exercise_card.dart';
 import '../../../shared/widgets/session_set_row.dart';
 import '../model/session_local_state.dart';
 import '../viewmodel/session_viewmodel.dart';
-import 'add_exercise_modal.dart';
 import 'lessons_modal.dart';
+
+/// Opens the shared exercise picker wired to [vm] — the one picker behind both
+/// the live card and the empty-state placeholder, which differ only in whether
+/// removal is offered.
+///
+/// [onRemoveExercise] is the screen's confirmation, addressed by slot index;
+/// the picker hands it back an exercise id, so the mapping happens here. Null
+/// leaves the tick informational, which is right for the placeholder — there is
+/// nothing in the session to remove yet.
+void showSessionExercisePicker(
+  BuildContext context,
+  SessionViewModel vm, {
+  void Function(int index)? onRemoveExercise,
+}) {
+  showAddExerciseModal(
+    context,
+    listenable: vm,
+    entries: () => [
+      for (final e in vm.exercises)
+        AddExerciseEntry(
+          exerciseId: e.exerciseId,
+          name: toProperCase(e.name),
+          lastUsed: vm.lastUsedByExercise[e.exerciseId],
+        ),
+    ],
+    isAdded: (id) => vm.exerciseSlots.any((s) => s.exerciseIds.contains(id)),
+    onAdd: vm.addExerciseSlot,
+    onRemoveRequest: onRemoveExercise == null
+        ? null
+        : (id) async {
+            final i = vm.exerciseSlots.indexWhere(
+              (s) => s.exerciseIds.contains(id),
+            );
+            if (i >= 0) onRemoveExercise(i);
+          },
+    onCreate: vm.submitNewExercise,
+    isCreating: () => vm.newExCreating,
+  );
+}
 
 /// The live session's exercise card — a thin adapter over the shared
 /// [SessionExerciseCard] that maps the [SessionViewModel]'s mutable state
@@ -23,9 +62,9 @@ class LiveExerciseCard extends StatelessWidget {
   final SessionViewModel vm;
   final SessionExerciseSlot slot;
 
-  /// Fired by the selector's hold-to-delete — the screen shows its own
-  /// remove-exercise confirmation.
-  final VoidCallback? onRemoveExercise;
+  /// The screen's remove-exercise confirmation, addressed by slot index — the
+  /// exercise picker calls it when the user taps an already-added exercise.
+  final void Function(int index)? onRemoveExercise;
 
   static String _fmtNum(num n) =>
       n == n.roundToDouble() ? n.toInt().toString() : n.toString();
@@ -108,6 +147,7 @@ class LiveExerciseCard extends StatelessWidget {
               exerciseId: exerciseId,
               displayIndex: i + 1,
               isDraft: false,
+              dragIndex: i,
               initialWeightText: set.weight != null ? _fmtNum(set.weight!) : '',
               initialRepsText: set.reps.isNotEmpty ? _fmtNum(set.reps.first) : '',
               initialVariationId: set.variationId,
@@ -125,6 +165,7 @@ class LiveExerciseCard extends StatelessWidget {
                     weight: _parseWeight(v.weight),
                     clearWeight: v.weight == null,
                     reps: _parseReps(v.reps),
+                    clearReps: v.reps == null,
                     // First real commit adopts the planned variation — the
                     // draft path does the same, so a logged row keeps its
                     // template's variation instead of silently losing it.
@@ -208,9 +249,11 @@ class LiveExerciseCard extends StatelessWidget {
           activeIndex: vm.activeSlotIndex,
           onSelect: vm.tapTab,
           onMove: (i, dir) => vm.reorderExercises(i, i + dir),
-          onAdd: () => showAddExerciseModal(context, vm: vm),
-          onDeleteRequest:
-              onRemoveExercise ?? () => vm.removeExerciseSlot(vm.activeSlotIndex),
+          onAdd: () => showSessionExercisePicker(
+            context,
+            vm,
+            onRemoveExercise: onRemoveExercise,
+          ),
           pinnedLesson: pinnedLesson != null
               ? PinnedLessonData(
                   text: pinnedLesson.text,
@@ -230,6 +273,8 @@ class LiveExerciseCard extends StatelessWidget {
           planned: slot.planned,
           rows: rows,
           onAddSet: () => vm.addDraftSet(exerciseId),
+          onReorderSets: (oldIndex, newIndex) =>
+              vm.reorderSets(exerciseId, oldIndex, newIndex),
           history: history,
           // The history viewer is the regular sets grid — shared
           // SessionSetRow rows in history mode, gated by the one-time
@@ -259,6 +304,7 @@ class LiveExerciseCard extends StatelessWidget {
                   weight: _parseWeight(v.weight),
                   clearWeight: v.weight == null,
                   reps: _parseReps(v.reps),
+                  clearReps: v.reps == null,
                 );
               }
             },
@@ -283,6 +329,8 @@ class LiveExerciseCard extends StatelessWidget {
           ),
           // A fresh history session must re-earn the edit confirm gate.
           onHistorySessionSelected: (_) => vm.historyEditConfirmed = false,
+          // The picker tiles show each past session's PR count.
+          isPrSet: (setId) => vm.prEventsBySetId.containsKey(setId),
         );
       },
     );

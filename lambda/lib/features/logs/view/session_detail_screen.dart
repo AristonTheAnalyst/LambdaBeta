@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
-import '../../../core/styles/app_radius.dart';
 import '../../../core/styles/app_spacing.dart';
 import '../../../core/utils/session_format.dart';
 import '../../../data/models/lesson.dart';
 import '../../../data/models/session_exercise_set.dart';
 import '../../../shared/mixins/unsaved_changes_guard.dart';
+import '../../../shared/widgets/add_exercise_modal.dart';
 import '../../../shared/widgets/app_card.dart';
 import '../../../shared/widgets/dropdown_select.dart';
 import '../../../shared/widgets/glass_button.dart';
@@ -15,10 +15,9 @@ import '../../../shared/widgets/planned_banner.dart';
 import '../../../shared/widgets/reflection_summary.dart';
 import '../../../shared/widgets/segmented_control.dart';
 import '../../../shared/widgets/session_bookend.dart';
-import '../../../shared/widgets/container_styles.dart';
+import '../../../shared/widgets/session_identity_card.dart';
 import '../../../shared/widgets/session_exercise_card.dart';
 import '../../../shared/widgets/session_set_row.dart';
-import '../../../shared/widgets/slide_up_modal.dart';
 import '../../../shared/widgets/stats_row.dart';
 import '../../session/model/pr_engine.dart';
 import '../../session/view/lessons_modal.dart';
@@ -155,16 +154,21 @@ class SessionDetailView extends StatefulWidget {
 }
 
 class _SessionDetailViewState extends State<SessionDetailView> {
-  /// Which of the two surfaces is shown: the pre/PRS/lessons/post summary,
-  /// or the sets (details). Plain UI state — no VM involvement.
-  String _tab = 'summary';
+  /// Which of the three surfaces is shown: the session's PR events, the
+  /// sets (details), or the pre/lessons/post reflection. Plain UI state —
+  /// no VM involvement.
+  String _tab = 'reflection';
 
   @override
   Widget build(BuildContext context) {
     final viewModel = widget.viewModel;
     final state = widget.state;
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        // The session identity card sits at the very top — the same
+        // position as the planned-session picker on the training page,
+        // above the tab toggle.
         Padding(
           padding: const EdgeInsets.fromLTRB(
             AppSpacing.lg,
@@ -172,10 +176,22 @@ class _SessionDetailViewState extends State<SessionDetailView> {
             AppSpacing.lg,
             AppSpacing.xs,
           ),
+          child: SessionIdentityCard(
+            plannedName: state.session?.plannedSessionName,
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.lg,
+            AppSpacing.sm,
+            AppSpacing.lg,
+            AppSpacing.xs,
+          ),
           child: SegmentedControl<String>(
             options: const [
-              SegmentOption(label: 'Summary', value: 'summary'),
+              SegmentOption(label: 'PRs', value: 'prs'),
               SegmentOption(label: 'Details', value: 'details'),
+              SegmentOption(label: 'Reflection', value: 'reflection'),
             ],
             value: _tab,
             onChange: (v) => setState(() => _tab = v),
@@ -187,8 +203,11 @@ class _SessionDetailViewState extends State<SessionDetailView> {
   }
 
   Widget _body(SessionDetailViewModel viewModel, SessionDetailState state) {
-    if (_tab == 'summary') {
-      return _SessionSummaryBody(viewModel: viewModel, state: state);
+    if (_tab == 'reflection') {
+      return _SessionReflectionBody(viewModel: viewModel, state: state);
+    }
+    if (_tab == 'prs') {
+      return _SessionPrsBody(viewModel: viewModel, state: state);
     }
     if (state.exerciseSlots.isEmpty) {
       return Center(
@@ -200,6 +219,7 @@ class _SessionDetailViewState extends State<SessionDetailView> {
     }
 
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Expanded(
           child: SingleChildScrollView(
@@ -212,18 +232,6 @@ class _SessionDetailViewState extends State<SessionDetailView> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                if (state.session?.plannedSessionName != null)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 6),
-                    child: Text(
-                      state.session!.plannedSessionName!,
-                      style: AppFonts.mono(
-                        fontSize: 10,
-                        letterSpacing: 0.6,
-                        color: AppColors.planned,
-                      ),
-                    ),
-                  ),
                 if (state.activeSlot != null)
                   _DetailCardBuilder(
                     viewModel: viewModel,
@@ -274,23 +282,91 @@ class _SessionDetailViewState extends State<SessionDetailView> {
   }
 
   void _showAddExercise(BuildContext context) {
-    showLambdaModal(
+    final vm = widget.viewModel;
+    showAddExerciseModal(
       context,
-      fitContent: true,
-      keyboardAware: true,
-      child: _DetailAddExerciseContent(viewModel: widget.viewModel),
+      listenable: vm.state,
+      entries: () {
+        final s = vm.state.value;
+        return [
+          for (final e in s.exerciseDetailMap.values)
+            AddExerciseEntry(
+              exerciseId: e.exerciseId,
+              name: toProperCase(e.name),
+              lastUsed: lastUsedFromHistory(s.historyByExercise, e.exerciseId),
+            ),
+        ];
+      },
+      isAdded: (id) =>
+          vm.state.value.exerciseSlots.any((slot) => slot.exerciseId == id),
+      onAdd: vm.addExerciseGroup,
+      onRemoveRequest: (id) async {
+        final i = vm.state.value.exerciseSlots.indexWhere(
+          (slot) => slot.exerciseId == id,
+        );
+        if (i >= 0) _confirmRemoveExercise(i);
+      },
+      onCreate: vm.submitNewExercise,
+      isCreating: () => vm.state.value.newExCreating,
+    );
+  }
+
+  /// Remove-exercise confirmation, addressed by slot index. Lives on the screen
+  /// rather than on the card because the exercise picker identifies an exercise
+  /// by id, not by the tab the card happens to be showing.
+  void _confirmRemoveExercise(int index) {
+    final state = widget.viewModel.state.value;
+    final slot = state.exerciseSlots[index];
+    final name = toProperCase(widget.viewModel.exerciseDisplayName(slot.exerciseId));
+    final setCount = state.setsFor(slot.groupOrder).length;
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: Text(
+          'Remove Exercise',
+          style: AppFonts.ui(
+            fontWeight: FontWeight.w800,
+            color: AppColors.danger,
+          ),
+        ),
+        content: Text(
+          'Remove $name from this workout?\n$setCount set${setCount == 1 ? '' : 's'} will be removed.',
+          style: AppFonts.ui(color: AppColors.muted),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text('Keep', style: AppFonts.ui(color: AppColors.muted)),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              widget.viewModel.removeExerciseGroup(index);
+            },
+            child: Text(
+              'Remove',
+              style: AppFonts.ui(
+                color: AppColors.danger,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
 
-// ── Summary tab ───────────────────────────────────────────────────────────────
+// ── Reflection tab ────────────────────────────────────────────────────────────
 
 /// The session's bookends and reflection — the same layout as the prep
 /// page's LAST SESSION card, minus its date row and session pager (this
 /// screen is a focused view of one session). Order per spec: pre-training
-/// data, then PRS + LESSONS, then post-training data.
-class _SessionSummaryBody extends StatelessWidget {
-  const _SessionSummaryBody({required this.viewModel, required this.state});
+/// data, then LESSONS, then post-training data.
+class _SessionReflectionBody extends StatelessWidget {
+  const _SessionReflectionBody({required this.viewModel, required this.state});
 
   final SessionDetailViewModel viewModel;
   final SessionDetailState state;
@@ -299,11 +375,6 @@ class _SessionSummaryBody extends StatelessWidget {
   Widget build(BuildContext context) {
     final session = state.session;
 
-    // PR events grouped by exercise.
-    final prsByExercise = <String, List<PrEvent>>{};
-    for (final p in state.prEvents) {
-      prsByExercise.putIfAbsent(p.exerciseId, () => []).add(p);
-    }
     // Session-scoped lessons only — mirrors the prep card, where only
     // lessons born in the shown session count toward its preview.
     final lessonsByExercise = <String, List<String>>{};
@@ -355,15 +426,16 @@ class _SessionSummaryBody extends StatelessWidget {
             ),
           ),
           const SizedBox(height: AppSpacing.md),
-          // The PRS and LESSONS sections — the sections carry their own
-          // empty notes.
+          // The LESSONS section — PRs moved to their own tab. The section
+          // carries its own empty note.
           AppCard(
             padding: const EdgeInsets.all(AppSpacing.md),
             child: ReflectionSummary(
               exerciseIds: exerciseIds,
-              prsByExercise: prsByExercise,
+              prsByExercise: const {},
               lessonsByExercise: lessonsByExercise,
               exerciseNameFor: viewModel.exerciseDisplayName,
+              showPrs: false,
             ),
           ),
           const SizedBox(height: AppSpacing.md),
@@ -392,12 +464,53 @@ class _SessionSummaryBody extends StatelessWidget {
   }
 }
 
+// ── PRs tab ───────────────────────────────────────────────────────────────────
+
+/// The PRs tab — the session's PR events only, one card per event grouped
+/// under its exercise (the same ReflectionSummary section styling as the
+/// live reflection page).
+class _SessionPrsBody extends StatelessWidget {
+  const _SessionPrsBody({required this.viewModel, required this.state});
+
+  final SessionDetailViewModel viewModel;
+  final SessionDetailState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final prsByExercise = <String, List<PrEvent>>{};
+    for (final p in state.prEvents) {
+      prsByExercise.putIfAbsent(p.exerciseId, () => []).add(p);
+    }
+    final exerciseIds = [
+      for (final sl in state.exerciseSlots) sl.exerciseId,
+    ];
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.lg,
+        AppSpacing.md,
+        AppSpacing.lg,
+        AppSpacing.xxl,
+      ),
+      child: AppCard(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        child: ReflectionSummary(
+          exerciseIds: exerciseIds,
+          prsByExercise: prsByExercise,
+          lessonsByExercise: const {},
+          exerciseNameFor: viewModel.exerciseDisplayName,
+          showLessons: false,
+        ),
+      ),
+    );
+  }
+}
+
 // ── Exercise card ────────────────────────────────────────────────────────────
 
 /// The past-session viewer's exercise card — an adapter over the shared
 /// [SessionExerciseCard]. View mode greys edit-only affordances (reorder,
-/// add, hold-to-delete X, ADD SET, swipe, editable cells); edit mode enables
-/// them. The selector switch works in both modes (browsing).
+/// add, ADD SET, swipe, editable cells); edit mode enables them. The selector
+/// switch works in both modes (browsing).
 class _DetailCardBuilder extends StatelessWidget {
   const _DetailCardBuilder({
     required this.viewModel,
@@ -420,51 +533,6 @@ class _DetailCardBuilder extends StatelessWidget {
   static List<num>? _parseReps(String? t) {
     final r = t == null || t.isEmpty ? null : num.tryParse(t);
     return r == null ? null : [r];
-  }
-
-  void _confirmRemoveExercise(BuildContext context) {
-    final name = toProperCase(viewModel.exerciseDisplayName(slot.exerciseId));
-    final setCount = state.setsFor(slot.groupOrder).length;
-
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        title: Text(
-          'Remove Exercise',
-          style: AppFonts.ui(
-            fontWeight: FontWeight.w800,
-            color: AppColors.danger,
-          ),
-        ),
-        content: Text(
-          'Remove $name from this workout?\n$setCount set${setCount == 1 ? '' : 's'} will be removed.',
-          style: AppFonts.ui(color: AppColors.muted),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text('Keep', style: AppFonts.ui(color: AppColors.muted)),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              final index = state.exerciseSlots.indexWhere(
-                (sl) => sl.groupOrder == slot.groupOrder,
-              );
-              viewModel.removeExerciseGroup(index);
-            },
-            child: Text(
-              'Remove',
-              style: AppFonts.ui(
-                color: AppColors.danger,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
   }
 
   /// Delete with the PR-count warning — cascade so PRs recompute.
@@ -585,6 +653,8 @@ class _DetailCardBuilder extends StatelessWidget {
           exerciseId: exerciseId,
           displayIndex: i + 1,
           isDraft: false,
+          // Only edit mode moves rows — view mode is a record.
+          dragIndex: state.isEditing ? i : null,
           initialWeightText: set.weight != null ? _fmtNum(set.weight!) : '',
           initialRepsText: set.reps.isNotEmpty ? _fmtNum(set.reps.first) : '',
           initialVariationId: set.variationId,
@@ -600,6 +670,7 @@ class _DetailCardBuilder extends StatelessWidget {
                 weight: _parseWeight(v.weight),
                 clearWeight: v.weight == null,
                 reps: _parseReps(v.reps),
+                clearReps: v.reps == null,
               );
             }
           },
@@ -671,14 +742,11 @@ class _DetailCardBuilder extends StatelessWidget {
       activeIndex: state.activeSlotIndex,
       onSelect: (i) => viewModel.tapTab(i),
       // Edit-only affordances: null greys the reorder arrows and the Add
-      // Exercise row; the hold-to-delete X is hidden in view mode.
+      // Exercise row.
       onMove: state.isEditing
           ? (i, dir) => viewModel.reorderExercises(i, i + dir)
           : null,
       onAdd: state.isEditing ? onAddExercise : null,
-      onDeleteRequest: state.isEditing
-          ? () => _confirmRemoveExercise(context)
-          : null,
       pinnedLesson: pinnedLesson != null
           ? PinnedLessonData(
               text: pinnedLesson.text,
@@ -697,10 +765,16 @@ class _DetailCardBuilder extends StatelessWidget {
               prs: viewModel.displayPrsFor(exerciseId),
             )
           : null,
-      // PLANNED badge → the planned card outline, like the live screen.
-      planned: state.session?.plannedSessionId != null,
+      // The viewer no longer outlines the card in planned blue — the
+      // session's planned source lives in the identity card above the
+      // stats bar.
+      planned: false,
       rows: rows,
       onAddSet: state.isEditing ? () => viewModel.addDraftSet(order) : null,
+      onReorderSets: state.isEditing
+          ? (oldIndex, newIndex) =>
+                viewModel.reorderSets(order, oldIndex, newIndex)
+          : null,
       history: history,
       // The history viewer is the regular sets grid — read-only here (the
       // screen's own edit mode is the logs' editing surface), so the rows
@@ -730,216 +804,8 @@ class _DetailCardBuilder extends StatelessWidget {
         findSimilarVariations: viewModel.findSimilarVariations,
         submitNewVariation: viewModel.submitNewVariation,
       ),
-    );
-  }
-}
-
-// ── Add Exercise Modal ───────────────────────────────────────────────────────
-
-class _DetailAddExerciseContent extends StatefulWidget {
-  const _DetailAddExerciseContent({required this.viewModel});
-
-  final SessionDetailViewModel viewModel;
-
-  @override
-  State<_DetailAddExerciseContent> createState() =>
-      _DetailAddExerciseContentState();
-}
-
-class _DetailAddExerciseContentState extends State<_DetailAddExerciseContent> {
-  String _query = '';
-
-  List<MapEntry<String, String>> get _filtered {
-    final s = widget.viewModel.state.value;
-    final entries = s.exerciseDetailMap.entries
-        .where(
-          (e) => toProperCase(
-            e.value.name,
-          ).toLowerCase().contains(_query.toLowerCase()),
-        )
-        .map((e) => MapEntry(e.key, toProperCase(e.value.name)))
-        .toList();
-    // Most recently used first (newest history session per exercise, nulls
-    // last), then name.
-    final lastUsed = <String, DateTime>{};
-    for (final sessions in s.historyByExercise.values) {
-      if (sessions.isNotEmpty) {
-        final exId = sessions.first.sets.first.exerciseId;
-        if (exId != null) lastUsed[exId] = sessions.first.date;
-      }
-    }
-    entries.sort((a, b) {
-      final da = lastUsed[a.key];
-      final db = lastUsed[b.key];
-      if (da != null && db != null) return db.compareTo(da);
-      if (da != null) return -1;
-      if (db != null) return 1;
-      return a.value.toLowerCase().compareTo(b.value.toLowerCase());
-    });
-    return entries;
-  }
-
-  bool get _canCreate =>
-      _query.trim().length > 1 &&
-      !widget.viewModel.state.value.exerciseDetailMap.values.any(
-        (e) => e.name.toLowerCase() == _query.trim().toLowerCase(),
-      );
-
-  void _pick(String exerciseId) {
-    widget.viewModel.addExerciseGroup(exerciseId);
-    Navigator.of(context, rootNavigator: true).pop();
-  }
-
-  Future<void> _createNew() async {
-    final id = await widget.viewModel.submitNewExercise(_query);
-    if (id == null || !mounted) return;
-    _pick(id);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(
-          AppSpacing.xl,
-          AppSpacing.xl,
-          AppSpacing.xl,
-          AppSpacing.xl,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'Add exercise',
-                    style: AppFonts.ui(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.primary,
-                    ),
-                  ),
-                ),
-                GestureDetector(
-                  onTap: () => Navigator.of(context, rootNavigator: true).pop(),
-                  child: Icon(Icons.close, size: 20, color: AppColors.muted),
-                ),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.lg),
-            TextField(
-              autofocus: true,
-              style: AppFonts.ui(fontSize: 14, color: AppColors.primary),
-              decoration: InputDecoration(
-                hintText: 'Search exercises…',
-                hintStyle: AppFonts.ui(color: AppColors.muted),
-                prefixIcon: Icon(
-                  Icons.search,
-                  size: 18,
-                  color: AppColors.muted,
-                ),
-                filled: true,
-                fillColor: AppColors.surfaceHigh,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(AppRadius.md),
-                  borderSide: BorderSide(color: AppColors.border),
-                ),
-              ),
-              onChanged: (v) => setState(() => _query = v),
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 260),
-              child: ValueListenableBuilder<SessionDetailState>(
-                valueListenable: widget.viewModel.state,
-                builder: (context, state, _) => ListView(
-                  shrinkWrap: true,
-                  children: [
-                    ..._filtered.map(
-                      // Exercises are unique per session — already-added
-                      // ones are marked, and picking one just switches to
-                      // its existing tab.
-                      (e) => _resultRow(
-                        e.value,
-                        () => _pick(e.key),
-                        added: state.exerciseSlots.any(
-                          (sl) => sl.exerciseId == e.key,
-                        ),
-                      ),
-                    ),
-                    if (_canCreate)
-                      _resultRow(
-                        '+ Create "${_query.trim()}"',
-                        state.newExCreating ? null : _createNew,
-                        accent: true,
-                      ),
-                    if (_filtered.isEmpty &&
-                        !_canCreate &&
-                        _query.trim().isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(
-                          vertical: AppSpacing.lg,
-                        ),
-                        child: Center(
-                          child: Text(
-                            'No exercises found',
-                            style: AppFonts.ui(
-                              fontSize: 13,
-                              color: AppColors.muted,
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _resultRow(String label, VoidCallback? onTap, {bool accent = false, bool added = false}) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          // Pressable rows — the glass recipe in their semantic color.
-          decoration: glassBox(accent ? AppColors.accent : AppColors.primary),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  label,
-                  style: AppFonts.ui(
-                    fontSize: 14,
-                    fontWeight: accent ? FontWeight.w700 : FontWeight.w600,
-                    color: accent ? AppColors.accent : AppColors.primary,
-                  ),
-                ),
-              ),
-              if (added) ...[
-                const SizedBox(width: 8),
-                Icon(Icons.check_circle, size: 14, color: AppColors.success),
-                const SizedBox(width: 4),
-                Text(
-                  'Added',
-                  style: AppFonts.mono(
-                    fontSize: 9,
-                    letterSpacing: 0.4,
-                    color: AppColors.success,
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
+      // The picker tiles show each past session's PR count.
+      isPrSet: (setId) => state.prEventSetIds.contains(setId),
     );
   }
 }

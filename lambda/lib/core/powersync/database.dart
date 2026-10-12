@@ -26,6 +26,8 @@ const _pkColumns = {
   'fact_session_exercise': 'session_exercise_id',
   'dim_program': 'program_id',
   'fact_program_run': 'program_run_id',
+  'fact_program_review': 'review_id',
+  'dim_program_block': 'block_id',
   'dim_lesson': 'lesson_id',
   'dim_planned_session': 'session_id',
   'dim_planned_session_exercise_set': 'planned_set_id',
@@ -210,7 +212,40 @@ class SupabaseConnector extends PowerSyncBackendConnector {
   }
 }
 
-late final PowerSyncDatabase db;
+PowerSyncDatabase? _db;
+
+/// The app's database — a PowerSync SQLite file, opened by [openDatabase].
+///
+/// Reading it before then throws: every in-app caller is a repository or a
+/// screen reached after `openDatabase()`, so an early read is a bug, and one
+/// clear throw at the point of use beats a null check at every call site.
+/// Stored as a nullable behind this getter rather than as `late` so
+/// [swapDatabase] can tell "nothing has opened it yet" from "it holds a
+/// database", which the integration harness depends on.
+PowerSyncDatabase get db =>
+    _db ?? (throw StateError('The database has not been opened yet.'));
+
+/// Points the global [db] at a caller-provided database, returning the one it
+/// replaced — `null` when there was nothing to replace, which is how the
+/// integration harness starts (it swaps in the first database of its
+/// process).
+///
+/// Two callers, one mechanism. Integration tests drive the REAL repositories
+/// against a throwaway PowerSync database with the real client schema
+/// (`openDatabase` is never called there, and cannot be: it wants a signed-in
+/// Supabase session and the device's app container). The dev flow lab swaps in
+/// a scratch database for the length of a sandbox session and restores the
+/// app's own on the way out.
+///
+/// Repositories read `db` per call, so a swap takes effect for any repo
+/// already constructed — with one exception, [LessonRepository], which
+/// captures the database it was given at construction and therefore only
+/// follows a swap made before it exists.
+PowerSyncDatabase? swapDatabase(PowerSyncDatabase database) {
+  final previous = _db;
+  _db = database;
+  return previous;
+}
 
 /// Registered by features (e.g. the session screen) to release their cached
 /// in-memory state when the user signs out — the local DB is being cleared,
@@ -265,11 +300,12 @@ bool isLoggedIn() {
 }
 
 Future<void> openDatabase() async {
-  db = PowerSyncDatabase(
+  _db = PowerSyncDatabase(
     schema: schema,
     path: await _dbPath(),
     logger: attachedLogger,
   );
+
   await db.initialize();
 
   // Purge stale CRUD entries for tables that have been renamed, dropped, or
@@ -301,6 +337,10 @@ Future<void> openDatabase() async {
         'fact_session_set',
         'dim_planned_session_set',
         'dim_exercise_variation_bridge',
+        // Reviews replaced versions (2026-10-05) — the snapshot moved onto
+        // `fact_program_review`, so any queued revision insert is now an
+        // upload against a table the schema no longer has.
+        'fact_program_revision',
       ]) {
         await tx.execute(
           'DELETE FROM ps_crud WHERE table_name = ?',

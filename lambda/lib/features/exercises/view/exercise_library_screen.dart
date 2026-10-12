@@ -8,6 +8,7 @@ import '../../../../core/styles/app_text_styles.dart';
 import '../../../../shared/widgets/app_card.dart';
 import '../../../../shared/widgets/archived_sheet.dart';
 import '../../../../shared/widgets/container_styles.dart';
+import '../../../../core/utils/name_limit.dart';
 import '../../../../core/utils/session_format.dart';
 import '../../../../data/models/custom_exercise.dart';
 import '../../../../data/models/custom_variation.dart';
@@ -15,11 +16,31 @@ import '../../../../data/models/exercise_usage.dart';
 import '../../../../shared/widgets/glass_button.dart';
 import '../../../../shared/widgets/lambda_button.dart';
 import '../../../../shared/widgets/lambda_input.dart';
+import '../../../../shared/widgets/lambda_search_field.dart';
+import '../../../../shared/widgets/name_limit_counter.dart';
 import '../../../../shared/widgets/page_header.dart';
+import '../../../../shared/widgets/scroll_shrink_nav_bar.dart';
 import '../../../../shared/widgets/slide_tab_bar.dart';
 import '../../../../shared/widgets/slide_tab_view.dart';
 import '../../../../shared/widgets/slide_up_modal.dart';
+import '../../../../shared/widgets/sort_button.dart';
 import '../viewmodel/exercise_viewmodel.dart';
+
+/// The Exercises/Variations sort choices, in menu order. "Last used" opens
+/// descending — newest first is what a recency sort means.
+const _exerciseSortOptions = [
+  SortOption(label: 'A–Z', value: ExerciseSortCriterion.name),
+  SortOption(
+    label: 'Last used',
+    value: ExerciseSortCriterion.lastUsed,
+    naturalDescending: true,
+  ),
+  SortOption(
+    label: 'Most used',
+    value: ExerciseSortCriterion.mostUsed,
+    naturalDescending: true,
+  ),
+];
 
 class ExerciseLibraryScreen extends StatefulWidget {
   const ExerciseLibraryScreen({
@@ -232,6 +253,7 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
             onEdit: _openEditExercise,
             onPrev: _viewModel.prevExPage,
             onNext: _viewModel.nextExPage,
+            onSort: _viewModel.setExSort,
           );
           final variationsPanel = _VariationsPanel(
             state: state,
@@ -241,6 +263,7 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
             onEdit: _openEditVariation,
             onPrev: _viewModel.prevVarPage,
             onNext: _viewModel.nextVarPage,
+            onSort: _viewModel.setVarSort,
           );
           return Column(
             children: [
@@ -312,6 +335,7 @@ class _ExercisesPanel extends StatelessWidget {
     required this.onEdit,
     required this.onPrev,
     required this.onNext,
+    required this.onSort,
   });
 
   final ExerciseState state;
@@ -321,41 +345,37 @@ class _ExercisesPanel extends StatelessWidget {
   final ValueChanged<CustomExercise> onEdit;
   final VoidCallback onPrev;
   final VoidCallback onNext;
+  final void Function(ExerciseSortCriterion, bool) onSort;
 
   @override
   Widget build(BuildContext context) {
     return state.isLoading
         ? Center(child: CircularProgressIndicator(color: AppColors.accent))
         : ListView(
-            padding: const EdgeInsets.all(AppSpacing.lg),
+            // The shell's bar floats over the page, so the last row has to
+            // be able to scroll clear of it.
+            padding: EdgeInsets.fromLTRB(
+              AppSpacing.lg,
+              AppSpacing.lg,
+              AppSpacing.lg,
+              ScrollShrinkNavBar.contentInset(context),
+            ),
             children: [
               Row(
                 children: [
                   if (state.exercises.isNotEmpty)
                     Expanded(
-                      child: TextField(
+                      child: LambdaSearchField(
                         controller: searchController,
-                        style: AppFonts.ui(
-                          fontSize: AppTextStyles.sm,
-                          color: AppColors.primary,
-                        ),
-                        decoration: InputDecoration(
-                          hintText: 'Search…',
-                          hintStyle: AppFonts.ui(color: AppColors.muted),
-                          filled: true,
-                          fillColor: AppColors.surface,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(AppRadius.md),
-                            borderSide: BorderSide.none,
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 8,
-                          ),
-                          isDense: true,
-                        ),
                       ),
                     ),
+                  const SizedBox(width: AppSpacing.sm),
+                  SortButton<ExerciseSortCriterion>(
+                    options: _exerciseSortOptions,
+                    value: state.exSort,
+                    descending: state.exSortDesc,
+                    onChanged: onSort,
+                  ),
                   const SizedBox(width: AppSpacing.sm),
                   GlassButton(
                     label: '',
@@ -474,6 +494,7 @@ class _VariationsPanel extends StatelessWidget {
     required this.onEdit,
     required this.onPrev,
     required this.onNext,
+    required this.onSort,
   });
 
   final ExerciseState state;
@@ -483,41 +504,37 @@ class _VariationsPanel extends StatelessWidget {
   final ValueChanged<CustomVariation> onEdit;
   final VoidCallback onPrev;
   final VoidCallback onNext;
+  final void Function(ExerciseSortCriterion, bool) onSort;
 
   @override
   Widget build(BuildContext context) {
     return state.isLoading
         ? Center(child: CircularProgressIndicator(color: AppColors.accent))
         : ListView(
-            padding: const EdgeInsets.all(AppSpacing.lg),
+            // The shell's bar floats over the page, so the last row has to
+            // be able to scroll clear of it.
+            padding: EdgeInsets.fromLTRB(
+              AppSpacing.lg,
+              AppSpacing.lg,
+              AppSpacing.lg,
+              ScrollShrinkNavBar.contentInset(context),
+            ),
             children: [
               Row(
                 children: [
                   if (state.variations.isNotEmpty)
                     Expanded(
-                      child: TextField(
+                      child: LambdaSearchField(
                         controller: searchController,
-                        style: AppFonts.ui(
-                          fontSize: AppTextStyles.sm,
-                          color: AppColors.primary,
-                        ),
-                        decoration: InputDecoration(
-                          hintText: 'Search…',
-                          hintStyle: AppFonts.ui(color: AppColors.muted),
-                          filled: true,
-                          fillColor: AppColors.surface,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(AppRadius.md),
-                            borderSide: BorderSide.none,
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 8,
-                          ),
-                          isDense: true,
-                        ),
                       ),
                     ),
+                  const SizedBox(width: AppSpacing.sm),
+                  SortButton<ExerciseSortCriterion>(
+                    options: _exerciseSortOptions,
+                    value: state.varSort,
+                    descending: state.varSortDesc,
+                    onChanged: onSort,
+                  ),
                   const SizedBox(width: AppSpacing.sm),
                   GlassButton(
                     label: '',
@@ -663,14 +680,14 @@ class _PaginationBar extends StatelessWidget {
           GestureDetector(
             onTap: canPrev ? onPrev : null,
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               // The glass recipe — enabled in accent, disabled stays muted.
               decoration: canPrev
                   ? glassBox(AppColors.accent)
                   : lambdaBox(ContainerTone.ghost, radius: AppRadius.md),
               child: Icon(
                 Icons.chevron_left,
-                size: 16,
+                size: 20,
                 color: canPrev ? AppColors.accent : AppColors.muted,
               ),
             ),
@@ -680,20 +697,20 @@ class _PaginationBar extends StatelessWidget {
             // Cumulative: everything shown up to this page, not just the
             // rows on the current one.
             '${((page + 1) * _pageSize).clamp(0, total)} of $total',
-            style: AppFonts.mono(fontSize: 11, color: AppColors.muted),
+            style: AppFonts.mono(fontSize: 13, color: AppColors.muted),
           ),
           const SizedBox(width: AppSpacing.md),
           GestureDetector(
             onTap: canNext ? onNext : null,
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               // The glass recipe — enabled in accent, disabled stays muted.
               decoration: canNext
                   ? glassBox(AppColors.accent)
                   : lambdaBox(ContainerTone.ghost, radius: AppRadius.md),
               child: Icon(
                 Icons.chevron_right,
-                size: 16,
+                size: 20,
                 color: canNext ? AppColors.accent : AppColors.muted,
               ),
             ),
@@ -742,8 +759,15 @@ class _CreateExerciseModal extends StatelessWidget {
                   enabled: !state.isCreatingEx,
                   textCapitalization: TextCapitalization.words,
                   textInputAction: TextInputAction.done,
+                  maxLength: kMaxExerciseNameLength,
+                  // The sheet's default background is a surface ground.
+                  elevated: true,
                   onChanged: viewModel.setCreateExName,
                 ),
+                if (state.createExName.trim().isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  NameLimitCounter(length: state.createExName.trim().length),
+                ],
                 const SizedBox(height: AppSpacing.lg),
                 Row(
                   children: [
@@ -821,8 +845,15 @@ class _CreateVariationModal extends StatelessWidget {
                   enabled: !state.isCreatingVar,
                   textCapitalization: TextCapitalization.words,
                   textInputAction: TextInputAction.done,
+                  maxLength: kMaxExerciseNameLength,
+                  // The sheet's default background is a surface ground.
+                  elevated: true,
                   onChanged: viewModel.setCreateVarName,
                 ),
+                if (state.createVarName.trim().isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  NameLimitCounter(length: state.createVarName.trim().length),
+                ],
                 const SizedBox(height: AppSpacing.lg),
                 Row(
                   children: [
@@ -916,8 +947,15 @@ class _EditVariationModal extends StatelessWidget {
                   placeholder: 'Variation name',
                   enabled: !state.isSaving,
                   textCapitalization: TextCapitalization.words,
+                  maxLength: kMaxExerciseNameLength,
+                  // The sheet's default background is a surface ground.
+                  elevated: true,
                   onChanged: viewModel.setEditVarName,
                 ),
+                if (state.editVarName.trim().isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  NameLimitCounter(length: state.editVarName.trim().length),
+                ],
                 const SizedBox(height: AppSpacing.lg),
                 Row(
                   children: [
@@ -936,6 +974,12 @@ class _EditVariationModal extends StatelessWidget {
                     Expanded(
                       child: LambdaButton(
                         label: 'Save',
+                        // Nothing to write until the name differs from the
+                        // one being renamed — Cancel is the dismissal.
+                        disabled: state.isSaving ||
+                            state.editVarName.trim().isEmpty ||
+                            state.editVarName.trim() ==
+                                state.editVariation!.name,
                         onPressed: () async {
                           final original = state.editVariation!.name;
                           final renamed = state.editVarName.trim() != original;
@@ -988,7 +1032,6 @@ class _EditVariationModal extends StatelessWidget {
                           }
                         },
                         loading: state.isSaving,
-                        disabled: state.isSaving,
                       ),
                     ),
                   ],

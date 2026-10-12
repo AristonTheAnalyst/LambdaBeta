@@ -40,6 +40,25 @@ class PlannedSessionExerciseSet {
   final String? variationName;
   final bool isArchived;
 
+  /// The same target row, renumbered. Everything but the row's position is
+  /// untouched — a reorder moves sets, it never edits them.
+  PlannedSessionExerciseSet copyWith({int? setNumber}) =>
+      PlannedSessionExerciseSet(
+        plannedSetId: plannedSetId,
+        plannedExerciseId: plannedExerciseId,
+        plannedSessionId: plannedSessionId,
+        userId: userId,
+        setNumber: setNumber ?? this.setNumber,
+        exerciseId: exerciseId,
+        variationId: variationId,
+        targetWeight: targetWeight,
+        targetReps: targetReps,
+        targetNotes: targetNotes,
+        exerciseName: exerciseName,
+        variationName: variationName,
+        isArchived: isArchived,
+      );
+
   factory PlannedSessionExerciseSet.fromMap(Map<String, dynamic> map) =>
       PlannedSessionExerciseSet(
         plannedSetId: map['planned_set_id'] as String,

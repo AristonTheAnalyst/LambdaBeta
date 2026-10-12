@@ -7,12 +7,16 @@ import '../../../core/styles/app_radius.dart';
 import '../../../core/styles/app_spacing.dart';
 import '../../../core/styles/app_text_styles.dart';
 import '../../../core/utils/date_range.dart';
+import '../../../core/utils/name_limit.dart';
 import '../../../data/models/session_exercise_set.dart';
 import '../../../data/repositories/lesson_repository.dart';
 import '../../../data/repositories/pr_view_setting_repository.dart';
 import '../../../data/repositories/session_repository.dart';
 import '../../../shared/widgets/glass_button.dart';
+import '../../../shared/widgets/lambda_input.dart';
+import '../../../shared/widgets/name_limit_counter.dart';
 import '../../../shared/widgets/page_header.dart';
+import '../../../shared/widgets/scroll_shrink_nav_bar.dart';
 import '../../../shared/widgets/container_styles.dart';
 import '../../../shared/widgets/date_range_selector.dart';
 import '../../../shared/widgets/section_divider.dart';
@@ -509,7 +513,14 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
       }
     }
     return ListView(
-      padding: const EdgeInsets.all(AppSpacing.lg),
+      // The shell's bar floats over this page, so the end of the journey has
+      // to be able to scroll clear of it.
+      padding: EdgeInsets.fromLTRB(
+        AppSpacing.lg,
+        AppSpacing.lg,
+        AppSpacing.lg,
+        ScrollShrinkNavBar.contentInset(context),
+      ),
       children: [
         // ── Date filter — one pill naming the active selection; tapping it
         // opens the date-range selector sheet.
@@ -527,7 +538,7 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
                 Text(
                   _selection.label(DateTime.now()),
                   style: AppFonts.mono(
-                    fontSize: 11,
+                    fontSize: 13,
                     color: AppColors.primary,
                   ),
                 ),
@@ -556,7 +567,7 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
         Text(
           'Per-week rates count only weeks where this exercise was trained.',
           style: AppFonts.mono(
-            fontSize: 9,
+            fontSize: 13,
             color: AppColors.muted.withValues(alpha: 0.7),
           ),
         ),
@@ -646,7 +657,7 @@ class _MetricsCard extends StatelessWidget {
                       _labels[i],
                       textAlign: TextAlign.center,
                       style: AppFonts.mono(
-                        fontSize: 8,
+                        fontSize: 14,
                         letterSpacing: 0.8,
                         color: AppColors.accent.withValues(alpha: 0.85),
                       ),
@@ -733,7 +744,7 @@ class _CurveRow extends StatelessWidget {
               child: Text(
                 label,
                 style: AppFonts.mono(
-                  fontSize: 11,
+                  fontSize: 13,
                   color: established ? AppColors.muted : AppColors.muted
                       .withValues(alpha: 0.5),
                 ),
@@ -802,7 +813,7 @@ class _CurveRow extends StatelessWidget {
                     Text(
                       '$prCount',
                       style: AppFonts.mono(
-                        fontSize: 10,
+                        fontSize: 14,
                         fontWeight: FontWeight.w700,
                         color: prCount! > 0
                             ? AppColors.accent
@@ -833,7 +844,14 @@ class _Skeleton extends StatelessWidget {
           ),
         );
     return ListView(
-      padding: const EdgeInsets.all(AppSpacing.lg),
+      // Matches the page it stands in for, so nothing jumps when the real
+      // one arrives.
+      padding: EdgeInsets.fromLTRB(
+        AppSpacing.lg,
+        AppSpacing.lg,
+        AppSpacing.lg,
+        ScrollShrinkNavBar.contentInset(context),
+      ),
       children: [
         box(40),
         const SizedBox(height: AppSpacing.md),
@@ -1006,11 +1024,22 @@ class _RenameExerciseDialog extends StatefulWidget {
 class _RenameExerciseDialogState extends State<_RenameExerciseDialog> {
   late final TextEditingController _controller;
 
+  /// Whether the field holds a name worth writing: something is there, and it
+  /// is not the name it opened with.
+  bool get _canSave =>
+      _controller.text.trim().isNotEmpty &&
+      _controller.text.trim() != (widget.initialName ?? '').trim();
+
   @override
   void initState() {
     super.initState();
     _controller = TextEditingController(text: widget.initialName);
+    // The Save button draws its enabled state from the field, so the dialog
+    // has to rebuild as it is typed into.
+    _controller.addListener(_onChanged);
   }
+
+  void _onChanged() => setState(() {});
 
   @override
   void dispose() {
@@ -1037,21 +1066,27 @@ class _RenameExerciseDialogState extends State<_RenameExerciseDialog> {
             ),
           ),
           const SizedBox(height: AppSpacing.sm),
-          TextField(
+          LambdaInput(
             controller: _controller,
             autofocus: true,
             textCapitalization: TextCapitalization.words,
-            style: AppFonts.ui(color: AppColors.primary),
-            decoration: InputDecoration(
-              hintText: 'Exercise name',
-              hintStyle: AppFonts.ui(color: AppColors.muted),
-              enabledBorder: UnderlineInputBorder(
-                borderSide: BorderSide(color: AppColors.border),
-              ),
-              focusedBorder: UnderlineInputBorder(
-                borderSide: BorderSide(color: AppColors.accent),
-              ),
-            ),
+            // The field pre-fills the current name, and a limit does not
+            // truncate text that is already there — so an over-long name (all
+            // of them were renamed by the 2026-09-29 backfill) shows its real
+            // length and Save refuses until it fits.
+            maxLength: kMaxExerciseNameLength,
+            placeholder: 'Exercise name',
+            // The dialog's ground is surface.
+            elevated: true,
+          ),
+          ValueListenableBuilder<TextEditingValue>(
+            valueListenable: _controller,
+            builder: (context, value, _) => value.text.trim().isEmpty
+                ? const SizedBox.shrink()
+                : Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: NameLimitCounter(length: value.text.trim().length),
+                  ),
           ),
         ],
       ),
@@ -1060,7 +1095,8 @@ class _RenameExerciseDialogState extends State<_RenameExerciseDialog> {
             onPressed: () => Navigator.of(context).pop(),
             child: Text('Cancel', style: AppFonts.ui(color: AppColors.muted))),
         TextButton(
-            onPressed: () => Navigator.of(context).pop(_controller.text),
+            onPressed:
+                _canSave ? () => Navigator.of(context).pop(_controller.text) : null,
             child: Text('Save',
                 style: AppFonts.ui(
                     color: AppColors.accent, fontWeight: FontWeight.w600))),

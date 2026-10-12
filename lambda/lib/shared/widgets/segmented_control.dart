@@ -48,7 +48,7 @@ class SegmentedControl<T> extends StatelessWidget {
           child: GestureDetector(
             onTap: () => onChange(opt.value),
             child: Container(
-              padding: EdgeInsets.symmetric(vertical: subtle ? 6 : 10),
+              padding: EdgeInsets.symmetric(vertical: subtle ? 8 : 12),
               decoration: BoxDecoration(
                 color: bg,
                 borderRadius: BorderRadius.circular(AppRadius.md),

@@ -6,6 +6,7 @@ import '../../../data/models/lesson.dart';
 import '../../../data/models/session.dart';
 import '../../../data/models/session_exercise.dart';
 import '../../../data/models/session_exercise_set.dart';
+import '../../../core/utils/name_limit.dart';
 import '../../../data/repositories/exercise_repository.dart';
 import '../../../data/repositories/lesson_repository.dart';
 import '../../../data/repositories/session_repository.dart';
@@ -563,8 +564,8 @@ class SessionDetailViewModel {
   }
 
   /// Removes an exercise group (slot + all its sets) — the past-session
-  /// viewer's mirror of the planner's remove, so the full-mirror selector's
-  /// hold-to-delete X works in edit mode. Sets go through
+  /// viewer's mirror of the planner's remove, so removing a ticked row in the
+  /// add-exercise modal works in edit mode. Sets go through
   /// [deleteSetCascade] so PRs recompute from the remaining history.
   Future<void> removeExerciseGroup(int index) async {
     final s = state.value;
@@ -595,6 +596,48 @@ class SessionDetailViewModel {
   }
 
   // ── Draft set rows ─────────────────────────────────────────────────────────
+
+  /// Hold-and-drag reorder of one exercise group's logged sets.
+  ///
+  /// [oldIndex] and [newIndex] count that group's REAL rows only, and
+  /// [newIndex] arrives already adjusted for the row being lifted out
+  /// (`onReorderItem`). Draft rows sit past the end and cannot be dropped
+  /// into — a drop there means "last real set".
+  ///
+  /// The renumber is local only, like [reorderExercises]: nothing is re-read,
+  /// because the values are untouched and the only thing that changed is the
+  /// column the read already sorts by. Renumbering is also what makes the new
+  /// order real — the group renders in `set_number` order, so a reorder that
+  /// left the numbers alone would undo itself on the next rebuild.
+  void reorderSets(int groupOrder, int oldIndex, int newIndex) {
+    final group = [
+      ...state.value.setsFor(groupOrder),
+    ]..sort((a, b) => a.setNumber.compareTo(b.setNumber));
+    if (group.length < 2) return;
+    if (newIndex >= group.length) newIndex = group.length - 1;
+    if (oldIndex == newIndex || oldIndex < 0 || oldIndex >= group.length) {
+      return;
+    }
+
+    group.insert(newIndex, group.removeAt(oldIndex));
+    // The group list becomes the new order — this viewer has no sort of its
+    // own, it draws `setsFor` exactly as it finds it.
+    final ordered = [
+      for (var i = 0; i < group.length; i++) group[i].copyWith(setNumber: i + 1),
+    ];
+    final byOrder = Map<int, List<SessionExerciseSet>>.from(
+      state.value.setsByOrder,
+    );
+    byOrder[groupOrder] = ordered;
+    state.value = state.value.copyWith(setsByOrder: byOrder);
+
+    final w = state.value.session;
+    if (w != null) {
+      _sessionRepo.reorderSets(w.sessionId, [
+        for (final s in ordered) s.sessionExerciseSetId,
+      ]);
+    }
+  }
 
   /// "+ ADD SET" in edit mode pre-creates an empty set in the DB so it
   /// survives hot restarts. Empty sets are NOT purged here — they were
@@ -676,6 +719,7 @@ class SessionDetailViewModel {
     double? weight,
     bool clearWeight = false,
     List<num>? reps,
+    bool clearReps = false,
     String? variationId,
     bool clearVariation = false,
     String? notes,
@@ -689,6 +733,7 @@ class SessionDetailViewModel {
         weight: weight,
         clearWeight: clearWeight,
         reps: reps,
+        clearReps: clearReps,
         variationId: variationId,
         clearVariation: clearVariation,
         notes: notes,
@@ -807,6 +852,7 @@ class SessionDetailViewModel {
   Future<String?> submitNewExercise(String name) async {
     final trimmed = name.trim();
     if (trimmed.isEmpty) return null;
+    if (nameTooLong(trimmed)) return null;
     state.value = state.value.copyWith(newExCreating: true);
     try {
       final existing = await _exerciseRepo.findExerciseByName(_userId, trimmed);
@@ -840,6 +886,10 @@ class SessionDetailViewModel {
   }) async {
     final trimmed = name.trim();
     if (trimmed.isEmpty && useExistingId == null) return null;
+    // Only the name-bearing path is capped: a "did you mean?" pick carries the
+    // id, and refusing it over the typed text would break the reuse it exists
+    // for.
+    if (useExistingId == null && nameTooLong(trimmed)) return null;
     state.value = state.value.copyWith(newVarCreating: true);
     try {
       String id;

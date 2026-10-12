@@ -11,7 +11,10 @@ import '../../../../shared/widgets/exercise_tab_chip.dart';
 import '../../../../shared/widgets/feeling_rating.dart';
 import '../../../../shared/widgets/glass_button.dart';
 import '../../../../shared/widgets/lambda_input.dart';
+import '../../../../shared/widgets/lambda_readout.dart';
+import '../../../../shared/widgets/lambda_search_field.dart';
 import '../../../../shared/widgets/page_header.dart';
+import '../../../../shared/widgets/scroll_shrink_nav_bar.dart';
 import '../../../../shared/widgets/segmented_control.dart';
 import '../../../../shared/widgets/stats_row.dart';
 import '../../../../shared/widgets/swipe_actions.dart';
@@ -34,12 +37,14 @@ class _GalleryScreenState extends State<GalleryScreen> {
   final _inputCtrl = TextEditingController();
   final _requiredCtrl = TextEditingController();
   final _errorCtrl = TextEditingController();
+  final _searchCtrl = TextEditingController();
 
   @override
   void dispose() {
     _inputCtrl.dispose();
     _requiredCtrl.dispose();
     _errorCtrl.dispose();
+    _searchCtrl.dispose();
     super.dispose();
   }
 
@@ -68,7 +73,14 @@ class _GalleryScreenState extends State<GalleryScreen> {
               ),
               Expanded(
                 child: ListView(
-                  padding: const EdgeInsets.all(AppSpacing.xl),
+                  // The shell's bar floats over this page, so the last
+                  // section has to be able to scroll clear of it.
+                  padding: EdgeInsets.fromLTRB(
+                    AppSpacing.xl,
+                    AppSpacing.xl,
+                    AppSpacing.xl,
+                    ScrollShrinkNavBar.contentInset(context),
+                  ),
                   children: [
                     _Section(
                       label: 'Colors',
@@ -142,14 +154,14 @@ class _GalleryScreenState extends State<GalleryScreen> {
                         _MonoRow(
                           label: 'mono · 12',
                           sample: '105kg × 5 @ 8 RPE',
-                          style: AppFonts.mono(fontSize: 12, color: c.primary),
+                          style: AppFonts.mono(fontSize: 14, color: c.primary),
                           c: c,
                         ),
                         _MonoRow(
                           label: 'micro · 9',
                           sample: 'SECTION LABEL',
                           style: AppFonts.mono(
-                            fontSize: 9,
+                            fontSize: 13,
                             letterSpacing: 0.8,
                             color: c.muted,
                           ),
@@ -273,6 +285,33 @@ class _GalleryScreenState extends State<GalleryScreen> {
                                 label: 'Disabled field',
                                 enabled: false,
                               ),
+                              // The text-box rule's other halves: a dense
+                              // search box, and a box that is read rather
+                              // than written (frontend-design §6).
+                              const SizedBox(height: AppSpacing.md),
+                              LambdaSearchField(
+                                controller: _searchCtrl,
+                                showIcon: true,
+                              ),
+                              const SizedBox(height: AppSpacing.md),
+                              const LambdaReadout(
+                                label: 'Read-only box',
+                                value: 'Text that is shown rather than '
+                                    'written wears this.',
+                              ),
+                              // The ground rule: the fill is always one tier
+                              // above what the box stands on, so the same
+                              // field on a surface card steps up
+                              // (frontend-design §6).
+                              const SizedBox(height: AppSpacing.md),
+                              AppCard(
+                                child: LambdaInput(
+                                  controller: _inputCtrl,
+                                  label: 'Field on a card',
+                                  placeholder: 'Steps up on surface…',
+                                  elevated: true,
+                                ),
+                              ),
                             ],
                           ),
                         ),
@@ -375,7 +414,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
                                     Text(
                                       'History',
                                       style: AppFonts.mono(
-                                        fontSize: 9,
+                                        fontSize: 13,
                                         letterSpacing: 0.4,
                                         color: c.accent,
                                       ),
@@ -484,7 +523,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
                         Padding(
                           padding: const EdgeInsets.all(AppSpacing.lg),
                           child: Container(
-                            height: 34,
+                            height: 38,
                             alignment: Alignment.center,
                             decoration: BoxDecoration(
                               color: c.bg,
@@ -542,7 +581,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
                                 child: Text(
                                   'PREVIOUS SESSION',
                                   style: AppFonts.mono(
-                                    fontSize: 12,
+                                    fontSize: 14,
                                     fontWeight: FontWeight.w700,
                                     letterSpacing: 1.2,
                                     color: c.primary,
@@ -635,7 +674,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
                                       child: Text(
                                         '5RM: 100kg  →  105kg',
                                         style: AppFonts.mono(
-                                          fontSize: 12,
+                                          fontSize: 14,
                                           fontWeight: FontWeight.w700,
                                           color: c.accent,
                                         ),
@@ -724,7 +763,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
                                       '1',
                                       textAlign: TextAlign.center,
                                       style: AppFonts.mono(
-                                        fontSize: 11,
+                                        fontSize: 13,
                                         color: c.muted,
                                       ),
                                     ),
@@ -767,8 +806,8 @@ class _GalleryScreenState extends State<GalleryScreen> {
                                   // when a set has a note — the neutral
                                   // glass treatment.
                                   Container(
-                                    width: 32,
-                                    height: 32,
+                                    width: 40,
+                                    height: 40,
                                     alignment: Alignment.center,
                                     decoration: BoxDecoration(
                                       color: c.primary.withAlpha(26),
@@ -1065,7 +1104,7 @@ class _RadiusRow extends StatelessWidget {
           ),
           Container(
             width: 56,
-            height: 28,
+            height: 40,
             decoration: BoxDecoration(
               color: c.surfaceHigh,
               borderRadius: BorderRadius.circular(radius),
@@ -1099,8 +1138,8 @@ class _SurfaceRow extends StatelessWidget {
       child: Row(
         children: [
           Container(
-            width: 28,
-            height: 28,
+            width: 40,
+            height: 40,
             decoration: BoxDecoration(
               color: color,
               borderRadius: BorderRadius.circular(6),

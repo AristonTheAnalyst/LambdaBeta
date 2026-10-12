@@ -1,10 +1,17 @@
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../core/utils/name_limit.dart';
+import '../../../core/utils/sort_compare.dart';
 import '../../../data/models/custom_exercise.dart';
 import '../../../data/models/custom_variation.dart';
 import '../../../data/models/exercise_detail.dart';
 import '../../../data/models/exercise_usage.dart';
 import '../../../data/repositories/exercise_repository.dart';
+
+/// What the Exercises and Variations lists order by — a per-run UI choice,
+/// not persisted. `lastUsed` is the default because recency is what makes
+/// the list useful; a library ordered by creation buries what you train.
+enum ExerciseSortCriterion { lastUsed, name, mostUsed }
 
 class ExerciseState {
   const ExerciseState({
@@ -20,6 +27,10 @@ class ExerciseState {
     this.varSearch = '',
     this.exPage = 0,
     this.varPage = 0,
+    this.exSort = ExerciseSortCriterion.lastUsed,
+    this.exSortDesc = true,
+    this.varSort = ExerciseSortCriterion.lastUsed,
+    this.varSortDesc = true,
     // Edit exercise modal
     this.editExercise,
     this.editExName = '',
@@ -47,6 +58,12 @@ class ExerciseState {
   final String varSearch;
   final int exPage;
   final int varPage;
+
+  /// Each list sorts independently — same criteria, own choice.
+  final ExerciseSortCriterion exSort;
+  final bool exSortDesc;
+  final ExerciseSortCriterion varSort;
+  final bool varSortDesc;
 
   final CustomExercise? editExercise;
   final String editExName;
@@ -77,29 +94,52 @@ class ExerciseState {
             )
             .toList();
 
-  /// Exercises sorted by most recently used (lastUsed desc), then name.
+  /// The exercises in view, sorted by the current criterion and direction,
+  /// with name as the tiebreak (two equal dates must still read A–Z).
   List<CustomExercise> get sortedExercises {
+    final dir = exSortDesc ? -1 : 1;
     final sorted = [...filteredExercises]
       ..sort((a, b) {
-        final da = usage[a.exerciseId]?.lastUsed;
-        final db = usage[b.exerciseId]?.lastUsed;
-        if (da != null && db != null) return db.compareTo(da);
-        if (da != null) return -1;
-        if (db != null) return 1;
-        return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+        final byCriterion = switch (exSort) {
+          ExerciseSortCriterion.lastUsed => compareNullable(
+            usage[a.exerciseId]?.lastUsed,
+            usage[b.exerciseId]?.lastUsed,
+            dir,
+          ),
+          ExerciseSortCriterion.name =>
+            a.name.toLowerCase().compareTo(b.name.toLowerCase()) * dir,
+          ExerciseSortCriterion.mostUsed =>
+            ((usage[a.exerciseId]?.sets ?? 0) -
+                    (usage[b.exerciseId]?.sets ?? 0)) *
+                dir,
+        };
+        return byCriterion != 0
+            ? byCriterion
+            : a.name.toLowerCase().compareTo(b.name.toLowerCase());
       });
     return sorted;
   }
 
   List<CustomVariation> get sortedVariations {
+    final dir = varSortDesc ? -1 : 1;
     final sorted = [...filteredVariations]
       ..sort((a, b) {
-        final da = usage[a.variationId]?.lastUsed;
-        final db = usage[b.variationId]?.lastUsed;
-        if (da != null && db != null) return db.compareTo(da);
-        if (da != null) return -1;
-        if (db != null) return 1;
-        return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+        final byCriterion = switch (varSort) {
+          ExerciseSortCriterion.lastUsed => compareNullable(
+            usage[a.variationId]?.lastUsed,
+            usage[b.variationId]?.lastUsed,
+            dir,
+          ),
+          ExerciseSortCriterion.name =>
+            a.name.toLowerCase().compareTo(b.name.toLowerCase()) * dir,
+          ExerciseSortCriterion.mostUsed =>
+            ((usage[a.variationId]?.sets ?? 0) -
+                    (usage[b.variationId]?.sets ?? 0)) *
+                dir,
+        };
+        return byCriterion != 0
+            ? byCriterion
+            : a.name.toLowerCase().compareTo(b.name.toLowerCase());
       });
     return sorted;
   }
@@ -138,6 +178,10 @@ class ExerciseState {
     String? varSearch,
     int? exPage,
     int? varPage,
+    ExerciseSortCriterion? exSort,
+    bool? exSortDesc,
+    ExerciseSortCriterion? varSort,
+    bool? varSortDesc,
     CustomExercise? editExercise,
     bool clearEditEx = false,
     String? editExName,
@@ -163,6 +207,10 @@ class ExerciseState {
     varSearch: varSearch ?? this.varSearch,
     exPage: exPage ?? this.exPage,
     varPage: varPage ?? this.varPage,
+    exSort: exSort ?? this.exSort,
+    exSortDesc: exSortDesc ?? this.exSortDesc,
+    varSort: varSort ?? this.varSort,
+    varSortDesc: varSortDesc ?? this.varSortDesc,
     editExercise: clearEditEx ? null : (editExercise ?? this.editExercise),
     editExName: clearEditEx ? '' : (editExName ?? this.editExName),
     editVariation: clearEditVar ? null : (editVariation ?? this.editVariation),
@@ -211,6 +259,15 @@ class ExerciseViewModel {
   void setVarSearch(String q) =>
       state.value = state.value.copyWith(varSearch: q, varPage: 0);
 
+  /// Change a list's ordering; the page resets because page 3 of one
+  /// ordering is not page 3 of another.
+  void setExSort(ExerciseSortCriterion c, bool descending) =>
+      state.value =
+          state.value.copyWith(exSort: c, exSortDesc: descending, exPage: 0);
+  void setVarSort(ExerciseSortCriterion c, bool descending) =>
+      state.value =
+          state.value.copyWith(varSort: c, varSortDesc: descending, varPage: 0);
+
   void nextExPage() =>
       state.value = state.value.copyWith(exPage: state.value.exPage + 1);
   void prevExPage() =>
@@ -239,6 +296,7 @@ class ExerciseViewModel {
   Future<void> saveEditExercise() async {
     final s = state.value;
     if (s.editExercise == null || s.editExName.trim().isEmpty) return;
+    if (nameTooLong(s.editExName)) return;
     state.value = s.copyWith(isSaving: true, clearError: true);
     try {
       await _repo.updateExercise(
@@ -281,6 +339,7 @@ class ExerciseViewModel {
   Future<void> renameExercise(String exerciseId, String name) async {
     final trimmed = name.trim();
     if (trimmed.isEmpty) return;
+    if (nameTooLong(trimmed)) return;
     await _repo.updateExercise(exerciseId, trimmed);
     await fetchAll();
   }
@@ -306,6 +365,7 @@ class ExerciseViewModel {
   Future<void> saveEditVariation() async {
     final s = state.value;
     if (s.editVariation == null || s.editVarName.trim().isEmpty) return;
+    if (nameTooLong(s.editVarName)) return;
     state.value = s.copyWith(isSaving: true, clearError: true);
     try {
       await _repo.updateVariation(
@@ -356,6 +416,7 @@ class ExerciseViewModel {
     final s = state.value;
     final name = s.createExName.trim();
     if (name.isEmpty) return null;
+    if (nameTooLong(name)) return null;
     state.value = s.copyWith(isCreatingEx: true);
     try {
       final existing = await _repo.findExerciseByName(_userId, name);
@@ -400,6 +461,7 @@ class ExerciseViewModel {
     final s = state.value;
     final name = s.createVarName.trim();
     if (name.isEmpty) return null;
+    if (nameTooLong(name)) return null;
     state.value = s.copyWith(isCreatingVar: true);
     try {
       final existing = await _repo.findVariationByName(_userId, name);

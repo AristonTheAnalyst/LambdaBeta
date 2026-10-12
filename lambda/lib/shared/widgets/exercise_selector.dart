@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_fonts.dart';
@@ -8,11 +6,36 @@ import './container_styles.dart';
 import '../../core/styles/app_spacing.dart';
 import '../../core/styles/app_text_styles.dart';
 
+/// How a review's two sides disagree about an exercise, read off its name: a
+/// green **plus** for one the comparison base did not hold (added since it),
+/// a red **minus** for one it did hold and the side on screen does not
+/// (dropped).
+///
+/// The mark says something about the COMPARISON, not about the workout —
+/// nothing is stored, and where the two sides do not meet the same exercise
+/// wears the plus from one side of the eye and the minus from the other. It
+/// appears nowhere else: a live session, a log, a plan on its own has no
+/// second reading to be a change against.
+enum ExerciseMark {
+  added(Icons.add_circle),
+  removed(Icons.remove_circle);
+
+  const ExerciseMark(this.icon);
+
+  /// The glyph the name wears — the plus or minus inside a disc, because a
+  /// bare stroke at this size reads as a hyphen, or as a smudge, against the
+  /// name it is about (2026-10-12). Colour resolves at draw time — the tokens
+  /// are getters over the live theme, so no enum constant can hold one — and
+  /// is always [AppColors.success] for [added], [AppColors.danger] for
+  /// [removed].
+  final IconData icon;
+}
+
 /// The workout exercise selector — a field that opens an anchored popover
 /// over the screen: the selected exercise shows highlighted, up/down arrows
-/// reorder, Add Exercise is pinned at the bottom, and holding the X for one
-/// second requests deletion (the caller shows the warning). The caller owns
-/// the list; every action reports back through callbacks.
+/// reorder, and Add/Remove Exercises is pinned at the bottom, where the
+/// caller's exercise picker both adds and removes. The caller owns the list;
+/// every action reports back through callbacks.
 class ExerciseSelector extends StatefulWidget {
   const ExerciseSelector({
     super.key,
@@ -21,7 +44,7 @@ class ExerciseSelector extends StatefulWidget {
     required this.onSelect,
     required this.onMove,
     required this.onAdd,
-    required this.onDeleteRequest,
+    this.marks = const [],
   });
 
   /// Display names, in order.
@@ -29,18 +52,19 @@ class ExerciseSelector extends StatefulWidget {
   final int activeIndex;
   final void Function(int index) onSelect;
 
+  /// One mark per name, parallel to [exercises]. A null entry, a list that
+  /// stops short, or no list at all leaves that name bare — an unmarked name
+  /// draws nothing, not even the gap its mark would take. Only a review fills
+  /// these.
+  final List<ExerciseMark?> marks;
+
   /// Reorder: move [index] by [direction] (-1 up, +1 down).
   /// Null greys the reorder arrows (read-only contexts).
   final void Function(int index, int direction)? onMove;
 
-  /// Null greys the Add Exercise row (kept visible but inert so the popover
-  /// still reads complete in read-only contexts).
+  /// Null greys the Add/Remove Exercises row (kept visible but inert so the
+  /// popover still reads complete in read-only contexts).
   final VoidCallback? onAdd;
-
-  /// Fired after the 1-second hold on the X — the caller shows the warning
-  /// dialog and performs the delete. Null hides the X entirely — a dead
-  /// hold-to-delete ring would be worse than absent.
-  final VoidCallback? onDeleteRequest;
 
   @override
   State<ExerciseSelector> createState() => _ExerciseSelectorState();
@@ -69,6 +93,24 @@ class _ExerciseSelectorState extends State<ExerciseSelector> {
       _open = true;
     });
     _portal.show();
+  }
+
+  /// The glyph a marked name wears, riding directly after it: the name
+  /// ellipsizes to its left, so a long one narrows rather than pushing its
+  /// mark out of the field. An unmarked name draws nothing at all.
+  Widget _mark(int i) {
+    final mark = i < widget.marks.length ? widget.marks[i] : null;
+    if (mark == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(left: 6),
+      child: Icon(
+        mark.icon,
+        size: 14,
+        color: mark == ExerciseMark.added
+            ? AppColors.success
+            : AppColors.danger,
+      ),
+    );
   }
 
   @override
@@ -112,16 +154,27 @@ class _ExerciseSelectorState extends State<ExerciseSelector> {
                     child: Row(
                       children: [
                         Expanded(
-                          child: Text(
-                            widget.exercises.isEmpty
-                                ? ''
-                                : widget.exercises[widget.activeIndex],
-                            overflow: TextOverflow.ellipsis,
-                            style: AppFonts.ui(
-                              fontSize: AppTextStyles.sm,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.primary,
-                            ),
+                          child: Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  widget.exercises.isEmpty
+                                      ? ''
+                                      : widget.exercises[widget.activeIndex],
+                                  // Single line: without it the name wraps and
+                                  // grows the field taller instead of
+                                  // shortening.
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: AppFonts.ui(
+                                    fontSize: AppTextStyles.sm,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.primary,
+                                  ),
+                                ),
+                              ),
+                              _mark(widget.activeIndex),
+                            ],
                           ),
                         ),
                         const SizedBox(width: AppSpacing.sm),
@@ -137,10 +190,6 @@ class _ExerciseSelectorState extends State<ExerciseSelector> {
                             color: AppColors.primary,
                           ),
                         ),
-                        if (widget.onDeleteRequest != null) ...[
-                          const SizedBox(width: AppSpacing.xs),
-                          _HoldToDeleteX(onComplete: widget.onDeleteRequest!),
-                        ],
                       ],
                     ),
                   ),
@@ -243,14 +292,24 @@ class _ExerciseSelectorState extends State<ExerciseSelector> {
         child: Row(
           children: [
             Expanded(
-              child: Text(
-                widget.exercises[i],
-                overflow: TextOverflow.ellipsis,
-                style: AppFonts.ui(
-                  fontSize: AppTextStyles.sm,
-                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                  color: selected ? AppColors.primary : AppColors.muted,
-                ),
+              child: Row(
+                children: [
+                  Flexible(
+                    child: Text(
+                      widget.exercises[i],
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppFonts.ui(
+                        fontSize: AppTextStyles.sm,
+                        fontWeight: selected
+                            ? FontWeight.w700
+                            : FontWeight.w500,
+                        color: selected ? AppColors.primary : AppColors.muted,
+                      ),
+                    ),
+                  ),
+                  _mark(i),
+                ],
               ),
             ),
             _arrow(
@@ -309,9 +368,10 @@ class _ExerciseSelectorState extends State<ExerciseSelector> {
   }
 
   /// Pinned at the bottom of the popover — the caller opens its own
-  /// add-exercise flow. When [widget.onAdd] is null the row stays visible
-  /// but renders greyed and inert, so read-only contexts keep the popover's
-  /// shape without a dead action.
+  /// exercise picker, which is where exercises are both added and removed.
+  /// When [widget.onAdd] is null the row stays visible but renders greyed and
+  /// inert, so read-only contexts keep the popover's shape without a dead
+  /// action.
   Widget _addRow() {
     final enabled = widget.onAdd != null;
     final color = enabled ? AppColors.primary : AppColors.muted.withValues(alpha: 0.4);
@@ -331,7 +391,7 @@ class _ExerciseSelectorState extends State<ExerciseSelector> {
             Icon(Icons.add, size: 16, color: color),
             const SizedBox(width: AppSpacing.sm),
             Text(
-              'Add Exercise',
+              'Add/Remove Exercises',
               style: AppFonts.ui(
                 fontSize: AppTextStyles.sm,
                 fontWeight: FontWeight.w700,
@@ -345,95 +405,3 @@ class _ExerciseSelectorState extends State<ExerciseSelector> {
   }
 }
 
-/// Hold-to-delete X — the container's background and outline fill with
-/// danger red over one second; once complete, fires [onComplete].
-class _HoldToDeleteX extends StatefulWidget {
-  const _HoldToDeleteX({required this.onComplete});
-
-  final VoidCallback onComplete;
-
-  @override
-  State<_HoldToDeleteX> createState() => _HoldToDeleteXState();
-}
-
-class _HoldToDeleteXState extends State<_HoldToDeleteX>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _progress = AnimationController(
-    vsync: this,
-    duration: const Duration(seconds: 1),
-  );
-  Timer? _timer;
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    _progress.dispose();
-    super.dispose();
-  }
-
-  void _start() {
-    _timer?.cancel();
-    _progress.forward(from: 0);
-    _timer = Timer(const Duration(seconds: 1), () {
-      if (mounted) {
-        _progress.reset();
-        widget.onComplete();
-      }
-    });
-  }
-
-  void _cancel() {
-    _timer?.cancel();
-    if (mounted) _progress.stop();
-    if (mounted) _progress.value = 0;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      key: const ValueKey('exercise-selector-delete'),
-      // Claims the tap arena so holding the X never triggers the field's
-      // own tap (which would open the menu on release).
-      onTap: () {},
-      child: Listener(
-        onPointerDown: (_) => _start(),
-        onPointerUp: (_) => _cancel(),
-        onPointerCancel: (_) => _cancel(),
-        child: SizedBox(
-          width: 28,
-          height: 28,
-          child: AnimatedBuilder(
-            animation: _progress,
-            builder: (context, _) {
-              // The hold fills the container — background and outline
-              // graduate from neutral to danger as the progress advances.
-              final t = _progress.value;
-              return Container(
-                width: 24,
-                height: 24,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: Color.lerp(Colors.transparent, AppColors.dangerBg, t),
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(
-                    color: Color.lerp(
-                      AppColors.border,
-                      AppColors.danger,
-                      t,
-                    )!,
-                    width: 0.5,
-                  ),
-                ),
-                child: Icon(
-                  Icons.close,
-                  size: 14,
-                  color: Color.lerp(AppColors.muted, AppColors.primary, t),
-                ),
-              );
-            },
-          ),
-        ),
-      ),
-    );
-  }
-}

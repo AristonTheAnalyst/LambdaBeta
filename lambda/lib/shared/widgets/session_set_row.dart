@@ -4,8 +4,8 @@ import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_fonts.dart';
 import '../../core/styles/app_radius.dart';
 import './container_styles.dart';
-import '../../core/utils/session_format.dart';
 import '../../data/models/planned_session_exercise_set.dart';
+import '../../data/models/program_content.dart';
 import '../../features/session/view/notes_modal.dart';
 import '../utils/pop_dialog.dart';
 import 'dropdown_select.dart';
@@ -28,6 +28,52 @@ enum SetRowMode {
   /// cells in view mode.
   history,
 }
+
+/// A set drawn as a **record** — a completed review's snapshot of it, or the
+/// pass's Compare flip reading it back. Read only, and structurally so: the
+/// swipe drawer is not drawn at all, and `readOnly` keeps every callback from
+/// firing, which is why the inert closures below are the whole plumbing.
+///
+/// One builder, two readers (the Compare flip in `plan_session_screen.dart`,
+/// the record's workout screen). A read-only row that drifts from the other
+/// read-only row is exactly the kind of copy this shared file exists to
+/// prevent.
+///
+/// The variation lists are the **caller's**, because they are the library's: a
+/// record stores an id, and the label drawn here comes from the live names.
+SessionSetRow recordSetRow({
+  required ContentSet set,
+  required int index,
+  required String exerciseId,
+  required Map<String, String> variationNames,
+  required List<DropdownOption<String?>> variationOptions,
+  required List<({String id, String name})> allVariations,
+}) => SessionSetRow(
+  key: ValueKey(set.plannedSetId),
+  mode: SetRowMode.planned,
+  // The row's own plumbing, unused by a read-only row — a record's exercise
+  // may have no id at all (a free tab), and the column would be empty then.
+  exerciseId: exerciseId,
+  displayIndex: index + 1,
+  isDraft: false,
+  initialWeightText: set.targetWeight ?? '',
+  initialRepsText: set.targetReps ?? '',
+  initialVariationId: set.variationId,
+  initialVariationName: variationNames[set.variationId],
+  initialNotes: set.targetNotes,
+  hasNotes: set.targetNotes?.isNotEmpty ?? false,
+  readOnly: true,
+  onCommit: (isDraft, values) async {},
+  onVariationChanged: (_) {},
+  onNotesSave: (_) {},
+  onDelete: () async {},
+  onDuplicate: () {},
+  variationOptions: variationOptions,
+  allVariations: allVariations,
+  findSimilarVariations: (_) => const [],
+  submitNewVariation: (name, {required exerciseId, useExistingId}) async =>
+      null,
+);
 
 /// Normalized commit payload — raw trimmed text; null means empty/cleared.
 /// The screen's closure parses to its VM's own types (double/num vs String).
@@ -56,6 +102,7 @@ class SessionSetRow extends StatefulWidget {
     required this.exerciseId,
     required this.displayIndex,
     required this.isDraft,
+    this.dragIndex,
     // Value seeds (screens compute, incl. live's numeric-planned-weight
     // prefill and the snapshot variation name for read-only display):
     required this.initialWeightText,
@@ -101,6 +148,11 @@ class SessionSetRow extends StatefulWidget {
   final String exerciseId;
   final int displayIndex;
   final bool isDraft;
+
+  /// The row's index in the card's reorderable list — non-null makes the
+  /// number cell the hold-and-drag handle. Null on rows that cannot move:
+  /// drafts (no id to key a move on) and every read-only surface.
+  final int? dragIndex;
 
   final String initialWeightText;
   final String initialRepsText;
@@ -497,7 +549,7 @@ class _SessionSetRowState extends State<SessionSetRow> {
                           '${s.exerciseCount} exercise${s.exerciseCount == 1 ? '' : 's'}',
                           style: TextStyle(
                             color: AppColors.muted,
-                            fontSize: 12,
+                            fontSize: 14,
                           ),
                         ),
                       ],
@@ -588,31 +640,7 @@ class _SessionSetRowState extends State<SessionSetRow> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          SizedBox(
-            width: 26,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (widget.isPr)
-                  Text(
-                    'PR',
-                    style: AppFonts.mono(
-                      fontSize: 8,
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.accent,
-                    ),
-                  )
-                else
-                  Text(
-                    '${widget.displayIndex}',
-                    style: AppFonts.mono(
-                      fontSize: 11,
-                      color: AppColors.muted,
-                    ),
-                  ),
-              ],
-            ),
-          ),
+          _numberCell(),
           const SizedBox(width: 6),
           Expanded(
             child: _cell(
@@ -667,13 +695,13 @@ class _SessionSetRowState extends State<SessionSetRow> {
                           : '',
                       child: Text(
                         variationId != null
-                            ? truncateName(widget.initialVariationName ?? '')
+                            ? (widget.initialVariationName ?? '')
                             : '—',
                         textAlign: TextAlign.center,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: AppFonts.ui(
-                          fontSize: 11,
+                          fontSize: 13,
                           fontWeight: FontWeight.w600,
                           color: AppColors.muted,
                         ),
@@ -683,7 +711,7 @@ class _SessionSetRowState extends State<SessionSetRow> {
                 : Tooltip(
                     message: variationLabel,
                     child: Container(
-                      height: 34,
+                      height: 38,
                       alignment: Alignment.center,
                       // Neutral chrome — planned-ness lives on the row
                       // container, never inside the fields.
@@ -714,45 +742,51 @@ class _SessionSetRowState extends State<SessionSetRow> {
                     ),
                   ),
           ),
-          const SizedBox(width: 6),
-          GestureDetector(
-            onTap: _effectiveReadOnly
-                ? (_gated
-                    ? () => _requestGateEdit(after: _openNotes)
-                    : (hasNotes ? _openNotes : null))
-                : _openNotes,
-            child: Container(
-              width: 32,
-              height: 32,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                // A noted set gets the neutral glass treatment — the same
-                // translucent tint + soft hairline as GlassButton (never the
-                // PR accent).
-                color: hasNotes
-                    ? AppColors.primary.withAlpha(26)
-                    : Colors.transparent,
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(
-                  color: hasNotes
-                      ? AppColors.primary.withAlpha(77)
-                      : AppColors.border,
-                ),
-              ),
-              child: Icon(
-                Icons.sticky_note_2_outlined,
-                size: 15,
-                color: hasNotes ? AppColors.primary : AppColors.muted,
-              ),
-            ),
-          ),
         ],
       ),
     );
 
-    // Gate-mode rows never expose swipe actions, even after the confirm —
-    // the history viewer edits values, it doesn't delete/duplicate past sets.
-    if (!_effectiveReadOnly && widget.onEditConfirm == null) {
+    // The note indicator — a white vertical line at the right edge of the
+    // row's background. The note itself opens from the swipe actions.
+    if (hasNotes) {
+      row = Stack(
+        children: [
+          row,
+          Positioned(
+            right: 2,
+            top: 7,
+            bottom: 7,
+            child: Container(
+              width: 3,
+              decoration: BoxDecoration(
+                color: AppColors.primary,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    if (widget.onEditConfirm != null) {
+      // The history viewer's rows: swipe reveals ONLY Note — past data can't
+      // be duplicated or deleted, but notes stay editable through the same
+      // one-time confirm gate as the field edits.
+      row = SwipeActions(
+        borderRadius: AppRadius.md,
+        actions: [
+          SwipeAction(
+            icon: Icons.sticky_note_2_outlined,
+            label: 'Note',
+            color: AppColors.primary,
+            onTap: _gated
+                ? () => _requestGateEdit(after: _openNotes)
+                : _openNotes,
+          ),
+        ],
+        child: row,
+      );
+    } else if (!_effectiveReadOnly) {
       row = SwipeActions(
         borderRadius: AppRadius.md,
         actions: [
@@ -764,6 +798,12 @@ class _SessionSetRowState extends State<SessionSetRow> {
               onTap: _duplicate,
             ),
           SwipeAction(
+            icon: Icons.sticky_note_2_outlined,
+            label: 'Note',
+            color: AppColors.primary,
+            onTap: _openNotes,
+          ),
+          SwipeAction(
             icon: Icons.delete_outline,
             label: 'Delete',
             color: AppColors.danger,
@@ -772,9 +812,99 @@ class _SessionSetRowState extends State<SessionSetRow> {
         ],
         child: row,
       );
+    } else {
+      // Plain read-only rows (the past-session viewer's view mode, the
+      // training-page preview): swipe reveals ONLY Note, every row — the
+      // modal renders read-only too.
+      row = SwipeActions(
+        borderRadius: AppRadius.md,
+        actions: [
+          SwipeAction(
+            icon: Icons.sticky_note_2_outlined,
+            label: 'Note',
+            color: AppColors.primary,
+            onTap: _openNotes,
+          ),
+        ],
+        child: row,
+      );
     }
 
     return Padding(padding: const EdgeInsets.only(bottom: 6), child: row);
+  }
+
+  /// The set number — and, when [SessionSetRow.dragIndex] is set, the handle
+  /// for reordering: hold it to lift the row, drag, drop.
+  ///
+  /// The label rolls on change, because a drop renumbers every row between
+  /// the lifted row's old and new slot at once and a bare text swap would read
+  /// as the grid flickering rather than as the sets resequencing.
+  ///
+  /// Both numbers travel the same way — the arriving one up into place, the
+  /// one it replaces carrying on up and out — so the column turns like an
+  /// odometer, and neither number is ever seen standing still beside the
+  /// other. The walk is paced to be followed by eye: quick enough to still
+  /// read as the tail end of the drop, slow enough not to flicker.
+  Widget _numberCell() {
+    final ValueKey<String> numberKey = widget.isPr
+        ? const ValueKey('pr')
+        : ValueKey('set-${widget.displayIndex}');
+
+    Widget label = AnimatedSwitcher(
+      duration: const Duration(milliseconds: 260),
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeInCubic,
+      transitionBuilder: (child, animation) {
+        // The child on its way out runs this same animation backwards, so its
+        // tween is the mirror of the incoming one: same direction of travel,
+        // leaving where the next one comes from.
+        final bool arriving = child.key == numberKey;
+        return FadeTransition(
+          opacity: animation,
+          child: SlideTransition(
+            position: Tween<Offset>(
+              begin: Offset(0, arriving ? 0.5 : -0.5),
+              end: Offset.zero,
+            ).animate(animation),
+            child: child,
+          ),
+        );
+      },
+      child: widget.isPr
+          ? Text(
+              'PR',
+              key: numberKey,
+              style: AppFonts.mono(
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+                color: AppColors.accent,
+              ),
+            )
+          : Text(
+              '${widget.displayIndex}',
+              key: numberKey,
+              style: AppFonts.mono(fontSize: 13, color: AppColors.muted),
+            ),
+    );
+
+    // The cell is as tall as the input cells beside it, so the hold target is
+    // the whole number column rather than the digits. The fill is what makes
+    // it one: `ReorderableDelayedDragStartListener` wraps a bare Listener,
+    // which hit-tests only where something painted.
+    Widget cell = Container(
+      width: 26,
+      height: 38,
+      color: Colors.transparent,
+      alignment: Alignment.center,
+      child: label,
+    );
+
+    if (widget.dragIndex == null) return cell;
+
+    return ReorderableDelayedDragStartListener(
+      index: widget.dragIndex!,
+      child: cell,
+    );
   }
 
   /// The reps/kg cell. Ghost = live's planned-target overlay — the planned
@@ -791,7 +921,7 @@ class _SessionSetRowState extends State<SessionSetRow> {
     ValueChanged<String>? onChanged,
   }) {
     return SizedBox(
-      height: 34,
+      height: 38,
       child: TextField(
         key: key,
         controller: controller,

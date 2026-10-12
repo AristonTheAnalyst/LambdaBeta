@@ -8,6 +8,7 @@ import '../../../../core/styles/app_text_styles.dart';
 import '../../../../shared/widgets/app_card.dart';
 import '../../../../shared/widgets/glass_button.dart';
 import '../../../../shared/widgets/page_header.dart';
+import '../../../../shared/widgets/scroll_shrink_nav_bar.dart';
 import '../sample_data_service.dart';
 
 class DevScreen extends StatelessWidget {
@@ -23,7 +24,14 @@ class DevScreen extends StatelessWidget {
           const PageHeader(title: 'Dev'),
           Expanded(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.all(AppSpacing.xl),
+              // The shell's bar floats over the page, so the last card has to
+              // be able to scroll clear of it.
+              padding: EdgeInsets.fromLTRB(
+                AppSpacing.xl,
+                AppSpacing.xl,
+                AppSpacing.xl,
+                ScrollShrinkNavBar.contentInset(context),
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -47,7 +55,20 @@ class DevScreen extends StatelessWidget {
                     subtitle: 'Raw dim_lesson rows + upload queue',
                     onTap: () => context.push('/dev/lesson-debug'),
                   ),
-                  const SizedBox(height: AppSpacing.xl),
+                  const SizedBox(height: AppSpacing.sm),
+                  _NavCard(
+                    icon: Icons.blur_on,
+                    label: 'Nav Bar Demo',
+                    subtitle: 'Floating blurred bar that shrinks on scroll',
+                    onTap: () => context.push('/nav-bar-demo'),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  _NavCard(
+                    icon: Icons.route_outlined,
+                    label: 'Review Flow',
+                    subtitle: 'The real review flow, on fake data',
+                    onTap: () => context.push('/dev/lab'),
+                  ),
                   const SizedBox(height: AppSpacing.xl),
                   AppCard(
                     child: Column(

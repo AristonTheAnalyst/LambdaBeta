@@ -11,60 +11,92 @@ import '../../data/models/session_exercise_set.dart';
 import './container_styles.dart';
 import './feeling_rating.dart';
 import './press_squash.dart';
+import './swipe_actions.dart';
 
 /// THE session card — the all-sessions picker sheet's row, reused as the
 /// Training Logs' workout card so the two surfaces share one
 /// implementation. A 2×2 identity grid (DATE / PLANNED / PRE / POST) plus
 /// centered per-exercise set summaries. [selected] marks the currently
-/// shown session with the accent soft-highlight recipe.
+/// shown session with the accent soft-highlight recipe; a non-null
+/// [onDelete] adds the left-swipe drawer the logs surfaces delete through.
 class SessionLogCard extends StatelessWidget {
   const SessionLogCard({
     super.key,
     required this.workout,
     this.selected = false,
+    this.prsByExercise,
+    this.onDelete,
     required this.onTap,
   });
 
   final SessionWithSets workout;
   final bool selected;
+
+  /// Delete. A non-null value adds the card's left-swipe drawer, whose
+  /// single Delete action runs this callback (the caller owns the
+  /// confirmation dialog). Null (the default) leaves the card unswipeable —
+  /// surfaces that can't delete pass nothing.
+  final VoidCallback? onDelete;
+
+  /// exerciseId → PR count for THIS session (from the global `prEvents`
+  /// walk, so the counts are relative to all prior history). Null hides the
+  /// trophy — surfaces that don't have the counts computed yet.
+  final Map<String, int>? prsByExercise;
+
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final s = workout.session;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AppSpacing.md),
-      child: PressSquash(
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.all(AppSpacing.lg),
-          decoration: BoxDecoration(
-            // Recessed — darker than the page ground so the row cards
-            // separate from it.
-            color: AppColors.surfaceLow,
-            borderRadius: BorderRadius.circular(AppRadius.lg),
-            // The soft-highlight recipe marks the selected session.
-            border: Border.all(
-              color: selected
-                  ? AppColors.accent.withValues(alpha: 0.35)
-                  : AppColors.border,
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _identityGrid(s),
-              if (workout.sets.isNotEmpty) ...[
-                const SizedBox(height: AppSpacing.md),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: _exerciseSummaries(workout.sets),
-                ),
-              ],
-            ],
+    final card = PressSquash(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        decoration: BoxDecoration(
+          // Recessed — darker than the page ground so the row cards
+          // separate from it.
+          color: AppColors.surfaceLow,
+          borderRadius: BorderRadius.circular(AppRadius.lg),
+          // The soft-highlight recipe marks the selected session.
+          border: Border.all(
+            color: selected
+                ? AppColors.accent.withValues(alpha: 0.35)
+                : AppColors.border,
           ),
         ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _identityGrid(s),
+            if (workout.sets.isNotEmpty) ...[
+              const SizedBox(height: AppSpacing.md),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: _exerciseSummaries(workout.sets),
+              ),
+            ],
+          ],
+        ),
       ),
+    );
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.md),
+      // The drawer is clipped to the card's radius — SwipeActions' default
+      // AppRadius.lg is the radius this card is drawn at.
+      child: onDelete == null
+          ? card
+          : SwipeActions(
+              actions: [
+                SwipeAction(
+                  icon: Icons.delete_outline,
+                  label: 'Delete',
+                  color: AppColors.danger,
+                  onTap: onDelete!,
+                ),
+              ],
+              child: card,
+            ),
     );
   }
 
@@ -170,7 +202,7 @@ class SessionLogCard extends StatelessWidget {
         Text(
           label,
           style: AppFonts.mono(
-            fontSize: 9,
+            fontSize: 13,
             letterSpacing: 0.8,
             color: AppColors.muted,
           ),
@@ -220,6 +252,25 @@ class SessionLogCard extends StatelessWidget {
                 color: AppColors.muted,
               ),
             ),
+            // The trophy + count after the set summary — accent is the PR
+            // color everywhere; exercises with no PRs this session stay bare.
+            if ((prsByExercise?[exId] ?? 0) > 0) ...[
+              const SizedBox(width: AppSpacing.sm),
+              Icon(
+                Icons.emoji_events_outlined,
+                size: 14,
+                color: AppColors.accent,
+              ),
+              const SizedBox(width: 3),
+              Text(
+                '${prsByExercise![exId]}',
+                style: AppFonts.mono(
+                  fontSize: AppTextStyles.sm,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.accent,
+                ),
+              ),
+            ],
           ],
         ),
       );

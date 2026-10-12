@@ -10,6 +10,7 @@ class PlannedSessionProgram {
     this.sequenceOrder,
     this.dayOfWeek,
     this.weekOffset,
+    this.blockId,
   });
 
   final String plannedSessionProgramId;
@@ -26,6 +27,11 @@ class PlannedSessionProgram {
   /// Fortnight week: 0 = week 1, 1 = week 2, null = every week.
   final int? weekOffset;
 
+  /// The block this workout belongs to; null = a blockless program. The server
+  /// holds (program_id, block_id) as a composite FK, so the pair always names a
+  /// real block of THIS program.
+  final String? blockId;
+
   factory PlannedSessionProgram.fromMap(Map<String, dynamic> map) =>
       PlannedSessionProgram(
         plannedSessionProgramId: map['planned_session_program_id'] as String,
@@ -35,6 +41,7 @@ class PlannedSessionProgram {
         sequenceOrder: _toInt(map['sequence_order']),
         dayOfWeek: _toInt(map['day_of_week']),
         weekOffset: _toInt(map['week_offset']),
+        blockId: map['block_id'] as String?,
       );
 
   static int? _toInt(dynamic v) {
@@ -51,5 +58,6 @@ class PlannedSessionProgram {
         'sequence_order': sequenceOrder,
         'day_of_week': dayOfWeek,
         'week_offset': weekOffset,
+        'block_id': blockId,
       };
 }

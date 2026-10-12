@@ -7,12 +7,13 @@ import '../../../core/styles/app_spacing.dart';
 import '../../../data/models/lesson.dart';
 import '../../../shared/widgets/glass_button.dart';
 import '../../../shared/widgets/container_styles.dart';
+import '../../../shared/widgets/lambda_input.dart';
 import '../../../shared/widgets/slide_up_modal.dart';
 import '../../../shared/widgets/swipe_actions.dart';
 
 /// Bound to a [Listenable] + a handful of callbacks rather than a concrete
 /// viewmodel type, so both `SessionViewModel` (a `ChangeNotifier`) and
-/// `ProgramDetailViewModel` (a `ValueNotifier<ProgramDetailState>`) can
+/// `WorkoutEditorViewModel` (a `ValueNotifier<WorkoutEditorState>`) can
 /// reuse this same modal for the exact same `fact_lesson` data — lessons are
 /// per-exercise and cross-session, not tied to either feature.
 void showLessonsModal(
@@ -89,13 +90,19 @@ class _LessonsModalContentState extends State<_LessonsModalContent> {
   void initState() {
     super.initState();
     widget.loadLessonsFor(widget.exerciseId);
+    // The Save Lesson button draws its enabled state from the draft, so the
+    // modal has to rebuild as it is typed into.
+    _draftCtrl.addListener(_onDraftChanged);
   }
 
   @override
   void dispose() {
+    _draftCtrl.removeListener(_onDraftChanged);
     _draftCtrl.dispose();
     super.dispose();
   }
+
+  void _onDraftChanged() => setState(() {});
 
   void _addLesson() {
     if (_draftCtrl.text.trim().isEmpty) return;
@@ -136,7 +143,7 @@ class _LessonsModalContentState extends State<_LessonsModalContent> {
                         children: [
                           Text(widget.exerciseName.toUpperCase(),
                               style: AppFonts.mono(
-                                  fontSize: 9, color: AppColors.muted, letterSpacing: 0.8)),
+                                  fontSize: 13, color: AppColors.muted, letterSpacing: 0.8)),
                           Text('Lessons',
                               style: AppFonts.ui(
                                   fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.primary)),
@@ -149,27 +156,28 @@ class _LessonsModalContentState extends State<_LessonsModalContent> {
                 ),
                 const SizedBox(height: AppSpacing.md),
                 if (_adding) ...[
-                  TextField(
+                  LambdaInput(
                     controller: _draftCtrl,
                     autofocus: true,
+                    minLines: 2,
                     maxLines: 3,
-                    style: AppFonts.ui(fontSize: 14, color: AppColors.primary),
-                    decoration: InputDecoration(
-                      hintText: 'What did you learn? Cues, breakthroughs, adjustments…',
-                      hintStyle: AppFonts.ui(color: AppColors.muted),
-                      filled: true,
-                      fillColor: AppColors.surfaceHigh,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(AppRadius.md),
-                        borderSide: BorderSide(color: AppColors.primary),
-                      ),
-                    ),
+                    placeholder:
+                        'What did you learn? Cues, breakthroughs, adjustments…',
+                    // The sheet's default background is a surface ground.
+                    elevated: true,
                   ),
                   const SizedBox(height: AppSpacing.sm),
                   Row(
                     children: [
                       Expanded(
-                          child: GlassButton(label: 'Save Lesson', solid: true, onPressed: _addLesson)),
+                        child: GlassButton(
+                          label: 'Save Lesson',
+                          solid: true,
+                          // Nothing to save until something is typed.
+                          disabled: _draftCtrl.text.trim().isEmpty,
+                          onPressed: _addLesson,
+                        ),
+                      ),
                       const SizedBox(width: AppSpacing.sm),
                       Expanded(
                         child: GlassButton(
@@ -254,13 +262,25 @@ class _LessonRowState extends State<_LessonRow> {
   void initState() {
     super.initState();
     _editCtrl = TextEditingController(text: widget.lesson.text);
+    // Save draws its enabled state from the text against the lesson it is
+    // editing, so the editor has to rebuild as it is typed into.
+    _editCtrl.addListener(_onEditChanged);
   }
 
   @override
   void dispose() {
+    _editCtrl.removeListener(_onEditChanged);
     _editCtrl.dispose();
     super.dispose();
   }
+
+  void _onEditChanged() => setState(() {});
+
+  /// Whether the text differs from the lesson being edited. An empty one is
+  /// not a lesson, so it never counts as a change to save.
+  bool get _editDiffers =>
+      _editCtrl.text.trim().isNotEmpty &&
+      _editCtrl.text.trim() != widget.lesson.text.trim();
 
   void _save() {
     if (_editCtrl.text.trim().isEmpty) return;
@@ -310,8 +330,8 @@ class _LessonRowState extends State<_LessonRow> {
         GestureDetector(
           onTap: widget.onTogglePin,
           child: Container(
-            width: 28,
-            height: 28,
+            width: 40,
+            height: 40,
             margin: const EdgeInsets.only(right: AppSpacing.sm, top: 1),
             alignment: Alignment.center,
             decoration: lesson.pinned
@@ -341,7 +361,7 @@ class _LessonRowState extends State<_LessonRow> {
                   children: [
                     Text(DateFormat('MMM d · h:mm a').format(lesson.createdDate),
                         style: AppFonts.mono(
-                            fontSize: 9, color: AppColors.muted)),
+                            fontSize: 13, color: AppColors.muted)),
                     if (widget.isNew) ...[
                       const SizedBox(width: 6),
                       Container(
@@ -356,7 +376,7 @@ class _LessonRowState extends State<_LessonRow> {
                         ),
                         child: Text('NEW',
                             style: AppFonts.mono(
-                                fontSize: 8,
+                                fontSize: 14,
                                 letterSpacing: 0.6,
                                 color: AppColors.accent)),
                       ),
@@ -376,28 +396,25 @@ class _LessonRowState extends State<_LessonRow> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        TextField(
+        LambdaInput(
           controller: _editCtrl,
           autofocus: true,
+          minLines: 2,
           maxLines: 3,
-          style: AppFonts.ui(fontSize: 14, color: AppColors.primary),
-          decoration: InputDecoration(
-            hintText: 'Lesson text…',
-            hintStyle: AppFonts.ui(color: AppColors.muted),
-            filled: true,
-            fillColor: AppColors.surfaceHigh,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(AppRadius.md),
-              borderSide: BorderSide(color: AppColors.primary),
-            ),
-          ),
+          placeholder: 'Lesson text…',
+          // The sheet's default background is a surface ground.
+          elevated: true,
         ),
         const SizedBox(height: AppSpacing.sm),
         Row(
           children: [
             Expanded(
                 child: GlassButton(
-                    label: 'Save', solid: true, compact: true, onPressed: _save)),
+                    label: 'Save',
+                    solid: true,
+                    compact: true,
+                    disabled: !_editDiffers,
+                    onPressed: _save)),
             const SizedBox(width: AppSpacing.sm),
             Expanded(
               child: GlassButton(

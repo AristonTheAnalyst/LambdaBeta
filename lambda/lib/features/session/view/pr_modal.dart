@@ -5,6 +5,7 @@ import '../../../core/styles/app_radius.dart';
 import '../../../core/styles/app_spacing.dart';
 import '../../../core/utils/session_format.dart';
 import '../../../shared/widgets/container_styles.dart';
+import '../../../shared/widgets/pr_event_row.dart';
 import '../../../shared/widgets/slide_up_modal.dart';
 import '../model/pr_engine.dart';
 
@@ -81,21 +82,6 @@ class _PrSheetState extends State<_PrSheet> {
       out = out.where((p) => p.variationId == _varFilter).toList();
     }
     return out;
-  }
-
-  static String _fmt(num n) =>
-      n == n.roundToDouble() ? n.toInt().toString() : n.toString();
-
-  /// The before-facts for one event — the previous frontier values it beat
-  /// on each dimension ("was 100 × 3 · 105 × 2"), or "First PR".
-  static String _before(PrEvent e) {
-    final facts = <String>[
-      if (e.beforeWeight != null)
-        'was ${_fmt(e.beforeWeight!)}kg × ${_fmt(e.reps)}',
-      if (e.beforeReps != null)
-        'was ${_fmt(e.weight)}kg × ${_fmt(e.beforeReps!)}',
-    ];
-    return facts.isEmpty ? 'First PR' : facts.join(' · ');
   }
 
   @override
@@ -183,49 +169,12 @@ class _PrSheetState extends State<_PrSheet> {
             Text('No PRs match the filter',
                 style: AppFonts.ui(fontSize: 13, color: AppColors.muted))
           else
-            for (final e in filtered) _eventRow(e),
+            for (final e in filtered) PrEventRow(e),
         ],
       ),
     );
   }
 
-  Widget _eventRow(PrEvent e) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: AppSpacing.sm),
-      padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.md, vertical: AppSpacing.sm),
-      decoration: lambdaBox(
-        ContainerTone.accent,
-        radius: AppRadius.md,
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.emoji_events_outlined, size: 16, color: AppColors.accent),
-          const SizedBox(width: AppSpacing.sm),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (e.variationName != null)
-                  Text(toProperCase(e.variationName!),
-                      style: AppFonts.mono(
-                          fontSize: 9,
-                          letterSpacing: 0.6,
-                          color: AppColors.accent)),
-                Text('${_fmt(e.weight)}kg × ${_fmt(e.reps)}',
-                    style: AppFonts.mono(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.accent)),
-                Text(_before(e),
-                    style: AppFonts.mono(fontSize: 10, color: AppColors.accent)),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 // ── Filter dropdown ──────────────────────────────────────────────────────────
@@ -266,7 +215,7 @@ class _FilterDropdown extends StatelessWidget {
             Expanded(
               child: Text(_label,
                   style: AppFonts.ui(
-                      fontSize: 12,
+                      fontSize: 14,
                       fontWeight: FontWeight.w600,
                       color: AppColors.primary),
                   maxLines: 1,

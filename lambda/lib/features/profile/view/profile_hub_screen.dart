@@ -5,6 +5,7 @@ import '../../../../core/styles/app_spacing.dart';
 import '../../../../core/styles/app_text_styles.dart';
 import '../../../../shared/widgets/app_card.dart';
 import '../../../../shared/widgets/page_header.dart';
+import '../../../../shared/widgets/scroll_shrink_nav_bar.dart';
 
 class ProfileHubScreen extends StatelessWidget {
   const ProfileHubScreen({super.key});
@@ -18,7 +19,14 @@ class ProfileHubScreen extends StatelessWidget {
           const PageHeader(title: 'Profile'),
           Expanded(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.all(AppSpacing.xl),
+              // The shell's bar floats over the page, so the last card has to
+              // be able to scroll clear of it.
+              padding: EdgeInsets.fromLTRB(
+                AppSpacing.xl,
+                AppSpacing.xl,
+                AppSpacing.xl,
+                ScrollShrinkNavBar.contentInset(context),
+              ),
               child: AppCard(
                 onTap: () => context.push('/profile/detail'),
                 child: Row(

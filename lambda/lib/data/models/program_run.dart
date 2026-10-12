@@ -1,3 +1,21 @@
+/// What a run's two state columns say it is.
+///
+/// There is no state column — the pair is enough. `is_current` alone cannot
+/// tell "stepped away from" from "finished", and that distinction is the whole
+/// point of pausing: a paused run keeps its id, its config, its block and its
+/// session attribution, and can be resumed; an ended one is history with a
+/// frozen record.
+enum RunState {
+  /// The one you are doing. At most one per user.
+  current,
+
+  /// Stepped away from, resumable. `is_current` off, no end stamped.
+  paused,
+
+  /// Formally finished or restarted. Its close record is frozen.
+  ended,
+}
+
 class ProgramRun {
   const ProgramRun({
     required this.programRunId,
@@ -10,6 +28,7 @@ class ProgramRun {
     this.targetWeeks,
     this.endDate,
     this.progressionMode,
+    this.blockId,
   });
 
   final String programRunId;
@@ -18,6 +37,15 @@ class ProgramRun {
   final DateTime startedDate;
   final DateTime? endedDate;
   final bool isCurrent;
+
+  /// The block being run. NULL = a blockless run: the whole program is the
+  /// unit, which is what every run was before blocks existed.
+  ///
+  /// A block run *is* a run — it has the same start/end, the same one-current
+  /// rule, the same session attribution. Only the set of workouts it walks is
+  /// narrowed, which is why nothing in the run layer branches on this beyond
+  /// the link filter in `getNextPlannedSession`.
+  final String? blockId;
 
   /// How this run progresses: 'frequency' (sessions assigned to days in the
   /// week/fortnight) or 'order' (sessions worked through in sequence).
@@ -32,6 +60,40 @@ class ProgramRun {
 
   /// Calendar: explicit end date (alternative to [targetWeeks]).
   final DateTime? endDate;
+
+  /// Where this run stands. See [RunState] — [isCurrent] alone is not enough
+  /// to tell a run that was stepped away from a run that is over.
+  RunState get state {
+    if (isCurrent) return RunState.current;
+    return endedDate == null ? RunState.paused : RunState.ended;
+  }
+
+  /// Stepped away from, not finished — the state a switch produces.
+  ///
+  /// `ended_date` is stamped only by an explicit end, so a run that is off and
+  /// has no end date is waiting to be picked back up.
+  bool get isPaused => state == RunState.paused;
+
+  /// This run as a superseding begin leaves it: off, and unstamped.
+  ///
+  /// Exists so a caller can report "this run was paused" while holding the run
+  /// the write actually applies to. Handing back the object as it was read
+  /// would describe it as `isCurrent` — true of the row before the switch and
+  /// of nothing afterwards, which is exactly the kind of stale claim that made
+  /// runs unaddressable in the first place.
+  ProgramRun asPaused() => ProgramRun(
+        programRunId: programRunId,
+        programId: programId,
+        userId: userId,
+        startedDate: startedDate,
+        isCurrent: false,
+        endedDate: null,
+        blockId: blockId,
+        progressionMode: progressionMode,
+        targetSessions: targetSessions,
+        targetWeeks: targetWeeks,
+        endDate: endDate,
+      );
 
   factory ProgramRun.fromMap(Map<String, dynamic> map) => ProgramRun(
         programRunId: map['program_run_id'] as String,
@@ -48,6 +110,7 @@ class ProgramRun {
             ? DateTime.parse(map['end_date'] as String)
             : null,
         progressionMode: map['progression_mode'] as String?,
+        blockId: map['block_id'] as String?,
       );
 
   static bool _toBool(dynamic v) {
@@ -62,14 +125,10 @@ class ProgramRun {
     return int.tryParse('$v');
   }
 
-  /// The effective calendar end date: explicit [endDate], else the run start
-  /// plus [targetWeeks].
-  DateTime? get effectiveEndDate {
-    if (endDate != null) return endDate;
-    final w = targetWeeks;
-    if (w != null) return startedDate.add(Duration(days: 7 * w));
-    return null;
-  }
+  // No `effectiveEndDate` here. A block run's length lives on the BLOCK, so a
+  // getter that can only see the run's own `targetWeeks` reports null for
+  // exactly the runs that most need an end date. `ProgramProgress.endsAt` is
+  // the same arithmetic with the block in view, and it is the only spelling.
 
   Map<String, dynamic> toMap() => {
         'program_run_id': programRunId,
@@ -82,5 +141,6 @@ class ProgramRun {
         'target_weeks': targetWeeks,
         'end_date': endDate?.toIso8601String(),
         'progression_mode': progressionMode,
+        'block_id': blockId,
       };
 }

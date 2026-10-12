@@ -58,7 +58,7 @@ class ExerciseTabChip extends StatelessWidget {
             Text(
               label,
               style: AppFonts.ui(
-                fontSize: 12,
+                fontSize: 14,
                 fontWeight: FontWeight.w700,
                 color: isActive ? color : AppColors.primary,
               ),

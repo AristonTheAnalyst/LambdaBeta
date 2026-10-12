@@ -8,12 +8,14 @@ import '../../../data/models/exercise_detail.dart';
 import '../../../data/models/lesson.dart';
 import '../../../data/models/planned_session_exercise_set.dart';
 import '../../../data/models/planned_session.dart';
+import '../../../data/models/program_block.dart';
 import '../../../data/models/program_progress.dart';
 import '../../../data/models/session.dart';
 import '../../../data/models/exercise_usage.dart';
 import '../../../data/models/session_exercise.dart';
 import '../../../data/models/session_exercise_set.dart';
 import '../../../core/powersync/database.dart' as ps;
+import '../../../core/utils/name_limit.dart';
 import '../../../data/repositories/exercise_repository.dart';
 import '../../../data/repositories/lesson_repository.dart';
 import '../../../data/repositories/program_repository.dart';
@@ -182,6 +184,10 @@ class SessionViewModel extends ChangeNotifier {
   /// (The same map also holds variation-id → last use — ids never collide.)
   Map<String, DateTime> lastUsedByExercise = {};
   Map<String, List<ExerciseHistorySession>> historyByExercise = {};
+
+  /// Bumped on every past-sets reload — Home's recent-logs strip keys its
+  /// reload off this so edits made in Logs show up on return.
+  int pastSetsVersion = 0;
 
   /// All active variations, most recently used first — the set-row picker
   /// order. Variations are a flat per-user library (no exercise assignment
@@ -373,9 +379,9 @@ class SessionViewModel extends ChangeNotifier {
   /// standalone).
   Future<void> _loadSelectedSessionSets() async {
     if (selectedStandaloneWorkout != null) {
-      // Consolidation keeps the preview consistent with the planner — one
-      // group per exercise, no-target stubs archived (idempotent).
-      final sets = await _plannedSessionRepo.consolidateDuplicateExerciseGroups(
+      // The preview reads through the same normalizing read the planner uses,
+      // so both count the same sets in the same order.
+      final sets = await _plannedSessionRepo.fetchNormalizedPlannedSets(
         selectedStandaloneWorkout!.sessionId,
       );
       plannedSetsByExercise = _plannedMapFromSets(sets);
@@ -389,10 +395,9 @@ class SessionViewModel extends ChangeNotifier {
       return;
     }
     try {
-      final plannedSets =
-          await _plannedSessionRepo.consolidateDuplicateExerciseGroups(
-            pw.sessionId,
-          );
+      final plannedSets = await _plannedSessionRepo.fetchNormalizedPlannedSets(
+        pw.sessionId,
+      );
       plannedSetsByExercise = _plannedMapFromSets(plannedSets);
       plannedExerciseOrder = _plannedOrderFromSets(plannedSets);
     } catch (_) {}
@@ -429,7 +434,7 @@ class SessionViewModel extends ChangeNotifier {
   Future<void> selectStandaloneWorkout(PlannedSession w) async {
     selectedStandaloneWorkout = w;
     selectedPlannedSession = null;
-    final sets = await _plannedSessionRepo.consolidateDuplicateExerciseGroups(
+    final sets = await _plannedSessionRepo.fetchNormalizedPlannedSets(
       w.sessionId,
     );
     plannedSetsByExercise = _plannedMapFromSets(sets);
@@ -492,9 +497,18 @@ class SessionViewModel extends ChangeNotifier {
       final programId = programProgress?.program.programId;
       if (programId != null) {
         availableWorkouts = await _programRepo.fetchPlannedSessions(programId);
-        selectedPlannedSession =
-            programProgress?.nextPlannedSession ??
-            availableWorkouts.firstOrNull;
+        // An explicit pick survives a tab switch: re-entering refreshes the
+        // list, it does not re-choose. Only an absent (or vanished) selection
+        // falls back to the run's next workout.
+        final picked = selectedPlannedSession;
+        final stillAvailable =
+            picked != null &&
+            availableWorkouts.any((w) => w.sessionId == picked.sessionId);
+        if (!stillAvailable) {
+          selectedPlannedSession =
+              programProgress?.nextPlannedSession ??
+              availableWorkouts.firstOrNull;
+        }
       } else {
         availableWorkouts = [];
         selectedPlannedSession = null;
@@ -506,6 +520,13 @@ class SessionViewModel extends ChangeNotifier {
       standaloneWorkouts = await _plannedSessionRepo.fetchPlannedSessions(
         _userId,
       );
+      // Same pick-persistence rule for a standalone template: only a selection
+      // that no longer exists is dropped.
+      final standalone = selectedStandaloneWorkout;
+      if (standalone != null &&
+          !standaloneWorkouts.any((w) => w.sessionId == standalone.sessionId)) {
+        selectedStandaloneWorkout = null;
+      }
       await _loadSelectedSessionSets();
       notifyListeners();
     } catch (_) {}
@@ -518,6 +539,7 @@ class SessionViewModel extends ChangeNotifier {
       lastUsedByExercise = lastUsedByEntity(_pastSets);
     } catch (_) {}
     pastSetsLoaded = true;
+    pastSetsVersion++;
     notifyListeners();
     // The live session's PR highlighting and events derive from the
     // timeline — recompute on every reload so history edits and tab
@@ -608,6 +630,35 @@ class SessionViewModel extends ChangeNotifier {
   /// the viewer card's all-sessions picker sheet.
   Future<List<SessionWithSets>> loadCompletedSessions() =>
       _sessionRepo.loadSessionsWithSets(_userId);
+
+  /// Hard-deletes a completed session from the all-sessions picker, then
+  /// rebuilds everything derived from the timeline — PR counts, history
+  /// grouping, and the reflection pager. The picker can only ever list
+  /// completed sessions (`loadSessionsWithSets` filters
+  /// `end_datetime IS NOT NULL`), so the still-active workout is
+  /// unreachable from here; the guard is belt-and-braces.
+  ///
+  /// Position is deliberately NOT preserved: removing a row shifts every
+  /// index, so the pager falls through [_refreshReflection]'s default path
+  /// (THIS SESSION on the summary page, else the newest completed session).
+  Future<void> deleteCompletedSession(String sessionId) async {
+    if (sessionId == currentWorkoutId) return;
+    await _sessionRepo.deleteSession(sessionId);
+    await _loadPastSets();
+  }
+
+  /// sessionId → exerciseId → PR count, one global `prEvents` walk of the
+  /// loaded timeline (a set is a PR relative to all prior history, so
+  /// counts must come from the global walk, never per-session sets). The
+  /// all-sessions picker sheet's cards' trophy badges.
+  Map<String, Map<String, int>> prCountsByCompletedSession() {
+    final out = <String, Map<String, int>>{};
+    for (final e in prEvents(_pastSets)) {
+      final byExercise = out.putIfAbsent(e.sessionId, () => {});
+      byExercise[e.exerciseId] = (byExercise[e.exerciseId] ?? 0) + 1;
+    }
+    return out;
+  }
 
   /// Jumps the viewer card to a completed session picked from the
   /// all-sessions sheet.
@@ -825,10 +876,9 @@ class SessionViewModel extends ChangeNotifier {
       selectedPlannedSession = null;
     }
     try {
-      final plannedSets =
-          await _plannedSessionRepo.consolidateDuplicateExerciseGroups(
-            parentId,
-          );
+      final plannedSets = await _plannedSessionRepo.fetchNormalizedPlannedSets(
+        parentId,
+      );
       plannedSetsByExercise = _plannedMapFromSets(plannedSets);
       plannedExerciseOrder = _plannedOrderFromSets(plannedSets);
     } catch (_) {}
@@ -883,6 +933,11 @@ class SessionViewModel extends ChangeNotifier {
         ),
       );
     }
+    // Recency includes the live rows: what was just trained is by definition
+    // the most recent use, and a chooser opened mid-workout has to say so. The
+    // past-sets timeline only sees completed sessions, so the merge happens
+    // here, on every sets change.
+    lastUsedByExercise = lastUsedByEntity(combined);
     final events = prEvents(combined);
     sessionPrEvents = events.where((e) => e.sessionId == id).toList();
     prSetIds = {
@@ -963,6 +1018,62 @@ class SessionViewModel extends ChangeNotifier {
     }
     _persistExerciseOrder();
     notifyListeners();
+  }
+
+  /// Hold-and-drag reorder of one exercise's set rows.
+  ///
+  /// [oldIndex] and [newIndex] count that exercise's REAL rows only, and
+  /// [newIndex] arrives already adjusted for the row being lifted out
+  /// (`onReorderItem`). Draft rows sit past the end and cannot be dropped
+  /// into — they are virtual, and a drop there means "last real set".
+  ///
+  /// The renumber is applied locally first so the grid settles into its new
+  /// order on the drop's own frame; the write follows, and its reload has
+  /// nothing left to change. The rows keep their ids, so ghosts, notes, PR
+  /// events and the draft bindings all stay with the set that moved.
+  void reorderSets(String exerciseId, int oldIndex, int newIndex) {
+    final rows =
+        <SessionExerciseSet>[
+          for (final s in sets)
+            if (s.exerciseId == exerciseId &&
+                !isDraftBoundRow(s.sessionExerciseSetId))
+              s,
+        ]..sort((a, b) => a.setNumber.compareTo(b.setNumber));
+    if (rows.length < 2) return;
+    if (newIndex >= rows.length) newIndex = rows.length - 1;
+    if (oldIndex == newIndex || oldIndex < 0 || oldIndex >= rows.length) {
+      return;
+    }
+
+    rows.insert(newIndex, rows.removeAt(oldIndex));
+
+    // Renumbered in place rather than re-sorted: the exercise's rows keep the
+    // slots they already occupy in `sets`, so nothing that reads that list
+    // positionally — the empty-seed check on restore included — shifts under
+    // the move. Only `set_number` changes, and it is what orders the grid.
+    var number = 0;
+    for (var i = 0; i < sets.length; i++) {
+      final s = sets[i];
+      if (s.exerciseId != exerciseId ||
+          isDraftBoundRow(s.sessionExerciseSetId)) {
+        continue;
+      }
+      sets[i] = rows[number].copyWith(setNumber: ++number);
+    }
+    notifyListeners();
+
+    final workoutId = currentWorkoutId;
+    if (workoutId == null) return;
+    unawaited(
+      _sessionRepo
+          .reorderSets(workoutId, [
+            for (final s in rows) s.sessionExerciseSetId,
+          ])
+          .catchError((Object e) {
+            error = e.toString();
+            notifyListeners();
+          }),
+    );
   }
 
   /// Persists the current tab order to `fact_session_exercise.exercise_order`
@@ -1304,6 +1415,7 @@ class SessionViewModel extends ChangeNotifier {
     double? weight,
     bool clearWeight = false,
     List<num>? reps,
+    bool clearReps = false,
 
     String? variationId,
     bool clearVariation = false,
@@ -1316,6 +1428,7 @@ class SessionViewModel extends ChangeNotifier {
         weight: weight,
         clearWeight: clearWeight,
         reps: reps,
+        clearReps: clearReps,
         variationId: variationId,
         clearVariation: clearVariation,
         notes: notes,
@@ -1337,6 +1450,7 @@ class SessionViewModel extends ChangeNotifier {
     double? weight,
     bool clearWeight = false,
     List<num>? reps,
+    bool clearReps = false,
     String? variationId,
     bool clearVariation = false,
     String? notes,
@@ -1348,6 +1462,7 @@ class SessionViewModel extends ChangeNotifier {
         weight: weight,
         clearWeight: clearWeight,
         reps: reps,
+        clearReps: clearReps,
         variationId: variationId,
         clearVariation: clearVariation,
         notes: notes,
@@ -1644,11 +1759,39 @@ class SessionViewModel extends ChangeNotifier {
         } catch (_) {}
       }
       slidePagesController.slideToPage(kPostQuestionnairePage);
+      // Re-read progress now that the session is behind us. Deliberately AFTER
+      // `_resetActiveWorkoutState`: `refreshProgram` early-returns while a
+      // workout is active, so before the reset this would be a no-op and the
+      // idle screen would keep offering the session just completed — and, on a
+      // block's last session, would not know the block was finished.
+      //
+      // After the slide rather than before it: the user has somewhere to be,
+      // and this is bookkeeping for the page they are heading to.
+      await refreshProgram();
     } catch (e) {
       error = e.toString();
     }
     endLoading = false;
     notifyListeners();
+  }
+
+  /// The block this run is following, once its length has run out — the
+  /// condition that puts the "you've completed this training block" prompt on
+  /// the idle training page. Null while a workout is open (nothing to announce
+  /// mid-session), on a blockless run, and before the length is reached.
+  ///
+  /// Derived rather than flagged: the same read that refreshes the header's
+  /// week line answers this, so there is no second piece of state to keep in
+  /// step with it — and a prompt that is a state rather than an event also
+  /// survives the user walking away without answering.
+  ProgramBlock? get finishedBlock {
+    if (currentWorkoutId != null) return null;
+    final p = programProgress;
+    // `isReadyToEnd` is the shared spelling of "done its length, still open";
+    // what this site adds is the block to name, and the quiet while a workout
+    // is open above.
+    if (p == null || !p.isBlockRun || !p.isReadyToEnd) return null;
+    return p.block;
   }
 
   /// The post-questionnaire page's Done: writes the post answers to the
@@ -1768,6 +1911,7 @@ class SessionViewModel extends ChangeNotifier {
   Future<String?> submitNewExercise(String name) async {
     final trimmed = name.trim();
     if (trimmed.isEmpty) return null;
+    if (nameTooLong(trimmed)) return null;
     newExCreating = true;
     notifyListeners();
     try {
@@ -1807,6 +1951,10 @@ class SessionViewModel extends ChangeNotifier {
   }) async {
     final trimmed = name.trim();
     if (trimmed.isEmpty && useExistingId == null) return null;
+    // Only the name-bearing path is capped: a "did you mean?" pick carries the
+    // id, and refusing it over the typed text would break the reuse it exists
+    // for.
+    if (useExistingId == null && nameTooLong(trimmed)) return null;
     newVarCreating = true;
     notifyListeners();
     try {

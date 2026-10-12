@@ -35,7 +35,33 @@ enum ContainerTone {
 
   /// Transparent fill with the standard border — pure outline containers.
   outline,
+
+  /// Transparent fill with the floating layer's brighter rim — [outline] for
+  /// controls standing on the blurred floor (a review's add tile), where the
+  /// house hairline is all but invisible. The same rim the glass wears.
+  outlineBright,
 }
+
+/// The floating layer's rim — the edge every tone standing on (or made of)
+/// the blurred floor shares: light cream, faint enough to read as an edge
+/// rather than as a border.
+///
+/// A getter, not a stored value: the palette follows the theme, so the rim has
+/// to be read where it is drawn.
+Color get floatingRim => AppColors.primary.withValues(alpha: 0.30);
+
+/// The floating layer's shadow — one recipe for anything hovering above the
+/// page rather than sitting on it: the nav bar's pill, a review's bar, the
+/// toolbar's anchored menus. Drawn on the outer decoration, outside whatever
+/// clips the fill, or the blur gets cut off at the edges.
+List<BoxShadow> get floatingShadow => [
+  BoxShadow(
+    color: Colors.black.withValues(alpha: 0.28),
+    blurRadius: 24,
+    offset: const Offset(0, 8),
+    spreadRadius: -6,
+  ),
+];
 
 /// The box recipe for [tone]. Radius defaults to [AppRadius.lg]; pill
 /// containers pass a larger radius (e.g. 999).
@@ -58,6 +84,7 @@ BoxDecoration lambdaBox(
     ContainerTone.field => (AppColors.surface, null),
     ContainerTone.bg => (AppColors.bg, AppColors.border),
     ContainerTone.outline => (Colors.transparent, AppColors.border),
+    ContainerTone.outlineBright => (Colors.transparent, floatingRim),
   };
   return BoxDecoration(
     color: fill,

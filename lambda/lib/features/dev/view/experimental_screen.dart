@@ -9,7 +9,9 @@ import '../../../../core/styles/app_spacing.dart';
 import '../../../../core/styles/app_text_styles.dart';
 import '../../../../core/theme/lambda_theme.dart';
 import '../../../../shared/widgets/exercise_selector.dart';
+import '../../../../shared/widgets/lambda_search_field.dart';
 import '../../../../shared/widgets/page_header.dart';
+import '../../../../shared/widgets/scroll_shrink_nav_bar.dart';
 import '../../../../shared/widgets/slide_up_modal.dart';
 
 class ExperimentalScreen extends StatelessWidget {
@@ -40,7 +42,14 @@ class ExperimentalScreen extends StatelessWidget {
               ),
               Expanded(
                 child: ListView(
-                  padding: const EdgeInsets.all(AppSpacing.xl),
+                  // The shell's bar floats over this page, so the last
+                  // section has to be able to scroll clear of it.
+                  padding: EdgeInsets.fromLTRB(
+                    AppSpacing.xl,
+                    AppSpacing.xl,
+                    AppSpacing.xl,
+                    ScrollShrinkNavBar.contentInset(context),
+                  ),
                   children: [
                     Text(
                       'THEME',
@@ -168,7 +177,7 @@ class _ThemeOption extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Container(
-                    width: 28,
+                    width: 40,
                     height: 6,
                     decoration: BoxDecoration(
                       color: preview.primary,
@@ -432,7 +441,7 @@ class _PagerExerciseSelectorState extends State<_PagerExerciseSelector> {
               Text(
                 '${i + 1}',
                 style: AppFonts.mono(
-                  fontSize: 11,
+                  fontSize: 13,
                   color: selected ? c.primary : c.muted,
                 ),
               ),
@@ -528,8 +537,8 @@ class _PagerExerciseSelectorState extends State<_PagerExerciseSelector> {
       // Disabled chevrons still claim the tap with a no-op handler.
       onTap: enabled ? onTap : () {},
       child: Container(
-        width: 28,
-        height: 28,
+        width: 40,
+        height: 40,
         alignment: Alignment.center,
         decoration: BoxDecoration(
           color: enabled ? c.surfaceHigh : Colors.transparent,
@@ -568,7 +577,6 @@ class _DropdownMenuSelectorState extends State<_DropdownMenuSelector> {
         _exercises.insert(i + dir, e);
       }),
       onAdd: _openExercisePicker,
-      onDeleteRequest: _confirmDelete,
     );
   }
 
@@ -595,55 +603,18 @@ class _DropdownMenuSelectorState extends State<_DropdownMenuSelector> {
     });
   }
 
-  /// Hold-to-delete warning — asks for confirmation before removing the
-  /// exercise (and all of its sets) from the workout.
-  Future<void> _confirmDelete() async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        title: Text(
-          'Are you sure you want to delete this exercise?',
-          style: AppFonts.ui(
-            fontWeight: FontWeight.w800,
-            color: AppColors.danger,
-          ),
-        ),
-        content: Text(
-          'All sets in this workout under this exercise will be deleted.',
-          style: AppFonts.ui(color: AppColors.muted),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text('Cancel', style: AppFonts.ui(color: AppColors.muted)),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(
-              'Delete',
-              style: AppFonts.ui(
-                color: AppColors.danger,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-    if (ok != true || !mounted) return;
-    setState(() {
-      _exercises.removeAt(_active);
-      if (_exercises.isEmpty) {
-        _exercises.add('Benchpress');
-      }
-      _active = _active.clamp(0, _exercises.length - 1);
-    });
-  }
 }
 
 /// The demo's choose-exercise sheet — search the available list or create a
 /// new name; returns the picked name.
+///
+/// Deliberately NOT the shared `showAddExerciseModal` (2026-09-29), unlike
+/// every real screen: this demo drives a local `List<String>` with no
+/// repository behind it, so it picks a *name* and hides rows already in the
+/// list, where the real picker takes ids, shows additions ticked, and stays
+/// open. Wiring it up would mean inventing a name→id adapter for a screen that
+/// has no data layer — the drift is the honest state of a dev harness, and it
+/// is noted here rather than papered over.
 class _ExercisePickerSheet extends StatefulWidget {
   const _ExercisePickerSheet({required this.existing, required this.available});
 
@@ -701,24 +672,10 @@ class _ExercisePickerSheetState extends State<_ExercisePickerSheet> {
               ],
             ),
             const SizedBox(height: AppSpacing.lg),
-            TextField(
+            LambdaSearchField(
               autofocus: true,
-              style: AppFonts.ui(fontSize: 14, color: AppColors.primary),
-              decoration: InputDecoration(
-                hintText: 'Search exercises…',
-                hintStyle: AppFonts.ui(color: AppColors.muted),
-                prefixIcon: Icon(
-                  Icons.search,
-                  size: 18,
-                  color: AppColors.muted,
-                ),
-                filled: true,
-                fillColor: AppColors.surfaceHigh,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(AppRadius.md),
-                  borderSide: BorderSide(color: AppColors.border),
-                ),
-              ),
+              showIcon: true,
+              hint: 'Search exercises…',
               onChanged: (v) => setState(() => _query = v),
             ),
             const SizedBox(height: AppSpacing.sm),

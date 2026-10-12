@@ -41,7 +41,7 @@ class FeelingRating extends StatelessWidget {
         if (label != null) ...[
           Text(
             label!,
-            style: AppFonts.ui(fontSize: 11, color: AppColors.muted),
+            style: AppFonts.ui(fontSize: 13, color: AppColors.muted),
           ),
           const SizedBox(width: 4),
         ],

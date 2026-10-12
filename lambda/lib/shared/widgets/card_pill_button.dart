@@ -30,7 +30,7 @@ class CardPillButton extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         // Active pills get the glass recipe in their semantic color —
         // the same chrome as GlassButton and every other pressable.
         decoration: active
@@ -53,14 +53,20 @@ class CardPillButton extends StatelessWidget {
                   : AppColors.muted.withValues(alpha: 0.4),
             ),
             const SizedBox(width: 5),
-            Text(
-              label,
-              style: AppFonts.mono(
-                fontSize: 11,
-                letterSpacing: 0.4,
-                color: enabled
-                    ? (active ? c : AppColors.muted)
-                    : AppColors.muted.withValues(alpha: 0.4),
+            // Flexible so three pills sharing a card row shrink the label
+            // instead of overflowing (the icon stays fixed).
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppFonts.mono(
+                  fontSize: 13,
+                  letterSpacing: 0.4,
+                  color: enabled
+                      ? (active ? c : AppColors.muted)
+                      : AppColors.muted.withValues(alpha: 0.4),
+                ),
               ),
             ),
           ],

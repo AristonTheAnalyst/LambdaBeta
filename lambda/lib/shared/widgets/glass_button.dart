@@ -15,6 +15,7 @@ class GlassButton extends StatelessWidget {
     this.disabled = false,
     this.compact = false,
     this.solid = false,
+    this.radius = AppRadius.md,
   });
 
   final String label;
@@ -27,6 +28,21 @@ class GlassButton extends StatelessWidget {
   // Full-fill treatment for a primary CTA, instead of the default
   // translucent "glass" look.
   final bool solid;
+
+  /// Corner radius. The default is the button's own; a button standing on a
+  /// rounded container passes that container's radius so the two curves agree
+  /// ([FloatingBar.cornerRadius], say — a tighter corner sitting inside a
+  /// rounder one reads as a different object resting on it).
+  final double radius;
+
+  /// [icon]'s size beside a label: chrome for the word, and the word is the
+  /// button.
+  static const double _iconWithLabelSize = 14;
+
+  /// [icon]'s size with no label under it. A glyph standing alone IS the
+  /// button, so it takes the size the chrome alone has to carry — the same 14
+  /// reads as decoration with nothing for it to decorate.
+  static const double _iconOnlySize = 18;
 
   @override
   Widget build(BuildContext context) {
@@ -46,12 +62,12 @@ class GlassButton extends StatelessWidget {
         onTap: isDisabled ? null : onPressed,
         child: Container(
           padding: EdgeInsets.symmetric(
-            horizontal: compact ? 12 : 16,
-            vertical: compact ? 8 : 10,
+            horizontal: compact ? 14 : 16,
+            vertical: compact ? 10 : 12,
           ),
           decoration: BoxDecoration(
             color: solid ? effectiveColor : effectiveColor.withAlpha(26),
-            borderRadius: BorderRadius.circular(AppRadius.md),
+            borderRadius: BorderRadius.circular(radius),
             border: Border.all(
                 color: solid ? effectiveColor : effectiveColor.withAlpha(77)),
           ),
@@ -71,11 +87,11 @@ class GlassButton extends StatelessWidget {
                 )
               else ...[
                 if (icon != null && label.isNotEmpty) ...[
-                  Icon(icon, size: 14, color: fgColor),
+                  Icon(icon, size: _iconWithLabelSize, color: fgColor),
                   const SizedBox(width: 6),
                 ],
                 if (icon != null && label.isEmpty)
-                  Icon(icon, size: 14, color: fgColor)
+                  Icon(icon, size: _iconOnlySize, color: fgColor)
                 else
                   Text(
                     label,
