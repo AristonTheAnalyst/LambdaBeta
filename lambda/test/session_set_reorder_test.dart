@@ -27,11 +27,11 @@ void main() {
     initialRepsText: '5',
     initialVariationId: null,
     hasNotes: false,
-    onCommit: (_, _) async {},
+    onCommit: (_, _, {bool immediate = false}) async {},
     onVariationChanged: (_) {},
     onNotesSave: (_) {},
     onDelete: () async {},
-    onDuplicate: () {},
+    onDuplicate: (_) {},
     variationOptions: const [
       DropdownOption<String?>(label: 'No Variation', value: null),
     ],
@@ -78,7 +78,7 @@ void main() {
   double drawerOpacity(WidgetTester tester) => tester
       .widget<Opacity>(
         find
-            .ancestor(of: find.text('Delete'), matching: find.byType(Opacity))
+            .ancestor(of: find.byIcon(Icons.delete_outline), matching: find.byType(Opacity))
             .first,
       )
       .opacity;

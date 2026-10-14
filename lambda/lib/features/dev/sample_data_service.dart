@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:uuid/uuid.dart';
 import '../../../core/powersync/database.dart' as ps;
+import '../../../data/cache/past_sets_timeline_cache.dart';
 import '../../../data/repositories/exercise_repository.dart';
 
 const _uuid = Uuid();
@@ -109,6 +110,9 @@ class SampleDataService {
         }
       }
     });
+    // The seeder writes fact rows directly — same funnel rule as the
+    // repository (2026-10-13).
+    PastSetsTimelineCache.instance.invalidate();
 
     return dates.length;
   }
@@ -180,6 +184,7 @@ class SampleDataService {
         deletedSessions = sessionIds.length;
       }
     });
+    PastSetsTimelineCache.instance.invalidate();
     return deletedSessions;
   }
 

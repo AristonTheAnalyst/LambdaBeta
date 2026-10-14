@@ -318,7 +318,7 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
               actions: [
                 SwipeAction(
                   icon: Icons.delete_outline,
-                  label: 'Cancel',
+                  
                   color: AppColors.danger,
                   onTap: () => _cancel(entry),
                 ),

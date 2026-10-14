@@ -57,15 +57,18 @@ class _ExerciseHubScreenState extends State<ExerciseHubScreen> {
             onTap: (i) => setState(() => _tab = i),
           ),
           Expanded(
+            // ONE library instance serves the Exercises and Variations tabs —
+            // two instances used to each fetch the whole catalog + timeline
+            // on hub open (2026-10-13). Tabs 0/1 both map to child 0, with
+            // `panel` telling it which of its own two panels to show.
             child: IndexedStack(
-              index: _tab,
-              children: const [
-                ExerciseLibraryScreen(embedded: true, initialTab: 0),
-                ExerciseLibraryScreen(embedded: true, initialTab: 1),
-                WorkoutLibraryScreen(showHeader: false),
-                ProgramLibraryScreen(showHeader: false),
-                ReviewsScreen(showHeader: false),
-                GoalsScreen(showHeader: false),
+              index: _tab <= 1 ? 0 : _tab - 1,
+              children: [
+                ExerciseLibraryScreen(embedded: true, panel: _tab <= 1 ? _tab : 0),
+                const WorkoutLibraryScreen(showHeader: false),
+                const ProgramLibraryScreen(showHeader: false),
+                const ReviewsScreen(showHeader: false),
+                const GoalsScreen(showHeader: false),
               ],
             ),
           ),

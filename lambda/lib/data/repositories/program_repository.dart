@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 import '../../core/powersync/database.dart' as ps;
 import '../../core/utils/lambda_exception.dart';
+import '../cache/past_sets_timeline_cache.dart';
 import '../models/planned_session_exercise.dart';
 import '../models/planned_session_exercise_set.dart';
 import '../models/planned_session.dart';
@@ -551,6 +552,10 @@ class ProgramRepository {
         ''',
         [programId],
       );
+      // program_run_id is not a timeline-visible column, but the write is a
+      // fact_session write — invalidate so the funnel rule has no exception
+      // to remember (2026-10-13).
+      PastSetsTimelineCache.instance.invalidate();
       await tx.execute(
         'DELETE FROM fact_program_run WHERE program_id = ?',
         [programId],

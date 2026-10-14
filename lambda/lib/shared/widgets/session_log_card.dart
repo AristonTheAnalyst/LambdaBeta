@@ -90,7 +90,7 @@ class SessionLogCard extends StatelessWidget {
               actions: [
                 SwipeAction(
                   icon: Icons.delete_outline,
-                  label: 'Delete',
+                  
                   color: AppColors.danger,
                   onTap: onDelete!,
                 ),

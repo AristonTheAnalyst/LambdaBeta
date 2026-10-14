@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:uuid/uuid.dart';
 import '../../core/powersync/database.dart' as ps;
+import '../cache/past_sets_timeline_cache.dart';
 import '../models/session.dart';
 import '../models/session_exercise.dart';
 import '../models/session_exercise_set.dart';
@@ -9,6 +10,11 @@ import '../models/session_exercise_set.dart';
 const _uuid = Uuid();
 
 class SessionRepository {
+  /// Every fact write invalidates the shared timeline cache — this class is
+  /// the single funnel for fact_session* rows, so a forgotten call here is
+  /// the only way a screen could read a stale timeline (2026-10-13).
+  void _invalidateTimeline() => PastSetsTimelineCache.instance.invalidate();
+
   Future<String> createSession(
     String userId, {
     String? preNotes,
@@ -17,6 +23,7 @@ class SessionRepository {
     String? plannedSessionName,
     int? preFeeling,
   }) async {
+_invalidateTimeline();
     final sessionId = _uuid.v4();
     await ps.db.execute(
       '''
@@ -43,6 +50,7 @@ class SessionRepository {
   /// Stamps the end time only — the post-session questionnaire lands
   /// separately via [updatePostQuestionnaire] after the session ends.
   Future<void> endSession(String sessionId) async {
+    _invalidateTimeline();
     await ps.db.execute(
       'UPDATE fact_session SET end_datetime = ? WHERE session_id = ?',
       [
@@ -60,6 +68,7 @@ class SessionRepository {
     int? feeling,
     String? notes,
   }) async {
+    _invalidateTimeline();
     await ps.db.execute(
       'UPDATE fact_session SET post_notes = ?, post_feeling = ? WHERE session_id = ?',
       [
@@ -82,6 +91,7 @@ class SessionRepository {
     int? preFeeling,
     int? postFeeling,
   }) async {
+    _invalidateTimeline();
     await ps.db.execute(
       '''
       UPDATE fact_session
@@ -104,6 +114,7 @@ class SessionRepository {
     String sessionId,
     List<String> orderedSessionExerciseIds,
   ) async {
+    _invalidateTimeline();
     for (var i = 0; i < orderedSessionExerciseIds.length; i++) {
       await ps.db.execute(
         'UPDATE fact_session_exercise SET exercise_order = ? WHERE session_exercise_id = ?',
@@ -122,6 +133,7 @@ class SessionRepository {
   /// order they were written. `dim_lesson.session_id` is ON DELETE SET
   /// NULL, so lessons logged during the session survive it.
   Future<void> deleteSession(String sessionId) async {
+    _invalidateTimeline();
     await ps.db.execute(
       '''
       DELETE FROM fact_session_exercise_set
@@ -161,6 +173,7 @@ class SessionRepository {
     String? exerciseId,
     String? plannedExerciseId,
   }) async {
+    _invalidateTimeline();
     final id = _uuid.v4();
     await ps.db.execute(
       '''
@@ -197,6 +210,7 @@ class SessionRepository {
     bool clearExercise = false,
   }) async {
     if (clearExercise) {
+      _invalidateTimeline();
       await ps.db.execute(
         'UPDATE fact_session_exercise SET custom_exercise_id = NULL WHERE session_exercise_id = ?',
         [sessionExerciseId],
@@ -204,6 +218,7 @@ class SessionRepository {
       return;
     }
     if (exerciseId == null) return;
+    _invalidateTimeline();
     await ps.db.execute(
       'UPDATE fact_session_exercise SET custom_exercise_id = ? WHERE session_exercise_id = ?',
       [exerciseId, sessionExerciseId],
@@ -219,6 +234,7 @@ class SessionRepository {
   }
 
   Future<void> deleteSessionExercise(String sessionExerciseId) async {
+    _invalidateTimeline();
     await ps.db.execute(
       'DELETE FROM fact_session_exercise_set WHERE session_exercise_id = ?',
       [sessionExerciseId],
@@ -242,6 +258,7 @@ class SessionRepository {
     String? notes,
     String? plannedSetId,
   }) async {
+    _invalidateTimeline();
     final setId = _uuid.v4();
     await ps.db.execute(
       '''
@@ -288,6 +305,7 @@ class SessionRepository {
     bool clearReps = false,
     bool clearNotes = false,
   }) async {
+    _invalidateTimeline();
     final setClauses = <String>[];
     final params = <Object?>[];
 
@@ -331,6 +349,7 @@ class SessionRepository {
   }
 
   Future<void> deleteSet(String setId) async {
+    _invalidateTimeline();
     await ps.db.execute(
       'DELETE FROM fact_session_exercise_set WHERE session_exercise_set_id = ?',
       [setId],
@@ -338,8 +357,14 @@ class SessionRepository {
   }
 
   Future<List<SessionExerciseSet>> loadSetsForSession(String sessionId) async {
-    final rows = await ps.db.getAll(
-      '''
+    final rows = await ps.db.getAll(_sessionSetsQuery, [sessionId]);
+    return rows.map((r) => SessionExerciseSet.fromMap(r)).toList();
+  }
+
+  /// The one session-sets read, shared by the pull and the watch — the join
+  /// hydrates exercise/variation names, so any consumer of this stream sees
+  /// exactly what [loadSetsForSession] would return.
+  static const _sessionSetsQuery = '''
       SELECT s.*,
              fe.custom_exercise_id,
              fe.session_id,
@@ -351,13 +376,39 @@ class SessionRepository {
       LEFT JOIN dim_variation v ON v.custom_variation_id = s.custom_variation_id
       WHERE fe.session_id = ?
       ORDER BY fe.exercise_order, s.set_number
-      ''',
-      [sessionId],
-    );
-    return rows.map((r) => SessionExerciseSet.fromMap(r)).toList();
-  }
+      ''';
+
+  /// The session's sets as a live stream — re-emits the authoritative rows
+  /// whenever the tables behind them change, locally or from sync. The live
+  /// session subscribes instead of pulling per edit: a debounced write lands
+  /// and the stream delivers what the DB actually holds (2026-10-13).
+  Stream<List<SessionExerciseSet>> watchSetsForSession(String sessionId) =>
+      ps.db
+          .watch(
+            _sessionSetsQuery,
+            parameters: [sessionId],
+            triggerOnTables: const [
+              'fact_session_exercise_set',
+              'fact_session_exercise',
+              'dim_exercise',
+              'dim_variation',
+            ],
+          )
+          .map((rs) => rs.map(SessionExerciseSet.fromMap).toList());
+
+  /// The session's exercise rows as a live stream — same contract as
+  /// [watchSetsForSession], for the tab-layer rows.
+  Stream<List<SessionExercise>> watchSessionExercises(String sessionId) =>
+      ps.db
+          .watch(
+            'SELECT * FROM fact_session_exercise WHERE session_id = ? ORDER BY exercise_order',
+            parameters: [sessionId],
+            triggerOnTables: const ['fact_session_exercise'],
+          )
+          .map((rs) => rs.map(SessionExercise.fromMap).toList());
 
   Future<void> reorderSets(String sessionId, List<String> orderedSetIds) async {
+    _invalidateTimeline();
     for (var i = 0; i < orderedSetIds.length; i++) {
       await ps.db.execute(
         'UPDATE fact_session_exercise_set SET set_number = ? WHERE session_exercise_set_id = ?',

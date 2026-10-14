@@ -924,7 +924,7 @@ class _PlanExerciseCard extends StatelessWidget {
             hasNotes: set.targetNotes?.isNotEmpty ?? false,
             onRegisterCommit: vm.registerCommitHandle,
             onUnregisterCommit: vm.unregisterCommitHandle,
-            onCommit: (isDraft, v) async {
+            onCommit: (isDraft, v, {bool immediate = false}) async {
               if (!isDraft) {
                 await vm.quickUpdatePlannedSessionExerciseSet(
                   set,
@@ -946,7 +946,11 @@ class _PlanExerciseCard extends StatelessWidget {
               clearNotes: v.trim().isEmpty,
             ),
             onDelete: () => vm.deletePlannedSessionExerciseSet(set.plannedSetId),
-            onDuplicate: () => vm.duplicatePlannedSessionExerciseSet(set),
+            onDuplicate: (v) => vm.duplicatePlannedSessionExerciseSet(
+              set,
+              targetWeight: v.weight,
+              targetReps: v.reps,
+            ),
             variationOptions: variationOptions,
             allVariations: allVariations,
             findSimilarVariations: vm.findSimilarVariations,
@@ -973,7 +977,7 @@ class _PlanExerciseCard extends StatelessWidget {
             // all, since only the active card is built.
             onRegisterCommit: vm.registerCommitHandle,
             onUnregisterCommit: vm.unregisterCommitHandle,
-            onCommit: (isDraft, v) async {
+            onCommit: (isDraft, v, {bool immediate = false}) async {
               if (isDraft) {
                 await vm.quickCreatePlannedSessionExerciseSet(
                   exerciseId: exerciseId,
@@ -992,7 +996,7 @@ class _PlanExerciseCard extends StatelessWidget {
               plannedExerciseId,
               draftId,
             ),
-            onDuplicate: () {},
+            onDuplicate: (_) {},
             variationOptions: variationOptions,
             allVariations: allVariations,
             findSimilarVariations: vm.findSimilarVariations,

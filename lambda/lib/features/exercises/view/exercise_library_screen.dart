@@ -46,7 +46,8 @@ class ExerciseLibraryScreen extends StatefulWidget {
   const ExerciseLibraryScreen({
     super.key,
     this.embedded = false,
-    this.initialTab = 0,
+    this.panel = 0,
+    this.viewModel,
   });
 
   /// When embedded in a hub tab, render one panel only — the hub owns the
@@ -54,14 +55,21 @@ class ExerciseLibraryScreen extends StatefulWidget {
   final bool embedded;
 
   /// Which panel to show when [embedded]: 0 = Exercises, 1 = Variations.
-  final int initialTab;
+  /// The hub holds ONE embedded instance and flips this as its tabs change
+  /// (2026-10-13).
+  final int panel;
+
+  /// Injected for tests — the screen disposes the VM only when it created
+  /// it (2026-10-13).
+  final ExerciseViewModel? viewModel;
 
   @override
   State<ExerciseLibraryScreen> createState() => _ExerciseLibraryScreenState();
 }
 
 class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
-  final _viewModel = ExerciseViewModel();
+  late final ExerciseViewModel _viewModel;
+  late final bool _ownsViewModel;
   final _tabController = SlideTabController();
   final _exSearchController = TextEditingController();
   final _varSearchController = TextEditingController();
@@ -72,9 +80,11 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
   @override
   void initState() {
     super.initState();
+    _viewModel = widget.viewModel ?? ExerciseViewModel();
+    _ownsViewModel = widget.viewModel == null;
     _viewModel.fetchAll();
-    if (widget.embedded && widget.initialTab == 1) {
-      _viewModel.setTab(1);
+    if (widget.embedded) {
+      _viewModel.setTab(widget.panel);
     }
     _exSearchController.addListener(
       () => _viewModel.setExSearch(_exSearchController.text),
@@ -85,8 +95,16 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
   }
 
   @override
+  void didUpdateWidget(ExerciseLibraryScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.embedded && widget.panel != oldWidget.panel) {
+      _viewModel.setTab(widget.panel);
+    }
+  }
+
+  @override
   void dispose() {
-    _viewModel.dispose();
+    if (_ownsViewModel) _viewModel.dispose();
     _tabController.dispose();
     _exSearchController.dispose();
     _varSearchController.dispose();
@@ -169,8 +187,9 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
     // archive) instead of the name-only bottom sheet.
     await context.push('/exercises/exercise/${ex.exerciseId}', extra: ex.name);
     // Rename/archive edits on the detail page must show immediately when the
-    // library list is restored (its state lives on beneath the pushed route).
-    _viewModel.fetchAll();
+    // library list is restored (its state lives on beneath the pushed route)
+    // — the light read, not the full catalog + timeline rescan (2026-10-13).
+    _viewModel.refreshExercisesOnly();
   }
 
   // ── Edit Variation ───────────────────────────────────────────────────────────
@@ -306,7 +325,7 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
                 ),
               if (widget.embedded)
                 Expanded(
-                  child: widget.initialTab == 0
+                  child: widget.panel == 0
                       ? exercisesPanel
                       : variationsPanel,
                 )

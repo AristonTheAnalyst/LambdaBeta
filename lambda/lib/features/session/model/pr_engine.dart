@@ -79,7 +79,16 @@ List<PrEvent> prEvents(List<PastSetRow> sets) {
     final d = a.sessionCreatedDate.compareTo(b.sessionCreatedDate);
     return d != 0 ? d : a.setNumber.compareTo(b.setNumber);
   });
+  return prEventsSorted(ordered);
+}
 
+/// The engine's walk over history already known to be chronological —
+/// oldest first, set-number tie-break (see [prEvents]'s ordering contract).
+/// Callers that keep a sorted timeline (the live session's `_pastSetsAsc`,
+/// the logs VM) pass it straight in and skip the per-call sort; the sort is
+/// O(N log N) over the user's entire set history, so it belongs at load
+/// time, not on every keystroke (2026-10-13).
+List<PrEvent> prEventsSorted(List<PastSetRow> ordered) {
   // (exercise, variation) → (minReps → best weight, exact weight → best reps)
   final state = <(String, String?), (Map<int, num>, Map<num, num>)>{};
   final events = <PrEvent>[];

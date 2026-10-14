@@ -103,14 +103,9 @@ class _SessionScreenState extends State<SessionScreen>
     }
     _startNotesCtrl = TextEditingController(text: _vm.startNotes);
     _endNotesCtrl = TextEditingController(text: _vm.endNotes);
-    _vm.addListener(_onVmChanged);
-  }
-
-  void _onVmChanged() {
-    // The cached VM outlives this State (hot reload / navigation), so guard
-    // every notification with mounted — otherwise a VM event after dispose
-    // throws "setState() called after dispose()".
-    if (mounted) setState(() {});
+    // No whole-screen listener: rebuilds are scoped to the widgets that read
+    // the VM (per-page ListenableBuilders below) instead of one setState over
+    // the entire wizard per notify (2026-10-13).
   }
 
   @override
@@ -134,7 +129,6 @@ class _SessionScreenState extends State<SessionScreen>
     if (ps.onSignOutReset == _resetCachedVmOnSignOut) {
       ps.onSignOutReset = null;
     }
-    _vm.removeListener(_onVmChanged);
     _startNotesCtrl.dispose();
     _endNotesCtrl.dispose();
     super.dispose();
@@ -311,11 +305,17 @@ class _SessionScreenState extends State<SessionScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.bg,
-      body: Stack(
-        children: [
-          _vm.initLoading
-              ? const Center(child: CircularProgressIndicator())
-              : Column(
+      // The whole-screen listener is gone: this builder scopes rebuilds to
+      // the body subtree that actually reads the VM. The win is the notify
+      // count — keystrokes debounce into one settle, so this fires per
+      // settle instead of per keystroke (2026-10-13).
+      body: ListenableBuilder(
+        listenable: _vm,
+        builder: (context, _) => Stack(
+          children: [
+            _vm.initLoading
+                ? const Center(child: CircularProgressIndicator())
+                : Column(
                   children: [
                     ListenableBuilder(
                       listenable: _vm.slidePagesController,
@@ -489,6 +489,7 @@ class _SessionScreenState extends State<SessionScreen>
                   ],
                 ),
         ],
+        ),
       ),
     );
   }
@@ -1614,11 +1615,11 @@ class _SessionPreviewState extends State<_SessionPreview> {
       initialNotes: set.targetNotes,
       hasNotes: set.targetNotes?.isNotEmpty ?? false,
       readOnly: true,
-      onCommit: (_, _) async {},
+      onCommit: (_, _, {bool immediate = false}) async {},
       onVariationChanged: (_) {},
       onNotesSave: (_) {},
       onDelete: () async {},
-      onDuplicate: () {},
+      onDuplicate: (_) {},
       variationOptions: _noVariationOptions,
       allVariations: const [],
       findSimilarVariations: (_) => const [],
@@ -1664,11 +1665,11 @@ class _SessionPreviewState extends State<_SessionPreview> {
                 initialVariationId: null,
                 hasNotes: false,
                 readOnly: true,
-                onCommit: (_, _) async {},
+                onCommit: (_, _, {bool immediate = false}) async {},
                 onVariationChanged: (_) {},
                 onNotesSave: (_) {},
                 onDelete: () async {},
-                onDuplicate: () {},
+                onDuplicate: (_) {},
                 variationOptions: _noVariationOptions,
                 allVariations: const [],
                 findSimilarVariations: (_) => const [],

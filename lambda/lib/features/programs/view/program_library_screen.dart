@@ -540,13 +540,13 @@ class _ProgramCard extends StatelessWidget {
       actions: [
         SwipeAction(
           icon: Icons.copy_rounded,
-          label: 'Duplicate',
+          
           color: AppColors.accent,
           onTap: onDuplicate,
         ),
         SwipeAction(
           icon: Icons.delete_outline,
-          label: 'Delete',
+          
           color: AppColors.danger,
           onTap: onDelete,
         ),

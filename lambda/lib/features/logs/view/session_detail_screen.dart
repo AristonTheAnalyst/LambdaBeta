@@ -663,7 +663,7 @@ class _DetailCardBuilder extends StatelessWidget {
           hasNotes: set.notes?.isNotEmpty ?? false,
           isPr: prSetIds.contains(set.sessionExerciseSetId),
           readOnly: !state.isEditing,
-          onCommit: (isDraft, v) async {
+          onCommit: (isDraft, v, {bool immediate = false}) async {
             if (!isDraft) {
               await viewModel.quickUpdateSet(
                 set,
@@ -671,6 +671,7 @@ class _DetailCardBuilder extends StatelessWidget {
                 clearWeight: v.weight == null,
                 reps: _parseReps(v.reps),
                 clearReps: v.reps == null,
+                immediate: immediate,
               );
             }
           },
@@ -678,14 +679,20 @@ class _DetailCardBuilder extends StatelessWidget {
             set,
             variationId: id,
             clearVariation: id == null,
+            immediate: true,
           ),
           onNotesSave: (v) => viewModel.quickUpdateSet(
             set,
             notes: v.trim().isEmpty ? null : v.trim(),
             clearNotes: v.trim().isEmpty,
+            immediate: true,
           ),
           onDelete: () => _confirmDeleteSet(set, context),
-          onDuplicate: () => viewModel.duplicateSet(set),
+          onDuplicate: (v) => viewModel.duplicateSet(
+            set,
+            weight: _parseWeight(v.weight),
+            reps: _parseReps(v.reps),
+          ),
           variationOptions: variationOptions,
           allVariations: allVariations,
           findSimilarVariations: viewModel.findSimilarVariations,
@@ -706,7 +713,7 @@ class _DetailCardBuilder extends StatelessWidget {
           initialRepsText: '',
           initialVariationId: null,
           hasNotes: false,
-          onCommit: (isDraft, v) async {
+          onCommit: (isDraft, v, {bool immediate = false}) async {
             if (isDraft) {
               // The row guarantees reps text for history drafts — the
               // numeric formatter makes this parse safe.
@@ -725,7 +732,7 @@ class _DetailCardBuilder extends StatelessWidget {
           onVariationChanged: (_) {},
           onNotesSave: (_) {},
           onDelete: () async => viewModel.removeDraftSet(order, draftId),
-          onDuplicate: () {},
+          onDuplicate: (_) {},
           variationOptions: variationOptions,
           allVariations: allVariations,
           findSimilarVariations: viewModel.findSimilarVariations,
@@ -794,11 +801,11 @@ class _DetailCardBuilder extends StatelessWidget {
         // Past PR sets badge like the grid — events are keyed by set id.
         isPr: state.prEventSetIds.contains(s.sessionExerciseSetId),
         readOnly: true,
-        onCommit: (_, _) async {},
+        onCommit: (_, _, {bool immediate = false}) async {},
         onVariationChanged: (_) {},
         onNotesSave: (_) {},
         onDelete: () async {},
-        onDuplicate: () {},
+        onDuplicate: (_) {},
         variationOptions: variationOptions,
         allVariations: allVariations,
         findSimilarVariations: viewModel.findSimilarVariations,

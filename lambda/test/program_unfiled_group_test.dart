@@ -104,9 +104,9 @@ void main() {
 
     await reveal(tester);
 
-    expect(find.text('File into…'), findsOneWidget,
+    expect(find.byIcon(Icons.drive_file_move_outline), findsOneWidget,
         reason: 'filing it into a block is the fix the group exists to offer');
-    expect(find.text('Delete'), findsOneWidget,
+    expect(find.byIcon(Icons.delete_outline), findsOneWidget,
         reason: 'and removing it from the program is the other answer — an '
             'archived block\'s leftovers are not all wanted back');
   });
@@ -123,7 +123,7 @@ void main() {
     await pump(tester, usesBlocks: true);
 
     await reveal(tester);
-    await tester.tap(find.text('File into…'));
+    await tester.tap(find.byIcon(Icons.drive_file_move_outline));
     await tester.pumpAndSettle();
 
     // The sheet offers the program's blocks to choose between — by name, which

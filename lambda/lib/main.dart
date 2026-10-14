@@ -12,18 +12,21 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   AppFonts.init();
 
-  await Supabase.initialize(
-    url: 'https://dybluaeowmpdwsweawcq.supabase.co',
-    publishableKey:
-        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR5Ymx1YWVvd21wZHdzd2Vhd2NxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI4MTA1MzcsImV4cCI6MjA4ODM4NjUzN30.rjzDqKQJT3giqZ4o7-8oRHaGw1IujnOQVzKINJDjWBg',
-    // Persist the session (incl. refresh token) in the OS keychain/keystore
-    // instead of supabase_flutter's plaintext SharedPreferences default.
-    authOptions: FlutterAuthClientOptions(
-      localStorage: SecureLocalStorage(),
+  // Independent inits run in parallel — the date formatting waited behind
+  // the Supabase network round trip for no reason (2026-10-13).
+  await Future.wait([
+    Supabase.initialize(
+      url: 'https://dybluaeowmpdwsweawcq.supabase.co',
+      publishableKey:
+          'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR5Ymx1YWVvd21wZHdzd2Vhd2NxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI4MTA1MzcsImV4cCI6MjA4ODM4NjUzN30.rjzDqKQJT3giqZ4o7-8oRHaGw1IujnOQVzKINJDjWBg',
+      // Persist the session (incl. refresh token) in the OS keychain/keystore
+      // instead of supabase_flutter's plaintext SharedPreferences default.
+      authOptions: FlutterAuthClientOptions(
+        localStorage: SecureLocalStorage(),
+      ),
     ),
-  );
-
-  await initializeDateFormatting('en_GB');
+    initializeDateFormatting('en_GB'),
+  ]);
   await openDatabase();
 
   _initDeepLinks();

@@ -1,26 +1,32 @@
 import 'package:uuid/uuid.dart';
 import '../../core/powersync/database.dart' as ps;
+import '../cache/past_sets_timeline_cache.dart';
 import '../../core/utils/name_limit.dart';
 import '../models/custom_exercise.dart';
 import '../models/custom_variation.dart';
 import '../models/exercise_detail.dart';
 import '../models/exercise_usage.dart';
-import 'session_repository.dart';
 
 // lastUsedByEntity is used by fetchExerciseDetailMap below.
 
 const _uuid = Uuid();
 
 class ExerciseRepository {
-  final _sessionRepo = SessionRepository();
 
   /// Aggregate per-exercise and per-variation usage across the user's history
   /// (sets, workouts, last used, and the distinct other-entity count). Derived
   /// from the past-sets timeline so it stays consistent with what the library
   /// and analytics show. Every exercise/variation gets an entry (zeros if
   /// unused) so callers can sort the full list.
-  Future<Map<String, ExerciseUsage>> fetchUsage(String userId) async {
-    final timeline = await _sessionRepo.loadPastSetsTimeline(userId);
+  Future<Map<String, ExerciseUsage>> fetchUsage(
+    String userId, {
+    List<CustomExercise>? exercises,
+    List<CustomVariation>? variations,
+  }) async {
+    // The timeline rides the shared cache — and callers that already hold
+    // the catalog (the library VM) pass it in, so this reads nothing extra
+    // (2026-10-13).
+    final timeline = await PastSetsTimelineCache.instance.get(userId);
     final exSets = <String, int>{};
     final exWorkouts = <String, Set<String>>{};
     final exVariations = <String, Set<String>>{};
@@ -60,7 +66,8 @@ class ExerciseRepository {
     }
 
     final usage = <String, ExerciseUsage>{};
-    for (final e in await fetchExercises(userId)) {
+    final exercisesList = exercises ?? await fetchExercises(userId);
+    for (final e in exercisesList) {
       usage[e.exerciseId] = ExerciseUsage(
         sets: exSets[e.exerciseId] ?? 0,
         workouts: exWorkouts[e.exerciseId]?.length ?? 0,
@@ -68,7 +75,8 @@ class ExerciseRepository {
         lastUsed: exLast[e.exerciseId],
       );
     }
-    for (final v in await fetchVariations(userId)) {
+    final variationsList = variations ?? await fetchVariations(userId);
+    for (final v in variationsList) {
       usage[v.variationId] = ExerciseUsage(
         sets: varSets[v.variationId] ?? 0,
         workouts: varWorkouts[v.variationId]?.length ?? 0,

@@ -43,7 +43,7 @@ void main() {
           swipeActions: [
             SwipeAction(
               icon: Icons.copy_rounded,
-              label: 'Duplicate',
+              
               color: Colors.blue,
               onTap: () {},
             ),

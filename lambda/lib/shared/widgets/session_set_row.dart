@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import 'package:flutter/services.dart';
 import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_fonts.dart';
@@ -63,11 +64,11 @@ SessionSetRow recordSetRow({
   initialNotes: set.targetNotes,
   hasNotes: set.targetNotes?.isNotEmpty ?? false,
   readOnly: true,
-  onCommit: (isDraft, values) async {},
+  onCommit: (isDraft, values, {bool immediate = false}) async {},
   onVariationChanged: (_) {},
   onNotesSave: (_) {},
   onDelete: () async {},
-  onDuplicate: () {},
+  onDuplicate: (_) {},
   variationOptions: variationOptions,
   allVariations: allVariations,
   findSimilarVariations: (_) => const [],
@@ -173,11 +174,21 @@ class SessionSetRow extends StatefulWidget {
   final void Function(Future<void> Function())? onRegisterCommit;
   final void Function(Future<void> Function())? onUnregisterCommit;
 
-  /// Commit on blur: `(isDraft, values)`. Draft commits also carry the
+  /// Commit: `(isDraft, values, {immediate})`. Draft commits also carry the
   /// row-local variation and notes; real-set commits carry weight/reps only
   /// (variation/notes go through [onVariationChanged]/[onNotesSave]).
-  final Future<void> Function(bool isDraft, SetRowFieldValues values)
-      onCommit;
+  ///
+  /// [immediate] separates the two commit classes (2026-10-13): keystroke
+  /// commits (`immediate: false`) are debounce-eligible — the caller merges
+  /// them into one write per settle. Blur and the registered flush handle
+  /// commit with `immediate: true`, which must write now, so navigation and
+  /// lifecycle can never lose a typed value. A caller with no debounce
+  /// (the planner) simply ignores the flag.
+  final Future<void> Function(
+    bool isDraft,
+    SetRowFieldValues values, {
+    bool immediate,
+  }) onCommit;
 
   /// Variation dropdown change on a REAL set — the screen maps null to
   /// clearVariation. Drafts keep the variation row-locally.
@@ -187,7 +198,11 @@ class SessionSetRow extends StatefulWidget {
   final void Function(String notes) onNotesSave;
 
   final Future<void> Function() onDelete;
-  final VoidCallback onDuplicate;
+
+  /// Duplicate, carrying the row's CURRENT weight/reps text — the copy must
+  /// carry what is on screen, not the seed values a debounced write may not
+  /// have settled yet (2026-10-13).
+  final void Function(SetRowFieldValues values) onDuplicate;
 
   /// 'No Variation' first, then all the user's variations.
   final List<DropdownOption<String?>> variationOptions;
@@ -230,9 +245,12 @@ class _SessionSetRowState extends State<SessionSetRow> {
 
   /// Real (non-draft) rows commit on every keystroke — the value is
   /// recognized as it's being typed, so navigating away (back, switching
-  /// exercises, ending) can never lose it. Drafts stay blur/ flush
-  /// committed: a keystroke must not materialize a draft mid-typing
-  /// (that would replace the row and drop the field's focus).
+  /// exercises, ending) can never lose it. Keystroke commits are
+  /// debounce-eligible (`immediate: false`) — the caller merges them into
+  /// one write per settle — while blur and the flush handle commit now, so
+  /// the safety net is unchanged. Drafts stay blur/flush committed: a
+  /// keystroke must not materialize a draft mid-typing (that would replace
+  /// the row and drop the field's focus).
   bool get _commitOnChange => !_effectiveReadOnly && !_isDraft;
 
   /// Planned styling applies to planner rows always (the fields ARE the
@@ -275,13 +293,13 @@ class _SessionSetRowState extends State<SessionSetRow> {
     }
     if (!widget.readOnly) {
       _weightFocus.addListener(() {
-        if (!_weightFocus.hasFocus) _commit();
+        if (!_weightFocus.hasFocus) _commit(immediate: true);
       });
       _repsFocus.addListener(() {
-        if (!_repsFocus.hasFocus) _commit();
+        if (!_repsFocus.hasFocus) _commit(immediate: true);
       });
     }
-    widget.onRegisterCommit?.call(_commit);
+    widget.onRegisterCommit?.call(_flushHandle);
   }
 
   @override
@@ -308,7 +326,7 @@ class _SessionSetRowState extends State<SessionSetRow> {
 
   @override
   void dispose() {
-    widget.onUnregisterCommit?.call(_commit);
+    widget.onUnregisterCommit?.call(_flushHandle);
     _weightCtrl.dispose();
     _repsCtrl.dispose();
     _weightFocus.dispose();
@@ -316,7 +334,15 @@ class _SessionSetRowState extends State<SessionSetRow> {
     super.dispose();
   }
 
-  Future<void> _commit() async {
+  /// The registered commit handle — a method (not a closure) so register
+  /// and unregister match by identity: a `() => _commit(immediate: true)`
+  /// wrapper would be a different tear-off every call, while a method
+  /// tear-off of the same instance is stable. Flush = commit now: tab
+  /// switches, page changes, lifecycle pause and session end all flush
+  /// through this, and a debounce timer must not outlive them.
+  Future<void> _flushHandle() => _commit(immediate: true);
+
+  Future<void> _commit({bool immediate = false}) async {
     // A gated row's fields are read-only until the confirm flips — nothing
     // can be pending, so never write.
     if (_effectiveReadOnly) return;
@@ -357,6 +383,7 @@ class _SessionSetRowState extends State<SessionSetRow> {
           variationId: _draftVariationId,
           notes: _draftNotes?.trim().isEmpty == true ? null : _draftNotes?.trim(),
         ),
+        immediate: immediate,
       );
       return;
     }
@@ -374,6 +401,7 @@ class _SessionSetRowState extends State<SessionSetRow> {
         weight: weightText.isEmpty ? null : weightText,
         reps: repsText.isEmpty ? null : repsText,
       ),
+      immediate: immediate,
     );
   }
 
@@ -458,13 +486,26 @@ class _SessionSetRowState extends State<SessionSetRow> {
 
   Future<void> _delete() => widget.onDelete();
 
-  void _duplicate() {
+  Future<void> _duplicate() async {
     if (_isDraft) return; // nothing persisted yet to copy
-    // Live-only guard: an empty placeholder set can't be duplicated.
-    if (widget.mode == SetRowMode.live && widget.initialRepsText.isEmpty) {
-      return;
-    }
-    widget.onDuplicate();
+    // A duplicate of an empty row is a deliberate act — the user tapped the
+    // button on THAT row. Empty rows are valid (user-added rows persist even
+    // unfilled), and the old "empty placeholder can't be duplicated" guard
+    // made the button silently do nothing on planned/materialized ghost rows
+    // (2026-10-13). The copy carries whatever the row shows, nothing more.
+    // Persist the on-screen text first — the copy must carry what the user
+    // just typed, not the stale seed values — then hand the same text to
+    // the caller for the copied row.
+    await _commit(immediate: true);
+    if (!mounted) return;
+    widget.onDuplicate(
+      SetRowFieldValues(
+        weight: _weightCtrl.text.trim().isEmpty
+            ? null
+            : _weightCtrl.text.trim(),
+        reps: _repsCtrl.text.trim().isEmpty ? null : _repsCtrl.text.trim(),
+      ),
+    );
   }
 
   /// Wired as the variation dropdown's create-new handler. [query] is
@@ -777,7 +818,7 @@ class _SessionSetRowState extends State<SessionSetRow> {
         actions: [
           SwipeAction(
             icon: Icons.sticky_note_2_outlined,
-            label: 'Note',
+            
             color: AppColors.primary,
             onTap: _gated
                 ? () => _requestGateEdit(after: _openNotes)
@@ -793,19 +834,19 @@ class _SessionSetRowState extends State<SessionSetRow> {
           if (!_isDraft)
             SwipeAction(
               icon: Icons.copy_rounded,
-              label: 'Duplicate',
+              
               color: AppColors.accent,
               onTap: _duplicate,
             ),
           SwipeAction(
             icon: Icons.sticky_note_2_outlined,
-            label: 'Note',
+            
             color: AppColors.primary,
             onTap: _openNotes,
           ),
           SwipeAction(
             icon: Icons.delete_outline,
-            label: 'Delete',
+            
             color: AppColors.danger,
             onTap: _delete,
           ),
@@ -821,7 +862,7 @@ class _SessionSetRowState extends State<SessionSetRow> {
         actions: [
           SwipeAction(
             icon: Icons.sticky_note_2_outlined,
-            label: 'Note',
+            
             color: AppColors.primary,
             onTap: _openNotes,
           ),

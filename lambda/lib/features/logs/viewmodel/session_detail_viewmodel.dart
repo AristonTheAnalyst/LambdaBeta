@@ -1,12 +1,15 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide Session;
+import '../../../core/utils/name_limit.dart';
+import '../../../data/cache/past_sets_timeline_cache.dart';
 import '../../../data/models/custom_variation.dart';
 import '../../../data/models/exercise_detail.dart';
 import '../../../data/models/lesson.dart';
 import '../../../data/models/session.dart';
 import '../../../data/models/session_exercise.dart';
 import '../../../data/models/session_exercise_set.dart';
-import '../../../core/utils/name_limit.dart';
 import '../../../data/repositories/exercise_repository.dart';
 import '../../../data/repositories/lesson_repository.dart';
 import '../../../data/repositories/session_repository.dart';
@@ -164,9 +167,11 @@ class SessionDetailViewModel {
     SessionRepository? sessionRepo,
     ExerciseRepository? exerciseRepo,
     LessonRepository? lessonRepo,
+    String? userId,
   }) : _sessionRepo = sessionRepo ?? SessionRepository(),
        _exerciseRepo = exerciseRepo ?? ExerciseRepository(),
-       _lessonRepo = lessonRepo ?? LessonRepository();
+       _lessonRepo = lessonRepo ?? LessonRepository(),
+       _userIdOverride = userId;
 
   final SessionRepository _sessionRepo;
   final ExerciseRepository _exerciseRepo;
@@ -175,7 +180,23 @@ class SessionDetailViewModel {
 
   int _nextDraftId = 1;
 
-  String get _userId => Supabase.instance.client.auth.currentUser!.id;
+  /// The host-test seam's answer; null reads the live Supabase session.
+  final String? _userIdOverride;
+
+  String get _userId => _userIdOverride ?? Supabase.instance.client.auth.currentUser!.id;
+
+  // ── Debounced set writes (the live VM's sibling machinery) ────────────────
+  /// Same contract as `SessionViewModel.kAutoCommitDebounce` — keep the two
+  /// in step (2026-10-13).
+  static const kAutoCommitDebounce = Duration(milliseconds: 250);
+
+  final Map<String, _PendingDetailSetWrite> _pendingSetWrites = {};
+  final Map<String, Timer> _setDebounceTimers = {};
+  final Map<String, Future<void>> _setWriteChains = {};
+
+  /// The flat timeline (oldest first) behind history derivations — served by
+  /// the shared cache, refreshed whenever a write invalidates it.
+  List<PastSetRow> _timelineAsc = const [];
 
   /// Builds slots in the order the user arranged them during the session —
   /// `fact_session_exercise.exercise_order` (a real column now; the old JSON
@@ -256,14 +277,17 @@ class SessionDetailViewModel {
     try {
       final results = await Future.wait([
         _exerciseRepo.fetchExerciseDetailMap(_userId),
-        _sessionRepo.loadPastSetsTimeline(_userId),
+        // The shared timeline cache — the first reader pays the query, every
+        // later reader (logs list, library, exercise detail) rides it until
+        // a write or a sync round invalidates (2026-10-13).
+        PastSetsTimelineCache.instance.get(_userId),
         _exerciseRepo.fetchVariations(_userId),
       ]);
+      final timeline = results[1] as List<PastSetRow>;
+      _timelineAsc = PastSetsTimelineCache.instance.asc(_userId) ?? timeline;
       state.value = state.value.copyWith(
         exerciseDetailMap: results[0] as Map<String, ExerciseDetail>,
-        historyByExercise: groupHistoryByExercise(
-          results[1] as List<PastSetRow>,
-        ),
+        historyByExercise: groupHistoryByExercise(timeline),
         pastSetsLoaded: true,
         allVariations: results[2] as List<CustomVariation>,
       );
@@ -273,51 +297,39 @@ class SessionDetailViewModel {
     }
   }
 
+  /// Re-derives PR highlighting from the timeline (oldest-first, excluding
+  /// this workout's own stale rows) merged with this workout's CURRENT sets,
+  /// scoped to the exercises this screen can show (2026-10-13). The merge is
+  /// positional, not a sort: the timeline already walks chronologically, and
+  /// this workout's rows slot in at their session date — the one tolerance
+  /// is a same-timestamp session, where the tie-break follows insertion
+  /// order rather than set number (timestamps carry milliseconds, so the
+  /// case is effectively unreachable).
   void _computePRs() {
     final s = state.value;
-    // Build prevBest from all history *except* this workout's sets
-    final exclusions = s.session?.sessionId != null
-        ? {s.session!.sessionId}
-        : <String>{};
-    final filtered = <PastSetRow>[];
-    for (final sessions in s.historyByExercise.values) {
-      for (final session in sessions) {
-        for (final set in session.sets) {
-          if (!exclusions.contains(set.sessionId)) {
-            filtered.add(set);
-          }
-        }
-      }
-    }
-
-    // Compute PRs with the engine: history (excluding this workout) + this
-    // workout's sets, then keep records whose sessionId matches this one.
     final thisWorkoutId = s.session?.sessionId;
-    final combined = [...filtered];
-    for (final e in s.setsByOrder.entries) {
-      for (final set in e.value) {
-        combined.add(
-          PastSetRow(
-            sessionExerciseSetId: set.sessionExerciseSetId,
-            sessionExerciseId: set.sessionExerciseId,
-            sessionId: set.sessionId,
-            userId: set.userId,
-            exerciseId: set.exerciseId,
-            setNumber: set.setNumber,
-            reps: set.reps,
-            sessionCreatedDate: s.session?.createdDatetime ?? DateTime.now(),
-            variationId: set.variationId,
-            weight: set.weight,
-            notes: set.notes,
-            exerciseName: set.exerciseName,
-            variationName: set.variationName,
-          ),
-        );
-      }
-    }
+    final thisDate = s.session?.createdDatetime ?? DateTime.now();
 
-    final allEvents =
-        thisWorkoutId != null ? prEvents(combined) : <PrEvent>[];
+    final slotExerciseIds = s.exerciseSlots
+        .map((sl) => sl.exerciseId)
+        .toSet();
+
+    final combined = <PastSetRow>[];
+    var inserted = false;
+    for (final row in _timelineAsc) {
+      if (row.sessionId == thisWorkoutId) continue; // replaced below
+      if (row.exerciseId == null || !slotExerciseIds.contains(row.exerciseId)) {
+        continue;
+      }
+      if (!inserted && row.sessionCreatedDate.isAfter(thisDate)) {
+        combined.addAll(_thisSessionRows(s, thisDate));
+        inserted = true;
+      }
+      combined.add(row);
+    }
+    if (!inserted) combined.addAll(_thisSessionRows(s, thisDate));
+
+    final allEvents = prEventsSorted(combined);
     // This session's events — one per frontier-extending set; each event
     // carries its own before-facts.
     final events = allEvents
@@ -340,6 +352,35 @@ class SessionDetailViewModel {
     );
   }
 
+  /// This workout's current sets as timeline rows — set-number order, all
+  /// sharing the workout's session date.
+  List<PastSetRow> _thisSessionRows(SessionDetailState s, DateTime date) {
+    final rows = <PastSetRow>[];
+    for (final sets in s.setsByOrder.values) {
+      for (final set in sets) {
+        rows.add(
+          PastSetRow(
+            sessionExerciseSetId: set.sessionExerciseSetId,
+            sessionExerciseId: set.sessionExerciseId,
+            sessionId: set.sessionId,
+            userId: set.userId,
+            exerciseId: set.exerciseId,
+            setNumber: set.setNumber,
+            reps: set.reps,
+            sessionCreatedDate: date,
+            variationId: set.variationId,
+            weight: set.weight,
+            notes: set.notes,
+            exerciseName: set.exerciseName,
+            variationName: set.variationName,
+          ),
+        );
+      }
+    }
+    rows.sort((a, b) => a.setNumber.compareTo(b.setNumber));
+    return rows;
+  }
+
   int prCountFor(String exerciseId) =>
       state.value.prsByExercise[exerciseId] ?? 0;
 
@@ -353,67 +394,18 @@ class SessionDetailViewModel {
     final exercises = await _sessionRepo.loadSessionExercises(sessionId);
     final sets = await _sessionRepo.loadSetsForSession(sessionId);
     final slots = _buildSlots(exercises);
-    // History derives from the same timeline — reload it too, otherwise the
-    // History picker shows the pre-edit version of the workout being edited.
-    final timeline = await _sessionRepo.loadPastSetsTimeline(_userId);
+    // History derives from the same timeline — through the shared cache,
+    // which the structural write that led here has already invalidated
+    // (2026-10-13).
+    final userId = _userId;
+    final timeline = await PastSetsTimelineCache.instance.get(userId);
+    _timelineAsc = PastSetsTimelineCache.instance.asc(userId) ?? timeline;
     state.value = state.value.copyWith(
       exerciseSlots: slots,
       setsByOrder: _groupByOrder(sets, slots),
       historyByExercise: groupHistoryByExercise(timeline),
       clearSessionSetDrafts: true,
     );
-    _computePRs();
-  }
-
-  /// Re-derives PR highlighting for the edited exercise from current data —
-  /// this workout's in-state sets (which reflect the edit/delete just made)
-  /// plus other workouts' loaded history. Deletes then re-inserts that
-  /// exercise's records (promoting the next-best from the remaining sets).
-  ///
-  /// If the combined source (other workouts' history + this workout's sets)
-  /// has no data for the exercise, the recompute is skipped — otherwise an
-  /// empty baseline would wipe every PR record for the exercise. Editing
-  /// before history loads is fine: in-state sets alone still re-derive this
-  /// workout's PRs, and there's no loaded history to lose.
-  Future<void> recomputeExercisePRs(String exerciseId) async {
-    final s = state.value;
-
-    final thisWorkoutId = s.session?.sessionId;
-    final combined = <PastSetRow>[];
-    // Other workouts' history (accurate — this workout isn't in it)
-    for (final sessions in s.historyByExercise.values) {
-      for (final session in sessions) {
-        for (final set in session.sets) {
-          if (set.sessionId != thisWorkoutId) combined.add(set);
-        }
-      }
-    }
-    // This workout's CURRENT sets — reflects the optimistic delete already
-    // applied to setsByOrder, so the deleted set is not included.
-    for (final sets in s.setsByOrder.values) {
-      for (final set in sets) {
-        combined.add(
-          PastSetRow(
-            sessionExerciseSetId: set.sessionExerciseSetId,
-            sessionExerciseId: set.sessionExerciseId,
-            sessionId: set.sessionId,
-            userId: set.userId,
-            exerciseId: set.exerciseId,
-            setNumber: set.setNumber,
-            reps: set.reps,
-            sessionCreatedDate: s.session?.createdDatetime ?? DateTime.now(),
-            variationId: set.variationId,
-            weight: set.weight,
-            notes: set.notes,
-            exerciseName: set.exerciseName,
-            variationName: set.variationName,
-          ),
-        );
-      }
-    }
-
-    // PRs are derived from the sets on read — after an edit the state's
-    // in-memory derivation is simply refreshed. Nothing is persisted.
     _computePRs();
   }
 
@@ -706,7 +698,6 @@ class SessionDetailViewModel {
       );
       removeDraftSet(groupOrder, draftId);
       await _reloadSets(w.sessionId);
-      await recomputeExercisePRs(exerciseId);
       return true;
     } catch (e) {
       state.value = state.value.copyWith(error: e.toString());
@@ -714,6 +705,14 @@ class SessionDetailViewModel {
     }
   }
 
+  /// The edit-mode set write (2026-10-13): keystroke commits merge into one
+  /// debounced write per settle — the same contract as the live VM. The
+  /// settle writes once, patches the row in state (both the sets grid and
+  /// the timeline's copy of it — the edited workout IS in the timeline), and
+  /// re-derives PRs — zero queries per keystroke, one state update per
+  /// settle. Discrete edits (blur flush, variation pick, notes save) pass
+  /// [immediate] and write now. A failed write patches nothing: the state
+  /// keeps the pre-edit row, and the error surface says what happened.
   Future<void> quickUpdateSet(
     SessionExerciseSet set, {
     double? weight,
@@ -724,30 +723,156 @@ class SessionDetailViewModel {
     bool clearVariation = false,
     String? notes,
     bool clearNotes = false,
-  }) async {
+    bool immediate = false,
+  }) {
     final w = state.value.session;
-    if (w == null) return;
+    if (w == null) return Future.value();
+    final pending = _pendingSetWrites.putIfAbsent(
+      set.sessionExerciseSetId,
+      _PendingDetailSetWrite.new,
+    );
+    pending.merge(
+      weight: weight,
+      clearWeight: clearWeight,
+      reps: reps,
+      clearReps: clearReps,
+      variationId: variationId,
+      clearVariation: clearVariation,
+      notes: notes,
+      clearNotes: clearNotes,
+    );
+    _setDebounceTimers.remove(set.sessionExerciseSetId)?.cancel();
+    if (immediate) return _flushSetWrite(set.sessionExerciseSetId);
+    _setDebounceTimers[set.sessionExerciseSetId] = Timer(
+      kAutoCommitDebounce,
+      () {
+        _setDebounceTimers.remove(set.sessionExerciseSetId);
+        unawaited(_flushSetWrite(set.sessionExerciseSetId));
+      },
+    );
+    return Future.value();
+  }
+
+  Future<void> _flushSetWrite(String setId) async {
+    final pending = _pendingSetWrites.remove(setId);
+    if (pending == null) return;
+    final previous = _setWriteChains[setId];
+    final run = (previous ?? Future<void>.value()).then(
+      (_) => _writePendingSet(setId, pending),
+    );
+    _setWriteChains[setId] = run;
+    await run;
+    if (identical(_setWriteChains[setId], run)) _setWriteChains.remove(setId);
+  }
+
+  Future<void> _writePendingSet(String setId, _PendingDetailSetWrite p) async {
     try {
       await _sessionRepo.updateSet(
-        set.sessionExerciseSetId,
-        weight: weight,
-        clearWeight: clearWeight,
-        reps: reps,
-        clearReps: clearReps,
-        variationId: variationId,
-        clearVariation: clearVariation,
-        notes: notes,
-        clearNotes: clearNotes,
+        setId,
+        weight: p.weight,
+        clearWeight: p.clearWeight,
+        reps: p.reps,
+        clearReps: p.clearReps,
+        variationId: p.variationId,
+        clearVariation: p.clearVariation,
+        notes: p.notes,
+        clearNotes: p.clearNotes,
       );
-      await _reloadSets(w.sessionId);
-      final exerciseId = set.exerciseId;
-      if (exerciseId != null) await recomputeExercisePRs(exerciseId);
+      // The write invalidated the shared timeline cache — re-read it so the
+      // next derivation (here and everywhere else) sees the edit, and keep
+      // the asc copy for the sorted PR walk.
+      final userId = _userId;
+      final timeline = await PastSetsTimelineCache.instance.get(userId);
+      _timelineAsc = PastSetsTimelineCache.instance.asc(userId) ?? timeline;
+      _applySetPatchToState(setId, p);
+      _computePRs();
     } catch (e) {
       state.value = state.value.copyWith(error: e.toString());
     }
   }
 
-  Future<void> duplicateSet(SessionExerciseSet set) async {
+  /// Replaces the edited row in [SessionDetailState.setsByOrder] and in its
+  /// timeline copy ([SessionDetailState.historyByExercise]) with the values
+  /// just written — the DB and the patch agree by construction.
+  void _applySetPatchToState(String setId, _PendingDetailSetWrite p) {
+    final s = state.value;
+
+    final newSetsByOrder = <int, List<SessionExerciseSet>>{};
+    for (final e in s.setsByOrder.entries) {
+      newSetsByOrder[e.key] = [
+        for (final set in e.value)
+          if (set.sessionExerciseSetId == setId)
+            SessionExerciseSet(
+              sessionExerciseSetId: set.sessionExerciseSetId,
+              sessionExerciseId: set.sessionExerciseId,
+              sessionId: set.sessionId,
+              userId: set.userId,
+              exerciseId: set.exerciseId,
+              variationId: p.clearVariation
+                  ? null
+                  : (p.variationId ?? set.variationId),
+              setNumber: set.setNumber,
+              weight: p.clearWeight ? null : (p.weight ?? set.weight),
+              reps: p.clearReps ? const [] : (p.reps ?? set.reps),
+              notes: p.clearNotes ? null : (p.notes ?? set.notes),
+              exerciseName: set.exerciseName,
+              variationName: set.variationName,
+              plannedSetId: set.plannedSetId,
+            )
+          else
+            set,
+      ];
+    }
+
+    final newHistory = <String, List<ExerciseHistorySession>>{};
+    for (final entry in s.historyByExercise.entries) {
+      newHistory[entry.key] = [
+        for (final session in entry.value)
+          ExerciseHistorySession(
+            date: session.date,
+            sets: [
+              for (final set in session.sets)
+                if (set.sessionExerciseSetId == setId)
+                  PastSetRow(
+                    sessionExerciseSetId: set.sessionExerciseSetId,
+                    sessionExerciseId: set.sessionExerciseId,
+                    sessionId: set.sessionId,
+                    userId: set.userId,
+                    exerciseId: set.exerciseId,
+                    variationId: p.clearVariation
+                        ? null
+                        : (p.variationId ?? set.variationId),
+                    setNumber: set.setNumber,
+                    weight: p.clearWeight ? null : (p.weight ?? set.weight),
+                    reps: p.clearReps ? const [] : (p.reps ?? set.reps),
+                    notes: p.clearNotes ? null : (p.notes ?? set.notes),
+                    exerciseName: set.exerciseName,
+                    variationName: set.variationName,
+                    plannedSetId: set.plannedSetId,
+                    sessionCreatedDate: set.sessionCreatedDate,
+                  )
+                else
+                  set,
+            ],
+          ),
+      ];
+    }
+
+    state.value = s.copyWith(
+      setsByOrder: newSetsByOrder,
+      historyByExercise: newHistory,
+    );
+  }
+
+  /// Inserts a new set copying [set] — the grid row's swipe Duplicate. The
+  /// row passes the text on screen as [weight]/[reps] overrides: the copy
+  /// must carry what the user just typed, which a debounced write may not
+  /// have settled into [set] yet (2026-10-13).
+  Future<void> duplicateSet(
+    SessionExerciseSet set, {
+    double? weight,
+    List<num>? reps,
+  }) async {
     final w = state.value.session;
     if (w == null) return;
     final exerciseId = set.exerciseId;
@@ -766,12 +891,12 @@ class SessionDetailViewModel {
         userId: _userId,
         variationId: set.variationId,
         setNumber: nextNum,
-        weight: set.weight,
-        reps: set.reps,
+        weight: weight ?? set.weight,
+        reps: reps ?? set.reps,
         notes: set.notes,
       );
       await _reloadSets(w.sessionId);
-      await recomputeExercisePRs(exerciseId);
+      _computePRs();
     } catch (e) {
       state.value = state.value.copyWith(error: e.toString());
     }
@@ -801,7 +926,7 @@ class SessionDetailViewModel {
     await _deleteSetFromState(setId);
     try {
       await _sessionRepo.deleteSet(setId);
-      await recomputeExercisePRs(exerciseId);
+      _computePRs();
       await _reloadSets(w.sessionId);
     } catch (e) {
       state.value = state.value.copyWith(error: e.toString());
@@ -935,9 +1060,25 @@ class SessionDetailViewModel {
 
   /// All active variations, most recently used first — the set-row picker
   /// order. Variations are a flat per-user library.
+  /// Most recently used first — memoized on the identity of its two inputs
+  /// (both are replaced wholesale), so a rebuild no longer walks the whole
+  /// history per access (2026-10-13).
+  List<CustomVariation>? _variationsByRecencyCache;
+  Map<String, List<ExerciseHistorySession>>? _vrHistory;
+  List<CustomVariation>? _vrAllVariations;
+
   List<CustomVariation> get variationsByRecency {
+    final history = state.value.historyByExercise;
+    final variations = state.value.allVariations;
+    if (identical(_vrHistory, history) &&
+        identical(_vrAllVariations, variations) &&
+        _variationsByRecencyCache != null) {
+      return _variationsByRecencyCache!;
+    }
+    _vrHistory = history;
+    _vrAllVariations = variations;
     final last = <String, DateTime>{};
-    for (final sessions in state.value.historyByExercise.values) {
+    for (final sessions in history.values) {
       for (final session in sessions) {
         for (final s in session.sets) {
           final vid = s.variationId;
@@ -948,7 +1089,8 @@ class SessionDetailViewModel {
         }
       }
     }
-    return CustomVariation.sortByLastUsed(state.value.allVariations, last);
+    return _variationsByRecencyCache =
+        CustomVariation.sortByLastUsed(variations, last);
   }
 
   List<Lesson> lessonsFor(String exerciseId) =>
@@ -1065,5 +1207,47 @@ extension _FirstWhereOrNull<T> on List<T> {
       if (test(e)) return e;
     }
     return null;
+  }
+}
+
+/// One set's merged, not-yet-written edits — the detail VM's debounce holder
+/// (mirrors the live VM's `_PendingSetWrite`; the two VMs flush differently,
+/// so each owns its copy — 2026-10-13).
+class _PendingDetailSetWrite {
+  double? weight;
+  bool clearWeight = false;
+  List<num>? reps;
+  bool clearReps = false;
+  String? variationId;
+  bool clearVariation = false;
+  String? notes;
+  bool clearNotes = false;
+
+  void merge({
+    double? weight,
+    bool clearWeight = false,
+    List<num>? reps,
+    bool clearReps = false,
+    String? variationId,
+    bool clearVariation = false,
+    String? notes,
+    bool clearNotes = false,
+  }) {
+    if (weight != null || clearWeight) {
+      this.weight = weight;
+      this.clearWeight = clearWeight;
+    }
+    if (reps != null || clearReps) {
+      this.reps = reps;
+      this.clearReps = clearReps;
+    }
+    if (variationId != null || clearVariation) {
+      this.variationId = variationId;
+      this.clearVariation = clearVariation;
+    }
+    if (notes != null || clearNotes) {
+      this.notes = notes;
+      this.clearNotes = clearNotes;
+    }
   }
 }

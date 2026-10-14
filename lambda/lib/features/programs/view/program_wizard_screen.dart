@@ -596,13 +596,13 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
                 actions: [
                   SwipeAction(
                     icon: Icons.copy_rounded,
-                    label: 'Duplicate',
+                    
                     color: AppColors.accent,
                     onTap: () => _vm.duplicatePlannedSession(workouts[i]),
                   ),
                   SwipeAction(
                     icon: Icons.delete_outline,
-                    label: 'Delete',
+                    
                     color: AppColors.danger,
                     onTap: () {
                       _vm.removePlannedSession(workouts[i]);

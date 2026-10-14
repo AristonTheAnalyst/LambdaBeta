@@ -1303,7 +1303,7 @@ class _ReviewLandingState extends State<_ReviewLanding> {
             actions: [
               SwipeAction(
                 icon: Icons.remove_circle_outline,
-                label: 'Remove',
+                
                 color: AppColors.danger,
                 onTap: () => _removeWorkout(card),
               ),

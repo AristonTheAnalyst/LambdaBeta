@@ -26,6 +26,30 @@ class LessonRepository {
     return rows.map((r) => Lesson.fromMap(r)).toList();
   }
 
+  /// One batch read for a workout's exercise slots — the editor used to
+  /// query per exercise on every open (2026-10-13).
+  Future<Map<String, List<Lesson>>> fetchLessonsForExercises(
+    String userId,
+    List<String> exerciseIds,
+  ) async {
+    if (exerciseIds.isEmpty) return {};
+    final placeholders = List.filled(exerciseIds.length, '?').join(',');
+    final rows = await _db.getAll(
+      '''
+      SELECT * FROM dim_lesson
+      WHERE user_id = ? AND custom_exercise_id IN ($placeholders) AND is_archived = 0
+      ORDER BY pinned DESC, lesson_created_date DESC
+      ''',
+      [userId, ...exerciseIds],
+    );
+    final byExercise = <String, List<Lesson>>{};
+    for (final r in rows) {
+      final lesson = Lesson.fromMap(r);
+      byExercise.putIfAbsent(lesson.exerciseId, () => []).add(lesson);
+    }
+    return byExercise;
+  }
+
   Future<Lesson> createLesson(String userId, String exerciseId, String text,
       {String? sessionId}) async {
     final id = _uuid.v4();

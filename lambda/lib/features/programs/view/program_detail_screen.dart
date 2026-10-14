@@ -698,13 +698,13 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
             swipeActions: [
               SwipeAction(
                 icon: Icons.copy_rounded,
-                label: 'Duplicate',
+                
                 color: AppColors.accent,
                 onTap: () => _vm.duplicatePlannedSession(workouts[i]),
               ),
               SwipeAction(
                 icon: Icons.delete_outline,
-                label: 'Delete',
+                
                 color: AppColors.danger,
                 onTap: () => _confirmDeleteWorkout(workouts[i]),
               ),
@@ -1639,13 +1639,13 @@ class _UnfiledGroup extends StatelessWidget {
             swipeActions: [
               SwipeAction(
                 icon: Icons.drive_file_move_outline,
-                label: 'File into…',
+                
                 color: AppColors.accent,
                 onTap: () => onFile(w),
               ),
               SwipeAction(
                 icon: Icons.delete_outline,
-                label: 'Delete',
+                
                 color: AppColors.danger,
                 onTap: () => onDelete(w),
               ),

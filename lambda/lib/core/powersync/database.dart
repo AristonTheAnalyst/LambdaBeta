@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:powersync/powersync.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../data/cache/past_sets_timeline_cache.dart';
 import 'schema.dart';
 
 final _log = Logger('powersync');
@@ -259,6 +260,9 @@ void resetForSignOut() {
   final reset = onSignOutReset;
   onSignOutReset = null;
   reset?.call();
+  // The cleared local DB must not serve the next user a stale timeline —
+  // or the previous user's rows through the shared cache (2026-10-13).
+  PastSetsTimelineCache.instance.invalidate();
 }
 
 /// Centralised bounded write helper — every repository that writes through
@@ -307,6 +311,20 @@ Future<void> openDatabase() async {
   );
 
   await db.initialize();
+
+  // Remote downloads invalidate the timeline cache once per sync round —
+  // the narrow trigger: a status whose `downloading` flips false→true means
+  // server rows are about to land, so the memoized timeline must re-read
+  // once they do. Status emissions are value-deduped, and progress reports
+  // during an active download only update `downloadProgress`, so the flip
+  // fires once per round, not per batch (2026-10-13).
+  var wasDownloading = false;
+  db.statusStream.listen((status) {
+    if (status.downloading && !wasDownloading) {
+      PastSetsTimelineCache.instance.invalidate();
+    }
+    wasDownloading = status.downloading;
+  });
 
   // Purge stale CRUD entries for tables that have been renamed, dropped, or
   // are missing from the sync-stream config.  These entries will never succeed

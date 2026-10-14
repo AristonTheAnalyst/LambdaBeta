@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../../../core/utils/session_format.dart';
 import '../../../data/models/lesson.dart';
 import '../../../shared/widgets/add_exercise_modal.dart';
@@ -158,7 +159,7 @@ class LiveExerciseCard extends StatelessWidget {
               isPr: vm.isPrSet(set.sessionExerciseSetId),
               onRegisterCommit: vm.registerCommitHandle,
               onUnregisterCommit: vm.unregisterCommitHandle,
-              onCommit: (isDraft, v) async {
+              onCommit: (isDraft, v, {bool immediate = false}) async {
                 if (!isDraft) {
                   await vm.updateSetField(
                     set,
@@ -173,6 +174,7 @@ class LiveExerciseCard extends StatelessWidget {
                             planned?.variationId != null
                         ? planned!.variationId
                         : null,
+                    immediate: immediate,
                   );
                 }
               },
@@ -180,6 +182,7 @@ class LiveExerciseCard extends StatelessWidget {
                 set,
                 variationId: id,
                 clearVariation: id == null,
+                immediate: true,
               ),
               onNotesSave: (v) => vm.updateSetField(
                 set,
@@ -189,9 +192,14 @@ class LiveExerciseCard extends StatelessWidget {
                         planned?.variationId != null
                     ? planned!.variationId
                     : null,
+                immediate: true,
               ),
               onDelete: () => vm.deleteSetById(set.sessionExerciseSetId),
-              onDuplicate: () => vm.duplicateSet(set),
+              onDuplicate: (v) => vm.duplicateSet(
+                set,
+                weight: _parseWeight(v.weight),
+                reps: _parseReps(v.reps),
+              ),
               variationOptions: variationOptions,
               allVariations: allVariations,
               findSimilarVariations: vm.findSimilarVariations,
@@ -217,7 +225,7 @@ class LiveExerciseCard extends StatelessWidget {
               plannedTarget: null,
               onRegisterCommit: vm.registerCommitHandle,
               onUnregisterCommit: vm.unregisterCommitHandle,
-              onCommit: (isDraft, v) async {
+              onCommit: (isDraft, v, {bool immediate = false}) async {
                 if (isDraft) {
                   await vm.commitDraftSet(
                     exerciseId,
@@ -232,7 +240,7 @@ class LiveExerciseCard extends StatelessWidget {
               onVariationChanged: (_) {},
               onNotesSave: (_) {},
               onDelete: () async => vm.removeDraftSet(exerciseId, draftId),
-              onDuplicate: () {},
+              onDuplicate: (_) {},
               variationOptions: variationOptions,
               allVariations: allVariations,
               findSimilarVariations: vm.findSimilarVariations,
@@ -297,7 +305,7 @@ class LiveExerciseCard extends StatelessWidget {
             isPr: vm.prEventsBySetId.containsKey(s.sessionExerciseSetId),
             editConfirmed: vm.historyEditConfirmed,
             onEditConfirm: vm.confirmHistoryEdit,
-            onCommit: (isDraft, v) async {
+            onCommit: (isDraft, v, {bool immediate = false}) async {
               if (!isDraft) {
                 await vm.updateHistoricalSetField(
                   s,
@@ -305,6 +313,7 @@ class LiveExerciseCard extends StatelessWidget {
                   clearWeight: v.weight == null,
                   reps: _parseReps(v.reps),
                   clearReps: v.reps == null,
+                  immediate: immediate,
                 );
               }
             },
@@ -312,16 +321,18 @@ class LiveExerciseCard extends StatelessWidget {
               s,
               variationId: id,
               clearVariation: id == null,
+              immediate: true,
             ),
             onNotesSave: (v) => vm.updateHistoricalSetField(
               s,
               notes: v.trim().isEmpty ? null : v.trim(),
               clearNotes: v.trim().isEmpty,
+              immediate: true,
             ),
             // Gate-mode rows never expose swipe actions, so these two can
             // never fire.
             onDelete: () async {},
-            onDuplicate: () {},
+            onDuplicate: (_) {},
             variationOptions: variationOptions,
             allVariations: allVariations,
             findSimilarVariations: vm.findSimilarVariations,

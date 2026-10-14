@@ -422,11 +422,11 @@ class _SnapshotWorkoutCard extends StatelessWidget {
       readOnly: true,
       // Required plumbing, all inert — `readOnly` keeps every one of these
       // from firing, and the planner passes the same shapes with real bodies.
-      onCommit: (isDraft, values) async {},
+      onCommit: (isDraft, values, {bool immediate = false}) async {},
       onVariationChanged: (_) {},
       onNotesSave: (_) {},
       onDelete: () async {},
-      onDuplicate: () {},
+      onDuplicate: (_) {},
       variationOptions: variationOptions,
       allVariations: [
         for (final entry in variationNames.entries)
