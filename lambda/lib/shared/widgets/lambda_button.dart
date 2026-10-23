@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_fonts.dart';
 import '../../core/styles/app_radius.dart';
@@ -28,11 +28,11 @@ class LambdaButton extends StatelessWidget {
   /// (translucent tint + soft hairline in this color), the same chrome as
   /// GlassButton and every other pressable.
   Color get _color => switch (variant) {
-        ButtonVariant.primary => AppColors.primary,
-        ButtonVariant.ghost   => AppColors.primary,
-        ButtonVariant.danger  => AppColors.danger,
-        ButtonVariant.success => AppColors.success,
-      };
+    ButtonVariant.primary => AppColors.primary,
+    ButtonVariant.ghost => AppColors.primary,
+    ButtonVariant.danger => AppColors.danger,
+    ButtonVariant.success => AppColors.success,
+  };
 
   @override
   Widget build(BuildContext context) {

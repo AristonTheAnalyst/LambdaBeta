@@ -168,30 +168,31 @@ class ProgramLibraryState {
     Map<String, ProgramUsage>? usage,
     ProgramSortCriterion? sort,
     bool? sortDesc,
-  }) =>
-      ProgramLibraryState(
-        isLoading: isLoading ?? this.isLoading,
-        error: clearError ? null : error ?? this.error,
-        programs: programs ?? this.programs,
-        currentProgramId: clearCurrentProgramId
-            ? null
-            : (currentProgramId ?? this.currentProgramId),
-        pausedProgramIds: pausedProgramIds ?? this.pausedProgramIds,
-        settingCurrentId: clearSettingCurrentId
-            ? null
-            : (settingCurrentId ?? this.settingCurrentId),
-        // `currentProgress: null` cannot mean "clear" through a `??` copyWith
-        // — ending a run has to say so explicitly.
-        currentProgress:
-            clearCurrentProgress ? null : (currentProgress ?? this.currentProgress),
-        historyWarning:
-            clearHistoryWarning ? null : (historyWarning ?? this.historyWarning),
-        dueItems: dueItems ?? this.dueItems,
-        blockedWithoutBlocks: blockedWithoutBlocks ?? this.blockedWithoutBlocks,
-        usage: usage ?? this.usage,
-        sort: sort ?? this.sort,
-        sortDesc: sortDesc ?? this.sortDesc,
-      );
+  }) => ProgramLibraryState(
+    isLoading: isLoading ?? this.isLoading,
+    error: clearError ? null : error ?? this.error,
+    programs: programs ?? this.programs,
+    currentProgramId: clearCurrentProgramId
+        ? null
+        : (currentProgramId ?? this.currentProgramId),
+    pausedProgramIds: pausedProgramIds ?? this.pausedProgramIds,
+    settingCurrentId: clearSettingCurrentId
+        ? null
+        : (settingCurrentId ?? this.settingCurrentId),
+    // `currentProgress: null` cannot mean "clear" through a `??` copyWith
+    // — ending a run has to say so explicitly.
+    currentProgress: clearCurrentProgress
+        ? null
+        : (currentProgress ?? this.currentProgress),
+    historyWarning: clearHistoryWarning
+        ? null
+        : (historyWarning ?? this.historyWarning),
+    dueItems: dueItems ?? this.dueItems,
+    blockedWithoutBlocks: blockedWithoutBlocks ?? this.blockedWithoutBlocks,
+    usage: usage ?? this.usage,
+    sort: sort ?? this.sort,
+    sortDesc: sortDesc ?? this.sortDesc,
+  );
 }
 
 class ProgramLibraryViewModel {
@@ -201,10 +202,10 @@ class ProgramLibraryViewModel {
     ProgramHistoryRepository? historyRepo,
     AchievementsDerivation? achievementsDerivation,
     String? userId,
-  })  : _repo = repo ?? ProgramRepository(),
-        _runRepo = runRepo ?? ProgramRunRepository(),
-        _historyRepo = historyRepo ?? ProgramHistoryRepository(),
-        _userIdOverride = userId {
+  }) : _repo = repo ?? ProgramRepository(),
+       _runRepo = runRepo ?? ProgramRunRepository(),
+       _historyRepo = historyRepo ?? ProgramHistoryRepository(),
+       _userIdOverride = userId {
     _lifecycle = ProgramRunLifecycle(
       runRepo: _runRepo,
       historyRepo: _historyRepo,
@@ -276,7 +277,10 @@ class ProgramLibraryViewModel {
         usage: usage,
       );
     } catch (e) {
-      state.value = state.value.copyWith(isLoading: false, error: friendlyError(e));
+      state.value = state.value.copyWith(
+        isLoading: false,
+        error: friendlyError(e),
+      );
     }
   }
 
@@ -403,7 +407,10 @@ class ProgramLibraryViewModel {
     String? blockId,
   }) async {
     if (_disposed) return;
-    state.value = state.value.copyWith(settingCurrentId: programId, clearError: true);
+    state.value = state.value.copyWith(
+      settingCurrentId: programId,
+      clearError: true,
+    );
     try {
       // The lifecycle steps aside the run this replaces — this screen can
       // switch away from another program's run, and that run keeps everything
@@ -448,8 +455,10 @@ class ProgramLibraryViewModel {
       );
     } catch (e) {
       if (_disposed) return;
-      state.value =
-          state.value.copyWith(clearSettingCurrentId: true, error: friendlyError(e));
+      state.value = state.value.copyWith(
+        clearSettingCurrentId: true,
+        error: friendlyError(e),
+      );
     }
   }
 
@@ -461,7 +470,10 @@ class ProgramLibraryViewModel {
   /// can need saying afterwards is that it did not work.
   Future<void> resumeProgram(String programId) async {
     if (_disposed) return;
-    state.value = state.value.copyWith(settingCurrentId: programId, clearError: true);
+    state.value = state.value.copyWith(
+      settingCurrentId: programId,
+      clearError: true,
+    );
     try {
       final run = await _runRepo.fetchPausedRun(_userId, programId: programId);
       if (run == null) {
@@ -499,7 +511,9 @@ class ProgramLibraryViewModel {
         // explanation has to outlive it.
         await fetchAll();
         if (_disposed) return;
-        state.value = state.value.copyWith(error: 'Could not resume that program.');
+        state.value = state.value.copyWith(
+          error: 'Could not resume that program.',
+        );
         return;
       }
 

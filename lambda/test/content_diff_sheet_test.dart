@@ -37,27 +37,25 @@ void main() {
     String id, {
     String? exerciseId = 'ex1',
     List<ContentSet>? sets,
-  }) =>
-      ContentExercise(
-        plannedExerciseId: id,
-        plannedSessionId: 's1',
-        userId: 'u1',
-        exerciseId: exerciseId,
-        exerciseOrder: 1,
-        sets: sets ?? [cset('${id}s1')],
-      );
+  }) => ContentExercise(
+    plannedExerciseId: id,
+    plannedSessionId: 's1',
+    userId: 'u1',
+    exerciseId: exerciseId,
+    exerciseOrder: 1,
+    sets: sets ?? [cset('${id}s1')],
+  );
 
   ContentSession cworkout(
     String id, {
     String name = 'Push Day',
     List<ContentExercise>? exercises,
-  }) =>
-      ContentSession(
-        sessionId: id,
-        userId: 'u1',
-        name: name,
-        exercises: exercises ?? const [],
-      );
+  }) => ContentSession(
+    sessionId: id,
+    userId: 'u1',
+    name: name,
+    exercises: exercises ?? const [],
+  );
 
   Future<void> openContentSheet(
     WidgetTester tester, {
@@ -121,7 +119,11 @@ void main() {
     const was = 'Squat felt slow out of the hole, keep the pause honest';
     const now = 'Pause worked — everything moved faster today';
 
-    await openSheet(tester, before: session(notes: was), after: session(notes: now));
+    await openSheet(
+      tester,
+      before: session(notes: was),
+      after: session(notes: now),
+    );
 
     // The row: a preview that says both things changed...
     expect(find.textContaining('…'), findsOneWidget);
@@ -159,14 +161,21 @@ void main() {
     // counts the pass is about, answered before the rows get specific.
     await openContentSheet(
       tester,
-      before: ProgramContent(sessions: [
-        cworkout('s1', exercises: [cexercise('pe1')]),
-      ]),
-      after: ProgramContent(sessions: [
-        cworkout('s1', exercises: [
-          cexercise('pe1', sets: [cset('a'), cset('b'), cset('c')]),
-        ]),
-      ]),
+      before: ProgramContent(
+        sessions: [
+          cworkout('s1', exercises: [cexercise('pe1')]),
+        ],
+      ),
+      after: ProgramContent(
+        sessions: [
+          cworkout(
+            's1',
+            exercises: [
+              cexercise('pe1', sets: [cset('a'), cset('b'), cset('c')]),
+            ],
+          ),
+        ],
+      ),
     );
 
     expect(find.text('SETS'), findsOneWidget);
@@ -188,16 +197,26 @@ void main() {
   ) async {
     await openContentSheet(
       tester,
-      before: ProgramContent(sessions: [
-        cworkout('s1', exercises: [
-          cexercise('pe1', sets: [cset('a', weight: '60')]),
-        ]),
-      ]),
-      after: ProgramContent(sessions: [
-        cworkout('s1', exercises: [
-          cexercise('pe1', sets: [cset('a', weight: '65')]),
-        ]),
-      ]),
+      before: ProgramContent(
+        sessions: [
+          cworkout(
+            's1',
+            exercises: [
+              cexercise('pe1', sets: [cset('a', weight: '60')]),
+            ],
+          ),
+        ],
+      ),
+      after: ProgramContent(
+        sessions: [
+          cworkout(
+            's1',
+            exercises: [
+              cexercise('pe1', sets: [cset('a', weight: '65')]),
+            ],
+          ),
+        ],
+      ),
     );
 
     // The target edit is a real row below; the counts it did not move stay
@@ -213,18 +232,28 @@ void main() {
     // card exists to give, so it renders too — "No changes" is not silence.
     await openContentSheet(
       tester,
-      before: ProgramContent(sessions: [
-        cworkout('s1', exercises: [
-          cexercise('pe1', sets: [cset('a', weight: '60')]),
-          cexercise('pe2', exerciseId: 'ex2', sets: [cset('pe2s1')]),
-        ]),
-      ]),
-      after: ProgramContent(sessions: [
-        cworkout('s1', exercises: [
-          cexercise('pe1', sets: [cset('a', weight: '65')]),
-          cexercise('pe2', exerciseId: 'ex2', sets: [cset('pe2s1')]),
-        ]),
-      ]),
+      before: ProgramContent(
+        sessions: [
+          cworkout(
+            's1',
+            exercises: [
+              cexercise('pe1', sets: [cset('a', weight: '60')]),
+              cexercise('pe2', exerciseId: 'ex2', sets: [cset('pe2s1')]),
+            ],
+          ),
+        ],
+      ),
+      after: ProgramContent(
+        sessions: [
+          cworkout(
+            's1',
+            exercises: [
+              cexercise('pe1', sets: [cset('a', weight: '65')]),
+              cexercise('pe2', exerciseId: 'ex2', sets: [cset('pe2s1')]),
+            ],
+          ),
+        ],
+      ),
       exerciseNames: const {'ex1': 'Bench Press', 'ex2': 'Incline Press'},
     );
 
@@ -245,18 +274,28 @@ void main() {
 
     await openContentSheet(
       tester,
-      before: ProgramContent(sessions: [
-        cworkout('s1', exercises: [
-          cexercise('pe1', sets: [cset('a', weight: '60')]),
-          cexercise('pe2', exerciseId: 'ex2', sets: [cset('pe2s1')]),
-        ]),
-      ]),
-      after: ProgramContent(sessions: [
-        cworkout('s1', exercises: [
-          cexercise('pe1', sets: [cset('a', weight: '65')]),
-          cexercise('pe2', exerciseId: 'ex2', sets: [cset('pe2s1')]),
-        ]),
-      ]),
+      before: ProgramContent(
+        sessions: [
+          cworkout(
+            's1',
+            exercises: [
+              cexercise('pe1', sets: [cset('a', weight: '60')]),
+              cexercise('pe2', exerciseId: 'ex2', sets: [cset('pe2s1')]),
+            ],
+          ),
+        ],
+      ),
+      after: ProgramContent(
+        sessions: [
+          cworkout(
+            's1',
+            exercises: [
+              cexercise('pe1', sets: [cset('a', weight: '65')]),
+              cexercise('pe2', exerciseId: 'ex2', sets: [cset('pe2s1')]),
+            ],
+          ),
+        ],
+      ),
       exerciseNames: const {'ex1': 'Bench Press', 'ex2': 'Incline Press'},
       onExerciseTap: (id) => opened = id,
     );
@@ -285,17 +324,27 @@ void main() {
     String? opened;
     await openContentSheet(
       tester,
-      before: ProgramContent(sessions: [
-        cworkout('s1', exercises: [
-          cexercise('pe1', sets: [cset('a')]),
-          cexercise('pe2', exerciseId: 'ex2', sets: [cset('pe2s1')]),
-        ]),
-      ]),
-      after: ProgramContent(sessions: [
-        cworkout('s1', exercises: [
-          cexercise('pe1', sets: [cset('a')]),
-        ]),
-      ]),
+      before: ProgramContent(
+        sessions: [
+          cworkout(
+            's1',
+            exercises: [
+              cexercise('pe1', sets: [cset('a')]),
+              cexercise('pe2', exerciseId: 'ex2', sets: [cset('pe2s1')]),
+            ],
+          ),
+        ],
+      ),
+      after: ProgramContent(
+        sessions: [
+          cworkout(
+            's1',
+            exercises: [
+              cexercise('pe1', sets: [cset('a')]),
+            ],
+          ),
+        ],
+      ),
       exerciseNames: const {'ex1': 'Bench Press', 'ex2': 'Incline Press'},
       onExerciseTap: (id) => opened = id,
     );
@@ -322,16 +371,26 @@ void main() {
   ) async {
     await openContentSheet(
       tester,
-      before: ProgramContent(sessions: [
-        cworkout('s1', exercises: [
-          cexercise('pe1', sets: [cset('a', variation: 'v1')]),
-        ]),
-      ]),
-      after: ProgramContent(sessions: [
-        cworkout('s1', exercises: [
-          cexercise('pe1', sets: [cset('a', variation: 'v2')]),
-        ]),
-      ]),
+      before: ProgramContent(
+        sessions: [
+          cworkout(
+            's1',
+            exercises: [
+              cexercise('pe1', sets: [cset('a', variation: 'v1')]),
+            ],
+          ),
+        ],
+      ),
+      after: ProgramContent(
+        sessions: [
+          cworkout(
+            's1',
+            exercises: [
+              cexercise('pe1', sets: [cset('a', variation: 'v2')]),
+            ],
+          ),
+        ],
+      ),
       exerciseNames: const {'ex1': 'Bench Press'},
       variationNames: const {'v1': 'Paused', 'v2': 'Tempo'},
     );
@@ -367,9 +426,11 @@ void main() {
     await openContentSheet(
       tester,
       before: null,
-      after: ProgramContent(sessions: [
-        cworkout('s1', exercises: [cexercise('pe1')]),
-      ]),
+      after: ProgramContent(
+        sessions: [
+          cworkout('s1', exercises: [cexercise('pe1')]),
+        ],
+      ),
       beforeMissingNote: 'no earlier version to compare',
     );
 
@@ -381,9 +442,11 @@ void main() {
   testWidgets('identical contents show the note, not zeroed counts', (
     tester,
   ) async {
-    final content = ProgramContent(sessions: [
-      cworkout('s1', exercises: [cexercise('pe1')]),
-    ]);
+    final content = ProgramContent(
+      sessions: [
+        cworkout('s1', exercises: [cexercise('pe1')]),
+      ],
+    );
     await openContentSheet(
       tester,
       before: content,

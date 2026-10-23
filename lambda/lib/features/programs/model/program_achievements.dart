@@ -71,8 +71,9 @@ class ProgramAchievements {
         until: _date(raw['until']),
         weightStart: _num(raw['weight_start'])?.toDouble(),
         weightEnd: _num(raw['weight_end'])?.toDouble(),
-        sessions:
-            _maps(raw['sessions']).map(AchievementSession.fromMap).toList(),
+        sessions: _maps(
+          raw['sessions'],
+        ).map(AchievementSession.fromMap).toList(),
         prs: _maps(raw['prs']).map(_prFromMap).toList(),
         goals: _maps(raw['goals']).map(GoalAchievement.fromMap).toList(),
       );
@@ -82,14 +83,14 @@ class ProgramAchievements {
   }
 
   Map<String, dynamic> toJson() => {
-        'from': from.toUtc().toIso8601String(),
-        'until': until?.toUtc().toIso8601String(),
-        'weight_start': weightStart,
-        'weight_end': weightEnd,
-        'sessions': sessions.map((s) => s.toMap()).toList(),
-        'prs': prs.map(_prToMap).toList(),
-        'goals': goals.map((g) => g.toMap()).toList(),
-      };
+    'from': from.toUtc().toIso8601String(),
+    'until': until?.toUtc().toIso8601String(),
+    'weight_start': weightStart,
+    'weight_end': weightEnd,
+    'sessions': sessions.map((s) => s.toMap()).toList(),
+    'prs': prs.map(_prToMap).toList(),
+    'goals': goals.map((g) => g.toMap()).toList(),
+  };
 }
 
 /// One goal's outcome across a window — the goal itself plus what met it.
@@ -111,45 +112,46 @@ class GoalAchievement {
   final Goal goal;
   final bool achieved;
 
-  /// The strongest set in the window for this goal's exercise, whether or not
-  /// it met the target — the panel shows *how close* a missed goal came, which
-  /// is the whole reason a goal is worth reviewing.
+  /// The set the outcome is told by. A hit's evidence is the **earliest**
+  /// set that met the target — the set that achieved the goal (2026-10-20).
+  /// A miss's is the strongest set in the window, whether or not it met the
+  /// target, so the panel shows *how close* a missed goal came.
   final num? evidenceWeight;
   final num? evidenceReps;
   final DateTime? evidenceDate;
   final String? evidenceVariationId;
 
   Map<String, dynamic> toMap() => {
-        'goal_id': goal.goalId,
-        'text': goal.text,
-        'exercise_id': goal.exerciseId,
-        'target_weight': goal.targetWeight,
-        'target_reps': goal.targetReps,
-        'achieved': achieved,
-        'evidence_weight': evidenceWeight,
-        'evidence_reps': evidenceReps,
-        'evidence_date': evidenceDate?.toUtc().toIso8601String(),
-        'evidence_variation_id': evidenceVariationId,
-      };
+    'goal_id': goal.goalId,
+    'text': goal.text,
+    'exercise_id': goal.exerciseId,
+    'target_weight': goal.targetWeight,
+    'target_reps': goal.targetReps,
+    'achieved': achieved,
+    'evidence_weight': evidenceWeight,
+    'evidence_reps': evidenceReps,
+    'evidence_date': evidenceDate?.toUtc().toIso8601String(),
+    'evidence_variation_id': evidenceVariationId,
+  };
 
   factory GoalAchievement.fromMap(Map<String, dynamic> map) => GoalAchievement(
-        // A frozen record is read long after the goal row may be gone — goals
-        // are facts, and facts hard-delete — so the outcome carries its own
-        // copy of what was being chased. `userId` is not part of the record.
-        goal: Goal(
-          goalId: '${map['goal_id']}',
-          userId: '',
-          text: map['text'] as String?,
-          exerciseId: map['exercise_id'] as String?,
-          targetWeight: _num(map['target_weight']),
-          targetReps: _num(map['target_reps'])?.toInt(),
-        ),
-        achieved: map['achieved'] == true,
-        evidenceWeight: _num(map['evidence_weight']),
-        evidenceReps: _num(map['evidence_reps']),
-        evidenceDate: _date(map['evidence_date']),
-        evidenceVariationId: map['evidence_variation_id'] as String?,
-      );
+    // A frozen record is read long after the goal row may be gone — goals
+    // are facts, and facts hard-delete — so the outcome carries its own
+    // copy of what was being chased. `userId` is not part of the record.
+    goal: Goal(
+      goalId: '${map['goal_id']}',
+      userId: '',
+      text: map['text'] as String?,
+      exerciseId: map['exercise_id'] as String?,
+      targetWeight: _num(map['target_weight']),
+      targetReps: _num(map['target_reps'])?.toInt(),
+    ),
+    achieved: map['achieved'] == true,
+    evidenceWeight: _num(map['evidence_weight']),
+    evidenceReps: _num(map['evidence_reps']),
+    evidenceDate: _date(map['evidence_date']),
+    evidenceVariationId: map['evidence_variation_id'] as String?,
+  );
 }
 
 /// Every PR event in `[from, to)` across every exercise and variation, newest
@@ -210,7 +212,7 @@ List<GoalAchievement> evaluateGoals({
     }
 
     PastSetRow? strongest;
-    PastSetRow? strongestQualifying;
+    PastSetRow? firstQualifying;
 
     for (final set in sets) {
       if (set.exerciseId != exerciseId) continue;
@@ -221,24 +223,29 @@ List<GoalAchievement> evaluateGoals({
       if (date.isBefore(from) || !date.isBefore(to)) continue;
 
       if (_heavierThan(set, strongest)) strongest = set;
-      if (_meetsTarget(set, goal) && _heavierThan(set, strongestQualifying)) {
-        strongestQualifying = set;
+      if (_meetsTarget(set, goal) &&
+          (firstQualifying == null || _earlierThan(set, firstQualifying))) {
+        firstQualifying = set;
       }
     }
 
-    // The heaviest qualifying set is the evidence for a hit; for a miss, the
-    // heaviest set at all — so a missed goal reports how close it came rather
-    // than how recently it was attempted.
-    final evidence = strongestQualifying ?? strongest;
-    out.add(GoalAchievement(
-      goal: goal,
-      achieved: strongestQualifying != null,
-      evidenceWeight: evidence == null ? null : (evidence.weight ?? 0),
-      evidenceReps:
-          evidence == null || evidence.reps.isEmpty ? null : evidence.reps.first,
-      evidenceDate: evidence?.sessionCreatedDate,
-      evidenceVariationId: evidence?.variationId,
-    ));
+    // A hit's evidence is the set that FIRST met it — the set that achieved
+    // the goal, and the one the G marks wherever it is drawn (2026-10-20).
+    // A miss's evidence is the heaviest set at all, so the report says how
+    // close it came rather than how recently it was attempted.
+    final evidence = firstQualifying ?? strongest;
+    out.add(
+      GoalAchievement(
+        goal: goal,
+        achieved: firstQualifying != null,
+        evidenceWeight: evidence == null ? null : (evidence.weight ?? 0),
+        evidenceReps: evidence == null || evidence.reps.isEmpty
+            ? null
+            : evidence.reps.first,
+        evidenceDate: evidence?.sessionCreatedDate,
+        evidenceVariationId: evidence?.variationId,
+      ),
+    );
   }
   return out;
 }
@@ -248,42 +255,116 @@ List<GoalAchievement> evaluateGoals({
 bool _heavierThan(PastSetRow set, PastSetRow? than) =>
     than == null || (set.weight ?? 0) > (than.weight ?? 0);
 
-bool _meetsTarget(PastSetRow set, Goal goal) {
-  final weight = (set.weight ?? 0).toDouble();
-  final reps = set.reps.isEmpty ? 0.0 : set.reps.first.toDouble();
-  return weight >= (goal.targetWeight ?? 0) &&
-      reps >= (goal.targetReps?.toDouble() ?? 0);
+/// Timeline order: the earlier session first, and inside one session the
+/// lower set number — a session's rows all share its timestamp, so the
+/// number is the only tie-break there is (2026-10-20).
+bool _earlierThan(PastSetRow set, PastSetRow than) {
+  final d = set.sessionCreatedDate.compareTo(than.sessionCreatedDate);
+  return d < 0 || (d == 0 && set.setNumber < than.setNumber);
+}
+
+bool _meetsTarget(PastSetRow set, Goal goal) =>
+    setReachesTarget(set, weight: goal.targetWeight, reps: goal.targetReps);
+
+/// Whether [set] reaches [weight] × [reps] — the one goal rule: a single set
+/// at or above BOTH numbers.
+///
+/// Shared by [evaluateGoals] and the New Goal form's "already beat this" check
+/// (2026-10-19), so the two can never disagree about whether a set counts.
+/// Bulk and zero both read as 0 — bodyweight is a real weight, and a goal
+/// that states only one of the two numbers asks only about that one.
+///
+/// A set with no reps was never performed (2026-10-23): Start can record a
+/// plan's weight into the row, and that adopted value alone must not light a
+/// weight-only goal's `G` before the user has done any reps.
+bool setReachesTarget(PastSetRow set, {num? weight, int? reps}) {
+  if (set.reps.isEmpty) return false;
+  final setWeight = (set.weight ?? 0).toDouble();
+  final setReps = set.reps.first.toDouble();
+  return setWeight >= (weight ?? 0) && setReps >= (reps?.toDouble() ?? 0);
+}
+
+/// The set that **first** met a goal — the earliest set that reaches the
+/// target, scoped to exactly [exerciseId] × [variationId], exactly the scope
+/// [evaluateGoals] applies (2026-10-20).
+///
+/// This is the set that achieved the goal, so it is the one the `G` badge
+/// marks on every set grid, and the one the focused goal sheet's completion
+/// row opens. A goal is achieved once: later sets that also reach the target
+/// are repeats, not achievements, and stay unmarked.
+PastSetRow? earliestSetReaching({
+  required List<PastSetRow> sets,
+  required String exerciseId,
+  required String? variationId,
+  num? weight,
+  int? reps,
+}) {
+  PastSetRow? first;
+  for (final set in sets) {
+    if (set.exerciseId != exerciseId) continue;
+    if (set.variationId != variationId) continue;
+    if (!setReachesTarget(set, weight: weight, reps: reps)) continue;
+    if (first == null || _earlierThan(set, first)) first = set;
+  }
+  return first;
+}
+
+/// The `fact_session_exercise_set` ids that achieved one of [goals] — the
+/// sets drawn green with the `G` badge (2026-10-20).
+///
+/// One id per goal at most: the earliest set that met it ([earliestSetReaching]).
+/// A set that achieves two goals is listed once — the badge says "a goal was
+/// achieved here", not which one. Free-text goals have nothing to measure and
+/// mark nothing.
+Set<String> goalAchievingSetIds({
+  required List<Goal> goals,
+  required List<PastSetRow> sets,
+}) {
+  final ids = <String>{};
+  for (final goal in goals) {
+    final exerciseId = goal.exerciseId;
+    if (exerciseId == null) continue;
+    final set = earliestSetReaching(
+      sets: sets,
+      exerciseId: exerciseId,
+      variationId: goal.variationId,
+      weight: goal.targetWeight,
+      reps: goal.targetReps,
+    );
+    if (set != null) ids.add(set.sessionExerciseSetId);
+  }
+  return ids;
 }
 
 // ── Serialization helpers ──────────────────────────────────────────────────
 
 Map<String, dynamic> _prToMap(PrEvent e) => {
-      'exercise_id': e.exerciseId,
-      'exercise_name': e.exerciseName,
-      'variation_id': e.variationId,
-      'variation_name': e.variationName,
-      'weight': e.weight,
-      'reps': e.reps,
-      'date': e.achievedDate.toUtc().toIso8601String(),
-      'session_id': e.sessionId,
-      'before_weight': e.beforeWeight,
-      'before_reps': e.beforeReps,
-    };
+  'exercise_id': e.exerciseId,
+  'exercise_name': e.exerciseName,
+  'variation_id': e.variationId,
+  'variation_name': e.variationName,
+  'weight': e.weight,
+  'reps': e.reps,
+  'date': e.achievedDate.toUtc().toIso8601String(),
+  'session_id': e.sessionId,
+  'before_weight': e.beforeWeight,
+  'before_reps': e.beforeReps,
+};
 
 /// Rebuilds a real [PrEvent], ids and all, so the frozen record renders through
 /// the same PR row widget the live view uses instead of a parallel one.
 PrEvent _prFromMap(Map<String, dynamic> map) => PrEvent(
-      exerciseId: '${map['exercise_id']}',
-      exerciseName: map['exercise_name'] as String?,
-      variationId: map['variation_id'] as String?,
-      variationName: map['variation_name'] as String?,
-      weight: _num(map['weight']) ?? 0,
-      reps: _num(map['reps']) ?? 0,
-      achievedDate: _date(map['date']) ?? DateTime.now(),
-      sessionId: '${map['session_id']}',
-      beforeWeight: _num(map['before_weight']),
-      beforeReps: _num(map['before_reps']),
-    );
+  exerciseId: '${map['exercise_id']}',
+  exerciseName: map['exercise_name'] as String?,
+  variationId: map['variation_id'] as String?,
+  variationName: map['variation_name'] as String?,
+  weight: _num(map['weight']) ?? 0,
+  reps: _num(map['reps']) ?? 0,
+  achievedDate: _date(map['date']) ?? DateTime.now(),
+  sessionId: '${map['session_id']}',
+  beforeWeight: _num(map['before_weight']),
+  beforeReps: _num(map['before_reps']),
+);
 
 List<Map<String, dynamic>> _maps(dynamic v) {
   if (v is! List) return const [];

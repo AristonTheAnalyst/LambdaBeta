@@ -8,6 +8,7 @@ import '../../core/styles/app_text_styles.dart';
 import '../../core/utils/session_format.dart';
 import '../../features/session/model/pr_engine.dart';
 import 'container_styles.dart';
+import 'user_name_text.dart';
 
 /// One PR event, rendered the same way everywhere it appears.
 ///
@@ -16,11 +17,7 @@ import 'container_styles.dart';
 /// same accent. A second hand-rolled row is how two surfaces end up disagreeing
 /// about what a PR looked like.
 class PrEventRow extends StatelessWidget {
-  const PrEventRow(
-    this.event, {
-    super.key,
-    this.showExercise = false,
-  });
+  const PrEventRow(this.event, {super.key, this.showExercise = false});
 
   final PrEvent event;
 
@@ -47,7 +44,7 @@ class PrEventRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 if (showExercise)
-                  Text(
+                  UserNameText(
                     eventName(event.exerciseName, event.exerciseId),
                     style: AppFonts.ui(
                       fontSize: AppTextStyles.sm,
@@ -56,7 +53,7 @@ class PrEventRow extends StatelessWidget {
                     ),
                   ),
                 if (event.variationName != null)
-                  Text(
+                  UserNameText(
                     toProperCase(event.variationName!),
                     style: AppFonts.mono(
                       fontSize: AppTextStyles.xs,

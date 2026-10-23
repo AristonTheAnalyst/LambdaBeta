@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_spacing.dart';
+import '../../../shared/widgets/header_icon_button.dart';
 import '../../../shared/widgets/page_header.dart';
 import 'program_history_panel.dart';
 
@@ -28,13 +29,11 @@ class ProgramHistoryScreen extends StatelessWidget {
         children: [
           PageHeader(
             title: 'History',
-            left: GestureDetector(
-              onTap: () => Navigator.of(context).pop(),
-              child: Icon(
-                Icons.arrow_back_ios_new,
-                size: 18,
-                color: AppColors.accent,
-              ),
+            left: HeaderIconButton(
+              icon: Icons.arrow_back_ios_new,
+              semanticsLabel: 'Back',
+              glyphSize: 18,
+              onPressed: () => Navigator.of(context).pop(),
             ),
           ),
           Expanded(

@@ -10,6 +10,7 @@ import '../../../data/models/program_review.dart';
 import '../../../shared/widgets/app_card.dart';
 import '../../../shared/widgets/dropdown_select.dart';
 import '../../../shared/widgets/glass_button.dart';
+import '../../../shared/widgets/header_icon_button.dart';
 import '../../../shared/widgets/page_header.dart';
 import '../../../shared/widgets/section_divider.dart';
 import '../../../shared/widgets/session_exercise_card.dart';
@@ -78,13 +79,11 @@ class _ReviewSnapshotScreenState extends State<ReviewSnapshotScreen> {
         children: [
           PageHeader(
             title: _title,
-            left: GestureDetector(
-              onTap: () => Navigator.of(context).pop(),
-              child: Icon(
-                Icons.arrow_back_ios_new,
-                size: 18,
-                color: AppColors.accent,
-              ),
+            left: HeaderIconButton(
+              icon: Icons.arrow_back_ios_new,
+              semanticsLabel: 'Back',
+              glyphSize: 18,
+              onPressed: () => Navigator.of(context).pop(),
             ),
             right: before == null || content == null
                 ? null
@@ -163,7 +162,7 @@ class _UnreadableCheckpoint extends StatelessWidget {
             textAlign: TextAlign.center,
             style: AppFonts.ui(
               fontSize: AppTextStyles.sm,
-              color: AppColors.muted,
+              color: AppColors.inkSecondary,
             ),
           ),
         ],
@@ -273,7 +272,7 @@ class _SnapshotBodyState extends State<_SnapshotBody> {
                   'This checkpoint had no workouts.',
                   style: AppFonts.ui(
                     fontSize: AppTextStyles.sm,
-                    color: AppColors.muted,
+                    color: AppColors.inkSecondary,
                   ),
                 ),
               ),
@@ -348,7 +347,7 @@ class _SnapshotWorkoutCard extends StatelessWidget {
           'No exercises',
           style: AppFonts.ui(
             fontSize: AppTextStyles.sm,
-            color: AppColors.muted,
+            color: AppColors.inkSecondary,
           ),
         ),
       );
@@ -368,9 +367,7 @@ class _SnapshotWorkoutCard extends StatelessWidget {
     ];
 
     return SessionExerciseCard(
-      exerciseNames: [
-        for (final e in exercises) _exerciseLabel(e.exerciseId),
-      ],
+      exerciseNames: [for (final e in exercises) _exerciseLabel(e.exerciseId)],
       activeIndex: index,
       onSelect: onSelect,
       // A snapshot is immutable: no reorder, no add, no delete. Null greys the

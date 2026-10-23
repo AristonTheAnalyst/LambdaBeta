@@ -1,0 +1,124 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:lambda/core/styles/app_colors.dart';
+import 'package:lambda/features/session/view/session_stats_bar.dart';
+
+/// The session bar's two doors (2026-10-22): a trophy and a book, each with
+/// the session's count — "+2" for a gain, "0" when the session added none
+/// (never "+0"). The count never decides doorness (2026-10-23): the sheets
+/// behind the tiles hold the exercise's whole story, so a `0` still opens
+/// them. A null handler — no exercise on the card — is the quiet fallback.
+/// Drawn at the live session's 402pt width, where two tiles share the row
+/// with the undo/redo boxes and the pencil.
+
+Future<void> _pumpTiles(
+  WidgetTester tester, {
+  required int prCount,
+  required int lessonCount,
+  VoidCallback? onPrTap,
+  VoidCallback? onLessonTap,
+}) async {
+  tester.view.physicalSize = const Size(1206, 2622);
+  tester.view.devicePixelRatio = 3;
+  addTearDown(tester.view.reset);
+  await tester.pumpWidget(
+    MaterialApp(
+      home: Scaffold(
+        body: Center(
+          child: SizedBox(
+            width: 402,
+            child: SessionStatsTiles(
+              prCount: prCount,
+              lessonCount: lessonCount,
+              onPrTap: onPrTap,
+              onLessonTap: onLessonTap,
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+  await tester.pumpAndSettle();
+}
+
+Finder _inTile(String key, Finder matching) =>
+    find.descendant(of: find.byKey(ValueKey(key)), matching: matching);
+
+void main() {
+  testWidgets('each tile draws its glyph and its session gain at 402', (
+    tester,
+  ) async {
+    await _pumpTiles(tester, prCount: 12, lessonCount: 3);
+
+    expect(_inTile('session-prs-tile', find.text('+12')), findsOneWidget);
+    expect(_inTile('session-lessons-tile', find.text('+3')), findsOneWidget);
+    expect(
+      _inTile('session-prs-tile', find.byIcon(Icons.emoji_events)),
+      findsOneWidget,
+    );
+    expect(
+      _inTile(
+        'session-lessons-tile',
+        find.byIcon(Icons.sticky_note_2_outlined),
+      ),
+      findsOneWidget,
+    );
+
+    // One row of 48pt controls (the floor's squares), and a two-digit count
+    // must not overflow.
+    expect(
+      tester.getSize(find.byKey(const ValueKey('session-prs-tile'))).height,
+      48,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('both tiles are doors at any count', (tester) async {
+    var prTaps = 0;
+    var lessonTaps = 0;
+    await _pumpTiles(
+      tester,
+      prCount: 2,
+      lessonCount: 0,
+      onPrTap: () => prTaps++,
+      onLessonTap: () => lessonTaps++,
+    );
+
+    await tester.tap(find.byKey(const ValueKey('session-prs-tile')));
+    await tester.pump();
+    expect(prTaps, 1);
+
+    // "0" is the absence reading, but the book still opens the exercise's
+    // whole lesson history — the PR Lab's own rule (2026-10-23).
+    expect(_inTile('session-lessons-tile', find.text('0')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('session-lessons-tile')));
+    await tester.pump();
+    expect(lessonTaps, 1);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a null handler — no exercise on the card — draws the quiet '
+      'tile', (tester) async {
+    await _pumpTiles(tester, prCount: 0, lessonCount: 0);
+
+    // The no-exercise fallback is the only quiet state left: surface fill,
+    // no tap.
+    final quiet = tester.widget<Container>(
+      find.byKey(const ValueKey('session-prs-tile')),
+    );
+    expect((quiet.decoration! as BoxDecoration).color, AppColors.surfaceHigh);
+    await tester.tap(find.byKey(const ValueKey('session-prs-tile')));
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a session with no gains reads 0 and 0, never +0', (
+    tester,
+  ) async {
+    await _pumpTiles(tester, prCount: 0, lessonCount: 0);
+    expect(_inTile('session-prs-tile', find.text('0')), findsOneWidget);
+    expect(_inTile('session-lessons-tile', find.text('0')), findsOneWidget);
+    expect(find.text('+0'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+}

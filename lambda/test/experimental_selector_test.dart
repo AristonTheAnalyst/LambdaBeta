@@ -21,40 +21,40 @@ void main() {
     expect(find.text('Pull Up'), findsWidgets);
   });
 
-  testWidgets('A dropdown: pop-up menu selects, and there is no delete control',
-      (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(800, 1800);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.reset);
-    await tester.pumpWidget(const MaterialApp(home: ExperimentalScreen()));
-    await tester.pump();
+  testWidgets(
+    'A dropdown: pop-up menu selects, and there is no delete control',
+    (tester) async {
+      tester.view.physicalSize = const Size(800, 1800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(const MaterialApp(home: ExperimentalScreen()));
+      await tester.pump();
 
-    // Open the pop-up menu — the selected (Benchpress) stays in the field;
-    // the sheet lists the others.
-    await tester.tap(find.byKey(const ValueKey('exercise-selector-field')));
-    await tester.pumpAndSettle();
-    expect(find.text('Squat'), findsOneWidget);
+      // Open the pop-up menu — the selected (Benchpress) stays in the field;
+      // the sheet lists the others.
+      await tester.tap(find.byKey(const ValueKey('exercise-selector-field')));
+      await tester.pumpAndSettle();
+      expect(find.text('Squat'), findsOneWidget);
 
-    // Tap a row — the sheet closes and the field shows the pick.
-    await tester.tap(find.text('Deadlift'));
-    await tester.pumpAndSettle();
-    expect(
-      find.descendant(
-        of: find.byKey(const ValueKey('exercise-selector-field')),
-        matching: find.text('Deadlift'),
-      ),
-      findsOneWidget,
-    );
+      // Tap a row — the sheet closes and the field shows the pick.
+      await tester.tap(find.text('Deadlift'));
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('exercise-selector-field')),
+          matching: find.text('Deadlift'),
+        ),
+        findsOneWidget,
+      );
 
-    // The hold-to-delete X is gone (2026-09-29): removal moved into the
-    // add-exercise modal, where a ticked row is tapped to un-tick it. The
-    // selector field no longer carries a control at all, so the cheapest
-    // regression test for the whole removal is that the key is not there.
-    expect(
-      find.byKey(const ValueKey('exercise-selector-delete')),
-      findsNothing,
-    );
-  });
+      // The hold-to-delete X is gone (2026-09-29): removal moved into the
+      // add-exercise modal, where a ticked row is tapped to un-tick it. The
+      // selector field no longer carries a control at all, so the cheapest
+      // regression test for the whole removal is that the key is not there.
+      expect(
+        find.byKey(const ValueKey('exercise-selector-delete')),
+        findsNothing,
+      );
+    },
+  );
 }

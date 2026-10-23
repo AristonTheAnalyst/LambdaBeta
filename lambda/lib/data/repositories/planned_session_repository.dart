@@ -1,6 +1,7 @@
 import 'package:uuid/uuid.dart';
 import '../../core/powersync/database.dart' as ps;
 import '../../core/utils/lambda_exception.dart';
+import '../../core/utils/name_limit.dart';
 import '../../shared/utils/unique_name.dart';
 import '../models/planned_session.dart';
 import '../models/planned_session_exercise.dart';
@@ -14,6 +15,24 @@ const _uuid = Uuid();
 /// are soft-deleted via is_archived so logged history that references them
 /// never dangles; join-table rows hard-delete (nothing references them).
 class PlannedSessionRepository {
+  /// Refuses a workout name the field would have stopped at.
+  ///
+  /// The screens cap the field (`LambdaInput.maxLength`), so this can only
+  /// fire on a programmatic write — and it should: the local PowerSync mirror
+  /// is a plain `Column.text` with no CHECK, so an over-long row would insert
+  /// locally, render, survive a restart, and then be quarantined by the
+  /// server's 23514 check. Refusing here keeps the device and the server
+  /// telling the same story.
+  void _assertNameFits(String name) {
+    if (nameTooLong(name, kMaxWorkoutNameLength)) {
+      throw ArgumentError.value(
+        name,
+        'name',
+        'exceeds $kMaxWorkoutNameLength characters',
+      );
+    }
+  }
+
   /// Planned session names for [userId], used to bump auto-generated defaults.
   Future<Set<String>> _sessionNames(String userId) async {
     final rows = await ps.db.getAll(
@@ -21,6 +40,15 @@ class PlannedSessionRepository {
       [userId],
     );
     return rows.map((r) => r['name'] as String).toSet();
+  }
+
+  /// The name a workout row currently holds, or null when the row is gone.
+  Future<String?> _storedName(String sessionId) async {
+    final rows = await ps.db.getAll(
+      'SELECT name FROM dim_planned_session WHERE session_id = ?',
+      [sessionId],
+    );
+    return rows.isEmpty ? null : rows.first['name'] as String?;
   }
 
   Future<bool> _nameExists(
@@ -224,6 +252,7 @@ class PlannedSessionRepository {
       final names = await _sessionNames(userId);
       finalName = uniqueName('New Session', names);
     } else {
+      _assertNameFits(finalName);
       await _assertSessionNameUnique(userId, finalName);
     }
     final id = _uuid.v4();
@@ -234,15 +263,7 @@ class PlannedSessionRepository {
         (id, session_id, user_id, name, notes, date_archived, created_date)
       VALUES (?, ?, ?, ?, ?, ?, ?)
       ''',
-      [
-        id,
-        id,
-        userId,
-        finalName,
-        notes,
-        null,
-        createdDate.toIso8601String(),
-      ],
+      [id, id, userId, finalName, notes, null, createdDate.toIso8601String()],
     );
     return PlannedSession(
       sessionId: id,
@@ -261,6 +282,15 @@ class PlannedSessionRepository {
     String userId = '',
   }) async {
     if (name != null) {
+      // A row written before the cap tightened is grandfathered: the discard
+      // path (`discardWorkoutChanges`) writes back the name the workout was
+      // OPENED with, and refusing it would leave that one old row unable to
+      // roll back at all. A row already over the cap may therefore be written
+      // freely — the field still caps every edit the user can make.
+      final stored = await _storedName(sessionId);
+      final grandfathered =
+          stored != null && nameTooLong(stored, kMaxWorkoutNameLength);
+      if (!grandfathered) _assertNameFits(name);
       await _assertSessionNameUnique(userId, name, excludeSessionId: sessionId);
     }
     final updates = <String, dynamic>{};
@@ -410,15 +440,7 @@ class PlannedSessionRepository {
          exercise_order, is_archived)
       VALUES (?, ?, ?, ?, ?, ?, ?)
       ''',
-      [
-        id,
-        id,
-        plannedSessionId,
-        userId,
-        exerciseId,
-        exerciseOrder,
-        0,
-      ],
+      [id, id, plannedSessionId, userId, exerciseId, exerciseOrder, 0],
     );
     return PlannedSessionExercise(
       plannedExerciseId: id,
@@ -438,6 +460,32 @@ class PlannedSessionRepository {
     await ps.db.execute(
       'UPDATE dim_planned_session_exercise SET is_archived = 1 WHERE planned_exercise_id = ?',
       [plannedExerciseId],
+    );
+  }
+
+  /// The undo of [deletePlannedExercise]: un-archives the group with its
+  /// captured order — the restore half of the planner's soft-delete inverses
+  /// (2026-10-13; the discard pass's raw-SQL precedent, as a repo method so
+  /// host tests can fake it).
+  Future<void> restorePlannedExercise(
+    String plannedExerciseId, {
+    required int exerciseOrder,
+  }) async {
+    await ps.db.execute(
+      'UPDATE dim_planned_session_exercise SET is_archived = 0, exercise_order = ? WHERE planned_exercise_id = ?',
+      [exerciseOrder, plannedExerciseId],
+    );
+  }
+
+  /// The undo of [deletePlannedSet]: un-archives the row with its captured
+  /// number (2026-10-13).
+  Future<void> restorePlannedSet(
+    String plannedSetId, {
+    required int setNumber,
+  }) async {
+    await ps.db.execute(
+      'UPDATE dim_planned_session_exercise_set SET is_archived = 0, set_number = ? WHERE planned_set_id = ?',
+      [setNumber, plannedSetId],
     );
   }
 
@@ -674,7 +722,8 @@ class PlannedSessionRepository {
         // A copy of a program workout inherits its base; a copy of a library
         // workout points at it. Either way the lineage names the original
         // rather than the last intermediate.
-        baseSessionId: source.baseSessionId ??
+        baseSessionId:
+            source.baseSessionId ??
             (sourceLink == null ? source.sessionId : null),
         createdDate: createdDate,
       );
@@ -766,7 +815,8 @@ class PlannedSessionRepository {
           'SELECT MAX(sequence_order) AS max_order FROM dim_planned_session_program WHERE program_id = ?',
           [programId],
         );
-        order = (_toInt(rows.isEmpty ? null : rows.first['max_order']) ?? 0) + 1;
+        order =
+            (_toInt(rows.isEmpty ? null : rows.first['max_order']) ?? 0) + 1;
       }
 
       final newLinkId = _uuid.v4();

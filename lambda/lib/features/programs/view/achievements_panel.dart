@@ -29,13 +29,19 @@ class AchievementsPanel extends StatelessWidget {
     if (a == null) {
       return Text(
         'Achievements are shown for the program that is currently running.',
-        style: AppFonts.ui(fontSize: AppTextStyles.sm, color: AppColors.muted),
+        style: AppFonts.ui(
+          fontSize: AppTextStyles.sm,
+          color: AppColors.inkSecondary,
+        ),
       );
     }
     if (a.isEmpty) {
       return Text(
         'Nothing logged in this window yet.',
-        style: AppFonts.ui(fontSize: AppTextStyles.sm, color: AppColors.muted),
+        style: AppFonts.ui(
+          fontSize: AppTextStyles.sm,
+          color: AppColors.inkSecondary,
+        ),
       );
     }
 
@@ -74,7 +80,6 @@ class _CountRow extends StatelessWidget {
       style: AppFonts.mono(
         fontSize: AppTextStyles.xs,
         fontWeight: FontWeight.w700,
-        letterSpacing: 0.6,
         color: AppColors.accent,
       ),
     );
@@ -131,7 +136,9 @@ class _GoalRow extends StatelessWidget {
                     g.achieved ? 'reached $evidence' : 'closest $evidence',
                     style: AppFonts.mono(
                       fontSize: AppTextStyles.xs,
-                      color: g.achieved ? AppColors.success : AppColors.muted,
+                      color: g.achieved
+                          ? AppColors.success
+                          : AppColors.inkSecondary,
                     ),
                   ),
               ],

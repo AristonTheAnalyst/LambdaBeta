@@ -75,10 +75,11 @@ num? _effectiveReps(SessionExerciseSet s) =>
 /// (sets in the SAME session share a timestamp, and Dart's sort is not
 /// stable — the tie-break keeps intra-session order deterministic).
 List<PrEvent> prEvents(List<PastSetRow> sets) {
-  final ordered = [...sets]..sort((a, b) {
-    final d = a.sessionCreatedDate.compareTo(b.sessionCreatedDate);
-    return d != 0 ? d : a.setNumber.compareTo(b.setNumber);
-  });
+  final ordered = [...sets]
+    ..sort((a, b) {
+      final d = a.sessionCreatedDate.compareTo(b.sessionCreatedDate);
+      return d != 0 ? d : a.setNumber.compareTo(b.setNumber);
+    });
   return prEventsSorted(ordered);
 }
 
@@ -102,10 +103,7 @@ List<PrEvent> prEventsSorted(List<PastSetRow> ordered) {
     final reps = _effectiveReps(s);
     if (reps == null) continue;
 
-    final pair = state.putIfAbsent(
-      (exerciseId, s.variationId),
-      () => ({}, {}),
-    );
+    final pair = state.putIfAbsent((exerciseId, s.variationId), () => ({}, {}));
     final bestWeightForMinReps = pair.$1;
     final bestRepsAtExactWeight = pair.$2;
 
@@ -114,19 +112,21 @@ List<PrEvent> prEventsSorted(List<PastSetRow> ordered) {
     final prevReps = bestRepsAtExactWeight[weight];
 
     if (prevWeight == null || prevWeight < weight) {
-      events.add(PrEvent(
-        exerciseId: exerciseId,
-        exerciseName: s.exerciseName,
-        variationId: s.variationId,
-        variationName: s.variationName,
-        weight: weight,
-        reps: reps,
-        achievedDate: s.sessionCreatedDate,
-        sessionId: s.sessionId,
-        sessionExerciseSetId: s.sessionExerciseSetId,
-        beforeWeight: prevWeight,
-        beforeReps: prevReps,
-      ));
+      events.add(
+        PrEvent(
+          exerciseId: exerciseId,
+          exerciseName: s.exerciseName,
+          variationId: s.variationId,
+          variationName: s.variationName,
+          weight: weight,
+          reps: reps,
+          achievedDate: s.sessionCreatedDate,
+          sessionId: s.sessionId,
+          sessionExerciseSetId: s.sessionExerciseSetId,
+          beforeWeight: prevWeight,
+          beforeReps: prevReps,
+        ),
+      );
     }
 
     // The frontier updates on EVERY set — dominated sets still feed the
@@ -181,10 +181,11 @@ Map<num, num> weightMaxCurve(List<PastSetRow> sets) {
 /// the best weight at ≥ [repCount] reps, oldest first. The insights
 /// axis-history lens (e.g. the "5RM history" sheet).
 List<PastSetRow> repAxisHistory(List<PastSetRow> sets, int repCount) {
-  final ordered = [...sets]..sort((a, b) {
-    final d = a.sessionCreatedDate.compareTo(b.sessionCreatedDate);
-    return d != 0 ? d : a.setNumber.compareTo(b.setNumber);
-  });
+  final ordered = [...sets]
+    ..sort((a, b) {
+      final d = a.sessionCreatedDate.compareTo(b.sessionCreatedDate);
+      return d != 0 ? d : a.setNumber.compareTo(b.setNumber);
+    });
   final out = <PastSetRow>[];
   num? best;
   for (final s in ordered) {
@@ -202,10 +203,11 @@ List<PastSetRow> repAxisHistory(List<PastSetRow> sets, int repCount) {
 /// Chronological progression of one weight axis — every set that raised
 /// the max reps at exactly [weight], oldest first. Lens.
 List<PastSetRow> weightAxisHistory(List<PastSetRow> sets, num weight) {
-  final ordered = [...sets]..sort((a, b) {
-    final d = a.sessionCreatedDate.compareTo(b.sessionCreatedDate);
-    return d != 0 ? d : a.setNumber.compareTo(b.setNumber);
-  });
+  final ordered = [...sets]
+    ..sort((a, b) {
+      final d = a.sessionCreatedDate.compareTo(b.sessionCreatedDate);
+      return d != 0 ? d : a.setNumber.compareTo(b.setNumber);
+    });
   final out = <PastSetRow>[];
   num? best;
   for (final s in ordered) {

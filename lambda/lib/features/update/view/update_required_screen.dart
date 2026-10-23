@@ -37,27 +37,33 @@ class UpdateRequiredScreen extends StatelessWidget {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.system_update_alt,
-                    size: 56, color: AppColors.accent),
+                Icon(
+                  Icons.system_update_alt,
+                  size: 56,
+                  color: AppColors.accent,
+                ),
                 const SizedBox(height: AppSpacing.lg),
-                Text('Update Required',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                        fontSize: AppTextStyles.xxl,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.primary)),
+                Text(
+                  'Update Required',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: AppTextStyles.xxl,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.primary,
+                  ),
+                ),
                 const SizedBox(height: AppSpacing.sm),
                 Text(
                   'This version of the app is no longer supported. Please update to continue.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                      fontSize: AppTextStyles.md, color: AppColors.muted),
+                    fontSize: AppTextStyles.md,
+                    color: AppColors.inkSecondary,
+                    height: 1.4,
+                  ),
                 ),
                 const SizedBox(height: AppSpacing.xl),
-                GlassButton(
-                  label: 'Update Now',
-                  onPressed: _openStore,
-                ),
+                GlassButton(label: 'Update Now', onPressed: _openStore),
               ],
             ),
           ),

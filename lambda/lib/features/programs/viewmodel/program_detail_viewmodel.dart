@@ -210,13 +210,16 @@ class ProgramDetailState {
     // explicit `clearActiveRun` is what a caller ending a run must pass, or the
     // ended run's data lingers as if it were still going.
     activeRun: clearActiveRun ? null : (activeRun ?? this.activeRun),
-    currentProgress:
-        clearCurrentProgress ? null : (currentProgress ?? this.currentProgress),
+    currentProgress: clearCurrentProgress
+        ? null
+        : (currentProgress ?? this.currentProgress),
     pausedRun: clearPausedRun ? null : (pausedRun ?? this.pausedRun),
-    pausedProgress:
-        clearPausedProgress ? null : (pausedProgress ?? this.pausedProgress),
-    historyWarning:
-        clearHistoryWarning ? null : (historyWarning ?? this.historyWarning),
+    pausedProgress: clearPausedProgress
+        ? null
+        : (pausedProgress ?? this.pausedProgress),
+    historyWarning: clearHistoryWarning
+        ? null
+        : (historyWarning ?? this.historyWarning),
     nameDraft: nameDraft ?? this.nameDraft,
     descriptionDraft: descriptionDraft ?? this.descriptionDraft,
     due: clearDue ? null : (due ?? this.due),
@@ -414,10 +417,11 @@ class ProgramDetailViewModel implements WorkoutEditorHost {
       String? currentProgramName;
       if (currentRun != null && !isCurrent) {
         try {
-          currentProgramName = (await _repo
-                  .fetchProgram(currentRun.programId)
-                  .timeout(const Duration(seconds: 4)))
-              ?.name;
+          currentProgramName =
+              (await _repo
+                      .fetchProgram(currentRun.programId)
+                      .timeout(const Duration(seconds: 4)))
+                  ?.name;
         } catch (_) {
           // Only the warning's wording depends on this.
         }
@@ -426,8 +430,7 @@ class ProgramDetailViewModel implements WorkoutEditorHost {
       // This program's paused run, when it is not the one being run. A program
       // cannot be both — pausing is what stepping away does — so the two are
       // read together and only one of them is ever set.
-      final pausedRun =
-          isCurrent ? null : results[6] as ProgramRun?;
+      final pausedRun = isCurrent ? null : results[6] as ProgramRun?;
       ProgramProgress? pausedProgress;
       if (pausedRun != null) {
         try {
@@ -480,7 +483,10 @@ class ProgramDetailViewModel implements WorkoutEditorHost {
       _loadDueItems();
     } catch (e) {
       if (_disposed) return;
-      state.value = state.value.copyWith(isLoading: false, error: friendlyError(e));
+      state.value = state.value.copyWith(
+        isLoading: false,
+        error: friendlyError(e),
+      );
     }
   }
 
@@ -523,7 +529,10 @@ class ProgramDetailViewModel implements WorkoutEditorHost {
       // throw from here would surface as an unhandled exception on a stack
       // with no screen left to catch it.
       if (_disposed) return;
-      state.value = state.value.copyWith(isSaving: false, error: friendlyError(e));
+      state.value = state.value.copyWith(
+        isSaving: false,
+        error: friendlyError(e),
+      );
     }
   }
 
@@ -695,8 +704,10 @@ class ProgramDetailViewModel implements WorkoutEditorHost {
       );
       await _loadRuns();
     } catch (e) {
-      state.value =
-          state.value.copyWith(settingCurrent: false, error: friendlyError(e));
+      state.value = state.value.copyWith(
+        settingCurrent: false,
+        error: friendlyError(e),
+      );
     }
     _loadDueItems();
   }
@@ -772,8 +783,10 @@ class ProgramDetailViewModel implements WorkoutEditorHost {
         clearHistoryWarning: result.warning == null,
       );
     } catch (e) {
-      state.value =
-          state.value.copyWith(settingCurrent: false, error: friendlyError(e));
+      state.value = state.value.copyWith(
+        settingCurrent: false,
+        error: friendlyError(e),
+      );
     }
     _loadDueItems();
   }
@@ -872,9 +885,7 @@ class ProgramDetailViewModel implements WorkoutEditorHost {
       (l) => l.plannedSessionId == w.sessionId,
     );
     if (link != null) {
-      await _plannedSessionRepo.deleteProgramLink(
-        link.plannedSessionProgramId,
-      );
+      await _plannedSessionRepo.deleteProgramLink(link.plannedSessionProgramId);
     }
     final updated = state.value.plannedWorkouts
         .where((pw) => pw.sessionId != w.sessionId)
@@ -1059,11 +1070,9 @@ class ProgramDetailViewModel implements WorkoutEditorHost {
       (l) => l.plannedSessionId == sessionId,
     );
     if (link == null) return;
-    await _plannedSessionRepo.assignLinksToBlock(
-      programId,
-      [link.plannedSessionProgramId],
-      blockId,
-    );
+    await _plannedSessionRepo.assignLinksToBlock(programId, [
+      link.plannedSessionProgramId,
+    ], blockId);
     await _reloadContents();
   }
 
@@ -1091,10 +1100,7 @@ class ProgramDetailViewModel implements WorkoutEditorHost {
       slotSessionIds: slotIds,
     );
     final byId = {for (final w in s.plannedWorkouts) w.sessionId: w};
-    await reorderWorkouts(
-      [for (final id in permuted) byId[id]!],
-      permuted,
-    );
+    await reorderWorkouts([for (final id in permuted) byId[id]!], permuted);
   }
 
   /// Re-reads the workouts, join rows and blocks after a change that moves

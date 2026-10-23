@@ -94,11 +94,14 @@ class _NotesModalContentState extends State<_NotesModalContent> {
                   ),
                 ),
                 GlassButton(
-                  label: widget.readOnly ? 'Done' : 'Save',
+                  label: '',
+                  icon: Icons.check,
+                  semanticsLabel: widget.readOnly ? 'Done' : 'Save note',
                   compact: true,
                   // Done dismisses whatever the state; Save has nothing to
                   // write until the note differs from the one it opened with.
-                  disabled: !widget.readOnly && _ctrl.text == widget.initialValue,
+                  disabled:
+                      !widget.readOnly && _ctrl.text == widget.initialValue,
                   onPressed: widget.readOnly
                       ? () => Navigator.of(context, rootNavigator: true).pop()
                       : _save,
@@ -131,8 +134,9 @@ class _NotesModalContentState extends State<_NotesModalContent> {
                       child: Text(
                         widget.plannedNote!,
                         style: AppFonts.ui(
-                          fontSize: 13,
-                          color: AppColors.muted,
+                          fontSize: AppTextStyles.caption,
+                          height: 1.4,
+                          color: AppColors.inkSecondary,
                         ),
                       ),
                     ),
@@ -147,7 +151,8 @@ class _NotesModalContentState extends State<_NotesModalContent> {
                   widget.plannedNote ?? 'Form cues, how it felt, adjustments…',
                   style: AppFonts.ui(
                     fontSize: AppTextStyles.sm,
-                    color: AppColors.muted,
+                    height: 1.4,
+                    color: AppColors.inkSecondary,
                   ),
                 )
               else
@@ -159,7 +164,8 @@ class _NotesModalContentState extends State<_NotesModalContent> {
                 minLines: 2,
                 maxLines: 5,
                 placeholder:
-                    widget.plannedNote ?? 'Form cues, how it felt, adjustments…',
+                    widget.plannedNote ??
+                    'Form cues, how it felt, adjustments…',
                 // The sheet's default background is a surface ground.
                 elevated: true,
               ),

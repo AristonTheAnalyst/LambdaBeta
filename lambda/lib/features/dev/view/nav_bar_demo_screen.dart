@@ -395,10 +395,7 @@ class _EndCard extends StatelessWidget {
           Text(
             'End of the feed — scroll up and the bar springs back.',
             textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: AppTextStyles.sm,
-              color: c.muted,
-            ),
+            style: TextStyle(fontSize: AppTextStyles.sm, color: c.muted),
           ),
         ],
       ),

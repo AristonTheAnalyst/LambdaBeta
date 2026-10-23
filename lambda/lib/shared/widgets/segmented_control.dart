@@ -36,13 +36,14 @@ class SegmentedControl<T> extends StatelessWidget {
         if (subtle) {
           bg = Colors.transparent;
           borderColor = isActive ? AppColors.primary : AppColors.border;
-          fg = isActive ? AppColors.primary : AppColors.muted;
+          fg = isActive ? AppColors.primary : AppColors.inkSecondary;
         } else {
           // Active segment = the glass recipe — the pressable chrome.
           bg = isActive ? AppColors.primary.withAlpha(26) : AppColors.surface;
-          borderColor =
-              isActive ? AppColors.primary.withAlpha(77) : AppColors.border;
-          fg = isActive ? AppColors.primary : AppColors.muted;
+          borderColor = isActive
+              ? AppColors.primary.withAlpha(77)
+              : AppColors.border;
+          fg = isActive ? AppColors.primary : AppColors.inkSecondary;
         }
         return Expanded(
           child: GestureDetector(

@@ -112,18 +112,18 @@ class PlannedSessionExerciseSet {
   }
 
   Map<String, dynamic> toMap() => {
-        'planned_set_id': plannedSetId,
-        'planned_exercise_id': plannedExerciseId,
-        'planned_session_id': plannedSessionId,
-        'user_id': userId,
-        'custom_exercise_id': exerciseId,
-        'custom_variation_id': variationId,
-        'set_number': setNumber,
-        'target_weight': targetWeight,
-        'target_reps': targetReps,
-        'target_notes': targetNotes,
-        'exercise_name': exerciseName,
-        'variation_name': variationName,
-        'is_archived': isArchived,
-      };
+    'planned_set_id': plannedSetId,
+    'planned_exercise_id': plannedExerciseId,
+    'planned_session_id': plannedSessionId,
+    'user_id': userId,
+    'custom_exercise_id': exerciseId,
+    'custom_variation_id': variationId,
+    'set_number': setNumber,
+    'target_weight': targetWeight,
+    'target_reps': targetReps,
+    'target_notes': targetNotes,
+    'exercise_name': exerciseName,
+    'variation_name': variationName,
+    'is_archived': isArchived,
+  };
 }

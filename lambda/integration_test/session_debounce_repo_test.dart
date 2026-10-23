@@ -51,8 +51,10 @@ void main() {
   }
 
   test('a typed burst flushed by finishSession persists as one op', () async {
-    // Seed an active session with one exercise and one empty set.
-    final sessionId = await repo.createSession(userId);
+    // Seed an active session with one exercise and one empty set — stamped
+    // with this (fake) device, because the restore only resumes the
+    // device's OWN session (2026-10-15).
+    final sessionId = await repo.createSession(userId, deviceId: 'dev-test');
     final group = await repo.insertSessionExercise(
       sessionId: sessionId,
       userId: userId,
@@ -66,9 +68,9 @@ void main() {
       setNumber: 1,
       reps: const [],
     );
-    final seededSetId = (await repo.loadSetsForSession(sessionId))
-        .single
-        .sessionExerciseSetId;
+    final seededSetId = (await repo.loadSetsForSession(
+      sessionId,
+    )).single.sessionExerciseSetId;
     final opsBefore = await setCrudOps(seededSetId); // the seed's insert
 
     // The VM restores the active session from the swapped database; the
@@ -77,11 +79,15 @@ void main() {
     final vm = SessionViewModel(
       waitForFirstSync: () async {},
       userId: userId,
+      deviceId: 'dev-test',
     );
     // Give _init's guarded stages (restore included) their turns.
     await Future<void>.delayed(const Duration(milliseconds: 50));
-    expect(vm.currentWorkoutId, sessionId,
-        reason: 'the restore must find the seeded active session');
+    expect(
+      vm.currentWorkoutId,
+      sessionId,
+      reason: 'the restore must find the seeded active session',
+    );
 
     final set = vm.sets.single;
     vm.updateSetField(set, weight: 1, immediate: false);
@@ -94,12 +100,20 @@ void main() {
     vm.dispose();
 
     final stored = await repo.loadSetsForSession(sessionId);
-    expect(stored.single.weight, 100,
-        reason: 'the last keystroke survives ending the session with no '
-            'blur — flush-before-prune is the no-data-loss guarantee');
+    expect(
+      stored.single.weight,
+      100,
+      reason:
+          'the last keystroke survives ending the session with no '
+          'blur — flush-before-prune is the no-data-loss guarantee',
+    );
     expect(stored.single.reps, isEmpty);
-    expect(await setCrudOps(seededSetId), opsBefore + 1,
-        reason: 'three keystrokes queue ONE upload op — the merge writes '
-            'once per settle');
+    expect(
+      await setCrudOps(seededSetId),
+      opsBefore + 1,
+      reason:
+          'three keystrokes queue ONE upload op — the merge writes '
+          'once per settle',
+    );
   });
 }

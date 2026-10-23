@@ -92,25 +92,51 @@ mixin UnsavedChangesGuard<T extends StatefulWidget> on State<T> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
-        title: Text('Unsaved Changes',
-            style: AppFonts.ui(fontWeight: FontWeight.w800, color: AppColors.primary)),
+        title: Text(
+          'Unsaved Changes',
+          style: AppFonts.ui(
+            fontWeight: FontWeight.w800,
+            color: AppColors.primary,
+          ),
+        ),
         content: Text(
-            includeDiscard
-                ? 'You have unsaved changes. What would you like to do?'
-                : 'The review finishes on what is saved. Save these changes first?',
-            style: AppFonts.ui(color: AppColors.muted)),
+          includeDiscard
+              ? 'You have unsaved changes. What would you like to do?'
+              : 'The review finishes on what is saved. Save these changes first?',
+          style: AppFonts.ui(color: AppColors.inkSecondary, height: 1.4),
+        ),
+        // Two verbs, never three (2026-10-23): the back door's warning is a
+        // discard-or-stay decision. Save is the screen's own button — a
+        // warning that can write on the way out puts an accidental commit
+        // one tap from a back gesture. The review settle keeps its save
+        // because there is no Discard side there, only "save first?".
         actions: [
           if (includeDiscard)
             TextButton(
-                onPressed: () => Navigator.of(ctx).pop('discard'),
-                child: Text('Discard', style: AppFonts.ui(color: AppColors.danger))),
-          TextButton(
+              onPressed: () => Navigator.of(ctx).pop('discard'),
+              child: Text(
+                'Discard',
+                style: AppFonts.ui(color: AppColors.danger),
+              ),
+            )
+          else
+            TextButton(
               onPressed: () => Navigator.of(ctx).pop('save'),
-              child: Text(includeDiscard ? 'Save' : 'Save and finish',
-                  style: AppFonts.ui(color: AppColors.accent, fontWeight: FontWeight.w600))),
+              child: Text(
+                'Save and finish',
+                style: AppFonts.ui(
+                  color: AppColors.accent,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
           TextButton(
-              onPressed: () => Navigator.of(ctx).pop('cancel'),
-              child: Text('Stay', style: AppFonts.ui(color: AppColors.muted))),
+            onPressed: () => Navigator.of(ctx).pop('cancel'),
+            child: Text(
+              'Stay',
+              style: AppFonts.ui(color: AppColors.inkSecondary),
+            ),
+          ),
         ],
       ),
     );

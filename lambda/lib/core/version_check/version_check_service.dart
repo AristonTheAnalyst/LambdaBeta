@@ -27,7 +27,7 @@ class VersionCheckResult {
 
 class VersionCheckService {
   VersionCheckService({AppConfigRepository? repo})
-      : _repo = repo ?? AppConfigRepository();
+    : _repo = repo ?? AppConfigRepository();
 
   final AppConfigRepository _repo;
 
@@ -48,8 +48,7 @@ class VersionCheckService {
       final packageInfo = await PackageInfo.fromPlatform().timeout(_timeout);
       final installed = Version.parse(packageInfo.version);
 
-      final config =
-          await _repo.fetchForPlatform(platform).timeout(_timeout);
+      final config = await _repo.fetchForPlatform(platform).timeout(_timeout);
       if (config == null) {
         return VersionCheckResult(
           status: VersionCheckStatus.unknown,
@@ -63,8 +62,8 @@ class VersionCheckService {
       final status = installed < minVersion
           ? VersionCheckStatus.updateRequired
           : installed < latestVersion
-              ? VersionCheckStatus.updateRecommended
-              : VersionCheckStatus.upToDate;
+          ? VersionCheckStatus.updateRecommended
+          : VersionCheckStatus.upToDate;
 
       return VersionCheckResult(
         status: status,

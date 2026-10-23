@@ -14,10 +14,12 @@ import '../../../data/models/planned_session_exercise_set.dart';
 import '../../../data/models/session.dart';
 import '../../../shared/router/app_router.dart';
 import '../../../shared/widgets/app_card.dart';
+import '../../../shared/widgets/bar_icon_button.dart';
 import '../../../shared/widgets/confirm_delete_session_dialog.dart';
 import '../../../shared/widgets/dropdown_select.dart';
 import '../../../shared/widgets/feeling_rating.dart';
 import '../../../shared/widgets/glass_button.dart';
+import '../../../shared/widgets/header_icon_button.dart';
 import '../../../shared/widgets/lambda_input.dart';
 import '../../../shared/widgets/page_header.dart';
 import '../../../shared/widgets/planned_banner.dart';
@@ -25,6 +27,7 @@ import '../../../shared/widgets/session_log_card.dart';
 import '../../../shared/widgets/reflection_summary.dart';
 import '../../../shared/widgets/scroll_shrink_nav_bar.dart';
 import '../../../shared/widgets/session_bookend.dart';
+import '../../../shared/widgets/session_date_bar.dart';
 import '../../../shared/widgets/session_exercise_card.dart';
 import '../../../shared/widgets/session_set_row.dart';
 import '../../../shared/widgets/slide_pages.dart';
@@ -32,9 +35,32 @@ import '../../../shared/widgets/slide_up_modal.dart';
 import '../../../shared/widgets/container_styles.dart';
 import '../../../shared/widgets/section_divider.dart';
 import '../../logs/view/logs_screen.dart';
+import '../../logs/viewmodel/session_detail_viewmodel.dart';
+import '../model/session_local_state.dart';
 import '../viewmodel/session_viewmodel.dart';
+import 'foreign_session_preview.dart';
 import 'live_exercise_card.dart';
+import 'session_history_peek.dart';
+import 'ratings_sheet.dart';
 import 'session_stats_bar.dart';
+import '../../../shared/widgets/undo_redo_buttons.dart';
+import '../../../shared/widgets/user_name_text.dart';
+
+/// Whether a re-tap of the Session nav tab moves the wizard to its browse
+/// (2026-10-23).
+///
+/// The tab re-tap is how the user reads past sessions while one is live: the
+/// wizard stops at Home — the embedded Training Logs browse — and the
+/// session keeps running underneath, since nothing ends a session but Finish
+/// (or Cancel). Only the two pages a live session actually shows can step
+/// away to it: Training and Summary. Home is already the browse, the
+/// pre-questionnaire has nothing live to leave, and the post-questionnaire is
+/// a one-way door — the session has already ended, and Done is the only way
+/// off it.
+bool browseOnSessionTabRetap({required bool live, required int page}) =>
+    live &&
+    (page == SessionViewModel.kTrainingPage ||
+        page == SessionViewModel.kSummaryPage);
 
 class SessionScreen extends StatefulWidget {
   const SessionScreen({super.key});
@@ -68,6 +94,13 @@ class _SessionScreenState extends State<SessionScreen>
   /// controllers from the VM.
   late final TextEditingController _startNotesCtrl;
   late final TextEditingController _endNotesCtrl;
+
+  /// The name the Training header should carry while a completed record is
+  /// hosted on the page (2026-10-23): the SESSION walk swaps the card and the
+  /// floor, so the header's title alone follows onto the record — its plan-name
+  /// snapshot, or Freestyle. Null on today, where the live session's own name
+  /// is the title. Written by [_TrainingPage], read here in the header.
+  final ValueNotifier<String?> _peekTitle = ValueNotifier(null);
 
   @override
   void initState() {
@@ -103,6 +136,9 @@ class _SessionScreenState extends State<SessionScreen>
     }
     _startNotesCtrl = TextEditingController(text: _vm.startNotes);
     _endNotesCtrl = TextEditingController(text: _vm.endNotes);
+    // The shell's tab bar lives outside this screen, so a re-tap of the
+    // Session tab arrives as a signal rather than a callback (2026-10-23).
+    AppRouter.sessionTabReselected.addListener(_onSessionTabReselected);
     // No whole-screen listener: rebuilds are scoped to the widgets that read
     // the VM (per-page ListenableBuilders below) instead of one setState over
     // the entire wizard per notify (2026-10-13).
@@ -125,12 +161,16 @@ class _SessionScreenState extends State<SessionScreen>
   @override
   void dispose() {
     AppRouter.routeObserver.unsubscribe(this);
+    AppRouter.sessionTabReselected.removeListener(_onSessionTabReselected);
     WidgetsBinding.instance.removeObserver(this);
     if (ps.onSignOutReset == _resetCachedVmOnSignOut) {
       ps.onSignOutReset = null;
     }
     _startNotesCtrl.dispose();
     _endNotesCtrl.dispose();
+    // The Training page's State disposes before this one (children first), so
+    // nothing listens by now — the notifier is simply spent.
+    _peekTitle.dispose();
     super.dispose();
   }
 
@@ -144,6 +184,28 @@ class _SessionScreenState extends State<SessionScreen>
         state == AppLifecycleState.detached) {
       _vm.flushPendingCommits();
     }
+  }
+
+  /// The Session nav tab was re-tapped while the wizard was already on
+  /// screen (2026-10-23): the user wants to read past sessions, not end
+  /// this one. Slides to Home — the embedded Training Logs browse — and
+  /// leaves the live session exactly as it is; Home's header swaps Start
+  /// for Resume, which lands back on Training. [browseOnSessionTabRetap]
+  /// holds the guard (no live session, Home already, the one-way post page).
+  void _onSessionTabReselected() {
+    if (!mounted ||
+        !browseOnSessionTabRetap(
+          live: _vm.hasActiveWorkout,
+          page: _vm.slidePagesController.currentPage,
+        )) {
+      return;
+    }
+    // Typed set values commit on blur or the debounce — leaving the page
+    // must not swallow the text under the cursor, the same flush every
+    // wizard step takes.
+    FocusManager.instance.primaryFocus?.unfocus();
+    _vm.flushPendingCommits();
+    _vm.slidePagesController.slideToPage(SessionViewModel.kSessionHomePage);
   }
 
   // ── Modals ─────────────────────────────────────────────────────────────────
@@ -190,6 +252,41 @@ class _SessionScreenState extends State<SessionScreen>
     _startNotesCtrl.clear();
   }
 
+  /// The floor bar's pencil: the same four answers the pre/post wizard pages
+  /// collect, in one sheet. Edits go through the VM's own setters, and the
+  /// notes are mirrored into the wizard's controllers, so closing the sheet
+  /// never leaves a page disagreeing with what was just typed (2026-10-22).
+  void _openRatings() {
+    final vm = _vm;
+    showSessionRatingsSheet(
+      context,
+      preFeeling: vm.sessionFeeling,
+      preNotes: vm.startNotes,
+      postFeeling: vm.endFeeling,
+      postNotes: vm.endNotes,
+      onPreFeelingChanged: vm.setSessionFeeling,
+      onPreNotesChanged: (v) {
+        vm.startNotes = v;
+        _mirrorNotes(_startNotesCtrl, v);
+      },
+      onPostFeelingChanged: vm.setEndFeeling,
+      onPostNotesChanged: (v) {
+        vm.endNotes = v;
+        _mirrorNotes(_endNotesCtrl, v);
+      },
+    );
+  }
+
+  /// Assign only when the text actually differs, and place the caret at the
+  /// end — a plain `.text` write leaves the selection stale.
+  void _mirrorNotes(TextEditingController controller, String text) {
+    if (!mounted || controller.text == text) return;
+    controller.value = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    );
+  }
+
   void _showNoSetsDialog() {
     showDialog<void>(
       context: context,
@@ -201,7 +298,7 @@ class _SessionScreenState extends State<SessionScreen>
         ),
         content: Text(
           "You haven't logged any sets yet. Log at least one set before ending, or cancel the workout instead.",
-          style: TextStyle(color: AppColors.muted),
+          style: TextStyle(color: AppColors.inkSecondary, height: 1.4),
         ),
         actions: [
           TextButton(
@@ -238,12 +335,15 @@ class _SessionScreenState extends State<SessionScreen>
         ),
         content: Text(
           'Remove $name from this workout?\n$setCount set${setCount == 1 ? '' : 's'} will be removed.',
-          style: TextStyle(color: AppColors.muted),
+          style: TextStyle(color: AppColors.inkSecondary, height: 1.4),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: Text('Keep', style: TextStyle(color: AppColors.muted)),
+            child: Text(
+              'Keep',
+              style: TextStyle(color: AppColors.inkSecondary),
+            ),
           ),
           TextButton(
             onPressed: () {
@@ -274,12 +374,15 @@ class _SessionScreenState extends State<SessionScreen>
         ),
         content: Text(
           'Discard this workout and all logged sets?',
-          style: TextStyle(color: AppColors.muted),
+          style: TextStyle(color: AppColors.inkSecondary, height: 1.4),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: Text('Keep Going', style: TextStyle(color: AppColors.muted)),
+            child: Text(
+              'Keep Going',
+              style: TextStyle(color: AppColors.inkSecondary),
+            ),
           ),
           TextButton(
             onPressed: () {
@@ -316,180 +419,361 @@ class _SessionScreenState extends State<SessionScreen>
             _vm.initLoading
                 ? const Center(child: CircularProgressIndicator())
                 : Column(
-                  children: [
-                    ListenableBuilder(
-                      listenable: _vm.slidePagesController,
-                      builder: (context, _) {
-                        final page = _vm.slidePagesController.currentPage;
-                        // The header IS the wizard nav: title names the step, the
-                        // left button steps back (or cancels), the right advances.
-                        // Once started, Training's title is the bound template's
-                        // name (freestyle keeps the generic title).
-                        final title = switch (page) {
-                          SessionViewModel.kTrainingPage =>
-                            _vm.hasActiveWorkout
-                                ? (_vm.selectedPlannedSession?.name ??
-                                      _vm.selectedStandaloneWorkout?.name ??
-                                      'Freestyle Session')
-                                : 'Training Session',
-                          SessionViewModel.kPreQuestionnairePage =>
-                            'Pre-Evaluation',
-                          SessionViewModel.kSessionHomePage => 'Session Prep',
-                          _ => 'Session Reflection',
-                        };
-                        return PageHeader(
-                          title: title,
-                          left: switch (page) {
-                            // Home has nothing to go back to; the
-                            // post-questionnaire is a one-way door (the
-                            // session has already ended).
-                            SessionViewModel.kSessionHomePage ||
-                            SessionViewModel.kPostQuestionnairePage =>
-                              null,
-                            // Pre-questionnaire: plain back — nothing was
-                            // created yet.
-                            SessionViewModel.kPreQuestionnairePage =>
-                              GlassButton(
-                                label: 'Back',
-                                color: AppColors.primary,
-                                compact: true,
-                                onPressed: () => _vm.slidePagesController
-                                    .slideToPage(SessionViewModel.kSessionHomePage),
-                              ),
-                            // Training: Cancel when active; Back to the
-                            // questionnaire when idle.
-                            SessionViewModel.kTrainingPage =>
-                              _vm.hasActiveWorkout
-                                  ? GlassButton(
-                                      label: 'Cancel',
-                                      color: AppColors.danger,
-                                      compact: true,
-                                      onPressed: _confirmCancelWorkout,
-                                    )
-                                  : GlassButton(
-                                      label: 'Back',
+                    children: [
+                      ListenableBuilder(
+                        listenable: _vm.slidePagesController,
+                        builder: (context, _) {
+                          final page = _vm.slidePagesController.currentPage;
+                          // The header IS the wizard nav: title names the step, the
+                          // left button steps back (or cancels), the right advances.
+                          // Once started, Training's title is the bound template's
+                          // name (freestyle keeps the generic title).
+                          //
+                          // While the SESSION walk hosts a completed record on the
+                          // Training page, the title follows that record instead
+                          // (2026-10-23): `peekTitle` is the record's own name —
+                          // its plan-name snapshot, or Freestyle — so the header
+                          // names what the card and floor are drawing, and goes
+                          // back to the live name when the walk returns to today.
+                          return ValueListenableBuilder<String?>(
+                            valueListenable: _peekTitle,
+                            builder: (context, peekTitle, _) {
+                              final title = switch (page) {
+                                SessionViewModel.kTrainingPage =>
+                                  _vm.hasActiveWorkout
+                                      ? (peekTitle ??
+                                            _vm.selectedPlannedSession?.name ??
+                                            _vm
+                                                .selectedStandaloneWorkout
+                                                ?.name ??
+                                            'Freestyle Session')
+                                      : 'Training Session',
+                                SessionViewModel.kPreQuestionnairePage =>
+                                  'Pre-Evaluation',
+                                SessionViewModel.kSessionHomePage => 'Sessions',
+                                _ => 'Session Reflection',
+                              };
+                              return PageHeader(
+                                title: title,
+                                // The Training page's idle title IS the session
+                                // selector (2026-10-23): the picker lives in the
+                                // header, not in a body card, so the page opens
+                                // straight onto the preview. An active session
+                                // keeps the plain name — a template cannot change
+                                // mid-session.
+                                titleWidget:
+                                    page == SessionViewModel.kTrainingPage &&
+                                        !_vm.hasActiveWorkout
+                                    ? _TrainingHeaderSelector(
+                                        vm: _vm,
+                                        onTap: () => _showWorkoutPickerSheet(
+                                          context,
+                                          _vm,
+                                        ),
+                                      )
+                                    : null,
+                                left: switch (page) {
+                                  // Home has nothing to go back to; the
+                                  // post-questionnaire is a one-way door (the
+                                  // session has already ended).
+                                  SessionViewModel.kSessionHomePage ||
+                                  SessionViewModel.kPostQuestionnairePage =>
+                                    null,
+                                  // Pre-questionnaire: plain back — nothing was
+                                  // created yet.
+                                  SessionViewModel.kPreQuestionnairePage =>
+                                    HeaderIconButton(
+                                      icon: Icons.arrow_back_ios_new,
+                                      semanticsLabel: 'Back',
+                                      glyphSize: 18,
                                       color: AppColors.primary,
-                                      compact: true,
-                                      onPressed: () {
-                                        // Home/pre-Q always shows the latest
-                                        // completed session — a THIS SESSION
-                                        // position from the summary page can't
-                                        // leak onto it.
-                                        _vm.showLatestReflection();
-                                        _vm.slidePagesController.slideToPage(
-                                          SessionViewModel.kPreQuestionnairePage,
-                                        );
-                                      },
+                                      onPressed: () =>
+                                          _vm.slidePagesController.slideToPage(
+                                            SessionViewModel.kSessionHomePage,
+                                          ),
                                     ),
-                            // Summary: resume training (the back-door).
-                            _ => GlassButton(
-                              label: 'Back',
-                              color: AppColors.primary,
-                              compact: true,
-                              onPressed: () => _vm.slidePagesController
-                                  .slideToPage(SessionViewModel.kTrainingPage),
-                            ),
-                          },
-                          // Wizard path: START (Home) → questionnaire →
-                          // CONTINUE → choose workout → START (Training) →
-                          // FINISH → summary → FINISH SESSION → post
-                          // questionnaire → DONE → Home.
-                          right: switch (page) {
-                            SessionViewModel.kSessionHomePage =>
-                              GlassButton(
-                                label: 'Start',
-                                color: AppColors.success,
-                                compact: true,
-                                onPressed: () => _vm.slidePagesController
-                                    .slideToPage(SessionViewModel.kPreQuestionnairePage),
-                              ),
-                            SessionViewModel.kPreQuestionnairePage =>
-                              GlassButton(
-                                label: 'Continue',
-                                color: AppColors.success,
-                                compact: true,
-                                onPressed: () => _vm.slidePagesController
-                                    .slideToPage(SessionViewModel.kTrainingPage),
-                              ),
-                            SessionViewModel.kTrainingPage =>
-                              GlassButton(
-                                label: _vm.hasActiveWorkout ? 'Summary' : 'Start',
-                                color: AppColors.success,
-                                compact: true,
-                                onPressed: _vm.hasActiveWorkout
-                                    ? _goToSummary
-                                    : _vm.startWorkout,
-                              ),
-                            SessionViewModel.kSummaryPage =>
-                              _vm.hasActiveWorkout
-                                  ? GlassButton(
-                                      label: 'End',
+                                  // Training: Cancel when active; Back to the
+                                  // questionnaire when idle.
+                                  SessionViewModel.kTrainingPage =>
+                                    _vm.hasActiveWorkout
+                                        ? HeaderIconButton(
+                                            // A red X, not the square stop glyph
+                                            // (2026-10-23): the square read as
+                                            // "pause/stop the timer", the X reads
+                                            // as "close this session".
+                                            icon: Icons.close,
+                                            semanticsLabel: 'Cancel workout',
+                                            color: AppColors.danger,
+                                            onPressed: _confirmCancelWorkout,
+                                          )
+                                        : HeaderIconButton(
+                                            icon: Icons.arrow_back_ios_new,
+                                            semanticsLabel: 'Back',
+                                            glyphSize: 18,
+                                            color: AppColors.primary,
+                                            onPressed: () {
+                                              // Home/pre-Q always shows the latest
+                                              // completed session — a THIS SESSION
+                                              // position from the summary page can't
+                                              // leak onto it.
+                                              _vm.showLatestReflection();
+                                              _vm.slidePagesController
+                                                  .slideToPage(
+                                                    SessionViewModel
+                                                        .kPreQuestionnairePage,
+                                                  );
+                                            },
+                                          ),
+                                  // Summary: resume training (the back-door).
+                                  _ => HeaderIconButton(
+                                    icon: Icons.arrow_back_ios_new,
+                                    semanticsLabel: 'Back',
+                                    glyphSize: 18,
+                                    color: AppColors.primary,
+                                    onPressed: () =>
+                                        _vm.slidePagesController.slideToPage(
+                                          SessionViewModel.kTrainingPage,
+                                        ),
+                                  ),
+                                },
+                                // Wizard path: START (Home) → questionnaire →
+                                // CONTINUE → choose workout → START (Training) →
+                                // FINISH → summary → FINISH SESSION → post
+                                // questionnaire → DONE → Home.
+                                right: switch (page) {
+                                  // With a session live, Home is the browse the
+                                  // Session tab's re-tap opens, and the door turns
+                                  // around: Start would begin a SECOND session, so
+                                  // the control reads Resume — the word alone, no
+                                  // glyph (2026-10-23): it is the one primary
+                                  // action on the browse, and the word is the
+                                  // whole of it. Returns to Training, leaving the
+                                  // session untouched.
+                                  SessionViewModel.kSessionHomePage =>
+                                    _vm.hasActiveWorkout
+                                        ? GlassButton(
+                                            label: 'Resume',
+                                            color: AppColors.success,
+                                            compact: true,
+                                            onPressed: () => _vm
+                                                .slidePagesController
+                                                .slideToPage(
+                                                  SessionViewModel
+                                                      .kTrainingPage,
+                                                ),
+                                          )
+                                        : HeaderIconButton(
+                                            icon: Icons.add,
+                                            semanticsLabel: 'Start',
+                                            glyphSize: 22,
+                                            color: AppColors.success,
+                                            onPressed: () => _vm
+                                                .slidePagesController
+                                                .slideToPage(
+                                                  SessionViewModel
+                                                      .kPreQuestionnairePage,
+                                                ),
+                                          ),
+                                  SessionViewModel.kPreQuestionnairePage =>
+                                    HeaderIconButton(
+                                      icon: Icons.arrow_forward_ios,
+                                      semanticsLabel: 'Continue',
+                                      glyphSize: 18,
                                       color: AppColors.success,
-                                      compact: true,
-                                      onPressed: _finishFromSummary,
-                                    )
-                                  : null,
-                            _ => GlassButton(
-                              label: 'Done',
-                              color: AppColors.success,
-                              compact: true,
-                              onPressed: _completePost,
+                                      onPressed: () =>
+                                          _vm.slidePagesController.slideToPage(
+                                            SessionViewModel.kTrainingPage,
+                                          ),
+                                    ),
+                                  SessionViewModel.kTrainingPage =>
+                                    _vm.hasActiveWorkout
+                                        ? HeaderIconButton(
+                                            icon: Icons.arrow_forward_ios,
+                                            semanticsLabel: 'Summary',
+                                            glyphSize: 18,
+                                            color: AppColors.success,
+                                            onPressed: _goToSummary,
+                                          )
+                                        : HeaderIconButton(
+                                            icon: Icons.play_arrow,
+                                            semanticsLabel: 'Start workout',
+                                            glyphSize: 22,
+                                            color: AppColors.success,
+                                            onPressed: _vm.startWorkout,
+                                          ),
+                                  SessionViewModel.kSummaryPage =>
+                                    _vm.hasActiveWorkout
+                                        ? HeaderIconButton(
+                                            icon: Icons.check,
+                                            semanticsLabel: 'End workout',
+                                            glyphSize: 22,
+                                            color: AppColors.success,
+                                            onPressed: _finishFromSummary,
+                                          )
+                                        : null,
+                                  _ => HeaderIconButton(
+                                    icon: Icons.check,
+                                    semanticsLabel: 'Done',
+                                    glyphSize: 22,
+                                    color: AppColors.success,
+                                    onPressed: _completePost,
+                                  ),
+                                },
+                              );
+                            },
+                          );
+                        },
+                      ),
+                      if (_vm.error != null)
+                        GestureDetector(
+                          onTap: _vm.clearError,
+                          child: Container(
+                            width: double.infinity,
+                            color: AppColors.dangerBg,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: AppSpacing.lg,
+                              vertical: AppSpacing.sm,
                             ),
-                          },
-                        );
-                      },
-                    ),
-                    if (_vm.error != null)
-                      GestureDetector(
-                        onTap: _vm.clearError,
-                        child: Container(
-                          width: double.infinity,
-                          color: AppColors.dangerBg,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: AppSpacing.lg,
-                            vertical: AppSpacing.sm,
-                          ),
-                          child: Text(
-                            _vm.error!,
-                            style: TextStyle(
-                              color: AppColors.danger,
-                              fontSize: AppTextStyles.sm,
+                            child: Text(
+                              _vm.error!,
+                              style: TextStyle(
+                                color: AppColors.danger,
+                                fontSize: AppTextStyles.sm,
+                              ),
                             ),
                           ),
                         ),
+                      // The another-device notice (2026-10-15): a live session
+                      // this device did not start. Nothing syncs on its own —
+                      // Switch trades this device's session (asking
+                      // cancel-or-complete when it has one), Stay keeps things
+                      // as they are.
+                      if (_vm.foreignActiveSessions.isNotEmpty)
+                        _ForeignSessionNotice(vm: _vm),
+                      Expanded(
+                        // Key keeps the SlidePages element stable across rebuilds —
+                        // otherwise the PageView is recreated and its page position
+                        // resets to Prep.
+                        key: const ValueKey('sessionPages'),
+                        child: SlidePages(
+                          controller: _vm.slidePagesController,
+                          // Strict wizard: steps advance via the header buttons and
+                          // (unlocked) tabs only — no swipe navigation.
+                          physics: const NeverScrollableScrollPhysics(),
+                          children: [
+                            _HomePage(vm: _vm),
+                            _PreEvaluationPage(
+                              vm: _vm,
+                              startNotesCtrl: _startNotesCtrl,
+                            ),
+                            _TrainingPage(
+                              vm: _vm,
+                              peekTitle: _peekTitle,
+                              onRemoveExercise: _confirmRemoveExercise,
+                              onOpenRatings: _openRatings,
+                            ),
+                            _SummaryPage(vm: _vm),
+                            _PostQuestionnairePage(
+                              vm: _vm,
+                              notesCtrl: _endNotesCtrl,
+                            ),
+                          ],
+                        ),
                       ),
-                    Expanded(
-                      // Key keeps the SlidePages element stable across rebuilds —
-                      // otherwise the PageView is recreated and its page position
-                      // resets to Prep.
-                      key: const ValueKey('sessionPages'),
-                      child: SlidePages(
-                        controller: _vm.slidePagesController,
-                        // Strict wizard: steps advance via the header buttons and
-                        // (unlocked) tabs only — no swipe navigation.
-                        physics: const NeverScrollableScrollPhysics(),
-                        children: [
-                          _HomePage(vm: _vm),
-                          _PreEvaluationPage(
-                            vm: _vm,
-                            startNotesCtrl: _startNotesCtrl,
-                          ),
-                          _TrainingPage(
-                            vm: _vm,
-                            onRemoveExercise: _confirmRemoveExercise,
-                          ),
-                          _SummaryPage(vm: _vm),
-                          _PostQuestionnairePage(
-                            vm: _vm,
-                            notesCtrl: _endNotesCtrl,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-        ],
+                    ],
+                  ),
+          ],
         ),
+      ),
+    );
+  }
+}
+
+/// The another-device notice (2026-10-15) — a strip above the wizard's pages
+/// while a live session started on ANOTHER device exists. It never acts on
+/// its own: **Switch** makes that session this device's (asking first what
+/// becomes of this device's own in-progress session, when there is one), and
+/// **Stay** dismisses every foreign session it is showing, for the rest of
+/// the run.
+class _ForeignSessionNotice extends StatelessWidget {
+  const _ForeignSessionNotice({required this.vm});
+
+  final SessionViewModel vm;
+
+  /// Preview first, decide after (2026-10-15): the notice's button opens the
+  /// session READ-ONLY — the viewer's own mode — and the Switch lives inside
+  /// the preview's bar, where the user has just seen what they are taking.
+  void _preview(BuildContext context, Session foreign) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ForeignSessionPreviewScreen(session: foreign, vm: vm),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // The newest is the one a Switch takes; extra ones only change the
+    // wording.
+    final foreign = [...vm.foreignActiveSessions]
+      ..sort((a, b) => b.createdDatetime.compareTo(a.createdDatetime));
+    final latest = foreign.first;
+    final started = DateFormat.jm().format(latest.createdDatetime.toLocal());
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.lg,
+        AppSpacing.sm,
+        AppSpacing.lg,
+        AppSpacing.sm,
+      ),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceHigh,
+        border: Border(bottom: BorderSide(color: AppColors.border, width: 0.5)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            foreign.length > 1
+                ? 'Sessions are live on other devices — the newest started $started.'
+                : 'A session is live on another device — started $started.',
+            style: AppFonts.ui(
+              fontSize: AppTextStyles.sm,
+              fontWeight: FontWeight.w600,
+              color: AppColors.primary,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            'Nothing syncs on its own — preview it, then switch if you want '
+            'it here.',
+            style: AppFonts.ui(
+              fontSize: AppTextStyles.xs,
+              color: AppColors.inkSecondary,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Row(
+            children: [
+              GlassButton(
+                label: 'Preview',
+                compact: true,
+                onPressed: () => _preview(context, latest),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              GlassButton(
+                label: 'Stay',
+                compact: true,
+                onPressed: () {
+                  for (final s in foreign) {
+                    vm.dismissForeignSession(s.sessionId);
+                  }
+                },
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -500,8 +784,10 @@ class _SessionScreenState extends State<SessionScreen>
 /// The wizard's landing page — the ALL SESSIONS browse: the full logs view
 /// (filters on top, session cards below; a card opens the past-session
 /// viewer) fills the page, with Start (header) kicking off the
-/// active-session flow. Keyed by the past-sets version so a finished
-/// workout remounts it with fresh data.
+/// active-session flow. With a session live it is also the browse a re-tap
+/// of the Session tab opens, and the header's door reads Resume instead
+/// (2026-10-23). Keyed by the past-sets version so a finished workout
+/// remounts it with fresh data.
 class _HomePage extends StatelessWidget {
   const _HomePage({required this.vm});
 
@@ -520,7 +806,6 @@ class _HomePage extends StatelessWidget {
     );
   }
 }
-
 
 // ── Page 1: Pre-Evaluation ───────────────────────────────────────────────────
 
@@ -642,9 +927,10 @@ class _PreEvaluationPageState extends State<_PreEvaluationPage> {
               Text(
                 'FROM LAST SESSION',
                 style: AppFonts.mono(
-                  fontSize: 14,
+                  fontSize: AppTextStyles.xs,
+                  fontWeight: FontWeight.w600,
                   letterSpacing: 0.8,
-                  color: AppColors.muted,
+                  color: AppColors.primary,
                 ),
               ),
             ],
@@ -748,69 +1034,75 @@ class _LastSessionCard extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-          // Card 1: session identity — pager, planned source, feeling.
-          // Tapping opens the shown session in the past-session viewer.
-          AppCard(
-            // The still-active session must not open the past-session viewer —
-            // its edit mode would let the user change sets the live VM doesn't
-            // know about mid-workout.
-            onTap: session == null || vm.reflectionIsCurrent
-                ? null
-                : () async {
-                    await context.push('/logs/${session.sessionId}');
-                    // Note/feeling edits made in the past-session viewer show
-                    // immediately when the viewer card recomputes on return.
-                    vm.refreshShownReflection();
-                  },
-            padding: const EdgeInsets.all(AppSpacing.md),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      // The shown session's date anchors the pager.
-                      child: Text(
-                        session == null
-                            ? ''
-                            : DateFormat('MMM d').format(session.createdDatetime),
-                        style: AppFonts.mono(
-                          fontSize: 13,
-                          letterSpacing: 0.8,
-                          color: AppColors.muted,
-                        ),
+        // Card 1: session identity — pager, planned source, feeling.
+        // Tapping opens the shown session in the past-session viewer.
+        AppCard(
+          // The still-active session must not open the past-session viewer —
+          // its edit mode would let the user change sets the live VM doesn't
+          // know about mid-workout.
+          onTap: session == null || vm.reflectionIsCurrent
+              ? null
+              : () async {
+                  await context.push(
+                    '/logs/${session.sessionId}',
+                    extra: AppRouter.fromLiveExtra,
+                  );
+                  // Note/feeling edits made in the past-session viewer show
+                  // immediately when the viewer card recomputes on return.
+                  vm.refreshShownReflection();
+                },
+          padding: const EdgeInsets.all(AppSpacing.md),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    // The shown session's date anchors the pager.
+                    child: Text(
+                      session == null
+                          ? ''
+                          // Local, like the card it describes and the
+                          // viewer's date bar (2026-10-22).
+                          : DateFormat(
+                              'MMM d',
+                            ).format(session.createdDatetime.toLocal()),
+                      style: AppFonts.mono(
+                        fontSize: AppTextStyles.caption,
+                        color: AppColors.inkSecondary,
                       ),
                     ),
-                    // All-sessions picker — jumps the card to any completed
-                    // session instead of paging one step at a time.
-                    _pagerButton(
-                      Icons.list_alt,
-                      vm.completedSessionCount > 0,
-                      () => _openSessionPicker(context, vm),
-                    ),
-                    const SizedBox(width: AppSpacing.sm),
-                    _pagerButton(
-                      Icons.chevron_left,
-                      vm.reflectionCanGoOlder,
-                      vm.showOlderReflectionSession,
-                    ),
-                    const SizedBox(width: AppSpacing.sm),
-                    _pagerButton(
-                      Icons.chevron_right,
-                      vm.reflectionCanGoNewer,
-                      vm.showNewerReflectionSession,
-                    ),
-                  ],
-                ),
-                // The planned session (if any) this session was started from.
-                if (session?.plannedSessionName != null) ...[
-                  const SizedBox(height: AppSpacing.sm),
-                  PlannedBanner(name: session!.plannedSessionName!),
+                  ),
+                  // All-sessions picker — jumps the card to any completed
+                  // session instead of paging one step at a time.
+                  _pagerButton(
+                    Icons.list_alt,
+                    vm.completedSessionCount > 0,
+                    () => _openSessionPicker(context, vm),
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  _pagerButton(
+                    Icons.chevron_left,
+                    vm.reflectionCanGoOlder,
+                    vm.showOlderReflectionSession,
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  _pagerButton(
+                    Icons.chevron_right,
+                    vm.reflectionCanGoNewer,
+                    vm.showNewerReflectionSession,
+                  ),
                 ],
+              ),
+              // The planned session (if any) this session was started from.
+              if (session?.plannedSessionName != null) ...[
+                const SizedBox(height: AppSpacing.sm),
+                PlannedBanner(name: session!.plannedSessionName!),
               ],
-            ),
+            ],
           ),
-          const SizedBox(height: AppSpacing.md),
+        ),
+        const SizedBox(height: AppSpacing.md),
         // Card 2: the PRS and LESSONS sections — a separate container; the
         // sections carry their own empty notes.
         AppCard(
@@ -976,9 +1268,10 @@ class _SessionPickerSheetState extends State<_SessionPickerSheet> {
               child: Text(
                 'ALL SESSIONS',
                 style: AppFonts.mono(
-                  fontSize: 13,
+                  fontSize: AppTextStyles.xs,
+                  fontWeight: FontWeight.w600,
                   letterSpacing: 0.8,
-                  color: AppColors.muted,
+                  color: AppColors.primary,
                 ),
               ),
             ),
@@ -1006,7 +1299,7 @@ class _SessionPickerSheetState extends State<_SessionPickerSheet> {
           child: Text(
             'No completed sessions yet',
             style: TextStyle(
-              color: AppColors.muted,
+              color: AppColors.inkSecondary,
               fontSize: AppTextStyles.sm,
             ),
           ),
@@ -1039,117 +1332,74 @@ class _SessionPickerSheetState extends State<_SessionPickerSheet> {
   }
 }
 
-/// The session-template selector card on the Training page — planned styling
-/// when a template is selected. Only rendered while idle: once the workout
-/// starts the card is hidden (the header title carries the session's name).
-class _SessionTemplateCard extends StatelessWidget {
-  const _SessionTemplateCard({required this.vm, this.onTap});
+/// The Training page's idle header — the session-template selector as a
+/// pill across the title slot (2026-10-23). It opens the same picker
+/// sheet the body card used to, so the page opens straight onto the preview
+/// and the picker costs the body no space. A selected template wears the
+/// planned container (its blue is the plan's provenance); freestyle wears
+/// the ghost box. An active session keeps the plain title — a template
+/// cannot change mid-session.
+class _TrainingHeaderSelector extends StatelessWidget {
+  const _TrainingHeaderSelector({required this.vm, required this.onTap});
 
   final SessionViewModel vm;
-  final VoidCallback? onTap;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        decoration: BoxDecoration(
-          // Any selected template — program planned or standalone —
-          // gets the planned styling (plannedBg fill + planned outline).
-          color:
-              vm.selectedPlannedSession != null ||
-                  vm.selectedStandaloneWorkout != null
-              ? AppColors.plannedBg
-              : AppColors.surface,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color:
-                vm.selectedPlannedSession != null ||
-                    vm.selectedStandaloneWorkout != null
-                ? AppColors.planned.withValues(alpha: 0.35)
-                : AppColors.border,
-          ),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (vm.selectedPlannedSession != null) ...[
-                    Text(
-                      vm.programProgress!.kickerLine,
-                      style: AppFonts.mono(
-                        fontSize: 13,
-                        letterSpacing: 0.6,
-                        color: AppColors.planned,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      vm.selectedPlannedSession!.name,
-                      style: AppFonts.ui(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.primary,
-                      ),
-                    ),
-                  ] else if (vm.selectedStandaloneWorkout != null) ...[
-                    Text(
-                      'Standalone session',
-                      style: AppFonts.mono(
-                        fontSize: 13,
-                        letterSpacing: 0.6,
-                        color: AppColors.planned,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      vm.selectedStandaloneWorkout!.name,
-                      style: AppFonts.ui(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.primary,
-                      ),
-                    ),
-                  ] else ...[
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Freestyle Session',
-                          style: AppFonts.ui(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w800,
-                            color: AppColors.muted,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'No planned session — add exercises as you train',
-                          style: AppFonts.mono(
-                            fontSize: 13,
-                            letterSpacing: 0.6,
-                            color: AppColors.muted,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ],
+    final planned =
+        vm.selectedPlannedSession != null ||
+        vm.selectedStandaloneWorkout != null;
+    final name =
+        vm.selectedPlannedSession?.name ??
+        vm.selectedStandaloneWorkout?.name ??
+        'Freestyle Session';
+    return Semantics(
+      button: true,
+      label: '$name — choose session',
+      excludeSemantics: true,
+      child: GestureDetector(
+        key: const ValueKey('training-session-selector'),
+        onTap: onTap,
+        child: Container(
+          // The pill spends the whole title band and the header's own target
+          // height (44 — the `HeaderIconButton` bare size), so the bar reads
+          // as one row of controls. The band is its ceiling: the 88pt gutters
+          // hold the 44pt buttons, so it stays narrower than the card's
+          // exercise selector below, which runs the card's full width. The
+          // rest of the recipe is the exercise-detail header selector's: the
+          // ghost box, 16px w600 ink and the drop arrow, so the app's header
+          // selectors are one species. The planned container swaps in while a
+          // template is selected — the same pair the session's selector field
+          // wears.
+          width: double.infinity,
+          constraints: const BoxConstraints(minHeight: 44),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          alignment: Alignment.center,
+          decoration: planned
+              ? lambdaBox(ContainerTone.planned, radius: AppRadius.md)
+              : lambdaBox(ContainerTone.ghost, radius: AppRadius.md),
+          child: Row(
+            // The field grammar the exercise selector below already wears:
+            // the name at the start, the drop arrow at the end. A stretched
+            // pill with a floating centred label would read as a button; this
+            // reads as the selector it is.
+            children: [
+              Flexible(
+                child: UserNameText(
+                  name,
+                  tooltip: true,
+                  style: AppFonts.ui(
+                    fontSize: AppTextStyles.md,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.primary,
+                  ),
+                ),
               ),
-            ),
-            Icon(
-              Icons.swap_vert,
-              size: 18,
-              color:
-                  vm.selectedPlannedSession != null ||
-                      vm.selectedStandaloneWorkout != null
-                  ? AppColors.planned
-                  : AppColors.muted,
-            ),
-          ],
+              const SizedBox(width: 4),
+              Icon(Icons.arrow_drop_down, size: 18, color: AppColors.muted),
+            ],
+          ),
         ),
       ),
     );
@@ -1158,20 +1408,170 @@ class _SessionTemplateCard extends StatelessWidget {
 
 // ── Page 1: Training ───────────────────────────────────────────────────────────
 
-class _TrainingPage extends StatelessWidget {
-  const _TrainingPage({required this.vm, required this.onRemoveExercise});
+class _TrainingPage extends StatefulWidget {
+  const _TrainingPage({
+    required this.vm,
+    required this.peekTitle,
+    required this.onRemoveExercise,
+    required this.onOpenRatings,
+  });
 
   final SessionViewModel vm;
+
+  /// The header's title, while a completed record is hosted in place; the
+  /// screen's own notifier, written here as the peek is entered, walked and
+  /// left (2026-10-23). Null means today — the live session names the header.
+  final ValueNotifier<String?> peekTitle;
+
   final void Function(int index) onRemoveExercise;
+
+  /// The floor bar's pencil — opened by the screen's State, which holds the
+  /// wizard's note controllers and so can keep them in step with the sheet.
+  final VoidCallback onOpenRatings;
+
+  @override
+  State<_TrainingPage> createState() => _TrainingPageState();
+}
+
+class _TrainingPageState extends State<_TrainingPage> {
+  SessionViewModel get vm => widget.vm;
+
+  /// The record the date bar has stepped onto, read by the viewer's own view
+  /// model (2026-10-22). Null = today, where the live sets are the card.
+  ///
+  /// A step never leaves this page: the record swaps under the same route,
+  /// header and wizard — the PR Lab's pager, not a navigation. The live
+  /// session keeps running underneath the whole time, and stepping forward
+  /// off the newest record only drops this reader.
+  SessionDetailViewModel? _peek;
+
+  @override
+  void initState() {
+    super.initState();
+    vm.slidePagesController.addListener(_onWizardStep);
+    vm.addListener(_onSessionChanged);
+  }
+
+  @override
+  void dispose() {
+    vm.slidePagesController.removeListener(_onWizardStep);
+    vm.removeListener(_onSessionChanged);
+    // No title write here: the screen's notifier is per-State and dies with
+    // this page; only the listener needs releasing.
+    _peek?.state.removeListener(_publishPeekTitle);
+    _peek?.dispose();
+    super.dispose();
+  }
+
+  /// The peek belongs to the Training page: leaving it (Summary, the post
+  /// questionnaire, Home) drops the record, so coming back opens on today.
+  void _onWizardStep() {
+    if (vm.slidePagesController.currentPage != SessionViewModel.kTrainingPage) {
+      _exitPeek();
+    }
+  }
+
+  /// A cancelled (or otherwise ended) session leaves this page in its idle
+  /// state without a wizard step — the peek has nothing left to stand on, so
+  /// it goes with the live sets.
+  void _onSessionChanged() {
+    if (!vm.hasActiveWorkout) _exitPeek();
+  }
+
+  /// The left arrow on today's bar: open the newest completed record **in
+  /// place**. The live body stays on screen until the first read lands, so
+  /// the step never flashes an empty page; a failed read leaves the live
+  /// sets where they were.
+  Future<void> _enterPeek() async {
+    final id = vm.previousSessionId;
+    if (id == null || _peek != null) return;
+    // A keystroke commit may still be settling; the peek replaces the card
+    // that owns the focused cell, so land the write first — the same rule
+    // the wizard's page changes follow.
+    await vm.flushPendingCommits();
+    if (!mounted || _peek != null || !vm.hasActiveWorkout) return;
+    // The peek is the viewer, and it opens on the stack the live bar was
+    // walking when the step was taken (2026-10-23) — a peek is only ever
+    // entered from SESSION mode, so its own bar reads SESSION and its
+    // arrows keep walking records.
+    final peek = vm.createRecordPeek()..setDateBarMode(vm.dateBarMode);
+    // The header follows the record (2026-10-23): every in-place step and
+    // every read the VM lands republishes its name. Until the first read
+    // lands `sessionTitle` is null, so the live name simply stays — the same
+    // "live stays until the record is there" rule the body follows.
+    peek.state.addListener(_publishPeekTitle);
+    setState(() => _peek = peek);
+    await peek.load(id);
+    if (!mounted) return;
+    // A missing record reads as a null session, not an error (2026-10-23):
+    // the stamp list this arrow was built from can outlive a row that a
+    // sync round removed. Both failures drop the peek and say so — a peek
+    // held on a record that will never land sits invisibly over the live
+    // sets, and the bar's arrow would press into a no-op for the rest of
+    // the session. The stamps are re-read so the arrow heals onto the next
+    // record (or spends).
+    if (peek.state.value.error != null || peek.state.value.session == null) {
+      peek.state.removeListener(_publishPeekTitle);
+      setState(() => _peek = null);
+      widget.peekTitle.value = null;
+      peek.dispose();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open that session')),
+      );
+      vm.refreshPreviousSession();
+    }
+  }
+
+  /// Keeps the header's title in step with the hosted record (2026-10-23):
+  /// the record's plan-name snapshot, or Freestyle — and back to null (the
+  /// live session's own name) the moment the peek is left.
+  void _publishPeekTitle() {
+    final peek = _peek;
+    if (!mounted || peek == null) return;
+    final title = peek.state.value.sessionTitle;
+    if (widget.peekTitle.value != title) widget.peekTitle.value = title;
+  }
+
+  /// The newest record's right arrow (or leaving the page): back onto the
+  /// live sets. Nothing about the live session changed while peeking.
+  void _exitPeek() {
+    final peek = _peek;
+    if (peek == null) return;
+    peek.state.removeListener(_publishPeekTitle);
+    setState(() => _peek = null);
+    widget.peekTitle.value = null;
+    peek.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
+    final peek = _peek;
+    if (peek == null || !vm.hasActiveWorkout) return _buildLive(context);
+    // The viewer's body, swapped for the live one — and swapped back as soon
+    // as the record is left. Until the record's first read lands there is
+    // nothing to draw, so the live sets simply stay (no spinner, no empty
+    // page: the same in-place rule the viewer's own steps follow).
+    return ValueListenableBuilder<SessionDetailState>(
+      valueListenable: peek.state,
+      builder: (context, state, _) {
+        if (state.session == null) return _buildLive(context);
+        return SessionHistoryPeek(
+          viewModel: peek,
+          state: state,
+          onExit: _exitPeek,
+        );
+      },
+    );
+  }
+
+  Widget _buildLive(BuildContext context) {
     // The Start Session button lives in the header (top right) while idle;
     // there is no bottom bar on this page.
     return vm.hasActiveWorkout ? _buildActive(context) : _buildIdle(context);
   }
 
-  /// Idle: template picker + read-only planned-set preview of the selection.
+  /// Idle: read-only planned-set preview of the selection; the template
+  /// picker is the header's title (2026-10-23).
   Widget _buildIdle(BuildContext context) {
     final finishedBlock = vm.finishedBlock;
     return ListView(
@@ -1195,13 +1595,8 @@ class _TrainingPage extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.md),
         ],
-        // Always shown while idle — with nothing selected it is the freestyle
-        // identity card (icon + sub-line), not an empty shell.
-        _SessionTemplateCard(
-          vm: vm,
-          onTap: () => _showWorkoutPickerSheet(context, vm),
-        ),
-        const SizedBox(height: AppSpacing.sm),
+        // The template selector is the header's title while idle (2026-10-23)
+        // — the page opens straight onto the preview.
         _SessionPreview(vm: vm),
       ],
     );
@@ -1211,25 +1606,63 @@ class _TrainingPage extends StatelessWidget {
   /// (PRS/LESSONS) sticks to the very bottom. The pinned lesson lives in
   /// the exercise card, right under the exercise.
   Widget _buildActive(BuildContext context) {
+    final exerciseMode = vm.dateBarMode == SessionDateMode.exercise;
+    final viewed = vm.viewedExerciseHistory;
     return Column(
       children: [
         Expanded(
           child: SingleChildScrollView(
+            // 16 top, not 12: the selector needs one more step of air under
+            // the header's hairline — the lab's own correction, carried over
+            // (2026-10-22).
             padding: const EdgeInsets.fromLTRB(
               AppSpacing.lg,
-              AppSpacing.md,
+              AppSpacing.lg,
               AppSpacing.lg,
               AppSpacing.lg,
             ),
-            child: vm.activeSlot == null
-                ? _PlaceholderExerciseCard(vm: vm)
-                // Key per exercise slot: switching tabs recreates the card
-                // state so an open history view doesn't carry over.
-                : LiveExerciseCard(
-                    key: ValueKey(vm.activeSlot!.id),
-                    vm: vm,
-                    slot: vm.activeSlot!,
-                    onRemoveExercise: onRemoveExercise,
+            child: vm.deletedViewSeId != null
+                // The deleted view (2026-10-14): the trash menu's row opened
+                // the exercise — red rows, the selector listing every deleted
+                // exercise by name (another is one tap away), and the Restore
+                // button below, which restores the one on screen. Looking is
+                // not writing.
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      DeletedExerciseCard(vm: vm),
+                      const SizedBox(height: AppSpacing.md),
+                      GlassButton(
+                        label: 'Restore',
+                        onPressed: vm.restoreViewedDeletedExercise,
+                      ),
+                    ],
+                  )
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      vm.activeSlot == null
+                          ? _PlaceholderExerciseCard(vm: vm)
+                          // Key per exercise slot: switching tabs recreates
+                          // the card state so an open history view doesn't
+                          // carry over.
+                          : LiveExerciseCard(
+                              key: ValueKey(vm.activeSlot!.id),
+                              vm: vm,
+                              slot: vm.activeSlot!,
+                              onRemoveExercise: widget.onRemoveExercise,
+                            ),
+                      // The way back for deleted sets: the card shows them
+                      // red in place, and this brings everything under the
+                      // exercise back (2026-10-14).
+                      if (vm.activeSlotHasDeletedSets) ...[
+                        const SizedBox(height: AppSpacing.md),
+                        GlassButton(
+                          label: 'Restore',
+                          onPressed: vm.restoreDeletedSetsForActiveExercise,
+                        ),
+                      ],
+                    ],
                   ),
           ),
         ),
@@ -1248,12 +1681,87 @@ class _TrainingPage extends StatelessWidget {
               top: BorderSide(color: AppColors.border, width: 0.5),
             ),
           ),
-          child: SessionStatsBar(vm: vm),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // The floor leads with the session's place in time — the same
+              // bar the past-session viewer draws, so the two surfaces are
+              // one page in two modes (2026-10-22). A session resumed the
+              // next day still says TODAY: it is the session being logged,
+              // which is the fact the phrase reports.
+              //
+              // The bar walks the session stack on both surfaces, and a
+              // step is **in place** on both (2026-10-22): today is the
+              // newest, so the right arrow is spent here; the left steps
+              // onto the newest completed record without leaving the page —
+              // the sets under this card swap to the record's, the viewer's
+              // own reading draws them, and the record's right arrow comes
+              // back to these sets. No route changes anywhere.
+              //
+              // EXERCISE is the live default (2026-10-23): the arrows walk
+              // the active exercise's own past performances and only the
+              // card's sets swap — the page, header and live session stay.
+              // SESSION is the record walk above, through the peek. The
+              // radios under the date are the switch between the two stacks.
+              SessionDateBar(
+                isToday: viewed == null,
+                date: viewed?.date ?? vm.workoutStartedAt ?? DateTime.now(),
+                mode: vm.dateBarMode,
+                onToggleMode: vm.toggleDateBarMode,
+                onOlder: exerciseMode
+                    ? (vm.canStepExerciseOlder
+                          ? () => unawaited(vm.stepExerciseHistory(1))
+                          : null)
+                    : (vm.previousSessionId == null ? null : _enterPeek),
+                onNewer: exerciseMode && vm.canStepExerciseNewer
+                    ? () => unawaited(vm.stepExerciseHistory(-1))
+                    : null,
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Row(
+                children: [
+                  UndoRedoButtons(
+                    // Greyed while the deleted view is up: the mode is a
+                    // reading, and an undo here would rewrite the very thing
+                    // being read (2026-10-14).
+                    canUndo: vm.canUndo && vm.deletedViewSeId == null,
+                    canRedo: vm.canRedo && vm.deletedViewSeId == null,
+                    onUndo: vm.undo,
+                    onRedo: vm.redo,
+                    // The trash menu: every deleted planned exercise, most
+                    // recently deleted first — a row opens it for reading, and
+                    // the Restore button under the card brings it back (the
+                    // view-then-restore flow, 2026-10-14).
+                    deletedExercises: [
+                      for (final e in vm.deletedPlannedExerciseEntries) e.name,
+                    ],
+                    onPickDeletedExercise: vm.viewDeletedPlannedExerciseAt,
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  // The ratings star (2026-10-23, was the pencil): the sheet
+                  // it opens is five feeling stars — the door wears the same
+                  // glyph it leads to, and a star shares no silhouette with
+                  // the trophy or the pin beside it. It keeps the tiles'
+                  // accent glass: a door to session content, not neutral
+                  // chrome like the undo/redo pair (the PR Lab's reading,
+                  // carried over).
+                  BarIconButton(
+                    key: const ValueKey('ratings-button'),
+                    icon: Icons.star_rounded,
+                    semanticsLabel: 'Session ratings',
+                    onPressed: widget.onOpenRatings,
+                    color: AppColors.accent,
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  Expanded(child: SessionStatsBar(vm: vm)),
+                ],
+              ),
+            ],
+          ),
         ),
       ],
     );
   }
-
 }
 
 /// Lets the user pick which session template to log — a standalone
@@ -1345,9 +1853,9 @@ Future<void> _showWorkoutPickerSheet(
               child: Text(
                 'Workouts',
                 style: AppFonts.mono(
-                  fontSize: 13,
-                  letterSpacing: 0.8,
-                  color: AppColors.muted,
+                  fontSize: AppTextStyles.caption,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.primary,
                 ),
               ),
             ),
@@ -1378,8 +1886,9 @@ Future<void> _showWorkoutPickerSheet(
                   child: Row(
                     children: [
                       Expanded(
-                        child: Text(
+                        child: UserNameText(
                           toProperCase(w.name),
+                          tooltip: true,
                           style: AppFonts.ui(
                             fontSize: AppTextStyles.md,
                             fontWeight: FontWeight.w600,
@@ -1407,9 +1916,9 @@ Future<void> _showWorkoutPickerSheet(
               child: Text(
                 'Program',
                 style: AppFonts.mono(
-                  fontSize: 13,
-                  letterSpacing: 0.8,
-                  color: AppColors.muted,
+                  fontSize: AppTextStyles.caption,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.primary,
                 ),
               ),
             ),
@@ -1440,8 +1949,9 @@ Future<void> _showWorkoutPickerSheet(
                   child: Row(
                     children: [
                       Expanded(
-                        child: Text(
+                        child: UserNameText(
                           toProperCase(w.name),
+                          tooltip: true,
                           style: AppFonts.ui(
                             fontSize: AppTextStyles.md,
                             fontWeight: FontWeight.w600,
@@ -1459,8 +1969,8 @@ Future<void> _showWorkoutPickerSheet(
           const SizedBox(height: AppSpacing.md),
         ],
       ),
-      ),
-    );
+    ),
+  );
 }
 
 /// "You've completed this training block" — shown on the idle training page
@@ -1506,7 +2016,7 @@ class _BlockCompleteBanner extends StatelessWidget {
                   '${toProperCase(blockName)} has run its length.',
                   style: AppFonts.ui(
                     fontSize: AppTextStyles.xs,
-                    color: AppColors.muted,
+                    color: AppColors.inkSecondary,
                   ),
                 ),
               ],
@@ -1569,6 +2079,9 @@ class _SessionPreviewState extends State<_SessionPreview> {
       // No onMove/onAdd — the preview is read-only (the shared card greys
       // the reorder arrows and the Add row).
       planned: true,
+      // The same flat card the live session wears once Start is pressed —
+      // the preview is that view, not a third style (2026-10-22).
+      flat: true,
       rows: _previewRows(vm, exerciseId),
       // No pills / history / ADD SET — all greyed or hidden via nulls.
     );
@@ -1651,6 +2164,7 @@ class _SessionPreviewState extends State<_SessionPreview> {
           ],
           activeIndex: 0,
           onSelect: (_) {},
+          flat: true,
           // Three empty neutral rows so the grid keeps its shape.
           rows: [
             for (var i = 0; i < 3; i++)
@@ -1680,7 +2194,6 @@ class _SessionPreviewState extends State<_SessionPreview> {
       ),
     );
   }
-
 }
 
 /// The training page's exercise-card placeholder shown before the first
@@ -1701,6 +2214,7 @@ class _PlaceholderExerciseCard extends StatelessWidget {
       activeIndex: 0,
       onSelect: (_) {},
       onAdd: () => showSessionExercisePicker(context, vm),
+      flat: true,
       rows: [
         Padding(
           padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
@@ -1709,7 +2223,8 @@ class _PlaceholderExerciseCard extends StatelessWidget {
             textAlign: TextAlign.center,
             style: AppFonts.ui(
               fontSize: AppTextStyles.sm,
-              color: AppColors.muted,
+              height: 1.4,
+              color: AppColors.inkSecondary,
             ),
           ),
         ),
@@ -1760,8 +2275,9 @@ class _SummaryPage extends StatelessWidget {
                   child: Text(
                     'Nothing to reflect on yet — finish a session here.',
                     style: TextStyle(
-                      color: AppColors.muted,
+                      color: AppColors.inkSecondary,
                       fontSize: AppTextStyles.sm,
+                      height: 1.4,
                     ),
                   ),
                 ),
@@ -1856,7 +2372,8 @@ class _PostQuestionnairePageState extends State<_PostQuestionnairePage> {
                           alignment: Alignment.centerRight,
                           child: GestureDetector(
                             onTap: () => setState(
-                              () => _showPreviousSession = !_showPreviousSession,
+                              () =>
+                                  _showPreviousSession = !_showPreviousSession,
                             ),
                             child: Container(
                               padding: const EdgeInsets.symmetric(
@@ -1919,9 +2436,10 @@ class _PostQuestionnairePageState extends State<_PostQuestionnairePage> {
               Text(
                 'FROM LAST SESSION',
                 style: AppFonts.mono(
-                  fontSize: 14,
+                  fontSize: AppTextStyles.xs,
+                  fontWeight: FontWeight.w600,
                   letterSpacing: 0.8,
-                  color: AppColors.muted,
+                  color: AppColors.primary,
                 ),
               ),
             ],
@@ -1949,4 +2467,3 @@ class _PostQuestionnairePageState extends State<_PostQuestionnairePage> {
     );
   }
 }
-

@@ -46,10 +46,12 @@ class _ArchivedSheetState extends State<ArchivedSheet> {
   @override
   void initState() {
     super.initState();
-    _searchController.addListener(() => setState(() {
-      _query = _searchController.text;
-      _page = 0;
-    }));
+    _searchController.addListener(
+      () => setState(() {
+        _query = _searchController.text;
+        _page = 0;
+      }),
+    );
     _load();
   }
 
@@ -73,9 +75,7 @@ class _ArchivedSheetState extends State<ArchivedSheet> {
   List<({String id, String name})> get _filtered => _query.isEmpty
       ? _items
       : _items
-            .where(
-              (i) => i.name.toLowerCase().contains(_query.toLowerCase()),
-            )
+            .where((i) => i.name.toLowerCase().contains(_query.toLowerCase()))
             .toList();
 
   List<({String id, String name})> get _paged {
@@ -120,7 +120,8 @@ class _ArchivedSheetState extends State<ArchivedSheet> {
                 widget.emptyText,
                 style: AppFonts.ui(
                   fontSize: AppTextStyles.sm,
-                  color: AppColors.muted,
+                  height: 1.4,
+                  color: AppColors.inkSecondary,
                 ),
               )
             else ...[
@@ -195,8 +196,8 @@ class _ArchivedSheetState extends State<ArchivedSheet> {
                         // Cumulative: everything shown up to this page.
                         '${((_page + 1) * _pageSize).clamp(0, _filtered.length)} of ${_filtered.length}',
                         style: AppFonts.mono(
-                          fontSize: 13,
-                          color: AppColors.muted,
+                          fontSize: AppTextStyles.caption,
+                          color: AppColors.inkSecondary,
                         ),
                       ),
                       const SizedBox(width: AppSpacing.md),

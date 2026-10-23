@@ -4,9 +4,11 @@ import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_fonts.dart';
 import '../../core/styles/app_radius.dart';
 import '../../core/styles/app_spacing.dart';
+import '../../core/styles/app_text_styles.dart';
 import './container_styles.dart';
 import '../../data/models/session_exercise_set.dart';
 import '../../features/session/model/session_local_state.dart';
+import '../../features/session/view/pinned_note_popup.dart';
 import 'card_pill_button.dart';
 import 'exercise_selector.dart';
 import 'lambda_input.dart';
@@ -22,13 +24,16 @@ class PinnedLessonData {
 }
 
 /// The review-note box's label inside a pass — the box IS the note, and the
-/// header names it.
-const String kReviewNoteLabel = 'Exercise Review Note';
+/// header names it. "Review Note", not "Exercise Review Note": the card
+/// already carries the exercise's *own* note in the pinned bar above the
+/// sets, and two exercise-note things on one card read as one thing
+/// (2026-10-23, the lesson → exercise-notes rename).
+const String kReviewNoteLabel = 'Review Note';
 
 /// The same box while the record is up: the note shown is the record's, not
 /// the pass's, and the label has to say so — a note read under the pass's own
 /// header would be taken for the one being written.
-const String kPreviousReviewNoteLabel = 'Exercise Review Note (Previous)';
+const String kPreviousReviewNoteLabel = 'Review Note (Previous)';
 
 /// What the record's box reads when its review left no note for the exercise.
 /// The box still holds its place — Compare flips values, never furniture, and
@@ -58,6 +63,7 @@ class SessionExerciseCard extends StatefulWidget {
     required this.activeIndex,
     required this.onSelect,
     this.exerciseMarks = const [],
+    this.deletedExercises = const [],
     this.onMove,
     this.onAdd,
     // ── Pinned lesson (sits between the selector and the pills) ──
@@ -75,6 +81,7 @@ class SessionExerciseCard extends StatefulWidget {
     this.reviewNoteEmptyText,
     // ── Card chrome ──
     this.planned = false,
+    this.flat = false,
     // ── Sets grid ──
     required this.rows,
     this.onAddSet,
@@ -83,6 +90,7 @@ class SessionExerciseCard extends StatefulWidget {
     // ── History view — a null list means no history: pill greyed, no
     // picker/banner ──
     this.history,
+    this.historySelection,
     this.historyRowBuilder,
     this.onHistorySessionSelected,
     this.isPrSet,
@@ -94,9 +102,14 @@ class SessionExerciseCard extends StatefulWidget {
   final void Function(int index) onSelect;
 
   /// One mark per name, parallel to [exerciseNames] — a review's green plus or
-  /// red minus where its two sides disagree about an exercise (see
-  /// [ExerciseMark]). Empty everywhere else.
+  /// red minus where its two sides disagree about an exercise, or the live
+  /// session's plan-diff (see [ExerciseMark]). Empty everywhere else.
   final List<ExerciseMark?> exerciseMarks;
+
+  /// One flag per name, parallel to [exerciseNames]: the past-session
+  /// viewer's deleted exercises, drawn red (2026-10-14). Empty everywhere
+  /// else.
+  final List<bool> deletedExercises;
 
   /// Reorder: null greys the popover's arrows.
   final void Function(int index, int direction)? onMove;
@@ -112,6 +125,10 @@ class SessionExerciseCard extends StatefulWidget {
   final int lessonsCount;
   final VoidCallback? onLessonsTap;
 
+  /// The PRs the session on screen ADDED — never the all-time count. The
+  /// pill quotes the same number with a `+` in front ("+3 PRs"), because a
+  /// session is a contribution to the history, not the history itself
+  /// (2026-10-21).
   final int prCount;
 
   /// Null greys the PRs pill (the live session's placeholder state).
@@ -151,9 +168,21 @@ class SessionExerciseCard extends StatefulWidget {
   /// by the editable box, which is already shown empty as the way in.
   final String? reviewNoteEmptyText;
 
-  /// Planned outline on the outer card (live slot.planned / logs
-  /// parentSessionId).
+  /// The exercise comes from a plan (live slot.planned / logs
+  /// parentSessionId). Since 2026-10-23 the card draws **no** planned rim:
+  /// the blue lives on the selector field and the plan-linked set rows, so a
+  /// plan is legible on the values rather than around the whole card.
   final bool planned;
+
+  /// Draws the card FLAT — the Training view's reading since 2026-10-22:
+  /// no fill, no inner boxes, no border, one 6pt inset so the selector's
+  /// arrows, the set rows and the add row all land on the page's 22pt
+  /// gutter. A deleted exercise draws no rim either (2026-10-23): the
+  /// deletion reads off its red selector name and red rows. The live
+  /// session and the past-session viewer pass `true`; the planner and the
+  /// review-record screens keep the boxed card, which is a different
+  /// surface, not a third style.
+  final bool flat;
 
   /// The screen-built list of [SessionSetRow]s (keys live inside).
   final List<Widget> rows;
@@ -178,6 +207,13 @@ class SessionExerciseCard extends StatefulWidget {
   final void Function(int oldIndex, int newIndex)? onReorderSets;
 
   final List<ExerciseHistorySession>? history;
+
+  /// A history performance selected from OUTSIDE the card — the date bar's
+  /// EXERCISE mode (2026-10-23), which swaps the sets under a flat card
+  /// that has no pills row to open the picker with. Null leaves the card's
+  /// own pill/picker selection in charge; a non-null value always wins, so
+  /// the bar's position and the sets on screen can never disagree.
+  final ExerciseHistorySession? historySelection;
 
   /// Builds one history-detail row for [PastSetRow] (per-screen wiring —
   /// the live screen's edit-gated row vs the logs' read-only row).
@@ -204,16 +240,59 @@ class _SessionExerciseCardState extends State<SessionExerciseCard> {
 
   @override
   Widget build(BuildContext context) {
-    final viewingHistory = _viewingSession != null;
+    // An external selection (the date bar's walk) outranks the card's own
+    // picker — the stage that owns the bar decides what the sets show.
+    final viewed = widget.historySelection ?? _viewingSession;
+    final viewingHistory = viewed != null;
+
+    // The card's head — selector, pinned lesson, pills — built once so the
+    // boxed and the flat card wear the same one.
+    //
+    // The pills row is the BOXED card's door row only. The session look has
+    // no row under the selector (2026-10-22): its doors are on the floor —
+    // PRs behind the trophy, exercise notes behind the note glyph — and the
+    // lab, which the flat card mirrors, draws the selector straight down to
+    // the grid.
+    final head = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ExerciseSelector(
+          exercises: widget.exerciseNames,
+          activeIndex: widget.activeIndex,
+          onSelect: widget.onSelect,
+          onMove: widget.onMove,
+          onAdd: widget.onAdd,
+          marks: widget.exerciseMarks,
+          deleted: widget.deletedExercises,
+          planned: widget.planned,
+        ),
+        // The pinned lesson sits right under the exercise — stays visible
+        // while viewing history too.
+        if (widget.pinnedLesson != null) ...[
+          const SizedBox(height: 6),
+          _pinnedLessonBar(widget.pinnedLesson!),
+        ],
+        if (!widget.flat) ...[
+          const SizedBox(height: 6),
+          _pillsRow(viewingHistory),
+        ],
+      ],
+    );
+
+    if (widget.flat) return _flatCard(head, viewed);
+
     return Container(
+      // The same key as the flat card's container: exactly one of the two
+      // is ever built, and the chrome tests find the card by this one name
+      // whichever reading is up (2026-10-22).
+      key: const ValueKey('session-exercise-card'),
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(AppRadius.lg),
-        border: Border.all(
-          color: widget.planned
-              ? AppColors.planned.withValues(alpha: 0.35)
-              : AppColors.border,
-        ),
+        // The card draws no state rims (2026-10-23): planned's blue is the
+        // selector field and the set rows, and a deleted exercise reads off
+        // its red selector and rows — the furniture never carries a state.
+        border: Border.all(color: AppColors.border),
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
@@ -227,81 +306,7 @@ class _SessionExerciseCardState extends State<SessionExerciseCard> {
             clipBehavior: Clip.antiAlias,
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  ExerciseSelector(
-                    exercises: widget.exerciseNames,
-                    activeIndex: widget.activeIndex,
-                    onSelect: widget.onSelect,
-                    onMove: widget.onMove,
-                    onAdd: widget.onAdd,
-                    marks: widget.exerciseMarks,
-                  ),
-                  const SizedBox(height: 6),
-                  // The pinned lesson sits right under the exercise, just
-                  // before the buttons — stays visible while viewing
-                  // history too.
-                  if (widget.pinnedLesson != null) ...[
-                    _pinnedLessonBar(widget.pinnedLesson!),
-                    const SizedBox(height: 6),
-                  ],
-                  // Lessons / History / PRs row — each button expands to
-                  // share the available width. Null callbacks grey them.
-                  Row(
-                    children: [
-                      Expanded(
-                        child: CardPillButton(
-                          icon: Icons.menu_book_outlined,
-                          label: widget.lessonsCount > 0
-                              ? '${widget.lessonsCount} Lessons'
-                              : 'Lessons',
-                          active: widget.lessonsCount > 0,
-                          enabled: widget.onLessonsTap != null,
-                          onTap: widget.onLessonsTap,
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: CardPillButton(
-                          icon: Icons.history,
-                          label: 'History',
-                          active: viewingHistory,
-                          enabled: widget.history != null &&
-                              widget.history!.isNotEmpty,
-                          onTap: widget.history == null ||
-                                  widget.history!.isEmpty
-                              ? null
-                              : () {
-                                  if (viewingHistory) {
-                                    _exitHistory();
-                                  } else {
-                                    _openHistorySheet(
-                                      widget.history ?? const [],
-                                    );
-                                  }
-                                },
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      // PR = accent everywhere; null onPrTap renders the
-                      // greyed placeholder state.
-                      Expanded(
-                        child: CardPillButton(
-                          icon: Icons.emoji_events_outlined,
-                          label: widget.prCount > 0
-                              ? '${widget.prCount} PRs'
-                              : 'PRs',
-                          active: widget.prCount > 0,
-                          color: AppColors.accent,
-                          enabled: widget.onPrTap != null,
-                          onTap: widget.onPrTap,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+              child: head,
             ),
           ),
           // Bottom card: the sets grid — a separate card with a gap above it.
@@ -319,7 +324,7 @@ class _SessionExerciseCardState extends State<SessionExerciseCard> {
                   // sits above when open).
                   padding: const EdgeInsets.fromLTRB(10, 10, 10, 12),
                   child: viewingHistory
-                      ? _historyDetail(_viewingSession!)
+                      ? _historyDetail(viewed)
                       : _setsGrid(),
                 ),
               ],
@@ -339,46 +344,153 @@ class _SessionExerciseCardState extends State<SessionExerciseCard> {
     );
   }
 
+  /// The flat card (2026-10-22): the page ground shows straight through —
+  /// no fill, no inner boxes, and no border at all (2026-10-23). Planned's
+  /// blue is the selector field and the set rows; a deleted exercise reads
+  /// off its red selector and rows. The furniture carries no state.
+  ///
+  /// The card's one inset is the 6pt padding below. The page already
+  /// contributes its gutter, so every child's edge — the selector's arrows,
+  /// the set rows, the add row — lands on the same 22pt line, and nothing
+  /// inside adds another.
+  Widget _flatCard(Widget head, ExerciseHistorySession? viewed) {
+    final viewingHistory = viewed != null;
+    return Container(
+      key: const ValueKey('session-exercise-card'),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            head,
+            // The head breathes: 16 between the pills and the column labels,
+            // so the grid does not start a hair under the selector.
+            const SizedBox(height: AppSpacing.lg),
+            viewingHistory ? _historyDetail(viewed) : _setsGrid(),
+            // The review's note on this exercise — a FOOTER, not a header.
+            // The slot under the selector belongs to the pinned lesson (how
+            // to do the lift); a note about how it went is about the work,
+            // and reads after the sets it is about.
+            if (_showsReviewNote) ...[
+              const SizedBox(height: AppSpacing.md),
+              _reviewNoteBox(),
+            ],
+            const SizedBox(height: AppSpacing.md),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Notes / History / PRs row — each button expands to share the
+  /// available width. Null callbacks grey them. The notes pill says "Notes"
+  /// because the card IS the exercise its row sits under; the modal it opens
+  /// and the summary tile carry the full "Exercise Notes" (2026-10-23).
+  Widget _pillsRow(bool viewingHistory) {
+    return Row(
+      children: [
+        Expanded(
+          child: CardPillButton(
+            icon: Icons.sticky_note_2_outlined,
+            label: widget.lessonsCount > 0
+                ? '${widget.lessonsCount} Notes'
+                : 'Notes',
+            active: widget.lessonsCount > 0,
+            enabled: widget.onLessonsTap != null,
+            onTap: widget.onLessonsTap,
+          ),
+        ),
+        const SizedBox(width: 6),
+        Expanded(
+          child: CardPillButton(
+            icon: Icons.history,
+            label: 'History',
+            active: viewingHistory,
+            enabled: widget.history != null && widget.history!.isNotEmpty,
+            onTap: widget.history == null || widget.history!.isEmpty
+                ? null
+                : () {
+                    if (viewingHistory) {
+                      _exitHistory();
+                    } else {
+                      _openHistorySheet(widget.history ?? const []);
+                    }
+                  },
+          ),
+        ),
+        const SizedBox(width: 6),
+        // PR = accent everywhere; null onPrTap renders the greyed
+        // placeholder state. The count is the session's own additions,
+        // written as a gain ("+3 PRs") — the all-time total belongs to the
+        // sheet it opens, not to a card that is about this workout
+        // (2026-10-21).
+        Expanded(
+          child: CardPillButton(
+            icon: Icons.emoji_events_outlined,
+            label: widget.prCount > 0
+                ? '+${widget.prCount} '
+                      '${widget.prCount == 1 ? 'PR' : 'PRs'}'
+                : 'PRs',
+            active: widget.prCount > 0,
+            color: AppColors.accent,
+            enabled: widget.onPrTap != null,
+            onTap: widget.onPrTap,
+          ),
+        ),
+      ],
+    );
+  }
+
   /// The pinned lesson bar, right under the exercise — recessed (bg fill)
-  /// against the header's surfaceHigh container.
+  /// against the header's surfaceHigh container. Just the note glyph and the
+  /// words: the lesson names itself by being a pinned cue, so no eyebrow and
+  /// no date (2026-10-23 — the bar is a reminder, not a record).
+  ///
+  /// The bar holds one line; tapping it opens the reader popup with the
+  /// complete message, and the popup's `View all exercise notes` is the way
+  /// on to the notes sheet (2026-10-23). The glyph is the set row's own —
+  /// one note icon everywhere.
   Widget _pinnedLessonBar(PinnedLessonData lesson) {
     final bar = Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-      decoration: lambdaBox(
-        ContainerTone.bg,
-        radius: AppRadius.md,
-      ),
+      decoration: lambdaBox(ContainerTone.bg, radius: AppRadius.md),
       child: Row(
         children: [
-          Icon(Icons.push_pin, size: 10, color: AppColors.primary),
-          const SizedBox(width: 4),
-          Text(
-            'LESSON',
-            style: AppFonts.mono(
-              fontSize: 13,
-              letterSpacing: 0.8,
-              color: AppColors.primary,
-            ),
-          ),
-          const SizedBox(width: 8),
+          Icon(Icons.sticky_note_2_outlined, size: 12, color: AppColors.primary),
+          const SizedBox(width: 6),
           Expanded(
             child: Text(
               lesson.text,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: AppFonts.ui(fontSize: 13, color: AppColors.muted),
+              style: AppFonts.ui(
+                fontSize: AppTextStyles.caption,
+                color: AppColors.inkSecondary,
+              ),
             ),
-          ),
-          Text(
-            DateFormat('MMM d').format(lesson.date),
-            style: AppFonts.mono(fontSize: 13, color: AppColors.muted),
           ),
         ],
       ),
     );
-    final onTap = widget.onPinnedLessonTap;
-    if (onTap == null) return bar;
-    return GestureDetector(onTap: onTap, child: bar);
+    return GestureDetector(onTap: _openPinnedNote, child: bar);
+  }
+
+  /// Reads the pinned note whole, then — only when that door was chosen —
+  /// hands over to the caller's notes sheet.
+  Future<void> _openPinnedNote() async {
+    final lesson = widget.pinnedLesson;
+    if (lesson == null) return;
+    final viewAll = await showPinnedNotePopup(
+      context,
+      text: lesson.text,
+      canViewAll: widget.onPinnedLessonTap != null,
+    );
+    if (!mounted || !viewAll) return;
+    widget.onPinnedLessonTap?.call();
   }
 
   /// The review's note for this exercise.
@@ -497,7 +609,7 @@ class _SessionExerciseCardState extends State<SessionExerciseCard> {
                       fontSize: 13,
                       fontWeight: FontWeight.w700,
                       letterSpacing: 0.5,
-                      color: AppColors.muted,
+                      color: AppColors.primary,
                     ),
                   ),
                 ),
@@ -539,20 +651,25 @@ class _SessionExerciseCardState extends State<SessionExerciseCard> {
     );
   }
 
-  /// The REPS/KG/VARIATION column labels shared by the sets grid and the
+  /// The KG/REPS/VARIATION column labels shared by the sets grid and the
   /// history viewer — the history rows are [SessionSetRow]s too, so the
-  /// columns must line up exactly. The note button carries no header — the
+  /// columns must line up exactly. Weight first, then reps, wherever the pair
+  /// is read (2026-10-22). The note button carries no header — the
   /// sticky-note icon is self-explanatory.
   Widget _gridHeaders() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8),
       child: Row(
+        // The labels' own left edge — 8 in from the card's 22pt gutter, so
+        // they sit over the rows' number cells. Keyed for the geometry
+        // tests that hold the gutter in place (2026-10-22).
+        key: const ValueKey('session-grid-headers'),
         children: [
           const SizedBox(width: 26),
           const SizedBox(width: 6),
-          Expanded(child: _colLabel('REPS')),
-          const SizedBox(width: 6),
           Expanded(child: _colLabel('KG')),
+          const SizedBox(width: 6),
+          Expanded(child: _colLabel('REPS')),
           const SizedBox(width: 6),
           Expanded(flex: 2, child: _colLabel('VARIATION')),
         ],
@@ -565,8 +682,9 @@ class _SessionExerciseCardState extends State<SessionExerciseCard> {
     textAlign: TextAlign.center,
     style: AppFonts.mono(
       fontSize: 14,
+      fontWeight: FontWeight.w600,
       letterSpacing: 0.6,
-      color: AppColors.muted,
+      color: AppColors.primary,
     ),
   );
 }
@@ -672,9 +790,10 @@ class _HistorySheet extends StatelessWidget {
               child: Text(
                 'PAST SESSIONS',
                 style: AppFonts.mono(
-                  fontSize: 11,
+                  fontSize: AppTextStyles.xs,
+                  fontWeight: FontWeight.w600,
                   letterSpacing: 0.8,
-                  color: AppColors.muted,
+                  color: AppColors.primary,
                 ),
               ),
             ),
@@ -700,9 +819,7 @@ class _HistorySheet extends StatelessWidget {
     final isSelected = identical(session, selected);
     final prCount = isPrSet == null
         ? 0
-        : session.sets
-              .where((s) => isPrSet!(s.sessionExerciseSetId))
-              .length;
+        : session.sets.where((s) => isPrSet!(s.sessionExerciseSetId)).length;
     return GestureDetector(
       onTap: () {
         Navigator.of(context, rootNavigator: true).pop();
@@ -740,8 +857,8 @@ class _HistorySheet extends StatelessWidget {
                   Text(
                     '${session.sets.length} sets',
                     style: AppFonts.mono(
-                      fontSize: 13,
-                      color: AppColors.muted,
+                      fontSize: AppTextStyles.caption,
+                      color: AppColors.inkSecondary,
                     ),
                   ),
                 ],
@@ -754,7 +871,7 @@ class _HistorySheet extends StatelessWidget {
               style: AppFonts.mono(
                 fontSize: 14,
                 fontWeight: prCount > 0 ? FontWeight.w700 : FontWeight.w500,
-                color: prCount > 0 ? AppColors.accent : AppColors.muted,
+                color: prCount > 0 ? AppColors.accent : AppColors.inkSecondary,
               ),
             ),
           ],

@@ -23,18 +23,21 @@ void main() {
     expect(find.text('Session 3'), findsOneWidget);
   });
 
-  testWidgets('no badge, no dragIndex → no chrome for them',
-      (tester) async {
+  testWidgets('no badge, no dragIndex → no chrome for them', (tester) async {
     await tester.pumpWidget(_host(ProgramWorkoutRow(workout: _workout())));
 
     expect(find.text('Session 1'), findsNothing);
     expect(find.byIcon(Icons.drag_handle), findsNothing);
-    expect(find.byType(SwipeActions), findsNothing,
-        reason: 'no actions means no drawer, not an empty one');
+    expect(
+      find.byType(SwipeActions),
+      findsNothing,
+      reason: 'no actions means no drawer, not an empty one',
+    );
   });
 
-  testWidgets('a dragIndex adds the handle; actions add the drawer',
-      (tester) async {
+  testWidgets('a dragIndex adds the handle; actions add the drawer', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       _host(
         ProgramWorkoutRow(
@@ -43,8 +46,9 @@ void main() {
           swipeActions: [
             SwipeAction(
               icon: Icons.copy_rounded,
-              
+
               color: Colors.blue,
+              foreground: Colors.white,
               onTap: () {},
             ),
           ],
@@ -76,9 +80,4 @@ void main() {
 Widget _host(Widget child) => MaterialApp(home: Scaffold(body: child));
 
 PlannedSession _workout({String name = 'Bench Day', String? notes}) =>
-    PlannedSession(
-      sessionId: 'w1',
-      userId: 'u1',
-      name: name,
-      notes: notes,
-    );
+    PlannedSession(sessionId: 'w1', userId: 'u1', name: name, notes: notes);

@@ -52,8 +52,45 @@ columns (schema v2, from migrations):
 `dim_planned_session_exercise_set→planned_set_id`,
 `dim_planned_session_program→planned_session_program_id`,
 `fact_goal→goal_id`,
-`coaching_relationship→(coach_user_id,athlete_user_id)` (composite — the
-only table with no server-side `id`).
+`dim_pr_view_setting→pr_view_setting_id`,
+`dim_friend_code→user_id`,
+`coaching_relationship→(coach_user_id,athlete_user_id)` and
+`friend_relationship→(user_id,friend_user_id)` (composite — the two tables
+with no server-side `id`).
+
+## The friends stream: the query is the privacy boundary (2026-10-23)
+
+There are now **two** auto-subscribed streams. `user_data` carries the user's
+own rows; `friends_data` (in `powersync/sync-streams.yaml`) carries each
+mutual friend's history. Streams bypass RLS, so that YAML's queries — not the
+policies — decide what a device may hold.
+
+- **Mutual by construction.** A `with:` CTE `my_friends` selects
+  `friend_relationship` rows where `user_id = auth.user_id()` **and** the
+  reverse row exists. Friendship is two directed rows; a one-way row matches
+  nothing.
+- **Completed records only.** `fact_session` is filtered
+  `end_datetime IS NOT NULL` — a friend's live session is never sent. The
+  child tables filter on `user_id IN my_friends`, not on session id: that is
+  one bucket per friend instead of one per session (thousands for a long
+  history). A mid-session friend's child rows can therefore download
+  parentless; no surface can name or open them because the parent row is
+  withheld.
+- **Names only.** The friend's `dim_user` slice selects `user_id,
+  user_name, user_lastname` — never height, weight, gender, DOB or code.
+- **The code streams to its owner only.** `dim_friend_code WHERE user_id =
+  auth.user_id()`.
+
+**The own-row-only mirror rule.** `FriendRepository.addByCode` calls the
+SECURITY DEFINER RPC and then mirrors ONLY the caller's own directed row,
+under the synthetic id `'<userId>-<friendId>'` (the stream synthesizes the
+same id). Never mirror the reciprocal row and never a friend's `dim_user`
+row: those are writes the caller's RLS rejects, and 42501 is fatal — the op
+is quarantined in `upload_failures` and the write silently never lands.
+`friend_relationship` is in `_compositeKeyTables`, so the uploader upserts on
+the pair; the mirror's PUT after the RPC is a no-op against the row the RPC
+already wrote. A removal's queued DELETE is harmless: the local own row is
+deleted first, so the uploader finds no pair and skips the op.
 
 ## Migration history hygiene
 

@@ -25,16 +25,15 @@ ProgramRun run(
   String? blockId,
   bool isCurrent = false,
   DateTime? endedDate,
-}) =>
-    ProgramRun(
-      programRunId: id,
-      programId: 'p1',
-      userId: 'u1',
-      startedDate: DateTime(2026, 2, 1),
-      isCurrent: isCurrent,
-      endedDate: endedDate,
-      blockId: blockId,
-    );
+}) => ProgramRun(
+  programRunId: id,
+  programId: 'p1',
+  userId: 'u1',
+  startedDate: DateTime(2026, 2, 1),
+  isCurrent: isCurrent,
+  endedDate: endedDate,
+  blockId: blockId,
+);
 
 void main() {
   group('pending is the first block not yet ended', () {
@@ -143,28 +142,33 @@ void main() {
       expect(seq.canBegin('b'), isTrue);
     });
 
-    test('nothing may be begun while a run is open, not even the next block',
-        () {
-      // Mid-phase the affordance is Resume, and beginning over it is Restart:
-      // a different act with a different record.
-      final seq = BlockSequence(
-        blocks: [block('a'), block('b')],
-        runs: [run('r1', blockId: 'a', isCurrent: true)],
-      );
-      expect(seq.canBegin('a'), isFalse);
-      expect(seq.canBegin('b'), isFalse);
-      expect(seq.hasOpenRun, isTrue);
-    });
+    test(
+      'nothing may be begun while a run is open, not even the next block',
+      () {
+        // Mid-phase the affordance is Resume, and beginning over it is Restart:
+        // a different act with a different record.
+        final seq = BlockSequence(
+          blocks: [block('a'), block('b')],
+          runs: [run('r1', blockId: 'a', isCurrent: true)],
+        );
+        expect(seq.canBegin('a'), isFalse);
+        expect(seq.canBegin('b'), isFalse);
+        expect(seq.hasOpenRun, isTrue);
+      },
+    );
 
-    test('a paused run holds the sequence exactly where a current one does', () {
-      final seq = BlockSequence(
-        blocks: [block('a'), block('b')],
-        runs: [run('r1', blockId: 'a')],
-      );
-      expect(seq.hasOpenRun, isTrue);
-      expect(seq.canBegin('b'), isFalse);
-      expect(seq.nextBlock?.blockId, 'a');
-    });
+    test(
+      'a paused run holds the sequence exactly where a current one does',
+      () {
+        final seq = BlockSequence(
+          blocks: [block('a'), block('b')],
+          runs: [run('r1', blockId: 'a')],
+        );
+        expect(seq.hasOpenRun, isTrue);
+        expect(seq.canBegin('b'), isFalse);
+        expect(seq.nextBlock?.blockId, 'a');
+      },
+    );
 
     test('an unknown block id can never be begun', () {
       final seq = BlockSequence(blocks: [block('a')], runs: []);

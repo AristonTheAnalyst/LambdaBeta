@@ -33,32 +33,46 @@ class UpdateNudgeBanner extends StatelessWidget {
       bottom: false,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(
-            AppSpacing.md, AppSpacing.sm, AppSpacing.md, 0),
+          AppSpacing.md,
+          AppSpacing.sm,
+          AppSpacing.md,
+          0,
+        ),
         child: Material(
           color: Colors.transparent,
           child: Container(
             padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+              horizontal: AppSpacing.md,
+              vertical: AppSpacing.sm,
+            ),
             decoration: lambdaBox(ContainerTone.ghost, radius: AppRadius.md),
             child: Row(
               children: [
-                Icon(Icons.system_update_alt,
-                    size: 18, color: AppColors.accent),
+                Icon(
+                  Icons.system_update_alt,
+                  size: 18,
+                  color: AppColors.accent,
+                ),
                 const SizedBox(width: AppSpacing.sm),
                 Expanded(
                   child: Text(
                     'A new version is available.',
                     style: TextStyle(
-                        fontSize: AppTextStyles.sm, color: AppColors.primary),
+                      fontSize: AppTextStyles.sm,
+                      color: AppColors.primary,
+                    ),
                   ),
                 ),
                 GestureDetector(
                   onTap: _openStore,
-                  child: Text('Update',
-                      style: TextStyle(
-                          fontSize: AppTextStyles.sm,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.accent)),
+                  child: Text(
+                    'Update',
+                    style: TextStyle(
+                      fontSize: AppTextStyles.sm,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.accent,
+                    ),
+                  ),
                 ),
                 const SizedBox(width: AppSpacing.sm),
                 GestureDetector(

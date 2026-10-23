@@ -7,6 +7,7 @@ import '../../../core/utils/session_format.dart';
 import '../../../data/models/planned_session.dart';
 import '../../../shared/widgets/app_card.dart';
 import '../../../shared/widgets/swipe_actions.dart';
+import '../../../shared/widgets/user_name_text.dart';
 
 /// One workout inside a program, as a card: name, notes, an optional badge,
 /// and — when [dragIndex] is given — a drag handle for the reorderable list it
@@ -54,8 +55,13 @@ class ProgramWorkoutRow extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                // The workout's name is the user's: one line, ellipsized,
+                // full text on long-press — the notes under it already hold
+                // their line, and a name that wraps moves the badge beside
+                // it (2026-10-20).
+                UserNameText(
                   toProperCase(workout.name),
+                  tooltip: true,
                   style: AppFonts.ui(
                     fontSize: AppTextStyles.md,
                     fontWeight: FontWeight.w600,
@@ -67,7 +73,7 @@ class ProgramWorkoutRow extends StatelessWidget {
                     workout.notes!,
                     style: AppFonts.ui(
                       fontSize: AppTextStyles.xs,
-                      color: AppColors.muted,
+                      color: AppColors.inkSecondary,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -96,11 +102,7 @@ class ProgramWorkoutRow extends StatelessWidget {
           if (dragIndex != null)
             ReorderableDragStartListener(
               index: dragIndex!,
-              child: Icon(
-                Icons.drag_handle,
-                size: 18,
-                color: AppColors.muted,
-              ),
+              child: Icon(Icons.drag_handle, size: 18, color: AppColors.muted),
             ),
         ],
       ),

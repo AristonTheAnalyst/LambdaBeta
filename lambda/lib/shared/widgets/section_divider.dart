@@ -24,7 +24,7 @@ class SectionDivider extends StatelessWidget {
           style: AppFonts.mono(
             fontSize: AppTextStyles.sm,
             fontWeight: FontWeight.w700,
-            letterSpacing: 1.2,
+            letterSpacing: 0.8,
             color: AppColors.primary,
           ),
         ),

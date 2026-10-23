@@ -50,8 +50,12 @@ class LessonRepository {
     return byExercise;
   }
 
-  Future<Lesson> createLesson(String userId, String exerciseId, String text,
-      {String? sessionId}) async {
+  Future<Lesson> createLesson(
+    String userId,
+    String exerciseId,
+    String text, {
+    String? sessionId,
+  }) async {
     final id = _uuid.v4();
     final createdDate = DateTime.now().toUtc();
     await _db.execute(
@@ -60,9 +64,21 @@ class LessonRepository {
         (id, lesson_id, user_id, custom_exercise_id, lesson_text, pinned, is_archived, lesson_created_date, session_id)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       ''',
-      [id, id, userId, exerciseId, text, 0, 0, createdDate.toIso8601String(), sessionId],
+      [
+        id,
+        id,
+        userId,
+        exerciseId,
+        text,
+        0,
+        0,
+        createdDate.toIso8601String(),
+        sessionId,
+      ],
     );
-    _log.info('createLesson → id=$id exercise=$exerciseId countAfter=${(await fetchLessons(userId, exerciseId)).length}');
+    _log.info(
+      'createLesson → id=$id exercise=$exerciseId countAfter=${(await fetchLessons(userId, exerciseId)).length}',
+    );
     return Lesson(
       lessonId: id,
       userId: userId,
@@ -76,18 +92,28 @@ class LessonRepository {
 
   /// Updates a lesson's text.
   Future<void> updateLesson(
-      String userId, String exerciseId, String lessonId, String text) async {
+    String userId,
+    String exerciseId,
+    String lessonId,
+    String text,
+  ) async {
     await _db.execute(
       'UPDATE dim_lesson SET lesson_text = ? WHERE lesson_id = ?',
       [text, lessonId],
     );
-    _log.info('updateLesson → id=$lessonId countAfter=${(await fetchLessons(userId, exerciseId)).length}');
+    _log.info(
+      'updateLesson → id=$lessonId countAfter=${(await fetchLessons(userId, exerciseId)).length}',
+    );
   }
 
   /// Sets a lesson's pinned state. Pinning is exclusive per exercise — at most
   /// one lesson can be pinned at a time, so pinning one clears the others.
   Future<void> setPinned(
-      String userId, String exerciseId, String lessonId, bool pinned) async {
+    String userId,
+    String exerciseId,
+    String lessonId,
+    bool pinned,
+  ) async {
     if (pinned) {
       await _db.execute(
         '''
@@ -97,11 +123,13 @@ class LessonRepository {
         [userId, exerciseId],
       );
     }
-    await _db.execute(
-      'UPDATE dim_lesson SET pinned = ? WHERE lesson_id = ?',
-      [pinned ? 1 : 0, lessonId],
+    await _db.execute('UPDATE dim_lesson SET pinned = ? WHERE lesson_id = ?', [
+      pinned ? 1 : 0,
+      lessonId,
+    ]);
+    _log.info(
+      'setPinned → id=$lessonId pinned=$pinned countAfter=${(await fetchLessons(userId, exerciseId)).length}',
     );
-    _log.info('setPinned → id=$lessonId pinned=$pinned countAfter=${(await fetchLessons(userId, exerciseId)).length}');
   }
 
   Future<void> deleteLesson(String lessonId) async {

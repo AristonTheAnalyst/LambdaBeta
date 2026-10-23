@@ -35,8 +35,9 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  GlassButton nextButton(WidgetTester tester) =>
-      tester.widget<GlassButton>(find.widgetWithText(GlassButton, 'Next'));
+  GlassButton nextButton(WidgetTester tester) => tester.widget<GlassButton>(
+    find.widgetWithIcon(GlassButton, Icons.arrow_forward_ios),
+  );
 
   testWidgets('Next stays disabled until the review has a name', (
     tester,
@@ -60,7 +61,7 @@ void main() {
     await tester.enterText(find.byType(TextField), '  End of block 1  ');
     await tester.pump();
 
-    await tester.tap(find.text('Next'));
+    await tester.tap(find.byIcon(Icons.arrow_forward_ios));
     await tester.pumpAndSettle();
     expect(result, 'End of block 1');
   });

@@ -205,17 +205,13 @@ class _ChangeLine extends StatelessWidget {
                     fontSize: AppTextStyles.sm,
                     fontWeight: FontWeight.w700,
                     color: diff.isEmpty
-                        ? AppColors.muted
+                        ? AppColors.inkSecondary
                         : AppColors.accent,
                   ),
                 ),
               ),
               if (diff.isNotEmpty && onViewAll != null)
-                GlassButton(
-                  label: 'All',
-                  compact: true,
-                  onPressed: onViewAll!,
-                ),
+                GlassButton(label: 'All', compact: true, onPressed: onViewAll!),
             ],
           ),
           // The first few lines, so the summary means something without a tap.
@@ -233,7 +229,7 @@ class _ChangeLine extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: AppFonts.ui(
                     fontSize: AppTextStyles.xs,
-                    color: AppColors.muted,
+                    color: AppColors.inkSecondary,
                   ),
                 ),
               ),
@@ -242,7 +238,7 @@ class _ChangeLine extends StatelessWidget {
                 '+${diff.changes.length - 3} more',
                 style: AppFonts.ui(
                   fontSize: AppTextStyles.xs,
-                  color: AppColors.muted,
+                  color: AppColors.inkSecondary,
                 ),
               ),
           ],
@@ -406,9 +402,7 @@ class _ContentsPanel extends StatelessWidget {
     if (session == null) {
       return const _Note('This workout is no longer in the program.');
     }
-    final block = session.blockId == null
-        ? null
-        : _blockById(session.blockId!);
+    final block = session.blockId == null ? null : _blockById(session.blockId!);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -487,9 +481,8 @@ class _ExerciseTargets extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final targets = [
-      for (final s in exercise.sets) _setLabel(s),
-    ]..removeWhere((t) => t.isEmpty);
+    final targets = [for (final s in exercise.sets) _setLabel(s)]
+      ..removeWhere((t) => t.isEmpty);
     final note = this.note?.trim() ?? '';
 
     return Padding(
@@ -509,7 +502,7 @@ class _ExerciseTargets extends StatelessWidget {
               targets.join('  ·  '),
               style: AppFonts.mono(
                 fontSize: AppTextStyles.xs,
-                color: AppColors.muted,
+                color: AppColors.inkSecondary,
               ),
             ),
           // Nameless here: the exercise's name is the line directly above, so
@@ -589,7 +582,7 @@ class _BlockHeading extends StatelessWidget {
             length,
             style: AppFonts.mono(
               fontSize: AppTextStyles.xs,
-              color: AppColors.muted,
+              color: AppColors.inkSecondary,
             ),
           ),
         const SizedBox(height: 2),
@@ -648,7 +641,9 @@ class _SessionLine extends StatelessWidget {
   Widget build(BuildContext context) {
     final names = [
       for (final e in session.exercises)
-        e.exerciseId != null ? (exerciseNames[e.exerciseId] ?? 'Exercise') : 'Exercise',
+        e.exerciseId != null
+            ? (exerciseNames[e.exerciseId] ?? 'Exercise')
+            : 'Exercise',
     ];
     return Padding(
       padding: const EdgeInsets.only(left: 8, bottom: 3),
@@ -668,7 +663,7 @@ class _SessionLine extends StatelessWidget {
               '${names.join(', ')}',
               style: AppFonts.ui(
                 fontSize: AppTextStyles.xs,
-                color: AppColors.muted,
+                color: AppColors.inkSecondary,
               ),
             ),
           // The pass's notes, each named for the exercise it was about: the
@@ -726,7 +721,7 @@ class _NoteLine extends StatelessWidget {
                   text: text,
                   style: AppFonts.ui(
                     fontSize: AppTextStyles.xs,
-                    color: AppColors.muted,
+                    color: AppColors.inkSecondary,
                   ),
                 ),
               ],
@@ -783,11 +778,14 @@ class _Line extends StatelessWidget {
     child: Text(
       text,
       style: mono
-          ? AppFonts.mono(fontSize: AppTextStyles.xs, color: AppColors.muted)
+          ? AppFonts.mono(
+              fontSize: AppTextStyles.xs,
+              color: AppColors.inkSecondary,
+            )
           : AppFonts.ui(
               fontSize: AppTextStyles.sm,
               fontWeight: FontWeight.w700,
-              color: AppColors.muted,
+              color: AppColors.primary,
             ),
     ),
   );
@@ -803,7 +801,11 @@ class _Note extends StatelessWidget {
     padding: const EdgeInsets.only(left: 8, bottom: 3),
     child: Text(
       text,
-      style: AppFonts.ui(fontSize: AppTextStyles.sm, color: AppColors.muted),
+      style: AppFonts.ui(
+        fontSize: AppTextStyles.sm,
+        color: AppColors.inkSecondary,
+        height: 1.4,
+      ),
     ),
   );
 }
@@ -818,9 +820,9 @@ class _SectionLabel extends StatelessWidget {
     text,
     style: AppFonts.mono(
       fontSize: AppTextStyles.xs,
-      fontWeight: FontWeight.w700,
-      letterSpacing: 1.0,
-      color: AppColors.muted,
+      fontWeight: FontWeight.w600,
+      letterSpacing: 0.8,
+      color: AppColors.primary,
     ),
   );
 }

@@ -72,7 +72,11 @@ class _LessonDebugScreenState extends State<LessonDebugScreen> {
             title: 'Lesson Debug',
             left: GestureDetector(
               onTap: () => Navigator.of(context).pop(),
-              child: Icon(Icons.arrow_back_ios_new, size: 18, color: AppColors.primary),
+              child: Icon(
+                Icons.arrow_back_ios_new,
+                size: 18,
+                color: AppColors.primary,
+              ),
             ),
             right: GestureDetector(
               onTap: _load,
@@ -92,28 +96,53 @@ class _LessonDebugScreenState extends State<LessonDebugScreen> {
                       ScrollShrinkNavBar.contentInset(context),
                     ),
                     children: [
-                      Text('dim_lesson: ${_rows.length} row(s) for this user',
-                          style: AppFonts.mono(fontSize: 14, color: AppColors.accent)),
+                      Text(
+                        'dim_lesson: ${_rows.length} row(s) for this user',
+                        style: AppFonts.mono(
+                          fontSize: 14,
+                          color: AppColors.accent,
+                        ),
+                      ),
                       const SizedBox(height: AppSpacing.sm),
                       if (_error != null)
-                        Text('ERROR: $_error',
-                            style: AppFonts.mono(fontSize: 13, color: AppColors.danger)),
+                        Text(
+                          'ERROR: $_error',
+                          style: AppFonts.mono(
+                            fontSize: 13,
+                            color: AppColors.danger,
+                          ),
+                        ),
                       for (final r in _rows) ...[
                         const SizedBox(height: AppSpacing.sm),
                         _row(r),
                       ],
                       const SizedBox(height: AppSpacing.xl),
-                      Text('ps_crud (upload queue): ${_crud.length} entr(ies)',
-                          style: AppFonts.mono(fontSize: 14, color: AppColors.accent)),
+                      Text(
+                        'ps_crud (upload queue): ${_crud.length} entr(ies)',
+                        style: AppFonts.mono(
+                          fontSize: 14,
+                          color: AppColors.accent,
+                        ),
+                      ),
                       const SizedBox(height: AppSpacing.sm),
                       if (_crud.isEmpty)
-                        Text('(empty — nothing pending upload)',
-                            style: AppFonts.ui(fontSize: 14, color: AppColors.muted)),
+                        Text(
+                          '(empty — nothing pending upload)',
+                          style: AppFonts.ui(
+                            fontSize: 14,
+                            color: AppColors.muted,
+                          ),
+                        ),
                       for (final c in _crud)
                         Padding(
                           padding: const EdgeInsets.only(bottom: 4),
-                          child: Text('id=${c['id']} ${(c['data'] ?? '').toString().substring(0, 120)}',
-                              style: AppFonts.mono(fontSize: 14, color: AppColors.muted)),
+                          child: Text(
+                            'id=${c['id']} ${(c['data'] ?? '').toString().substring(0, 120)}',
+                            style: AppFonts.mono(
+                              fontSize: 14,
+                              color: AppColors.muted,
+                            ),
+                          ),
                         ),
                     ],
                   ),
@@ -125,7 +154,10 @@ class _LessonDebugScreenState extends State<LessonDebugScreen> {
 
   Widget _row(Map<String, dynamic> r) {
     final pinned = r['pinned'] == 1 || r['pinned'] == true;
-    final active = r['is_archived'] == 0 || r['is_archived'] == false || r['is_archived'] == null;
+    final active =
+        r['is_archived'] == 0 ||
+        r['is_archived'] == false ||
+        r['is_archived'] == null;
     return Container(
       padding: const EdgeInsets.all(AppSpacing.sm),
       decoration: BoxDecoration(
@@ -136,15 +168,25 @@ class _LessonDebugScreenState extends State<LessonDebugScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('${r['exercise_name'] ?? r['custom_exercise_id']}'
-              '${pinned ? '  [PINNED]' : ''}${!active ? '  [INACTIVE]' : ''}',
-              style: AppFonts.mono(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.primary)),
+          Text(
+            '${r['exercise_name'] ?? r['custom_exercise_id']}'
+            '${pinned ? '  [PINNED]' : ''}${!active ? '  [INACTIVE]' : ''}',
+            style: AppFonts.mono(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: AppColors.primary,
+            ),
+          ),
           const SizedBox(height: 2),
-          Text('${r['lesson_text']}',
-              style: AppFonts.ui(fontSize: 14, color: AppColors.primary)),
+          Text(
+            '${r['lesson_text']}',
+            style: AppFonts.ui(fontSize: 14, color: AppColors.primary),
+          ),
           const SizedBox(height: 2),
-          Text('id=${r['lesson_id']}  created=${r['lesson_created_date']}',
-              style: AppFonts.mono(fontSize: 13, color: AppColors.muted)),
+          Text(
+            'id=${r['lesson_id']}  created=${r['lesson_created_date']}',
+            style: AppFonts.mono(fontSize: 13, color: AppColors.muted),
+          ),
         ],
       ),
     );

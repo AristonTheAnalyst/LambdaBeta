@@ -40,16 +40,15 @@ class LogsState {
     List<PastSetRow>? pastSets,
     Map<String, Map<String, int>>? prCountsBySession,
     int? activeTab,
-  }) =>
-      LogsState(
-        isLoading: isLoading ?? this.isLoading,
-        isRefreshing: isRefreshing ?? this.isRefreshing,
-        error: clearError ? null : error ?? this.error,
-        sessions: sessions ?? this.sessions,
-        pastSets: pastSets ?? this.pastSets,
-        prCountsBySession: prCountsBySession ?? this.prCountsBySession,
-        activeTab: activeTab ?? this.activeTab,
-      );
+  }) => LogsState(
+    isLoading: isLoading ?? this.isLoading,
+    isRefreshing: isRefreshing ?? this.isRefreshing,
+    error: clearError ? null : error ?? this.error,
+    sessions: sessions ?? this.sessions,
+    pastSets: pastSets ?? this.pastSets,
+    prCountsBySession: prCountsBySession ?? this.prCountsBySession,
+    activeTab: activeTab ?? this.activeTab,
+  );
 }
 
 class LogsViewModel {
@@ -64,7 +63,8 @@ class LogsViewModel {
   /// The host-test seam's answer; null reads the live Supabase session.
   final String? _userIdOverride;
 
-  String get _userId => _userIdOverride ?? Supabase.instance.client.auth.currentUser!.id;
+  String get _userId =>
+      _userIdOverride ?? Supabase.instance.client.auth.currentUser!.id;
 
   /// sessionId → exerciseId → PR count from one global walk over the
   /// load-time-sorted timeline — the cache's asc copy, so the walk never
@@ -103,8 +103,7 @@ class LogsViewModel {
       );
     } catch (e) {
       if (_disposed) return;
-      state.value =
-          state.value.copyWith(isLoading: false, error: e.toString());
+      state.value = state.value.copyWith(isLoading: false, error: e.toString());
     }
   }
 
@@ -127,8 +126,10 @@ class LogsViewModel {
       );
     } catch (e) {
       if (_disposed) return;
-      state.value =
-          state.value.copyWith(isRefreshing: false, error: e.toString());
+      state.value = state.value.copyWith(
+        isRefreshing: false,
+        error: e.toString(),
+      );
     }
   }
 

@@ -10,8 +10,8 @@ class AppConfig {
   final String latestVersion;
 
   factory AppConfig.fromMap(Map<String, dynamic> map) => AppConfig(
-        platform: map['platform'] as String,
-        minVersion: map['min_version'] as String,
-        latestVersion: map['latest_version'] as String,
-      );
+    platform: map['platform'] as String,
+    minVersion: map['min_version'] as String,
+    latestVersion: map['latest_version'] as String,
+  );
 }

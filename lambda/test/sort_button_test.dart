@@ -69,9 +69,13 @@ void main() {
     await tester.tap(find.text('Last used'));
     await tester.pumpAndSettle();
 
-    expect(calls, [('last', true)], reason:
-        '"Last used" reads newest-first — picking it must not land in its '
-        'upside-down reading');
+    expect(
+      calls,
+      [('last', true)],
+      reason:
+          '"Last used" reads newest-first — picking it must not land in its '
+          'upside-down reading',
+    );
     expect(
       find.text('A–Z'),
       findsNothing,
@@ -88,8 +92,9 @@ void main() {
     await tester.tap(find.text('Last used'));
     await tester.pumpAndSettle();
 
-    expect(calls, [('last', false)],
-        reason: 'the criterion is untouched — only the direction flips');
+    expect(calls, [
+      ('last', false),
+    ], reason: 'the criterion is untouched — only the direction flips');
     expect(find.text('A–Z'), findsNothing, reason: 'the pick closed it');
   });
 

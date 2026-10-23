@@ -42,6 +42,7 @@ progression mode lives on the RUN. Full plan of record:
 | **Reviews** (a recorded pass over a set of workouts **and goals** — standalone since 2026-10-07) | `fact_program_review` | Literal |
 | **Lessons** | `dim_lesson` | Literal |
 | **Goals** | `fact_goal` | Literal |
+| **Friends** (2026-10-23) | `dim_friend_code` + `friend_relationship` | Literal |
 | **Bodyweight** | `fact_bodyweight` | Literal |
 | **PRs** | *(none)* | **Fully derived** — see below |
 | **History / training logs** | *(none)* | **Derived read view** |
@@ -357,103 +358,88 @@ NULL), because a data-entry error (1000kg instead of 100kg) can falsely
 mark a goal achieved and the mistake should be undone by the user, not
 silently. Facts — hard-deleted.
 
+### Friends — `dim_friend_code` + `friend_relationship` (2026-10-23)
+
+There is **no pending state and no request**: entering a friend's code makes
+the friendship immediately and mutually. Two tables carry it:
+
+- `dim_friend_code` — one shareable code per user (8 characters,
+  `ABCD-EFGH` grouping in the UI). A **side table, not a `dim_user` column**,
+  because the user_data stream selects `dim_user *`; a new column would reach
+  old app builds that don't know it. It streams only to its owner.
+- `friend_relationship` — **one row per direction**. `add_friend_by_code`
+  writes both rows in one call; every read requires the pair (the
+  `friends_data` stream's `my_friends` CTE and `are_friends()` in RLS both
+  test both directions), so a half-pair grants nothing. Either side can end
+  the friendship with `remove_friend`, which deletes both rows.
+
+The Friends tab (`lib/features/friends/`) shows the user's code, adds by code,
+lists friends, and opens a friend's history in the existing **read-only**
+viewer: `LogsScreen(userId:, readOnly:)` → `SessionDetailScreen(userId:,
+readOnly:, navRoute: '/friends')`, with `showLessonsModal(readOnly:)`.
+Completed sessions only; the active session is never synced or shown. PRs and
+goal badges derive per friend from `PastSetsTimelineCache.get(friendId)` — the
+global `PrService` cache is never used on this path. Codes are stable in v1
+(no regeneration). Stream shape, upload maps and the own-row-only mirror rule:
+`sync-contract`.
+
 ### Bodyweight — `fact_bodyweight`
 Weight measurements: `user_weight`, `user_weight_date` (measurement date),
 `created_date` (log date). Profile screen logs these.
 
 ### PRs — **fully derived, no table**
 
-**What a PR is**: an improvement to the best weight lifted for a given rep
-count (rep-max), or the most reps ever lifted at a given weight (weight-max),
-for an exercise — optionally filtered by variation. A single set can be many
-PRs at once (105kg × 3 beats your 1RM, 2RM AND 3RM).
+**A set `(w, r)` is a PR iff it extends its (exercise × variation) pair's
+best-ever frontier** — no prior set did ≥ r reps at ≥ w weight
+(`¬∃ prior (w' ≥ w ∧ r' ≥ r)`; one dominance check covers both axes). So
+100 × 5 after 110 × 1 IS a PR (110 covers one rep, not five); 100 × 4 after
+100 × 5 is not; an identical repeat is not; the first-ever set on a pair is a
+"First PR". Bodyweight is weight 0; a null variation is its own key.
 
-Since 2026-08-14 `fact_pr` is dropped. PRs are computed on every read by
-`PrService` (`lib/features/session/model/pr_service.dart`) from
-`fact_session_exercise_set` history (joined through `fact_session_exercise`
-for the exercise id), using the rep-max engine
-(`lib/features/session/model/pr_engine.dart`). Memoized until `invalidate()`
-(call after ANY set write).
+**One set = one `PrEvent`**, even when it beats prior records on both
+dimensions at once. Each event carries `beforeWeight` (previous best weight
+at ≥ this rep count) and `beforeReps` (previous best reps at exactly this
+weight) — the two frontier values it beat, both null meaning "First PR"; the
+end screen renders both ("was 6 × 10 · 100 × 3").
 
-**Rep-max values**: `curve[N]` = the highest weight ever lifted for **≥ N
-reps**. Tracked N values: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 15, 20, 25, 30.
-Anything above 30 reps is not a PR axis. The curve is monotone non-increasing
-in N (if you can lift 100 for 5, you can lift 100 for any N < 5).
+**Counts, badges, accents, and modals all count events** — the live stats
+bar, logs summary, pills and PR modal read the same number and can never
+disagree (the pre-2026-08-29 per-axis engine counted one set as up to three
+PRs in some surfaces and one in others). A set can also be a goal's achieving
+set: it is drawn once as the goal (`G`) but still counts as a PR.
 
-**Curves are scoped per (exercise × variation)**. A Pause Bench PR never
-affects regular Bench: each (exerciseId, variationId) pair has its own
-independent rep-max curve and weight-max map. NULL variation is its own
-distinct key (a non-variated set does not share a curve with variated sets
-of the same exercise).
+**Lenses are insights-only** — `repMaxCurve`, `weightMaxCurve`,
+`repAxisHistory` and `weightAxisHistory` are pure projections over raw set
+history for the insight charts (`kTrackedRepCounts` is a display config), and
+they never gate detection.
 
-**Weight-max values**: for each distinct weight W, `maxReps[W]` = the most
-reps ever done at exactly W. If you can lift W × R, you can lift any lighter
-weight at least R times — so a heavier lift bumps the implied max of all
-lighter weights too.
+**The pre-2026-08-29 model is gone**: per-axis record types
+(`PrType.repMax` / `weightMax`), propagation records (`isPropagated`) and the
+`achievedRecords` / `countableRecords` filters were deleted. `fact_pr` was
+dropped 2026-08-14 — there is no PR table.
 
-**What a propagated PR is**: a record *implied* by a different, stronger
-actual performance, rather than directly achieved. Example: you do 100kg × 5.
-The 5RM at 100kg is **explicit** — you actually did it. The 3RM at 100kg is
-**propagated** — you never did 100 × 3, but 100 × 5 proves you can. Same for
-weight-max: doing 80kg × 5 propagates "most reps at 60kg = 5" — but only if
-60kg was already in the map, i.e. the user lifted 60kg before (they just
-never got 5 reps at it). **Weights never actually lifted are never
-fabricated** — propagation bumps only weights that exist in the history.
-`isPropagated` distinguishes these in the UI ("achieved" vs "implied").
-
-**The formula** (walks all logged sets chronologically, per exercise):
-
-```
-for each set (weight W, reps R, exercise E, variation V), oldest first:
-  # rep-max axis, scoped to the (E, V) curve
-  for each tracked N where N ≤ R:
-    if W > curve[(E, V)][N]:
-      curve[(E, V)][N] = W
-      emit PR(E, V, repMax, targetReps=N, weight=W, reps=R, propagated=(N ≠ R))
-  # weight-max axis, scoped to the (E, V) map
-  if R > maxReps[(E, V)][W]:
-    maxReps[(E, V)][W] = R
-    emit PR(E, V, weightMax, targetWeight=W, weight=W, reps=R, propagated=false)
-    for each lighter weight L ALREADY in the map (a weight explicitly
-    lifted before) where maxReps[(E, V)][L] < R:
-      maxReps[(E, V)][L] = R
-      emit PR(E, V, weightMax, targetWeight=L, weight=L, reps=R, propagated=true)
-    # never create map entries for weights between W and L — only explicit
-    # lifts exist as keys
-```
-
-Bodyweight is just weight 0 — it feeds the rep-max curve like any other
-weight (a 13-rep dips set is a 12RM at 0kg), and its weight-max propagation
-only bumps the 0kg key. Reps that fall between tracked values claim the
-highest tracked value below them as the explicit record (13 reps → explicit
-12RM); lower tracked Ns stay propagated.
-
-**Display & counting rules (2026-08-26)**: propagated records appear NOWHERE —
-`achievedRecords` filters the timeline and before-chains. Weight-max records
-(bodyweight 0kg included — bodyweight is just a weight) are **display-only**:
-visible in PR detail/timeline surfaces, never counted. Counts, badges, session
-totals, and insights charts use explicit rep-max only (`countableRecords`).
-
-Edit-past-data needs no recompute — the next read is correct by construction.
-**Data-entry errors self-heal**: a typo'd 1000kg set creates a bogus 1000kg
-PR while the bad data exists, but correcting the set removes the PR on the
-next derivation — nothing stale persists to clean up. This is a direct
-consequence of derive-only and the main reason goals (persisted) need an
-explicit revoke action while PRs don't.
+**Engine**: `lib/features/session/model/pr_engine.dart` (`prEvents` + the
+lenses), reached via `pr_service.dart` (memoized; `invalidate()` after any set
+write) and the live/logs `_recomputePRs`, fed by the oldest-first copy in
+`PastSetsTimelineCache`. Editing past data self-heals on the next read —
+nothing stale to clean up. Full spec: `docs/pr_methodology.md`.
 
 ### History / training logs — **derived read view**
-The Training Logs screen and past-session viewer read `fact_session` +
+The Sessions browse (the Session tab's Home, and the logs list the
+`/logs/:sessionId` records open from — one `LogsScreen`, no Sets tab since
+2026-10-23) and the past-session viewer read `fact_session` +
 `fact_session_exercise` + `fact_session_exercise_set` joined with current
 exercise/variation names. No table of its own. `PastSetRow` (a
 `SessionExerciseSet` + session date) powers the per-exercise history
 timeline.
 
 ### Analytics / insights — **derived, client-side**
-Statistics, PR catalog, PR exercise detail, and insights screens aggregate
-the local PowerSync mirror (all reads are local SQLite). No server-side
-analytics, no aggregates tables. At this scale a dedicated OLAP store is
-not justified; if analytics ever get slow, a client-computed daily-summary
-table is the fix.
+The PR insights surfaces (PR modal, PR History, the insight curves and
+axis-history sheets) aggregate the local PowerSync mirror — all reads are
+local SQLite. The standalone Statistics feature is retired (no
+`lib/features/statistics/`). No server-side analytics, no aggregates tables;
+at this scale a dedicated OLAP store is not justified, and if reads ever get
+slow a client-computed daily-summary table is the fix.
 
 ## Features you didn't list (worth remembering)
 
@@ -464,6 +450,7 @@ table is the fix.
 | **Supersets** | retired | Column `superset_group_number` DROPPED 2026-08-24 (schema v2). No UI creates supersets; dormant slot support renders a restored multi-exercise slot as its first exercise |
 | **Feelings** | `fact_session.pre_feeling` / `post_feeling` | Pre-workout feeling is shown in logs; `post_feeling` is written but **never displayed yet** — logs screen is the candidate place |
 | **Coaching** | `coaching_relationship` + coach RLS policies | Table + policies exist; no coach UI. Coach SELECT access exists on every athlete-owned table |
+| **Friends** | `dim_friend_code` + `friend_relationship` | Instant, mutual, by code (2026-10-23). No pending state; completed sessions only in the stream; the existing viewer reads a friend's history read-only |
 | **Onboarding** | `dim_user.onboarded` | Gate flag for first-run flow |
 
 ## Entity relationship quick map
@@ -491,6 +478,9 @@ dim_user ──< dim_exercise
   │         │                              block_id = the phase followed)
   │         ├──< fact_program_review (the review that answered its length)
   │         └──< fact_goal (optional link)
+  ├──< dim_friend_code (one shareable code per user, owner-only)
+  ├──< friend_relationship >── dim_user (one row per direction; the pair is
+  │                                           the friendship, 2026-10-23)
   ├──< fact_session ──< fact_session_exercise ──< fact_session_exercise_set
   │         ├── planned_session_id → dim_planned_session (template link)
   │         ├── program_run_id (program context via the run)
@@ -628,6 +618,22 @@ fact_program_run), `achieved_date` (nullable, revocable),
 `user_weight_id` (PK), `user_id`, `user_weight`, `user_weight_date`
 (measurement date), `created_date` (log date).
 
+### dim_friend_code — shareable codes (owner SELECT only)
+`user_id` (PK, FK → dim_user, ON DELETE CASCADE), `friend_code` (TEXT, unique,
+`^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{8}$` — no I/O/0/1), `created_date`. One
+row per user, written by the SECURITY DEFINER `after insert on dim_user`
+trigger and backfilled by the migration. The app never writes it: no grant,
+no UI (codes are stable in v1). Streams only to its owner.
+
+### friend_relationship — friendships (own row ALL, either side SELECT)
+`user_id` + `friend_user_id` (composite PK, both FK → dim_user, ON DELETE
+CASCADE), `created_date`; CHECK `user_id <> friend_user_id`. **One row per
+direction** — `add_friend_by_code` writes both in one call, `remove_friend`
+deletes both, and every read requires the pair (stream CTE and `are_friends()`
+RLS). No server-side `id` column: the stream synthesizes
+`user_id || '-' || friend_user_id`. The client mirrors only its **own**
+directed row (`_compositeKeyTables` in `database.dart`).
+
 ### coaching_relationship (coach ALL + both-sides SELECT)
 `coach_user_id` + `athlete_user_id` (composite PK), `created_date`. No app
 UI yet.
@@ -661,21 +667,33 @@ What actually happens to each table's rows.
 | fact_session_exercise_set | `insertSet` | `updateSet`, `reorderSets` | **hard DELETE** |
 | fact_program_run | REST insert in `startProgramRun` (ends previous is_current first — required by the partial unique index; takes progressionMode) | `updateRunConfig` (mode + duration), `pauseCurrentRun`/`resumeRun` (is_current) | never in the UI (history); hard-deleted only with `hardDeleteProgram` |
 | dim_program_block | `createProgramBlock` (block editor) | `updateBlock`, `reorderBlocks` (block_order) | **archive** (`date_archived = now()`), `reactivateBlock` clears it; hard-deleted only with `hardDeleteProgram` |
-| fact_program_review | `beginReview` (row + "as found" baseline, one move; `program_id` null = standalone) or `scheduleReview` (row only — a dated review must not freeze today's plan) | `captureBaseline` (idempotent — only where NULL), `markWorkoutReviewed` (tick map, read-modify-write, guarded on open), `setExerciseNote` / `setWorkoutNote` (write-through, read-modify-write of the JSON), `completeReview` (snapshot + completed_date + outcome, one transaction), `closeRun` (kind = 'close'), `deleteReview` (hard delete, guarded `completed_date IS NULL` — the Reviews list's cancel) | never in the UI (history); hard-deleted with `hardDeleteProgram` — and before runs, which they pin via NO ACTION — and by `deleteReview` when an open pass is cancelled |
+| fact_program_review | `beginReview` (row + "as found" baseline, one move; `program_id` null = standalone) or `scheduleReview` (row only — a dated review must not freeze today's plan) | `captureBaseline` (idempotent — only where NULL), `markWorkoutReviewed` / `unmarkWorkoutReviewed` (tick map, read-modify-write, guarded on open), `setExerciseNote` / `setWorkoutNote` (write-through, read-modify-write of the JSON), `completeReview` (snapshot + completed_date + outcome, one transaction), `closeRun` (kind = 'close'), `deleteReview` (hard delete, guarded `completed_date IS NULL` — the Reviews list's cancel), `deleteCompletedReview` (hard delete, guarded `completed_date IS NOT NULL` — deleting a record, 2026-10-19) | never in the UI (history); hard-deleted with `hardDeleteProgram` — and before runs, which they pin via NO ACTION — by `deleteReview` when an open pass is cancelled, and by `deleteCompletedReview` when a record is deleted |
 | fact_goal | run-start prompt, `createGoal` | `achieved_date` set/revoked | **hard DELETE** |
 | fact_bodyweight | profile weight logging | — | hard delete (rarely used) |
+| dim_friend_code | `after insert on dim_user` trigger (SECURITY DEFINER) + migration backfill | never (codes are stable in v1) | never (cascade from auth.users → dim_user) |
+| friend_relationship | `add_friend_by_code` RPC writes BOTH directions; the client mirrors only the caller's own directed row | — | `remove_friend` RPC deletes both directions, callable from either side; the client also deletes its own local row and drops the friend's cached timeline |
 | coaching_relationship | (no UI yet) | — | hard delete |
 | app_config | manual/ops | manual/ops | manual/ops |
 
 ## RLS policy matrix (verified current state)
 
-Every table has RLS enabled. Two policy shapes:
+Every table has RLS enabled. Three policy shapes:
 
 1. **owner access** (ALL, `user_id = auth.uid()` using + with-check) — on
    every user-owned table.
 2. **coach access** (SELECT, `EXISTS (SELECT 1 FROM coaching_relationship cr
    WHERE cr.coach_user_id = auth.uid() AND cr.athlete_user_id = <t>.user_id)`)
    — on every athlete-owned table.
+3. **friend access** (SELECT, `public.are_friends(auth.uid(), user_id)`,
+   2026-10-23) — on the seven tables a friend's history reads:
+   `fact_session` (additionally `end_datetime is not null`),
+   `fact_session_exercise` / `fact_session_exercise_set` (additionally their
+   parent session is completed), `dim_exercise`, `dim_variation`,
+   `dim_lesson`, `fact_goal`. `are_friends(a, b)` is SECURITY DEFINER and
+   requires **both** directed rows, so a half-pair grants nothing; it avoids
+   recursive policy evaluation, and its only exposure is a boolean for a pair
+   of UUIDs. The stream is the real privacy boundary — these policies are the
+   REST defence.
 
 | Table | Owner ALL | Coach SELECT |
 |---|---|---|
@@ -697,6 +715,8 @@ Every table has RLS enabled. Two policy shapes:
 | fact_goal | ✅ | ✅ |
 | fact_bodyweight | ✅ | ✅ |
 | coaching_relationship | coach ALL (coach_user_id = uid) + read SELECT (either side) | — |
+| dim_friend_code | **owner SELECT only** (no insert/update/delete grants; the trigger writes it) | — |
+| friend_relationship | own row ALL (`user_id = auth.uid()`) + both-sides SELECT (the reciprocal row is written by the SECURITY DEFINER RPC) | — |
 | app_config | public SELECT (true) | — |
 
 Anon never has a matching `auth.uid()`, so table-level grants to anon are
@@ -705,11 +725,14 @@ harmless (RLS is the gatekeeper).
 ## Sync wiring
 
 Every synced table must be registered in four places (see the
-`sync-contract` skill for the full contract): server publication (19 tables),
+`sync-contract` skill for the full contract): server publication (21 tables),
 `powersync/sync-streams.yaml` (queries alias the real PK as `id`),
 `lib/core/powersync/schema.dart`, and `lib/core/powersync/database.dart`
-(`_pkColumns` upload mapping). Local-only: `upload_failures`.
-REST-only (not synced): `app_config`.
+(`_pkColumns` / `_compositeKeyTables` upload mapping). Two auto-subscribed
+streams since 2026-10-23: `user_data` (the user's own rows) and `friends_data`
+(`dim_friend_code` owner-only, `friend_relationship` own directed rows, and
+each mutual friend's completed records + names slice — see `sync-contract`).
+Local-only: `upload_failures`. REST-only (not synced): `app_config`.
 
 ## Cross-references
 

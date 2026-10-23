@@ -97,23 +97,33 @@ class _LabScreenState extends State<LabScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
-        title: Text('Start the lab over',
-            style: AppFonts.ui(
-                fontWeight: FontWeight.w800, color: AppColors.primary)),
+        title: Text(
+          'Start the lab over',
+          style: AppFonts.ui(
+            fontWeight: FontWeight.w800,
+            color: AppColors.primary,
+          ),
+        ),
         content: Text(
-            'Throw away everything built in the lab and seed a fresh set of '
-            'fake workouts, goals and reviews? Your own data is untouched.',
-            style: AppFonts.ui(color: AppColors.muted)),
+          'Throw away everything built in the lab and seed a fresh set of '
+          'fake workouts, goals and reviews? Your own data is untouched.',
+          style: AppFonts.ui(color: AppColors.muted),
+        ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child:
-                  Text('Cancel', style: AppFonts.ui(color: AppColors.muted))),
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text('Cancel', style: AppFonts.ui(color: AppColors.muted)),
+          ),
           TextButton(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: Text('Start over',
-                  style: AppFonts.ui(
-                      color: AppColors.danger, fontWeight: FontWeight.w600))),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(
+              'Start over',
+              style: AppFonts.ui(
+                color: AppColors.danger,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -149,14 +159,20 @@ class _LabScreenState extends State<LabScreen> {
                   context.go('/dev');
                 }
               },
-              child: Icon(Icons.arrow_back_ios_new,
-                  size: 18, color: AppColors.accent),
+              child: Icon(
+                Icons.arrow_back_ios_new,
+                size: 18,
+                color: AppColors.accent,
+              ),
             ),
             right: _ready
                 ? GestureDetector(
                     onTap: _reset,
-                    child: Icon(Icons.restart_alt,
-                        size: 20, color: AppColors.accent),
+                    child: Icon(
+                      Icons.restart_alt,
+                      size: 20,
+                      color: AppColors.accent,
+                    ),
                   )
                 : null,
           ),
@@ -177,7 +193,9 @@ class _LabScreenState extends State<LabScreen> {
             'The lab could not open its sandbox.\n$error',
             textAlign: TextAlign.center,
             style: AppFonts.ui(
-                fontSize: AppTextStyles.sm, color: AppColors.danger),
+              fontSize: AppTextStyles.sm,
+              color: AppColors.danger,
+            ),
           ),
         ),
       );
@@ -209,7 +227,9 @@ class _SandboxBanner extends StatelessWidget {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
+        horizontal: AppSpacing.lg,
+        vertical: AppSpacing.sm,
+      ),
       color: AppColors.plannedBg,
       child: Row(
         children: [
@@ -219,7 +239,9 @@ class _SandboxBanner extends StatelessWidget {
             child: Text(
               'Sandbox · fake data. Nothing built here reaches your account.',
               style: AppFonts.ui(
-                  fontSize: AppTextStyles.xs, color: AppColors.planned),
+                fontSize: AppTextStyles.xs,
+                color: AppColors.planned,
+              ),
             ),
           ),
         ],

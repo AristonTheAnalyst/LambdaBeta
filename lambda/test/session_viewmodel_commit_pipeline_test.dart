@@ -4,6 +4,7 @@ import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lambda/data/models/custom_variation.dart';
 import 'package:lambda/data/models/exercise_detail.dart';
+import 'package:lambda/data/models/planned_session_exercise_set.dart';
 import 'package:lambda/data/models/session_exercise.dart';
 import 'package:lambda/data/models/session_exercise_set.dart';
 import 'package:lambda/data/models/session.dart';
@@ -30,6 +31,19 @@ class _FakeSessionRepo extends Fake implements SessionRepository {
   int loadSetsCalls = 0;
   bool failUpdate = false;
   final updateLog = <({String setId, double? weight, bool clearWeight})>[];
+
+  /// What the restore sees when it fetches the active session.
+  Session? sessionRow;
+  int endSessionCalls = 0;
+  final updateNotesLog =
+      <
+        ({
+          String? preNotes,
+          String? postNotes,
+          int? preFeeling,
+          int? postFeeling,
+        })
+      >[];
 
   final rows = <String, SessionExerciseSet>{};
   final _setsCtl = StreamController<List<SessionExerciseSet>>.broadcast();
@@ -58,13 +72,34 @@ class _FakeSessionRepo extends Fake implements SessionRepository {
     String? plannedSessionId,
     String? plannedSessionName,
     int? preFeeling,
+    String? deviceId,
   }) async => activeSessionId ?? 'w1';
 
   @override
-  Future<String?> getActiveSessionId(String userId) async => activeSessionId;
+  Future<String?> getActiveSessionId(String userId, {String? deviceId}) async =>
+      activeSessionId;
 
   @override
-  Future<Session?> fetchSession(String sessionId) async => null;
+  Future<Session?> fetchSession(String sessionId) async => sessionRow;
+
+  @override
+  Future<void> endSession(String sessionId) async => endSessionCalls++;
+
+  @override
+  Future<void> updateSessionNotes(
+    String sessionId, {
+    String? preNotes,
+    String? postNotes,
+    int? preFeeling,
+    int? postFeeling,
+  }) async {
+    updateNotesLog.add((
+      preNotes: preNotes,
+      postNotes: postNotes,
+      preFeeling: preFeeling,
+      postFeeling: postFeeling,
+    ));
+  }
 
   @override
   Future<List<PastSetRow>> loadPastSetsTimeline(String userId) async => [];
@@ -74,6 +109,13 @@ class _FakeSessionRepo extends Fake implements SessionRepository {
     loadSetsCalls++;
     return rows.values.toList();
   }
+
+  /// The completed stack the floor's date bar walks, newest first.
+  final completedStamps = <({String sessionId, DateTime createdDatetime})>[];
+
+  @override
+  Future<List<({String sessionId, DateTime createdDatetime})>>
+  loadCompletedSessionStamps(String userId) async => completedStamps;
 
   @override
   Future<List<SessionExercise>> loadSessionExercises(String sessionId) async =>
@@ -98,6 +140,8 @@ class _FakeSessionRepo extends Fake implements SessionRepository {
     bool clearVariation = false,
     String? notes,
     bool clearNotes = false,
+    bool isDeleted = false,
+    bool clearIsDeleted = false,
   }) async {
     if (failUpdate) {
       updateSetCalls++;
@@ -114,7 +158,9 @@ class _FakeSessionRepo extends Fake implements SessionRepository {
       setNumber: existing.setNumber,
       weight: clearWeight ? null : (weight ?? existing.weight),
       reps: clearReps ? [] : (reps ?? existing.reps),
-      variationId: clearVariation ? null : (variationId ?? existing.variationId),
+      variationId: clearVariation
+          ? null
+          : (variationId ?? existing.variationId),
       notes: clearNotes ? null : (notes ?? existing.notes),
       exerciseId: existing.exerciseId,
     );
@@ -123,7 +169,13 @@ class _FakeSessionRepo extends Fake implements SessionRepository {
   }
 
   int insertSetCalls = 0;
-  final insertLog = <({double? weight, List<num> reps, int setNumber})>[];
+  final insertLog =
+      <({
+        double? weight,
+        List<num> reps,
+        int setNumber,
+        String? plannedSetId,
+      })>[];
 
   @override
   Future<SessionExerciseSet> insertSet({
@@ -138,7 +190,12 @@ class _FakeSessionRepo extends Fake implements SessionRepository {
     String? plannedSetId,
   }) async {
     insertSetCalls++;
-    insertLog.add((weight: weight, reps: reps, setNumber: setNumber));
+    insertLog.add((
+      weight: weight,
+      reps: reps,
+      setNumber: setNumber,
+      plannedSetId: plannedSetId,
+    ));
     final setId = 'dup-${rows.length + 1}';
     rows[setId] = SessionExerciseSet(
       sessionExerciseSetId: setId,
@@ -154,6 +211,32 @@ class _FakeSessionRepo extends Fake implements SessionRepository {
     );
     _setsCtl.add(rows.values.toList());
     return rows[setId]!;
+  }
+
+  final insertedExercises =
+      <({String? exerciseId, int exerciseOrder, String? plannedExerciseId})>[];
+
+  @override
+  Future<SessionExercise> insertSessionExercise({
+    required String sessionId,
+    required String userId,
+    required int exerciseOrder,
+    String? exerciseId,
+    String? plannedExerciseId,
+  }) async {
+    insertedExercises.add((
+      exerciseId: exerciseId,
+      exerciseOrder: exerciseOrder,
+      plannedExerciseId: plannedExerciseId,
+    ));
+    return SessionExercise(
+      sessionExerciseId: 'se-${insertedExercises.length}',
+      sessionId: sessionId,
+      userId: userId,
+      exerciseOrder: exerciseOrder,
+      exerciseId: exerciseId,
+      plannedExerciseId: plannedExerciseId,
+    );
   }
 
   @override
@@ -214,49 +297,79 @@ void main() {
       vm.updateSetField(set, weight: 1, immediate: false);
       vm.updateSetField(set, weight: 10, immediate: false);
       vm.updateSetField(set, weight: 100, immediate: false);
-      expect(repo.updateSetCalls, 0,
-          reason: 'keystrokes merge — nothing writes inside the window');
-      expect(repo.loadSetsCalls, pullsAfterStart,
-          reason: 'no reload per keystroke');
+      expect(
+        repo.updateSetCalls,
+        0,
+        reason: 'keystrokes merge — nothing writes inside the window',
+      );
+      expect(
+        repo.loadSetsCalls,
+        pullsAfterStart,
+        reason: 'no reload per keystroke',
+      );
 
-      async.elapse(SessionViewModel.kAutoCommitDebounce + const Duration(milliseconds: 10));
+      async.elapse(
+        SessionViewModel.kAutoCommitDebounce + const Duration(milliseconds: 10),
+      );
       async.flushMicrotasks();
 
-      expect(repo.updateSetCalls, 1,
-          reason: 'one write per settle, however many keystrokes fed it');
-      expect(repo.updateLog.single.weight, 100,
-          reason: 'the merged write carries the latest value');
-      expect(repo.loadSetsCalls, pullsAfterStart,
-          reason: 'the settle does not reload — the watch stream re-emitted '
-              'the authoritative rows');
-      expect(vm.sets.single.weight, 100,
-          reason: 'the fake watch re-emit landed the row in the VM');
+      expect(
+        repo.updateSetCalls,
+        1,
+        reason: 'one write per settle, however many keystrokes fed it',
+      );
+      expect(
+        repo.updateLog.single.weight,
+        100,
+        reason: 'the merged write carries the latest value',
+      );
+      expect(
+        repo.loadSetsCalls,
+        pullsAfterStart,
+        reason:
+            'the settle does not reload — the watch stream re-emitted '
+            'the authoritative rows',
+      );
+      expect(
+        vm.sets.single.weight,
+        100,
+        reason: 'the fake watch re-emit landed the row in the VM',
+      );
       vm.dispose();
     });
   });
 
-  test('an immediate write lands now and the armed timer never fires again', () {
-    fakeAsync((async) {
-      final vm = buildVm();
-      async.flushMicrotasks();
-      vm.startWorkout();
-      async.flushMicrotasks();
+  test(
+    'an immediate write lands now and the armed timer never fires again',
+    () {
+      fakeAsync((async) {
+        final vm = buildVm();
+        async.flushMicrotasks();
+        vm.startWorkout();
+        async.flushMicrotasks();
 
-      final set = repo.row(setId: 's1');
-      vm.updateSetField(set, weight: 10, immediate: false);
-      vm.updateSetField(set, weight: 20, immediate: true);
-      async.flushMicrotasks();
-      expect(repo.updateSetCalls, 1);
-      expect(repo.updateLog.single.weight, 20,
-          reason: 'immediate merges the pending value and writes it');
+        final set = repo.row(setId: 's1');
+        vm.updateSetField(set, weight: 10, immediate: false);
+        vm.updateSetField(set, weight: 20, immediate: true);
+        async.flushMicrotasks();
+        expect(repo.updateSetCalls, 1);
+        expect(
+          repo.updateLog.single.weight,
+          20,
+          reason: 'immediate merges the pending value and writes it',
+        );
 
-      async.elapse(const Duration(seconds: 1));
-      async.flushMicrotasks();
-      expect(repo.updateSetCalls, 1,
-          reason: 'the debounce timer was cancelled — no second write');
-      vm.dispose();
-    });
-  });
+        async.elapse(const Duration(seconds: 1));
+        async.flushMicrotasks();
+        expect(
+          repo.updateSetCalls,
+          1,
+          reason: 'the debounce timer was cancelled — no second write',
+        );
+        vm.dispose();
+      });
+    },
+  );
 
   test('flushPendingCommits writes armed pending edits without waiting', () {
     fakeAsync((async) {
@@ -290,7 +403,9 @@ void main() {
 
       final set = repo.row(setId: 's1');
       vm.updateSetField(set, weight: 5, immediate: false);
-      async.elapse(SessionViewModel.kAutoCommitDebounce + const Duration(milliseconds: 10));
+      async.elapse(
+        SessionViewModel.kAutoCommitDebounce + const Duration(milliseconds: 10),
+      );
       async.flushMicrotasks();
 
       expect(repo.updateSetCalls, 1);
@@ -316,14 +431,23 @@ void main() {
       vm.duplicateSet(vm.sets.single, weight: 60, reps: [10]);
       async.flushMicrotasks();
 
-      expect(repo.insertSetCalls, 1,
-          reason: 'the swipe Duplicate lands exactly one insert');
+      expect(
+        repo.insertSetCalls,
+        1,
+        reason: 'the swipe Duplicate lands exactly one insert',
+      );
       expect(repo.insertLog.single.weight, 60);
       expect(repo.insertLog.single.reps, [10]);
-      expect(repo.insertLog.single.setNumber, 2,
-          reason: 'the copy takes the next set number');
-      expect(vm.sets.length, 2,
-          reason: 'the copy is in the grid after the reload');
+      expect(
+        repo.insertLog.single.setNumber,
+        2,
+        reason: 'the copy takes the next set number',
+      );
+      expect(
+        vm.sets.length,
+        2,
+        reason: 'the copy is in the grid after the reload',
+      );
       vm.dispose();
     });
   });
@@ -345,11 +469,167 @@ void main() {
       async.flushMicrotasks();
 
       expect(vm.sets.single.weight, 100);
-      expect(vm.sessionPrEvents, isNotEmpty,
-          reason: 'the stream listener recomputes PRs — 100×5 with no prior '
-              'history is a first PR');
+      expect(
+        vm.sessionPrEvents,
+        isNotEmpty,
+        reason:
+            'the stream listener recomputes PRs — 100×5 with no prior '
+            'history is a first PR',
+      );
       expect(vm.isPrSet('s1'), isTrue);
       expect(notifies, greaterThan(0));
+      vm.dispose();
+    });
+  });
+
+  // ── Plan materialization (2026-10-23) ─────────────────────────────────────
+  // "Record weight at start if it is a real value, but reps is always a
+  // guide." The plan's single-number weight becomes the row's real weight (so
+  // a repeat of the plan needs no typing); ranges and everything else stay on
+  // the dim row as guides, and reps are never adopted.
+
+  test('Start records a single-number planned weight; reps stay guides', () {
+    fakeAsync((async) {
+      final vm = buildVm();
+      async.flushMicrotasks();
+
+      PlannedSessionExerciseSet planned(
+        String id,
+        int number,
+        String? weight,
+        String? reps,
+      ) => PlannedSessionExerciseSet(
+        plannedSetId: id,
+        plannedExerciseId: 'pe1',
+        plannedSessionId: 'pw1',
+        userId: 'u1',
+        setNumber: number,
+        exerciseId: 'ex1',
+        targetWeight: weight,
+        targetReps: reps,
+      );
+
+      vm.plannedExerciseOrder = ['ex1'];
+      vm.plannedSetsByExercise = {
+        'ex1': [
+          planned('ps1', 1, '60', '8-12'),
+          planned('ps2', 2, '60-70', 'AMRAP'),
+        ],
+      };
+
+      vm.startWorkout();
+      async.flushMicrotasks();
+
+      expect(repo.insertedExercises.single.exerciseId, 'ex1');
+      expect(repo.insertedExercises.single.plannedExerciseId, 'pe1');
+      expect(repo.insertLog, hasLength(2));
+
+      expect(repo.insertLog[0].weight, 60);
+      expect(
+        repo.insertLog[0].reps,
+        isEmpty,
+        reason: 'a planned rep range is a guide — never a logged rep',
+      );
+      expect(repo.insertLog[0].plannedSetId, 'ps1');
+
+      expect(
+        repo.insertLog[1].weight,
+        isNull,
+        reason: 'a planned weight range is a guide — never a logged weight',
+      );
+      expect(repo.insertLog[1].reps, isEmpty);
+      vm.dispose();
+    });
+  });
+
+  // ── Questionnaire bookends (2026-10-22) ───────────────────────────────────
+  // The ratings pencil edits the same fields the prep/post pages collect, and
+  // Done saves all four at once — so a restore must reseed the pre half or
+  // Done would write blanks over what the prep page wrote.
+
+  test('resuming a session reseeds its pre answers', () {
+    fakeAsync((async) {
+      repo.sessionRow = Session(
+        sessionId: 'w1',
+        userId: 'u1',
+        createdDatetime: DateTime.utc(2026, 10, 22, 7),
+        preNotes: 'Slept well',
+        preFeeling: 4,
+      );
+      final vm = buildVm();
+      async.flushMicrotasks();
+
+      expect(vm.currentWorkoutId, 'w1');
+      expect(
+        vm.startNotes,
+        'Slept well',
+        reason: 'the pencil edits the field the prep page wrote at Start',
+      );
+      expect(vm.sessionFeeling, 4);
+      vm.dispose();
+    });
+  });
+
+  test('Done writes both bookends in one updateSessionNotes call', () {
+    fakeAsync((async) {
+      final vm = buildVm();
+      async.flushMicrotasks();
+
+      // The prep page's answers, captured at Start…
+      vm.startNotes = 'Slept well';
+      vm.setSessionFeeling(4);
+      vm.startWorkout();
+      async.flushMicrotasks();
+
+      // …and post answers the pencil collected mid-session.
+      vm.setEndFeeling(3);
+      vm.endNotes = 'Rushed the last set';
+
+      vm.finishSession();
+      async.flushMicrotasks();
+      expect(repo.endSessionCalls, 1);
+      expect(
+        vm.endFeeling,
+        3,
+        reason: 'the post page opens on the pencil\'s answer',
+      );
+      expect(vm.endNotes, 'Rushed the last set');
+
+      vm.completePostQuestionnaire();
+      async.flushMicrotasks();
+
+      expect(
+        repo.updateNotesLog,
+        hasLength(1),
+        reason: 'one write carries the whole questionnaire',
+      );
+      final write = repo.updateNotesLog.single;
+      expect(write.preNotes, 'Slept well');
+      expect(write.preFeeling, 4);
+      expect(write.postNotes, 'Rushed the last set');
+      expect(write.postFeeling, 3);
+      vm.dispose();
+    });
+  });
+
+  test('the live date bar opens the newest record this session did not '
+      'walk over', () {
+    fakeAsync((async) {
+      final now = DateTime.now();
+      repo.completedStamps.addAll([
+        // A record stamped after this session began is not "before" it —
+        // the walk reads the stack the session started on top of.
+        (sessionId: 'future', createdDatetime: now.add(const Duration(days: 1))),
+        (sessionId: 'h3', createdDatetime: now.subtract(const Duration(days: 1))),
+        (sessionId: 'h2', createdDatetime: now.subtract(const Duration(days: 2))),
+      ]);
+
+      final vm = buildVm();
+      async.flushMicrotasks();
+      vm.startWorkout();
+      async.flushMicrotasks();
+
+      expect(vm.previousSessionId, 'h3');
       vm.dispose();
     });
   });

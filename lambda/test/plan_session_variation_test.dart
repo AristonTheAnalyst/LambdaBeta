@@ -17,6 +17,7 @@ import 'package:lambda/features/programs/view/plan_session_screen.dart';
 import 'package:lambda/features/programs/view/review_container.dart';
 import 'package:lambda/features/programs/viewmodel/workout_editor_viewmodel.dart';
 import 'package:lambda/shared/widgets/dropdown_select.dart';
+import 'package:lambda/shared/widgets/session_exercise_card.dart';
 
 /// A variation picked on an empty draft set, and the exercise switch that used
 /// to eat it.
@@ -144,37 +145,57 @@ void main() {
     // The draft is still a draft: the pick is row-local and has not been
     // written. That is the contract, and it is what makes the flush below the
     // only thing that can save it.
-    expect(planned.created, isEmpty,
-        reason: 'picking a variation must not materialize a row on its own — '
-            'a draft materializes when it commits, and it commits on blur or '
-            'on a flush');
+    expect(
+      planned.created,
+      isEmpty,
+      reason:
+          'picking a variation must not materialize a row on its own — '
+          'a draft materializes when it commits, and it commits on blur or '
+          'on a flush',
+    );
 
     // Leave the card, exactly as the user does.
     await switchTo(tester, 'Bench Press');
 
-    expect(planned.created, hasLength(1),
-        reason: 'the switch destroyed the row; the registered commit is the '
-            'only thing that could have carried the pick out first');
+    expect(
+      planned.created,
+      hasLength(1),
+      reason:
+          'the switch destroyed the row; the registered commit is the '
+          'only thing that could have carried the pick out first',
+    );
     final written = planned.created.single;
-    expect(written.exerciseId, cableRowId,
-        reason: 'the row belongs to the exercise it was added under, not to '
-            'the one the user switched to');
+    expect(
+      written.exerciseId,
+      cableRowId,
+      reason:
+          'the row belongs to the exercise it was added under, not to '
+          'the one the user switched to',
+    );
     expect(written.variationId, pausedVariationId);
     expect(written.targetWeight, isNull);
-    expect(written.targetReps, isNull,
-        reason: 'nothing was typed — the variation alone is what the user '
-            'entered, and it is enough to make the set real');
+    expect(
+      written.targetReps,
+      isNull,
+      reason:
+          'nothing was typed — the variation alone is what the user '
+          'entered, and it is enough to make the set real',
+    );
 
     // And back, which is where the user saw the loss.
     await switchTo(tester, 'Cable Row');
 
     expect(find.byKey(ValueKey(written.plannedSetId)), findsOneWidget);
-    expect(find.text('Paused'), findsOneWidget,
-        reason: 'the cell reads the variation back out of the database');
+    expect(
+      find.text('Paused'),
+      findsOneWidget,
+      reason: 'the cell reads the variation back out of the database',
+    );
   });
 
-  testWidgets('three empty drafts, three variations, one switch',
-      (tester) async {
+  testWidgets('three empty drafts, three variations, one switch', (
+    tester,
+  ) async {
     // The report, at its own width: three sets, all three varied, then away.
     await pumpEditor(tester);
 
@@ -185,15 +206,23 @@ void main() {
     await switchTo(tester, 'Bench Press');
 
     expect(planned.created, hasLength(3));
-    expect(planned.created.map((s) => s.variationId),
-        [pausedVariationId, pausedVariationId, 'v-tempo']);
-    expect(planned.created.map((s) => s.setNumber), [1, 2, 3],
-        reason: 'the flushed rows are numbered in the order the user built '
-            'them — three cards\' worth of set numbers, not three first sets');
+    expect(planned.created.map((s) => s.variationId), [
+      pausedVariationId,
+      pausedVariationId,
+      'v-tempo',
+    ]);
+    expect(
+      planned.created.map((s) => s.setNumber),
+      [1, 2, 3],
+      reason:
+          'the flushed rows are numbered in the order the user built '
+          'them — three cards\' worth of set numbers, not three first sets',
+    );
   });
 
-  testWidgets('Save flushes a draft the user varied but never typed in',
-      (tester) async {
+  testWidgets('Save flushes a draft the user varied but never typed in', (
+    tester,
+  ) async {
     await pumpEditor(tester);
 
     await addDraftWithVariation(tester, 1, 'Paused');
@@ -204,9 +233,13 @@ void main() {
     await vm.saveWorkout();
 
     expect(planned.created, hasLength(1));
-    expect(planned.created.single.variationId, pausedVariationId,
-        reason: 'the row Save wrote for this draft is the row the user '
-            'described, variation included — and there is exactly one of it');
+    expect(
+      planned.created.single.variationId,
+      pausedVariationId,
+      reason:
+          'the row Save wrote for this draft is the row the user '
+          'described, variation included — and there is exactly one of it',
+    );
   });
 
   /// The same screen, with a review running and this workout open under it.
@@ -249,8 +282,10 @@ void main() {
   // same harness as the tests above because the planner screen IS the review's
   // editor; only the ambient session differs.
   group('the workout\'s note', () {
-    /// The bar's note glyph. The set rows carry the same icon behind their own
-    /// swipe drawers, so the bar's has to be asked for by where it sits.
+    /// The bar's note glyph. Since the one-note-glyph sweep (2026-10-23) the
+    /// card's Notes pill, its pinned-note bar and the set rows' swipe drawers
+    /// all wear the same icon — they are the *exercise's* notes. The bar's is
+    /// the *workout's*, so it has to be asked for by where it sits.
     Finder barNoteGlyph() => find.descendant(
       of: find.byType(ReviewBar),
       matching: find.byIcon(Icons.sticky_note_2_outlined),
@@ -272,11 +307,30 @@ void main() {
       await pumpEditor(tester);
 
       expect(find.byIcon(Icons.delete_outline), findsOneWidget);
+      // The workout's note door lives on the review bar, and there is no bar
+      // to hold one. The card's own Notes pill (and its rows' swipe drawers)
+      // wear the same glyph since the one-note-glyph sweep (2026-10-23) —
+      // those are the EXERCISE's notes, not the workout's, so the sweep is
+      // what the count subtracts. Every other note glyph on screen would be
+      // a door that must not exist.
       expect(
-        find.byIcon(Icons.sticky_note_2_outlined),
+        barNoteGlyph(),
         findsNothing,
-        reason: 'there is no pass to hold a note, so there is no door to one — '
-            'not in the header, and not on the nav bar',
+        reason:
+            'there is no pass to hold a note, so there is no door to one — '
+            'not in the header',
+      );
+      expect(find.byType(ReviewBar), findsNothing);
+      final cardGlyphs = find.descendant(
+        of: find.byType(SessionExerciseCard),
+        matching: find.byIcon(Icons.sticky_note_2_outlined),
+      );
+      expect(
+        find.byIcon(Icons.sticky_note_2_outlined).evaluate().length,
+        cardGlyphs.evaluate().length,
+        reason:
+            'every note glyph belongs to the card — the nav bar and the '
+            'header hold none',
       );
     });
 
@@ -287,13 +341,15 @@ void main() {
       expect(
         find.byIcon(Icons.delete_outline),
         findsNothing,
-        reason: 'deleting the planned workout is not a verb of the pass — '
+        reason:
+            'deleting the planned workout is not a verb of the pass — '
             'removing it from the review is a swipe on the landing',
       );
       expect(
         barNoteGlyph(),
         findsOneWidget,
-        reason: 'the note is the pass\'s verb for this workout, so it stands '
+        reason:
+            'the note is the pass\'s verb for this workout, so it stands '
             'with Compare and Done on the bar',
       );
       expect(
@@ -320,7 +376,8 @@ void main() {
       expect(
         tester.widget<Icon>(barNoteGlyph()).color,
         AppColors.success,
-        reason: 'the glyph says what has been recorded, not just what can be — '
+        reason:
+            'the glyph says what has been recorded, not just what can be — '
             'in the review bar\'s own green, the colour it lights controls in',
       );
     });
@@ -345,9 +402,13 @@ void main() {
       await pumpEditor(tester);
 
       expect(pill(), findsOneWidget);
-      expect(find.text('EXERCISES'), findsOneWidget,
-          reason: 'outside a pass there is no comparison to read, so these '
-              'counts are the only counts there are');
+      expect(
+        find.text('EXERCISES'),
+        findsOneWidget,
+        reason:
+            'outside a pass there is no comparison to read, so these '
+            'counts are the only counts there are',
+      );
     });
 
     testWidgets('steps aside for the pass\'s own bar', (tester) async {
@@ -356,7 +417,8 @@ void main() {
       expect(
         pill(),
         findsNothing,
-        reason: 'the review bar is the floor during a pass — a second bar '
+        reason:
+            'the review bar is the floor during a pass — a second bar '
             'above it stacks two floors on one screen',
       );
       expect(find.text('EXERCISES'), findsNothing);
@@ -398,7 +460,11 @@ class _FakePlanned implements PlannedSessionRepository {
 
   int _counter = 0;
 
-  void addExercise(String exerciseId, {required String name, required int order}) {
+  void addExercise(
+    String exerciseId, {
+    required String name,
+    required int order,
+  }) {
     exercises.add(
       PlannedSessionExercise(
         plannedExerciseId: 'pe-$exerciseId',
@@ -412,9 +478,9 @@ class _FakePlanned implements PlannedSessionRepository {
   }
 
   Map<String, String> get _variationNames => const {
-        'v-paused': 'Paused',
-        'v-tempo': 'Tempo',
-      };
+    'v-paused': 'Paused',
+    'v-tempo': 'Tempo',
+  };
 
   PlannedSessionExerciseSet _hydrate(PlannedSessionExerciseSet s) =>
       PlannedSessionExerciseSet(
@@ -435,26 +501,22 @@ class _FakePlanned implements PlannedSessionRepository {
   @override
   Future<List<PlannedSessionExercise>> fetchPlannedExercises(
     String plannedSessionId,
-  ) async =>
-      List.of(exercises);
+  ) async => List.of(exercises);
 
   @override
   Future<List<PlannedSessionExerciseSet>> fetchPlannedSets(
     String plannedSessionId,
-  ) async =>
-      sets.map(_hydrate).toList();
+  ) async => sets.map(_hydrate).toList();
 
   @override
   Future<List<PlannedSessionExerciseSet>> fetchNormalizedPlannedSets(
     String plannedSessionId,
-  ) async =>
-      sets.map(_hydrate).toList();
+  ) async => sets.map(_hydrate).toList();
 
   @override
   Future<List<PlannedSessionExerciseSet>> readNormalizedPlannedSession(
     String plannedSessionId,
-  ) async =>
-      sets.map(_hydrate).toList();
+  ) async => sets.map(_hydrate).toList();
 
   @override
   Future<PlannedSessionExerciseSet> createPlannedSet(
@@ -490,63 +552,50 @@ class _FakePlanned implements PlannedSessionRepository {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _FakeExercises implements ExerciseRepository {
   @override
   Future<Map<String, ExerciseDetail>> fetchExerciseDetailMap(
     String userId,
-  ) async =>
-      {
-        'ex-cable-row': ExerciseDetail(
-          exercise: CustomExercise(
-            exerciseId: 'ex-cable-row',
-            userId: userId,
-            name: 'Cable Row',
-          ),
-        ),
-        'ex-bench-press': ExerciseDetail(
-          exercise: CustomExercise(
-            exerciseId: 'ex-bench-press',
-            userId: userId,
-            name: 'Bench Press',
-          ),
-        ),
-      };
+  ) async => {
+    'ex-cable-row': ExerciseDetail(
+      exercise: CustomExercise(
+        exerciseId: 'ex-cable-row',
+        userId: userId,
+        name: 'Cable Row',
+      ),
+    ),
+    'ex-bench-press': ExerciseDetail(
+      exercise: CustomExercise(
+        exerciseId: 'ex-bench-press',
+        userId: userId,
+        name: 'Bench Press',
+      ),
+    ),
+  };
 
   @override
   Future<List<CustomVariation>> fetchVariations(String userId) async => [
-        CustomVariation(
-          variationId: 'v-paused',
-          userId: userId,
-          name: 'Paused',
-        ),
-        CustomVariation(
-          variationId: 'v-tempo',
-          userId: userId,
-          name: 'Tempo',
-        ),
-      ];
+    CustomVariation(variationId: 'v-paused', userId: userId, name: 'Paused'),
+    CustomVariation(variationId: 'v-tempo', userId: userId, name: 'Tempo'),
+  ];
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 /// Only here because `LessonRepository`'s constructor evaluates the global
 /// `ps.db` — the one repository that cannot be default-constructed off-device.
 class _FakeLessons implements LessonRepository {
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 /// The editor's history read. Empty is the honest answer for a fake: the
 /// planner shows history read-only and nothing here depends on it.
 class _FakeSessions implements SessionRepository {
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

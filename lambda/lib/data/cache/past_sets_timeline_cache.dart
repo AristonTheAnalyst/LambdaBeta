@@ -40,16 +40,19 @@ class PastSetsTimelineCache {
   Future<List<PastSetRow>> get(String userId) {
     return _byUser.putIfAbsent(
       userId,
-      () => (loaderOverride ??
-              (u) => SessionRepository().loadPastSetsTimeline(u))(
-        userId,
-      ).then((rows) {
-        _ascByUser[userId] = [...rows]..sort((a, b) {
-          final d = a.sessionCreatedDate.compareTo(b.sessionCreatedDate);
-          return d != 0 ? d : a.setNumber.compareTo(b.setNumber);
-        });
-        return rows;
-      }),
+      () =>
+          (loaderOverride ??
+                  (u) => SessionRepository().loadPastSetsTimeline(u))(userId)
+              .then((rows) {
+                _ascByUser[userId] = [...rows]
+                  ..sort((a, b) {
+                    final d = a.sessionCreatedDate.compareTo(
+                      b.sessionCreatedDate,
+                    );
+                    return d != 0 ? d : a.setNumber.compareTo(b.setNumber);
+                  });
+                return rows;
+              }),
     );
   }
 

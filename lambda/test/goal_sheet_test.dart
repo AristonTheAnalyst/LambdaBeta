@@ -1,29 +1,30 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:lambda/core/styles/app_colors.dart';
+import 'package:intl/intl.dart';
 import 'package:lambda/core/styles/app_fonts.dart';
 import 'package:lambda/data/models/goal.dart';
 import 'package:lambda/data/models/session_exercise_set.dart';
 import 'package:lambda/features/goals/view/goal_sheet.dart';
+import 'package:lambda/shared/widgets/exercise_target_picker.dart';
+import 'package:lambda/shared/widgets/glass_button.dart';
 import 'package:lambda/shared/widgets/lambda_input.dart';
-import 'package:lambda/shared/widgets/lambda_readout.dart';
 
-/// The focused goal sheet — the notes box and the two history axes.
+import 'support/readable_text.dart';
+
+/// The focused goal sheet — the same form the New goal sheet composes,
+/// resting (2026-10-19).
 ///
-/// The sheet is the only surface that edits a description, and it rests in
-/// view mode: looking at a goal must not be able to change it. Writes fire
-/// per keystroke through a guard seeded from the stored value, so opening and
-/// closing write nothing and A → B → A writes every step.
+/// Previewing a goal and creating one are the same act from two sides: the
+/// sheet draws the shared [ExerciseTargetPicker] and starts it disabled, so
+/// looking at a goal cannot change it. Edit unlocks the same form, SAVE
+/// replaces ADD at the floor and writes the whole row, and the sheet rests
+/// again on what the write read back. A record — a completed review's goal —
+/// wires no writer at all, so there is no Edit and no way in.
 ///
-/// The axes are the PR lenses applied to the goal's own pair: every set that
-/// raised the best reps at exactly the target weight, and every set that
-/// raised the best weight at the target reps or better. The tests below pin
-/// the two things that could go wrong quietly — the scoping (a set on another
-/// weight, reps count or variation must not appear) and the read (a failed or
-/// in-flight read must never render as "no sets").
+/// The tests pin the things that could go wrong quietly: the resting state
+/// letting a keystroke through, SAVE acting on a draft that says nothing new,
+/// and a save leaving the boxes disagreeing with the row it just wrote.
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -68,6 +69,9 @@ void main() {
     String? variationId,
     num? targetWeight = 100,
     int? targetReps = 5,
+    DateTime? targetDate,
+    List<GoalTargetDateChange> targetDateHistory = const [],
+    DateTime? createdDate,
   }) => Goal(
     goalId: 'g1',
     userId: 'u1',
@@ -77,22 +81,61 @@ void main() {
     variationId: variationId,
     targetWeight: targetWeight,
     targetReps: targetReps,
+    targetDate: targetDate,
+    targetDateHistory: targetDateHistory,
+    // Most goals in these tests were said on the 19th — the sheet's title
+    // subtext is part of what a reading shows.
+    createdDate: createdDate ?? DateTime(2026, 10, 19),
   );
 
+  /// The row the repository would read back after saving [target] over
+  /// [before]: the form's fields, blank notes normalized to none, and a moved
+  /// deadline appended to the history — the real UPDATE's shape.
+  Goal apply(Goal before, ExerciseTarget target) {
+    final notes = target.notes?.trim();
+    final next = target.targetDate == null
+        ? null
+        : dateOnly(target.targetDate!);
+    return Goal(
+      goalId: before.goalId,
+      userId: before.userId,
+      text: target.exerciseName.isEmpty ? before.text : target.exerciseName,
+      description: notes == null || notes.isEmpty ? null : notes,
+      exerciseId: target.exerciseId,
+      variationId: target.variationId,
+      targetWeight: target.weight,
+      targetReps: target.reps,
+      targetDate: next,
+      targetDateHistory: _sameDay(before.targetDate, next)
+          ? before.targetDateHistory
+          : [
+              ...before.targetDateHistory,
+              GoalTargetDateChange(
+                from: before.targetDate,
+                to: next,
+                changedAt: DateTime.now(),
+              ),
+            ],
+      createdDate: before.createdDate,
+    );
+  }
+
   /// Opens the sheet over a stubbed read and a recording writer, and hands
-  /// back the descriptions that were written, in order.
+  /// back the targets that were saved, in order.
   ///
   /// [writable] false opens it the way a **record** does — a null writer, the
-  /// state a completed review's goal is read in. The list stays empty there
-  /// for the same reason it exists: nothing can be written to it.
-  Future<List<String>> openSheet(
+  /// state a completed review's goal is read in. There is no Edit there, and
+  /// the list stays empty for the same reason it exists: nothing can be
+  /// written to it.
+  Future<List<ExerciseTarget>> openSheet(
     WidgetTester tester, {
     required Goal goal,
     Future<List<PastSetRow>> Function()? load,
     bool failWrite = false,
     bool writable = true,
+    void Function(PastSetRow set)? onOpenWorkout,
   }) async {
-    final writes = <String>[];
+    final writes = <ExerciseTarget>[];
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
@@ -103,15 +146,17 @@ void main() {
                   context,
                   goal: goal,
                   exerciseName: 'Bench',
-                  onDescriptionChanged: writable
-                      ? (text) async {
-                          writes.add(text);
+                  loadPastSets: load ?? () async => const <PastSetRow>[],
+                  onOpenWorkout: onOpenWorkout,
+                  onSave: writable
+                      ? (target) async {
+                          writes.add(target);
                           if (failWrite) {
-                            throw StateError('description write failed');
+                            throw StateError('goal write failed');
                           }
+                          return apply(goal, target);
                         }
                       : null,
-                  loadPastSets: load ?? () async => const <PastSetRow>[],
                 ),
                 child: const Text('open'),
               ),
@@ -125,70 +170,355 @@ void main() {
     return writes;
   }
 
-  testWidgets('rests in view mode, seeded from the stored notes', (
+  TextField field(WidgetTester tester, String key) =>
+      tester.widget<TextField>(find.byKey(ValueKey(key)));
+
+  final notesField = find.descendant(
+    of: find.byType(LambdaInput),
+    matching: find.byType(TextField),
+  );
+  final saveButton = find.widgetWithText(GlassButton, 'SAVE');
+  final editButton = find.widgetWithIcon(GlassButton, Icons.edit_outlined);
+
+  testWidgets(
+    'rests on the stored goal — the whole form, none of it enterable',
+    (tester) async {
+      final writes = await openSheet(
+        tester,
+        goal: goal(description: 'Beltless, pause on the chest'),
+      );
+
+      expect(find.text('Goal'), findsOneWidget);
+      // When the goal was said reads under the title — stamped at insert and
+      // the one date here nothing edits.
+      expect(find.text('Created 19 Oct 2026'), findsOneWidget);
+      // The same form the add sheet composes: the selector, the session grid's
+      // own column headers, the notes, the deadline.
+      expect(find.text('Bench'), findsOneWidget);
+      expect(find.text('REPS'), findsOneWidget);
+      expect(find.text('KG'), findsOneWidget);
+      expect(find.text('VARIATION'), findsOneWidget);
+      expect(find.text('NOTES'), findsOneWidget);
+      expect(find.text('TARGET DATE'), findsOneWidget);
+      expect(find.text('No target date'), findsOneWidget);
+
+      // The values read as the row stores them — 100, never 100.0.
+      expect(field(tester, 'goal-reps').controller!.text, '5');
+      expect(field(tester, 'goal-kg').controller!.text, '100');
+      expect(find.text('Beltless, pause on the chest'), findsOneWidget);
+
+      // Resting: every field shows its value and none can be entered.
+      expect(field(tester, 'goal-reps').readOnly, isTrue);
+      expect(field(tester, 'goal-kg').readOnly, isTrue);
+      expect(
+        tester.widget<LambdaInput>(find.byType(LambdaInput)).enabled,
+        isFalse,
+      );
+
+      // SAVE is drawn where ADD sits when creating, and it cannot act: the form
+      // has not been unlocked, let alone changed.
+      expect(editButton, findsOneWidget);
+      expect(saveButton, findsOneWidget);
+      expect(tester.widget<GlassButton>(saveButton).disabled, isTrue);
+      await tester.tap(find.text('SAVE'));
+      await tester.pumpAndSettle();
+
+      // A reading has no catalog to pick from, and no note invite.
+      await tester.tap(find.byKey(const ValueKey('goal-exercise-selector')));
+      await tester.pumpAndSettle();
+      expect(find.text('Search exercises…'), findsNothing);
+      expect(find.text('Add a note…'), findsNothing);
+
+      // A goal whose deadline never moved has no history to open.
+      expect(
+        find.byKey(const ValueKey('goal-target-date-history')),
+        findsNothing,
+      );
+
+      expect(
+        writes,
+        isEmpty,
+        reason: 'opening a goal must not be able to change it',
+      );
+    },
+  );
+
+  testWidgets('a met goal states the day it was hit, under the target date', (
     tester,
   ) async {
-    final writes = await openSheet(
+    await openSheet(
       tester,
-      goal: goal(description: 'Beltless, pause on the chest'),
+      goal: goal(),
+      load: () async => [
+        // A goal is achieved once: the sheet names the FIRST day the target
+        // was met, not the best day since (2026-10-20).
+        setRow(id: 's1', date: '2026-03-05', weight: 100, reps: [5]),
+        setRow(id: 's2', date: '2026-06-05', weight: 115, reps: [5]),
+      ],
     );
 
-    expect(find.byType(LambdaReadout), findsOneWidget);
-    expect(find.text('Beltless, pause on the chest'), findsOneWidget);
-    expect(find.byType(LambdaInput), findsNothing);
-    // The summary row is the name and the target as the two things they are,
-    // never the dash-joined string (2026-10-10).
-    expect(find.text('Bench'), findsOneWidget);
-    expect(find.text('100 kg × 5 reps'), findsOneWidget);
-    expect(find.text('Bench — 100 kg × 5 reps'), findsNothing);
-    expect(writes, isEmpty, reason: 'opening a goal must not be able to change it');
+    // The completion belongs to the deadline half of the sheet (2026-10-20):
+    // it reads beneath the TARGET DATE field — the goal's two dates, one
+    // above the other — not under the created date in the header.
+    expect(find.text('Created 19 Oct 2026'), findsOneWidget);
+    expect(find.text('Completed 5 Mar 2026'), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.text('Completed 5 Mar 2026')).dy,
+      greaterThan(tester.getTopLeft(find.text('TARGET DATE')).dy),
+      reason: 'the completion sits under the deadline, not in the header',
+    );
   });
 
-  testWidgets('a goal with no notes offers to add one', (tester) async {
-    await openSheet(tester, goal: goal());
+  testWidgets('a goal still standing states no completion day', (tester) async {
+    await openSheet(
+      tester,
+      goal: goal(),
+      // Heavy, but short of the target: evidence of an attempt, not a hit.
+      load: () async => [
+        setRow(id: 's1', date: '2026-03-05', weight: 90, reps: [5]),
+      ],
+    );
 
-    expect(find.text('Add a note…'), findsOneWidget);
-    expect(find.byType(LambdaReadout), findsNothing);
+    expect(find.text('Created 19 Oct 2026'), findsOneWidget);
+    expect(find.textContaining('Completed'), findsNothing);
+    expect(find.textContaining('already beat'), findsNothing);
+  });
+
+  testWidgets('Edit unlocks the form; SAVE waits for a real change', (
+    tester,
+  ) async {
+    await openSheet(tester, goal: goal(description: 'Beltless'));
+
+    await tester.tap(find.byIcon(Icons.edit_outlined));
+    await tester.pumpAndSettle();
+
+    // The mode changed, not the form: the same cells, now enterable — and
+    // SAVE is still quiet, because nothing has been said yet.
+    expect(find.byIcon(Icons.edit_outlined), findsNothing);
+    expect(field(tester, 'goal-reps').readOnly, isFalse);
+    expect(field(tester, 'goal-kg').readOnly, isFalse);
+    expect(
+      tester.widget<LambdaInput>(find.byType(LambdaInput)).enabled,
+      isTrue,
+    );
+    expect(tester.widget<GlassButton>(saveButton).disabled, isTrue);
+
+    await tester.enterText(notesField, 'Beltless, pause on the chest');
+    await tester.pumpAndSettle();
+    expect(tester.widget<GlassButton>(saveButton).disabled, isFalse);
+
+    // Back to the stored text: the draft says nothing new again.
+    await tester.enterText(notesField, 'Beltless');
+    await tester.pumpAndSettle();
+    expect(tester.widget<GlassButton>(saveButton).disabled, isTrue);
+
+    // A number typed and typed back is no change either.
+    await tester.enterText(find.byKey(const ValueKey('goal-kg')), '105');
+    await tester.pumpAndSettle();
+    expect(tester.widget<GlassButton>(saveButton).disabled, isFalse);
+    await tester.enterText(find.byKey(const ValueKey('goal-kg')), '100');
+    await tester.pumpAndSettle();
+    expect(tester.widget<GlassButton>(saveButton).disabled, isTrue);
+
+    // Whitespace around the stored notes is not a change — the row stores
+    // trimmed text, and the draft is compared trimmed.
+    await tester.enterText(notesField, '  Beltless  ');
+    await tester.pumpAndSettle();
+    expect(tester.widget<GlassButton>(saveButton).disabled, isTrue);
+  });
+
+  testWidgets('SAVE writes the whole form, and the sheet rests on what it read '
+      'back', (tester) async {
+    final writes = await openSheet(
+      tester,
+      goal: goal(description: 'Beltless', targetDate: DateTime(2026, 11, 1)),
+    );
+
+    await tester.tap(find.byIcon(Icons.edit_outlined));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const ValueKey('goal-kg')), '105');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('SAVE'));
+    await tester.pumpAndSettle();
+
+    expect(writes, hasLength(1));
+    final target = writes.single;
+    expect(target.exerciseId, 'e1');
+    expect(target.weight, 105);
+    expect(target.reps, 5);
+    expect(target.notes, 'Beltless');
+    expect(target.targetDate, DateTime(2026, 11, 1));
+
+    // Back to rest: Edit returns, SAVE goes quiet, and the boxes show the row
+    // as stored — the save left a reading, not a form still standing.
+    expect(find.byIcon(Icons.edit_outlined), findsOneWidget);
+    expect(tester.widget<GlassButton>(saveButton).disabled, isTrue);
+    expect(field(tester, 'goal-kg').controller!.text, '105');
+    expect(field(tester, 'goal-kg').readOnly, isTrue);
+  });
+
+  testWidgets('clearing the deadline saves "no date", and the history keeps '
+      'the move', (tester) async {
+    final moved = goal(
+      targetDate: DateTime(2026, 11, 15),
+      targetDateHistory: [
+        GoalTargetDateChange(
+          from: DateTime(2026, 11, 1),
+          to: DateTime(2026, 11, 15),
+          changedAt: DateTime(2026, 10, 25),
+        ),
+      ],
+    );
+    final writes = await openSheet(tester, goal: moved);
+
+    // The moves live behind the clock beside the deadline now: no caption
+    // under the field, and the button opens without entering edit mode.
+    expect(find.textContaining('Changed 25 Oct'), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('goal-target-date-history')));
+    await tester.pumpAndSettle();
+    final historySheet = find.byKey(
+      const ValueKey('goal-target-date-history-sheet'),
+    );
+    expect(find.text('Target date changes'), findsOneWidget);
+    expect(
+      find.descendant(of: historySheet, matching: find.text('15 Nov 2026')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: historySheet,
+        matching: find.text('Changed 25 Oct 2026 · was 1 Nov 2026'),
+      ),
+      findsOneWidget,
+    );
+
+    // Dismiss the list; the form underneath is still at rest.
+    await tester.tapAt(const Offset(10, 10));
+    await tester.pumpAndSettle();
+    expect(find.text('Target date changes'), findsNothing);
+
+    await tester.tap(find.byIcon(Icons.edit_outlined));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('goal-target-date-clear')));
+    await tester.pumpAndSettle();
+    expect(find.text('No target date'), findsOneWidget);
+    expect(tester.widget<GlassButton>(saveButton).disabled, isFalse);
+
+    await tester.tap(find.text('SAVE'));
+    await tester.pumpAndSettle();
+
+    expect(writes.single.targetDate, isNull);
+
+    // The read-back row carries the new adjustment — clearing a deadline is a
+    // move, not a forgetting — and the history now leads with it.
+    await tester.tap(find.byKey(const ValueKey('goal-target-date-history')));
+    await tester.pumpAndSettle();
+    final today = DateFormat('d MMM yyyy').format(DateTime.now());
+    expect(
+      find.descendant(of: historySheet, matching: find.text('No target date')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: historySheet,
+        matching: find.text('Changed $today · was 15 Nov 2026'),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('the history lists the moves newest first, a null side as '
+      '"no date"', (tester) async {
+    await openSheet(
+      tester,
+      goal: goal(
+        targetDate: DateTime(2026, 12, 1),
+        targetDateHistory: [
+          GoalTargetDateChange(
+            from: null,
+            to: DateTime(2026, 11, 1),
+            changedAt: DateTime(2026, 10, 20),
+          ),
+          GoalTargetDateChange(
+            from: DateTime(2026, 11, 1),
+            to: null,
+            changedAt: DateTime(2026, 10, 24),
+          ),
+          GoalTargetDateChange(
+            from: null,
+            to: DateTime(2026, 12, 1),
+            changedAt: DateTime(2026, 10, 26),
+          ),
+        ],
+      ),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('goal-target-date-history')));
+    await tester.pumpAndSettle();
+    final sheet = find.byKey(const ValueKey('goal-target-date-history-sheet'));
+
+    const newest = 'Changed 26 Oct 2026 · was no date';
+    const middle = 'Changed 24 Oct 2026 · was 1 Nov 2026';
+    const oldest = 'Changed 20 Oct 2026 · was no date';
+    for (final line in [newest, middle, oldest]) {
+      expect(
+        find.descendant(of: sheet, matching: find.text(line)),
+        findsOneWidget,
+      );
+    }
+
+    // Newest first: the move that produced the date on screen leads the list.
+    double y(String text) => tester
+        .getTopLeft(find.descendant(of: sheet, matching: find.text(text)))
+        .dy;
+    expect(y(newest), lessThan(y(middle)));
+    expect(y(middle), lessThan(y(oldest)));
   });
 
   // ── The record ────────────────────────────────────────────────────────────
   //
   // A completed review's goal opens the same sheet with no writer wired: the
   // report it would take is already made. The two states differ in what can be
-  // *reached*, never in what is shown — the notes still read back, the axes
-  // still stand on the history, and every way into edit mode is gone.
-  testWidgets('a record reads the goal back whole, with no way into edit '
-      'mode', (tester) async {
+  // *reached*, never in what is shown — the notes still read back, the form
+  // still stands complete, and every way into edit mode is gone.
+  testWidgets('a record has no Edit and no way into the form', (tester) async {
     await openSheet(
       tester,
       goal: goal(description: 'Beltless, pause on the chest'),
       writable: false,
-      load: () async => [
-        setRow(id: 'a', date: '2026-01-05', weight: 100, reps: [3]),
-        setRow(id: 'b', date: '2026-03-05', weight: 100, reps: [6]),
-      ],
     );
 
     // What the goal is, and what was said about it — all still here.
+    expect(find.text('Goal'), findsOneWidget);
+    expect(find.text('Created 19 Oct 2026'), findsOneWidget);
     expect(find.text('Bench'), findsOneWidget);
-    expect(find.text('100 kg × 5 reps'), findsOneWidget);
+    expect(field(tester, 'goal-reps').controller!.text, '5');
+    expect(field(tester, 'goal-kg').controller!.text, '100');
     expect(find.text('Beltless, pause on the chest'), findsOneWidget);
-    expect(find.byType(LambdaReadout), findsOneWidget);
-    // The axes are the live history, and a record did not freeze them.
-    expect(find.text('6 reps'), findsOneWidget);
-    expect(find.text('100 kg × 6'), findsOneWidget);
 
     // Every door into writing is gone, not merely locked.
-    expect(find.byType(LambdaInput), findsNothing);
-    expect(find.byIcon(Icons.edit_outlined), findsNothing);
-    expect(find.text('Add a note…'), findsNothing);
-
-    await tester.tap(find.byType(LambdaReadout));
-    await tester.pumpAndSettle();
+    expect(editButton, findsNothing);
+    expect(saveButton, findsOneWidget);
+    expect(tester.widget<GlassButton>(saveButton).disabled, isTrue);
+    expect(field(tester, 'goal-reps').readOnly, isTrue);
+    expect(field(tester, 'goal-kg').readOnly, isTrue);
     expect(
-      find.byType(LambdaInput),
-      findsNothing,
-      reason: 'the readout is inert — a record\'s tap opens nothing',
+      tester.widget<LambdaInput>(find.byType(LambdaInput)).enabled,
+      isFalse,
+    );
+
+    // Neither the catalog nor the calendar opens: the tap is gone with the
+    // edit it would start.
+    await tester.tap(find.byKey(const ValueKey('goal-exercise-selector')));
+    await tester.pumpAndSettle();
+    expect(find.text('Search exercises…'), findsNothing);
+    expect(
+      tester
+          .widget<GestureDetector>(
+            find.byKey(const ValueKey('goal-target-date')),
+          )
+          .onTap,
+      isNull,
     );
   });
 
@@ -201,81 +531,44 @@ void main() {
       findsNothing,
       reason: 'an empty header would only promise a note there is none of',
     );
-    expect(find.text('Add a note…'), findsNothing);
     expect(find.byType(LambdaInput), findsNothing);
+    expect(find.text('Add a note…'), findsNothing);
   });
 
-  testWidgets('edit mode seeds the box and writes the whole text per keystroke', (
+  testWidgets('a writable goal with no notes still offers the box', (
     tester,
   ) async {
-    final writes = await openSheet(tester, goal: goal(description: 'Beltless'));
-    await tester.tap(find.text('Beltless'));
-    await tester.pumpAndSettle();
+    await openSheet(tester, goal: goal());
 
-    final field = find.byType(TextField);
-    expect(tester.widget<TextField>(field).controller!.text, 'Beltless');
-    expect(writes, isEmpty, reason: 'entering edit mode is not an edit');
-
-    await tester.enterText(field, 'Beltless, paus');
-    await tester.pumpAndSettle();
-    await tester.enterText(field, 'Beltless, paused');
-    await tester.pumpAndSettle();
-
-    expect(writes, ['Beltless, paus', 'Beltless, paused']);
+    expect(find.text('NOTES'), findsOneWidget);
+    expect(find.byType(LambdaInput), findsOneWidget);
   });
 
-  testWidgets('a keystroke that changes nothing writes nothing', (tester) async {
-    final writes = await openSheet(tester, goal: goal(description: 'A'));
-    await tester.tap(find.text('A'));
-    await tester.pumpAndSettle();
-
-    // The same text again — a real keystroke that left the value alone.
-    tester.widget<LambdaInput>(find.byType(LambdaInput)).onChanged!('A');
-    await tester.pumpAndSettle();
-
-    expect(writes, isEmpty);
-  });
-
-  testWidgets('A → B → A writes every step', (tester) async {
-    final writes = await openSheet(tester, goal: goal(description: 'A'));
-    await tester.tap(find.text('A'));
-    await tester.pumpAndSettle();
-
-    await tester.enterText(find.byType(TextField), 'AB');
-    await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField), 'A');
-    await tester.pumpAndSettle();
-
-    expect(
-      writes,
-      ['AB', 'A'],
-      reason: 'going back to a value already written is still an edit',
-    );
-  });
-
-  testWidgets('a failed write keeps the text and says so', (tester) async {
+  testWidgets('a failed save keeps the form standing and says so', (
+    tester,
+  ) async {
     final writes = await openSheet(tester, goal: goal(), failWrite: true);
-    await tester.tap(find.text('Add a note…'));
+    await tester.tap(find.byIcon(Icons.edit_outlined));
     await tester.pumpAndSettle();
 
-    await tester.enterText(find.byType(TextField), 'Slow off the chest');
+    await tester.enterText(notesField, 'Slow off the chest');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('SAVE'));
     await tester.pumpAndSettle();
 
-    expect(writes, ['Slow off the chest']);
-    expect(find.text('Could not save the description.'), findsOneWidget);
+    expect(writes, hasLength(1));
+    expect(find.text('Could not save the goal.'), findsOneWidget);
     expect(
-      tester.widget<TextField>(find.byType(TextField)).controller!.text,
+      find.byIcon(Icons.edit_outlined),
+      findsNothing,
+      reason: 'a failure leaves the form unlocked — the edit is still in hand',
+    );
+    expect(tester.widget<GlassButton>(saveButton).disabled, isFalse);
+    expect(
+      tester.widget<TextField>(notesField).controller!.text,
       'Slow off the chest',
       reason: 'the box keeps what was typed',
     );
-
-    // The guard did not advance, so the next keystroke carries the whole text
-    // again — one failure cannot strand a half-written value.
-    tester
-        .widget<LambdaInput>(find.byType(LambdaInput))
-        .onChanged!('Slow off the chest, hips too');
-    await tester.pumpAndSettle();
-    expect(writes, ['Slow off the chest', 'Slow off the chest, hips too']);
 
     // Let the SnackBar's own dismiss timer run out — a timer still pending
     // when the tree comes down fails the test.
@@ -283,94 +576,46 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  testWidgets('both axes run newest-first, newest emphasized, pair-scoped', (
-    tester,
-  ) async {
+  testWidgets('a met goal states its completion under the deadline, and the '
+      'row opens that workout', (tester) async {
+    String? opened;
     await openSheet(
       tester,
       goal: goal(),
       load: () async => [
         setRow(id: 'a', date: '2026-01-05', weight: 100, reps: [3]),
-        setRow(id: 'b', date: '2026-02-05', weight: 100, reps: [4]),
-        setRow(id: 'c', date: '2026-03-05', weight: 100, reps: [6]),
-        // A heavier set at the target reps — a rung on the reps axis only.
-        setRow(id: 'd', date: '2026-04-05', weight: 105, reps: [5]),
-        // Wrong variation, better reps at the target weight: the newest rung
-        // on the weight axis if the pair were not scoped.
-        setRow(
-          id: 'x',
-          date: '2026-05-05',
-          weight: 100,
-          reps: [9],
-          variationId: 'v2',
-        ),
-        // Wrong exercise, same weight and better reps again.
-        setRow(
-          id: 'y',
-          date: '2026-06-05',
-          weight: 100,
-          reps: [10],
-          exerciseId: 'e2',
-        ),
+        setRow(id: 'b', date: '2026-03-05', weight: 100, reps: [6]),
       ],
+      onOpenWorkout: (set) => opened = set.sessionId,
     );
 
-    // The weight axis: 3 → 4 → 6 reps at 100 kg, newest on top.
-    expect(
-      tester.getTopLeft(find.text('6 reps')).dy,
-      lessThan(tester.getTopLeft(find.text('4 reps')).dy),
-    );
-    expect(
-      tester.getTopLeft(find.text('4 reps')).dy,
-      lessThan(tester.getTopLeft(find.text('3 reps')).dy),
-    );
-    expect(
-      tester.widget<Text>(find.text('6 reps')).style!.color,
-      AppColors.accent,
-      reason: 'the newest rung is the current best',
-    );
-    expect(
-      tester.widget<Text>(find.text('4 reps')).style!.color,
-      AppColors.muted,
-    );
-
-    // The reps axis: 100 kg then 105 kg at 5+ reps, newest on top.
-    expect(
-      tester.getTopLeft(find.text('105 kg × 5')).dy,
-      lessThan(tester.getTopLeft(find.text('100 kg × 6')).dy),
-    );
-    expect(
-      tester.widget<Text>(find.text('105 kg × 5')).style!.color,
-      AppColors.accent,
-    );
-    expect(
-      tester.widget<Text>(find.text('100 kg × 6')).style!.color,
-      AppColors.muted,
-    );
-
-    // The one set both axes share, dated on each.
-    expect(find.text('5 Mar'), findsNWidgets(2));
-
-    expect(
-      find.text('9 reps'),
-      findsNothing,
-      reason: 'a set on another variation is another scope',
-    );
-    expect(
-      find.text('10 reps'),
-      findsNothing,
-      reason: 'a set on another exercise is another goal entirely',
-    );
+    // The "you've already beat this" caption is the creation form's (the
+    // draft's target, as it is typed); a stored goal states the day it was
+    // hit, under the deadline it answered (2026-10-20).
+    expect(find.textContaining('already beat'), findsNothing);
+    expect(find.text('Completed 5 Mar 2026'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('goal-completed-on')));
+    expect(opened, 's-b');
   });
 
-  testWidgets('a weight-only goal shows only its weight axis', (tester) async {
-    await openSheet(tester, goal: goal(targetReps: null));
+  testWidgets('a failed history read claims nothing — never "no sets"', (
+    tester,
+  ) async {
+    await openSheet(
+      tester,
+      goal: goal(),
+      load: () async => throw StateError('timeline read failed'),
+    );
 
-    expect(find.text('AT 100 KG'), findsOneWidget);
-    expect(find.textContaining('REPS'), findsNothing);
+    expect(find.textContaining("Couldn't read"), findsNothing);
+    expect(find.textContaining('already beat'), findsNothing);
+    expect(find.textContaining('Completed'), findsNothing);
+    // The form itself is untouched by the miss.
+    expect(find.text('Bench'), findsOneWidget);
+    expect(find.text('SAVE'), findsOneWidget);
   });
 
-  testWidgets('a text-only goal has no axes and never reads the timeline', (
+  testWidgets('a goal with no exercise never reads the timeline', (
     tester,
   ) async {
     var reads = 0;
@@ -388,35 +633,21 @@ void main() {
       },
     );
 
-    expect(find.textContaining('AT '), findsNothing);
     expect(reads, 0, reason: 'there is no target to measure history against');
     expect(find.text('Read more'), findsOneWidget);
   });
 
-  testWidgets('a failed read says so — never "no sets"', (tester) async {
-    await openSheet(
-      tester,
-      goal: goal(),
-      load: () async => throw StateError('timeline read failed'),
-    );
-
-    // One line per axis, because the sheet claims nothing per axis either.
-    expect(find.text("Couldn't read your history."), findsNWidgets(2));
-    expect(find.textContaining('No sets'), findsNothing);
+  testWidgets('the sheet draws readable ink and type', (tester) async {
+    await openSheet(tester, goal: goal());
+    expectReadableText(tester, find.byType(MaterialApp));
   });
+}
 
-  testWidgets('a read still in flight reads as loading', (tester) async {
-    final completer = Completer<List<PastSetRow>>();
-    await openSheet(tester, goal: goal(), load: () => completer.future);
-    expect(find.text('Loading…'), findsNWidgets(2));
-    expect(find.textContaining('No sets'), findsNothing);
-
-    completer.complete(const <PastSetRow>[]);
-    await tester.pumpAndSettle();
-
-    expect(find.text('No sets at 100 kg yet.'), findsOneWidget);
-    expect(find.text('No sets of 5+ reps yet.'), findsOneWidget);
-  });
+/// Whether two goal dates name the same calendar day. Null is "no deadline",
+/// and equals only itself.
+bool _sameDay(DateTime? a, DateTime? b) {
+  if (a == null || b == null) return a == null && b == null;
+  return a.year == b.year && a.month == b.month && a.day == b.day;
 }
 
 /// Registers a bundled typeface under the family name the app asks for.

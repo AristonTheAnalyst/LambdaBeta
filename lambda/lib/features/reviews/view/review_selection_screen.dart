@@ -6,6 +6,7 @@ import '../../../core/styles/app_spacing.dart';
 import '../../../core/styles/app_text_styles.dart';
 import '../../../shared/widgets/floating_bar.dart';
 import '../../../shared/widgets/glass_button.dart';
+import '../../../shared/widgets/header_icon_button.dart';
 import '../../../shared/widgets/page_header.dart';
 import '../viewmodel/reviews_viewmodel.dart';
 import 'review_picker_rows.dart';
@@ -137,8 +138,11 @@ class _ReviewSelectionScreenState extends State<ReviewSelectionScreen> {
             children: [
               PageHeader(
                 title: widget.name,
-                left: IconButton(
-                  icon: Icon(Icons.arrow_back, color: AppColors.primary),
+                left: HeaderIconButton(
+                  icon: Icons.arrow_back_ios_new,
+                  semanticsLabel: 'Back',
+                  glyphSize: 18,
+                  color: AppColors.primary,
                   onPressed: () => Navigator.of(context).pop(),
                 ),
               ),
@@ -201,7 +205,8 @@ class _ReviewSelectionScreenState extends State<ReviewSelectionScreen> {
                                 'ride along with the workouts you pick.',
                                 style: AppFonts.ui(
                                   fontSize: AppTextStyles.xs,
-                                  color: AppColors.muted,
+                                  color: AppColors.inkSecondary,
+                                  height: 1.4,
                                 ),
                               ),
                             ),
@@ -232,7 +237,7 @@ class _EmptyLibrary extends StatelessWidget {
             'Nothing to review yet',
             style: AppFonts.ui(
               fontSize: AppTextStyles.md,
-              color: AppColors.muted,
+              color: AppColors.inkSecondary,
             ),
           ),
           const SizedBox(height: AppSpacing.sm),
@@ -242,7 +247,8 @@ class _EmptyLibrary extends StatelessWidget {
             textAlign: TextAlign.center,
             style: AppFonts.ui(
               fontSize: AppTextStyles.xs,
-              color: AppColors.muted,
+              color: AppColors.inkSecondary,
+              height: 1.4,
             ),
           ),
         ],

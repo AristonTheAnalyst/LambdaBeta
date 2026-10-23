@@ -61,6 +61,22 @@
 # retries forever — a stalled upload checkpoint on that device, never an error
 # the user sees.
 #
+# 2026-10-19 (goal target date): + fact_goal.target_date /
+# .target_date_history_json. No stream change — the row is already
+# `SELECT *` — so deploying this file is only needed to record the columns; the
+# migration alone is enough. Push 20261019120000_goal_target_date.sql BEFORE
+# shipping a build that writes them: against an unmigrated server the upload
+# earns PGRST204, which the client retries forever — a stalled upload
+# checkpoint on that device, never an error the user sees.
+#
+# 2026-10-23 (friends): + friends_data, a SECOND auto-subscribed stream:
+# dim_friend_code, friend_relationship, and each mutual friend's completed
+# sessions plus the rows the viewer reads (exercises, variations, lessons,
+# goals) and a NAME-ONLY dim_user slice. Push
+# 20261023120000_friends.sql BEFORE deploying this stream — validation names
+# the new tables — and bump the app version first so old builds keep
+# user_data only (they don't know the new tables' local schema).
+#
 # Deploy steps (PowerSync Dashboard → Sync Streams):
 #   1. Replace the current YAML with this file.
 #   2. Bump the app version BEFORE deploying — sync streams attach to app
@@ -97,3 +113,35 @@ streams:
       - SELECT *, review_id as id FROM fact_program_review WHERE user_id = auth.user_id()
       - SELECT *, block_id as id FROM dim_program_block WHERE user_id = auth.user_id()
       - SELECT *, (coach_user_id || '-' || athlete_user_id) as id FROM coaching_relationship WHERE coach_user_id = auth.user_id() OR athlete_user_id = auth.user_id()
+
+  # Friends (2026-10-23). One bucket per friend: every query keys on the same
+  # `my_friends` list, so the ten queries share buckets instead of adding one
+  # per table. The list is MUTUAL by construction — a one-way row (say,
+  # someone inserting themselves as my friend over REST) matches nothing.
+  # Streams bypass RLS; this query IS the privacy boundary.
+  friends_data:
+    auto_subscribe: true
+    with:
+      my_friends: SELECT f.friend_user_id AS friend_id
+                  FROM friend_relationship f
+                  WHERE f.user_id = auth.user_id()
+                    AND f.friend_user_id IN (
+                      SELECT rev.user_id FROM friend_relationship rev
+                      WHERE rev.friend_user_id = auth.user_id())
+    queries:
+      - SELECT *, user_id as id FROM dim_friend_code WHERE user_id = auth.user_id()
+      - SELECT *, (user_id || '-' || friend_user_id) as id FROM friend_relationship WHERE user_id = auth.user_id()
+      # Names only — a friend's height, weight, gender, DOB and code stay private.
+      - SELECT user_id, user_name, user_lastname, user_id as id FROM dim_user WHERE user_id IN my_friends
+      # Completed records only — the live session is never sent.
+      - SELECT *, session_id as id FROM fact_session WHERE user_id IN my_friends AND end_datetime IS NOT NULL
+      # Children keyed on user_id (one bucket per friend); a session_id filter
+      # would allocate one bucket per session, thousands for a long history. A
+      # mid-session friend's child rows can download, but the parent
+      # fact_session row is withheld, so no surface can name or open them.
+      - SELECT *, session_exercise_id as id FROM fact_session_exercise WHERE user_id IN my_friends
+      - SELECT *, session_exercise_set_id as id FROM fact_session_exercise_set WHERE user_id IN my_friends
+      - SELECT *, custom_exercise_id as id FROM dim_exercise WHERE user_id IN my_friends
+      - SELECT *, custom_variation_id as id FROM dim_variation WHERE user_id IN my_friends
+      - SELECT *, lesson_id as id FROM dim_lesson WHERE user_id IN my_friends
+      - SELECT *, goal_id as id FROM fact_goal WHERE user_id IN my_friends

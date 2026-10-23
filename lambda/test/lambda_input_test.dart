@@ -4,6 +4,8 @@ import 'package:lambda/core/styles/app_colors.dart';
 import 'package:lambda/shared/widgets/lambda_input.dart';
 import 'package:lambda/shared/widgets/lambda_search_field.dart';
 
+import 'support/readable_text.dart';
+
 /// The ground rule on the app's text boxes (2026-10-08).
 ///
 /// A box's fill is always one tier above what it stands on: `surface` on the
@@ -11,7 +13,7 @@ import 'package:lambda/shared/widgets/lambda_search_field.dart';
 /// `surface` ground (a card, a default modal sheet, the variation picker).
 /// On a surface ground the usual fill vanishes, and a box that vanishes into
 /// its ground reads as dead text however editable it actually is; the
-/// Exercise Review Note was exactly that when the rule was written down.
+/// Review Note was exactly that when the rule was written down.
 void main() {
   Future<Color?> fillOf(WidgetTester tester, Widget field) async {
     await tester.pumpWidget(MaterialApp(home: Scaffold(body: field)));
@@ -38,12 +40,16 @@ void main() {
   ) async {
     final ctrl = TextEditingController();
     addTearDown(ctrl.dispose);
-    final fill = await fillOf(tester, LambdaInput(controller: ctrl, elevated: true));
+    final fill = await fillOf(
+      tester,
+      LambdaInput(controller: ctrl, elevated: true),
+    );
     expect(fill, AppColors.surfaceHigh);
     expect(
       fill,
       isNot(AppColors.surface),
-      reason: 'a fill matching the ground is the uneditable look the rule '
+      reason:
+          'a fill matching the ground is the uneditable look the rule '
           'exists to prevent',
     );
   });
@@ -56,8 +62,30 @@ void main() {
     expect(
       await fillOf(tester, const LambdaSearchField()),
       AppColors.surface,
-      reason: 'a toolbar search box stands on the page and keeps the base '
+      reason:
+          'a toolbar search box stands on the page and keeps the base '
           'fill',
     );
+  });
+
+  testWidgets('placeholders are readable secondary ink, never muted', (
+    tester,
+  ) async {
+    final ctrl = TextEditingController();
+    addTearDown(ctrl.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Column(
+            children: [
+              LambdaInput(controller: ctrl, placeholder: 'Add a note'),
+              const LambdaSearchField(),
+            ],
+          ),
+        ),
+      ),
+    );
+    expect(find.text('Add a note'), findsOneWidget);
+    expectReadableText(tester, find.byType(MaterialApp));
   });
 }

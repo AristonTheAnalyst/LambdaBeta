@@ -74,10 +74,10 @@ class ProgramProgress {
   /// `getProgress` has to apply the same one when it fills in the numbers this
   /// reads.
   bool get boundedBySessions => isSessionsBounded(
-        hasBlock: block != null,
-        blockTargetSessions: block?.targetSessions,
-        progressionMode: run.progressionMode,
-      );
+    hasBlock: block != null,
+    blockTargetSessions: block?.targetSessions,
+    progressionMode: run.progressionMode,
+  );
 
   /// The days remainder of the weeks length — the part whole weeks cannot
   /// express. Null for a run with no block to carry one: a blockless run's own
@@ -177,11 +177,15 @@ class ProgramProgress {
       final w = totalWeeks;
       if (w != null) {
         final left = w - weekNumber;
-        return left <= 0 ? 'final week' : '$left week${left == 1 ? '' : 's'} left';
+        return left <= 0
+            ? 'final week'
+            : '$left week${left == 1 ? '' : 's'} left';
       }
       return 'ongoing';
     }
     final left = totalWorkoutsInCycle - totalWorkoutsCompleted;
-    return left <= 0 ? 'final session' : '$left session${left == 1 ? '' : 's'} left';
+    return left <= 0
+        ? 'final session'
+        : '$left session${left == 1 ? '' : 's'} left';
   }
 }

@@ -31,13 +31,14 @@ abstract final class AppFonts {
     Color? color,
     double? letterSpacing,
     double? height,
-  }) =>
-      _text(uiFamily,
-          fontSize: fontSize,
-          fontWeight: fontWeight,
-          color: color,
-          letterSpacing: letterSpacing,
-          height: height);
+  }) => _text(
+    uiFamily,
+    fontSize: fontSize,
+    fontWeight: fontWeight,
+    color: color,
+    letterSpacing: letterSpacing,
+    height: height,
+  );
 
   static TextStyle mono({
     double? fontSize,
@@ -45,13 +46,14 @@ abstract final class AppFonts {
     Color? color,
     double? letterSpacing,
     double? height,
-  }) =>
-      _text(monoFamily,
-          fontSize: fontSize,
-          fontWeight: fontWeight,
-          color: color,
-          letterSpacing: letterSpacing,
-          height: height);
+  }) => _text(
+    monoFamily,
+    fontSize: fontSize,
+    fontWeight: fontWeight,
+    color: color,
+    letterSpacing: letterSpacing,
+    height: height,
+  );
 
   static TextStyle _text(
     String family, {
@@ -60,36 +62,36 @@ abstract final class AppFonts {
     Color? color,
     double? letterSpacing,
     double? height,
-  }) =>
-      TextStyle(
-        fontFamily: family,
-        fontSize: fontSize,
-        fontWeight: fontWeight,
-        color: color,
-        letterSpacing: letterSpacing,
-        height: height,
-      );
+  }) => TextStyle(
+    fontFamily: family,
+    fontSize: fontSize,
+    fontWeight: fontWeight,
+    color: color,
+    letterSpacing: letterSpacing,
+    height: height,
+  );
 
   /// Applies the bundled Manrope family to a whole text theme, preserving
   /// each style's existing size/weight/color.
   static TextTheme uiTextTheme(TextTheme base) => TextTheme(
-        displayLarge: _apply(base.displayLarge),
-        displayMedium: _apply(base.displayMedium),
-        displaySmall: _apply(base.displaySmall),
-        headlineLarge: _apply(base.headlineLarge),
-        headlineMedium: _apply(base.headlineMedium),
-        headlineSmall: _apply(base.headlineSmall),
-        titleLarge: _apply(base.titleLarge),
-        titleMedium: _apply(base.titleMedium),
-        titleSmall: _apply(base.titleSmall),
-        bodyLarge: _apply(base.bodyLarge),
-        bodyMedium: _apply(base.bodyMedium),
-        bodySmall: _apply(base.bodySmall),
-        labelLarge: _apply(base.labelLarge),
-        labelMedium: _apply(base.labelMedium),
-        labelSmall: _apply(base.labelSmall),
-      );
+    displayLarge: _apply(base.displayLarge),
+    displayMedium: _apply(base.displayMedium),
+    displaySmall: _apply(base.displaySmall),
+    headlineLarge: _apply(base.headlineLarge),
+    headlineMedium: _apply(base.headlineMedium),
+    headlineSmall: _apply(base.headlineSmall),
+    titleLarge: _apply(base.titleLarge),
+    titleMedium: _apply(base.titleMedium),
+    titleSmall: _apply(base.titleSmall),
+    bodyLarge: _apply(base.bodyLarge),
+    bodyMedium: _apply(base.bodyMedium),
+    bodySmall: _apply(base.bodySmall),
+    labelLarge: _apply(base.labelLarge),
+    labelMedium: _apply(base.labelMedium),
+    labelSmall: _apply(base.labelSmall),
+  );
 
-  static TextStyle _apply(TextStyle? t) =>
-      t == null ? TextStyle(fontFamily: uiFamily) : t.copyWith(fontFamily: uiFamily);
+  static TextStyle _apply(TextStyle? t) => t == null
+      ? TextStyle(fontFamily: uiFamily)
+      : t.copyWith(fontFamily: uiFamily);
 }

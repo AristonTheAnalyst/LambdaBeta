@@ -43,12 +43,12 @@ class PlannedSessionExercise {
   }
 
   Map<String, dynamic> toMap() => {
-        'planned_exercise_id': plannedExerciseId,
-        'planned_session_id': plannedSessionId,
-        'user_id': userId,
-        'custom_exercise_id': exerciseId,
-        'exercise_order': exerciseOrder,
-        'exercise_name': exerciseName,
-        'is_archived': isArchived,
-      };
+    'planned_exercise_id': plannedExerciseId,
+    'planned_session_id': plannedSessionId,
+    'user_id': userId,
+    'custom_exercise_id': exerciseId,
+    'exercise_order': exerciseOrder,
+    'exercise_name': exerciseName,
+    'is_archived': isArchived,
+  };
 }

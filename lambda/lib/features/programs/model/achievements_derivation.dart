@@ -88,10 +88,7 @@ class AchievementsDerivation {
     // program-level target is being chased inside every one of its blocks.
     // A set scope asks the same question by workouts: the blocks any of them
     // sits in.
-    final allGoals = await _programs.fetchGoals(
-      userId,
-      programId: programId,
-    );
+    final allGoals = await _programs.fetchGoals(userId, programId: programId);
     final goalBlocks = sessionIds == null
         ? null
         : {

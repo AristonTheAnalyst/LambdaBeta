@@ -1,32 +1,79 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
 import '../../../core/styles/app_spacing.dart';
+import '../../../core/styles/app_text_styles.dart';
 import '../../../core/utils/session_format.dart';
 import '../../../data/models/lesson.dart';
 import '../../../data/models/session_exercise_set.dart';
 import '../../../shared/mixins/unsaved_changes_guard.dart';
+import '../../../shared/router/app_router.dart';
 import '../../../shared/widgets/add_exercise_modal.dart';
-import '../../../shared/widgets/app_card.dart';
+import '../../../shared/widgets/bar_icon_button.dart';
 import '../../../shared/widgets/dropdown_select.dart';
+import '../../../shared/widgets/exercise_selector.dart';
 import '../../../shared/widgets/glass_button.dart';
+import '../../../shared/widgets/header_icon_button.dart';
 import '../../../shared/widgets/page_header.dart';
-import '../../../shared/widgets/planned_banner.dart';
-import '../../../shared/widgets/reflection_summary.dart';
-import '../../../shared/widgets/segmented_control.dart';
-import '../../../shared/widgets/session_bookend.dart';
-import '../../../shared/widgets/session_identity_card.dart';
+import '../../../shared/widgets/scroll_shrink_nav_bar.dart';
+import '../../../shared/widgets/session_date_bar.dart';
 import '../../../shared/widgets/session_exercise_card.dart';
 import '../../../shared/widgets/session_set_row.dart';
-import '../../../shared/widgets/stats_row.dart';
-import '../../session/model/pr_engine.dart';
+import '../../../shared/widgets/undo_redo_buttons.dart';
+import '../../session/model/session_local_state.dart';
 import '../../session/view/lessons_modal.dart';
-import '../../session/view/pr_modal.dart';
+import '../../session/view/pr_history_sheet.dart';
+import '../../session/view/ratings_sheet.dart';
+import '../../session/view/session_stats_bar.dart';
 import '../viewmodel/session_detail_viewmodel.dart';
 
 class SessionDetailScreen extends StatefulWidget {
-  const SessionDetailScreen({super.key, required this.sessionId});
+  const SessionDetailScreen({
+    super.key,
+    required this.sessionId,
+    this.initialTab,
+    this.initialExerciseId,
+    this.fromLive = false,
+    this.userId,
+    this.readOnly = false,
+    this.navRoute = '/session',
+  });
+
   final String sessionId;
+
+  /// Accepted for route compatibility (`?tab=`); the viewer no longer has
+  /// surfaces to switch between (2026-10-22). The goal sheet's completion
+  /// row still lands right, because `?exercise=` is what selects the
+  /// exercise and it is honoured.
+  final String? initialTab;
+
+  /// The exercise the reader came to see, selected on open — the goal's own
+  /// (2026-10-20). Null leaves the first slot active.
+  final String? initialExerciseId;
+
+  /// The route was pushed by the live Training page (`AppRouter.fromLiveExtra`,
+  /// 2026-10-22): stepping forward onto "today" pops back onto the live page
+  /// still mounted underneath rather than rebuilding the shell.
+  final bool fromLive;
+
+  /// Whose record this is; null reads the signed-in user's own. The friend
+  /// viewer passes the friend's id, and every read — the record, its walk
+  /// stamps, the catalog, PRs, lessons and goals — follows it (2026-10-23).
+  final String? userId;
+
+  /// A friend's record: no edit path, no Restore, no write affordance
+  /// anywhere. The header's edit button and the lessons modal's composer are
+  /// the two doors this closes; everything else was already read-only in
+  /// view mode.
+  final bool readOnly;
+
+  /// Which tab the page's own bar lights — '/session' for the Training
+  /// viewer, '/friends' for a friend's.
+  final String navRoute;
 
   @override
   State<SessionDetailScreen> createState() => _SessionDetailScreenState();
@@ -39,10 +86,71 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
   @override
   void initState() {
     super.initState();
-    _vm = SessionDetailViewModel();
+    _vm = SessionDetailViewModel(userId: widget.userId);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _vm.load(widget.sessionId);
+      _vm.load(widget.sessionId, initialExerciseId: widget.initialExerciseId);
     });
+  }
+
+  @override
+  void didUpdateWidget(covariant SessionDetailScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // A rebuild that carries a different route id under the same State: the
+    // page reads the new record. The date bar's own walk never comes through
+    // here — it steps the view model in place, without a navigation
+    // (2026-10-22).
+    if (oldWidget.sessionId != widget.sessionId) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _vm.load(widget.sessionId, initialExerciseId: widget.initialExerciseId);
+      });
+    }
+  }
+
+  // ── The date bar's walk (2026-10-22) ───────────────────────────────────
+
+  /// The live Training page's guard, one step at a time: stepping away from
+  /// a record being edited asks exactly what leaving it does. A settle in
+  /// progress is flushed either way — a keystroke must not be dropped by a
+  /// step.
+  Future<bool> _settleBeforeWalk() async {
+    if (_vm.state.value.isEditing) {
+      final didProceed = await confirmBack();
+      return didProceed && mounted;
+    }
+    await _vm.flushPendingCommits();
+    return mounted;
+  }
+
+  Future<void> _walkOlder() async {
+    final id = _vm.state.value.walk?.olderId;
+    if (id == null || !await _settleBeforeWalk() || !mounted) return;
+    // In place: the same page, the same view model, the neighbouring record
+    // swapped under it — the PR Lab's pager, not a navigation (2026-10-22).
+    await _vm.walkTo(id);
+  }
+
+  Future<void> _walkNewer() async {
+    final walk = _vm.state.value.walk;
+    if (walk == null || !await _settleBeforeWalk() || !mounted) return;
+    final newerId = walk.newerId;
+    if (newerId != null) {
+      await _vm.walkTo(newerId);
+      return;
+    }
+    if (!walk.hasLiveSession) return;
+    // A friend's record never walks onto "today": the live page on this
+    // device is the viewer's own session, not the friend's (2026-10-23).
+    if (widget.readOnly) return;
+    // The top of the stack steps onto "today" — a different surface, so this
+    // one is a real move: a viewer pushed from Training pops back onto the
+    // live page still mounted underneath; one opened from the library enters
+    // the session tab.
+    if (widget.fromLive && Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    } else {
+      GoRouter.of(context).go('/session');
+    }
   }
 
   @override
@@ -60,12 +168,26 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
 
   @override
   Future<void> onSave() async {
-    await _vm.saveNotes(widget.sessionId);
+    await _vm.saveNotes();
   }
 
   @override
   void onDiscard() {
     _vm.cancelEditing();
+  }
+
+  /// The floating bar the Training page wears (2026-10-22). The viewer is a
+  /// pushed page on the root navigator, so the shell's bar is behind it —
+  /// the viewer draws the shell's own bar for itself, the tab the route came
+  /// from lit ([widget.navRoute]), and a tab tap leaves the record through
+  /// the same unsaved-changes guard the back arrow uses.
+  Future<void> _onNavTap(int index) async {
+    final router = GoRouter.of(context);
+    if (_vm.state.value.isEditing) {
+      final didProceed = await confirmBack();
+      if (!didProceed || !mounted) return;
+    }
+    router.go(tabRouteAt(index));
   }
 
   @override
@@ -86,45 +208,79 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
           return buildGuardedScaffold(
             scaffold: Scaffold(
               backgroundColor: AppColors.bg,
-              body: Column(
-                children: [
-                  PageHeader(
-                    title: state.isEditing ? 'Edit Session' : 'Past Session',
-                    left: GestureDetector(
-                      onTap: () async {
-                        if (state.isEditing) {
-                          final didProceed = await confirmBack();
-                          if (didProceed && mounted) {
-                            Navigator.of(this.context).pop();
-                          }
-                        } else {
-                          Navigator.of(context).pop();
-                        }
-                      },
-                      child: Icon(
-                        Icons.arrow_back_ios_new,
-                        size: 18,
+              // The shell's floating bar, drawn here because this page is a
+              // push over the shell — the Training page's bar, element for
+              // element (Session tab lit; logs live in its branch).
+              body: ScrollShrinkNavBar(
+                // '/session' for the Training viewer, '/friends' for a
+                // friend's record — the bar always lights the tab the page
+                // was opened from (2026-10-23).
+                currentIndex: tabIndexFor(widget.navRoute),
+                onTap: _onNavTap,
+                items: appTabItems,
+                child: Column(
+                  children: [
+                    PageHeader(
+                      // The header is the Training page's header (2026-10-22):
+                      // the session's own name — the plan it followed, or
+                      // Freestyle — so the two surfaces are the same page. The
+                      // date bar on the floor says it is a record being read;
+                      // the header never restates the mode in words. One title
+                      // owner for both surfaces: [sessionTitle] (2026-10-23).
+                      title: state.sessionTitle ?? 'Freestyle Session',
+                      left: HeaderIconButton(
+                        icon: Icons.arrow_back_ios_new,
+                        semanticsLabel: 'Back',
+                        glyphSize: 18,
                         color: AppColors.primary,
+                        onPressed: () async {
+                          if (state.isEditing) {
+                            final didProceed = await confirmBack();
+                            if (didProceed && mounted) {
+                              Navigator.of(this.context).pop();
+                            }
+                          } else {
+                            Navigator.of(context).pop();
+                          }
+                        },
+                      ),
+                      right: widget.readOnly
+                          // A friend's record has no edit path at all — no
+                          // pencil, no Done (2026-10-23).
+                          ? null
+                          : state.isEditing
+                          // The Training header's one-word verbs are glyphs
+                          // (golden rule 5): Done saves and leaves the mode,
+                          // exactly like the live page's check.
+                          ? HeaderIconButton(
+                              icon: Icons.check,
+                              semanticsLabel: 'Done editing',
+                              glyphSize: 22,
+                              color: AppColors.success,
+                              onPressed: state.isSaving
+                                  ? null
+                                  : () => _vm.saveNotes(),
+                            )
+                          : HeaderIconButton(
+                              icon: Icons.edit_outlined,
+                              semanticsLabel: 'Edit session',
+                              glyphSize: 20,
+                              color: AppColors.primary,
+                              onPressed: _vm.startEditing,
+                            ),
+                    ),
+                    Expanded(
+                      child: SessionDetailView(
+                        viewModel: _vm,
+                        state: state,
+                        initialTab: widget.initialTab,
+                        readOnly: widget.readOnly,
+                        onWalkOlder: _walkOlder,
+                        onWalkNewer: _walkNewer,
                       ),
                     ),
-                    right: state.isEditing
-                        ? GlassButton(
-                            label: 'Done',
-                            compact: true,
-                            loading: state.isSaving,
-                            disabled: state.isSaving,
-                            onPressed: () => _vm.saveNotes(widget.sessionId),
-                          )
-                        : GlassButton(
-                            label: 'Edit',
-                            compact: true,
-                            onPressed: _vm.startEditing,
-                          ),
-                  ),
-                  Expanded(
-                    child: SessionDetailView(viewModel: _vm, state: state),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           );
@@ -136,153 +292,286 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
 
 // ── Body ─────────────────────────────────────────────────────────────────────
 
-/// The past-session viewer's tabbed content — the Details/Summary toggle
-/// plus the selected surface. Shared between the /logs route (with its
-/// Edit header) and the Session tab's Home embed (read-only view mode).
-class SessionDetailView extends StatefulWidget {
+/// The past-session viewer — the Training view, read-only (2026-10-22).
+///
+/// Same shape as the live session, element for element: the name in the
+/// header, the exercise card on the page's gutter, and the floor bar the
+/// live page wears — the date bar (`PREVIOUSLY - 20 Oct 2026`), then
+/// undo/redo with the historic trash, the ratings pencil and the two count
+/// tiles. The old PRs | Details | Reflection toggle is gone; its three
+/// surfaces live behind the floor now — PRs behind the trophy, pre/post
+/// answers behind the pencil, lessons behind the book — and the sets were
+/// always the page itself.
+///
+/// Shared between the /logs route (with its Edit header glyph) and read-only
+/// embeds (the another-device preview).
+class SessionDetailView extends StatelessWidget {
   const SessionDetailView({
     super.key,
     required this.viewModel,
     required this.state,
+    this.initialTab,
+    this.readOnly = false,
+    this.onWalkOlder,
+    this.onWalkNewer,
   });
 
   final SessionDetailViewModel viewModel;
   final SessionDetailState state;
 
-  @override
-  State<SessionDetailView> createState() => _SessionDetailViewState();
-}
+  /// A friend's record (2026-10-23): the Restore button is not drawn and the
+  /// lessons modal opens without its composer — no write affordance exists on
+  /// the page.
+  final bool readOnly;
 
-class _SessionDetailViewState extends State<SessionDetailView> {
-  /// Which of the three surfaces is shown: the session's PR events, the
-  /// sets (details), or the pre/lessons/post reflection. Plain UI state —
-  /// no VM involvement.
-  String _tab = 'reflection';
+  /// The date bar's steps (2026-10-22). The route supplies them so a step
+  /// takes the same unsaved-changes guard as the back arrow; read-only
+  /// embeds (the another-device preview) omit them, and the arrows stay
+  /// spent.
+  final VoidCallback? onWalkOlder;
+  final VoidCallback? onWalkNewer;
+
+  /// No surface is named any more — the viewer draws them all at once.
+  /// Accepted so `?tab=` links and existing callers keep compiling; the
+  /// value is ignored (2026-10-22).
+  final String? initialTab;
 
   @override
   Widget build(BuildContext context) {
-    final viewModel = widget.viewModel;
-    final state = widget.state;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        // The session identity card sits at the very top — the same
-        // position as the planned-session picker on the training page,
-        // above the tab toggle.
-        Padding(
-          padding: const EdgeInsets.fromLTRB(
-            AppSpacing.lg,
-            AppSpacing.md,
-            AppSpacing.lg,
-            AppSpacing.xs,
-          ),
-          child: SessionIdentityCard(
-            plannedName: state.session?.plannedSessionName,
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(
-            AppSpacing.lg,
-            AppSpacing.sm,
-            AppSpacing.lg,
-            AppSpacing.xs,
-          ),
-          child: SegmentedControl<String>(
-            options: const [
-              SegmentOption(label: 'PRs', value: 'prs'),
-              SegmentOption(label: 'Details', value: 'details'),
-              SegmentOption(label: 'Reflection', value: 'reflection'),
-            ],
-            value: _tab,
-            onChange: (v) => setState(() => _tab = v),
-          ),
-        ),
-        Expanded(child: _body(viewModel, state)),
-      ],
-    );
-  }
-
-  Widget _body(SessionDetailViewModel viewModel, SessionDetailState state) {
-    if (_tab == 'reflection') {
-      return _SessionReflectionBody(viewModel: viewModel, state: state);
-    }
-    if (_tab == 'prs') {
-      return _SessionPrsBody(viewModel: viewModel, state: state);
-    }
-    if (state.exerciseSlots.isEmpty) {
-      return Center(
-        child: Text(
-          'No sets recorded.',
-          style: AppFonts.ui(fontSize: 15, color: AppColors.muted),
-        ),
-      );
-    }
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Expanded(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(
-              AppSpacing.lg,
-              AppSpacing.md,
-              AppSpacing.lg,
-              AppSpacing.xxl,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (state.activeSlot != null)
-                  _DetailCardBuilder(
-                    viewModel: viewModel,
-                    state: state,
-                    slot: state.activeSlot!,
-                    onAddExercise: () => _showAddExercise(context),
+          child: state.exerciseSlots.isEmpty
+              ? Center(
+                  child: Text(
+                    'No sets recorded.',
+                    style: AppFonts.ui(
+                      fontSize: AppTextStyles.body,
+                      color: AppColors.inkSecondary,
+                    ),
                   ),
-              ],
-            ),
-          ),
+                )
+              : SingleChildScrollView(
+                  // The live Training page's own insets — the card opens on
+                  // the same 22pt gutter, from the same place, with the same
+                  // 16 of air under the header (2026-10-22).
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.lg,
+                    AppSpacing.lg,
+                    AppSpacing.lg,
+                    AppSpacing.lg,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (state.activeSlot != null)
+                        _DetailCardBuilder(
+                          viewModel: viewModel,
+                          state: state,
+                          slot: state.activeSlot!,
+                          readOnly: readOnly,
+                          onAddExercise: () => _showAddExercise(context),
+                        ),
+                    ],
+                  ),
+                ),
         ),
-        // Sticky bottom: SETS/PRS/EXERCISES — the live session's bottom-bar
-        // position; the PRS tile stays accent + tappable.
-        Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.lg,
-            vertical: AppSpacing.sm,
-          ),
-          decoration: BoxDecoration(
-            color: AppColors.bg,
-            border: Border(
-              top: BorderSide(color: AppColors.border, width: 0.5),
-            ),
-          ),
-          child: StatsRow(
-            tiles: [
-              StatsTile(
-                label: 'SETS',
-                value: '${state.setsByOrder.values.expand((l) => l).length}',
-              ),
-              StatsTile(
-                label: 'PRS',
-                value: '${state.totalPRCount}',
-                accent: state.totalPRCount > 0,
-                onTap: state.totalPRCount > 0
-                    ? () => showPrModal(context, prs: state.prEvents)
-                    : null,
-              ),
-              StatsTile(
-                label: 'EXERCISES',
-                value: '${state.exerciseSlots.length}',
-              ),
-            ],
-          ),
-        ),
+        _floorBar(context),
       ],
     );
   }
 
+  /// The Training view's floor (2026-10-22): the date bar the live session
+  /// wears, then its action row — undo/redo with the historic trash, the
+  /// ratings pencil, the PR and lesson tiles. View mode greys what edit mode
+  /// lights: undo/redo answer nothing until there are edits to walk, and the
+  /// trash reads in both modes (a tap shows the deleted exercise).
+  ///
+  /// The row is the live page's row, control for control, at the same sizes
+  /// — the two floors are one recipe.
+  Widget _floorBar(BuildContext context) {
+    // The tiles speak for the exercise on screen — its own gains, its own
+    // doors — the live bar's recipe, so a count always names the feed behind
+    // it (2026-10-22).
+    final exerciseId = state.activeSlot?.exerciseId;
+    final prCount = exerciseId == null ? 0 : viewModel.prCountFor(exerciseId);
+    final lessonCount = exerciseId == null
+        ? 0
+        : viewModel.sessionLessonsCount(exerciseId);
+    final session = state.session;
+    final exerciseMode = state.dateBarMode == SessionDateMode.exercise;
+    final viewed = state.viewedHistorySession;
+    return Container(
+      key: const ValueKey('session-detail-bar'),
+      // The live floor's own insets, the bottom one included: the page sits
+      // under the floating bar, so the action row ends where the live one
+      // does. `contentInset` answers zero where no bar floats (the
+      // another-device preview holds its own action bar instead).
+      padding: EdgeInsets.fromLTRB(
+        AppSpacing.lg,
+        AppSpacing.sm,
+        AppSpacing.lg,
+        ScrollShrinkNavBar.contentInset(context),
+      ),
+      decoration: BoxDecoration(
+        color: AppColors.bg,
+        border: Border(top: BorderSide(color: AppColors.border, width: 0.5)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // PREVIOUSLY, not TODAY: this is a record being read, whatever
+          // the clock says. The same bar the live page draws, with the one
+          // word that marks the mode — and the same walk: the arrows step
+          // through completed sessions, and the newest record's right arrow
+          // is the way back onto today's live session when one exists
+          // (2026-10-22).
+          //
+          // EXERCISE is the default on this surface too (2026-10-23): the
+          // arrows walk the active exercise's own performances strictly
+          // before the record, the card's sets swapping while the record
+          // (header, floor, tiles) stays the page. SESSION restores the
+          // record walk above. The radios under the date switch the two.
+          if (session != null) ...[
+            SessionDateBar(
+              isToday: false,
+              date: viewed?.date ?? session.createdDatetime,
+              mode: state.dateBarMode,
+              onToggleMode: viewModel.toggleDateBarMode,
+              onOlder: exerciseMode
+                  ? (state.effectiveExerciseHistoryIndex <
+                            state.exerciseHistoryStack.length
+                        ? () => unawaited(viewModel.stepExerciseHistory(1))
+                        : null)
+                  : (state.walk?.olderId != null && onWalkOlder != null
+                        ? onWalkOlder
+                        : null),
+              onNewer: exerciseMode
+                  ? (state.effectiveExerciseHistoryIndex > 0
+                        ? () => unawaited(viewModel.stepExerciseHistory(-1))
+                        : null)
+                  : ((state.walk?.newerId != null ||
+                                (state.walk?.hasLiveSession ?? false)) &&
+                            onWalkNewer != null
+                        ? onWalkNewer
+                        : null),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+          ],
+          Row(
+            children: [
+              // The live floor's pair, at the live floor's size. View mode
+              // draws them spent — nothing has been edited yet — and edit
+              // mode lights them as the undo stack fills. The trash rides
+              // in its slot in both modes: a row opens the deleted exercise
+              // for reading, and the Restore button under the card is the
+              // write (2026-10-14).
+              UndoRedoButtons(
+                canUndo: state.isEditing && viewModel.canUndo,
+                canRedo: state.isEditing && viewModel.canRedo,
+                onUndo: viewModel.undo,
+                onRedo: viewModel.redo,
+                deletedExercises: [
+                  for (final e in viewModel.deletedExerciseEntries) e.name,
+                ],
+                onPickDeletedExercise: viewModel.viewDeletedExerciseAt,
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              BarIconButton(
+                key: const ValueKey('session-detail-ratings-button'),
+                // The star, matching the live floor and the sheet's five
+                // feeling stars (2026-10-23).
+                icon: Icons.star_rounded,
+                semanticsLabel: 'Session ratings',
+                onPressed: () => _openRatings(context),
+                // The tiles' accent glass — a door to session content, the
+                // live floor's reading (2026-10-22).
+                color: AppColors.accent,
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: SessionStatsTiles(
+                  prCount: prCount,
+                  lessonCount: lessonCount,
+                  // Doors at any count — the PR Lab's bar recipe. A past
+                  // record with no session PRs still opens onto the
+                  // exercise's whole history, split around this session
+                  // (2026-10-23).
+                  onPrTap: exerciseId == null
+                      ? null
+                      : () => _openPrHistory(context, exerciseId),
+                  onLessonTap: exerciseId == null
+                      ? null
+                      : () => _openLessons(context, exerciseId),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// The floor's trophy door: the active exercise's PR History, scoped to
+  /// the record on screen — the PR Lab's sheet, the live bar's door
+  /// (2026-10-22). The record's start places every other PR before it or
+  /// after it, so reading an old record never flies future PRs under
+  /// `PREVIOUSLY` (2026-10-23).
+  void _openPrHistory(BuildContext context, String exerciseId) {
+    showPrHistorySheet(
+      context,
+      exerciseName: toProperCase(viewModel.exerciseDisplayName(exerciseId)),
+      prs: viewModel.prHistoryFor(exerciseId),
+      sessionSetIds: viewModel.sessionPrSetIdsFor(exerciseId),
+      sessionStartedAt: state.session?.createdDatetime,
+    );
+  }
+
+  /// The floor's book door: the active exercise's lessons, grouped around
+  /// the record on screen — its own, the ones before it, and the ones added
+  /// since. The record's id is the scope, not "whatever session happens to
+  /// be live".
+  void _openLessons(BuildContext context, String exerciseId) {
+    showLessonsModal(
+      context,
+      listenable: viewModel.state,
+      lessonsFor: viewModel.lessonsFor,
+      loadLessonsFor: viewModel.loadLessonsFor,
+      addLesson: viewModel.addLesson,
+      toggleLessonPin: viewModel.toggleLessonPin,
+      deleteLesson: viewModel.deleteLesson,
+      updateLesson: viewModel.updateLessonText,
+      exerciseId: exerciseId,
+      exerciseName: toProperCase(viewModel.exerciseDisplayName(exerciseId)),
+      sessionId: state.session?.sessionId,
+      sessionStartedAt: state.session?.createdDatetime,
+      readOnly: readOnly,
+    );
+  }
+
+  /// The same four answers the live pencil sheet edits. View mode reads the
+  /// stored session; edit mode reads (and writes) the drafts, which the
+  /// header's Done persists in one `updateSessionNotes` write.
+  void _openRatings(BuildContext context) {
+    final session = state.session;
+    if (session == null) return;
+    final editing = state.isEditing;
+    showSessionRatingsSheet(
+      context,
+      preFeeling: editing ? state.preFeelingDraft : session.preFeeling,
+      preNotes: editing ? state.preNotesDraft : (session.preNotes ?? ''),
+      postFeeling: editing ? state.postFeelingDraft : session.feeling,
+      postNotes: editing ? state.postNotesDraft : (session.postNotes ?? ''),
+      onPreFeelingChanged: editing ? viewModel.setPreFeelingDraft : null,
+      onPreNotesChanged: editing ? viewModel.setPreNotesDraft : null,
+      onPostFeelingChanged: editing ? viewModel.setPostFeelingDraft : null,
+      onPostNotesChanged: editing ? viewModel.setPostNotesDraft : null,
+    );
+  }
+
   void _showAddExercise(BuildContext context) {
-    final vm = widget.viewModel;
+    final vm = viewModel;
     showAddExerciseModal(
       context,
       listenable: vm.state,
@@ -304,20 +593,24 @@ class _SessionDetailViewState extends State<SessionDetailView> {
         final i = vm.state.value.exerciseSlots.indexWhere(
           (slot) => slot.exerciseId == id,
         );
-        if (i >= 0) _confirmRemoveExercise(i);
+        // A deleted exercise's tick is historic — there is nothing left to
+        // remove; its way back is the Restore button (2026-10-14).
+        if (i >= 0 && !vm.state.value.exerciseSlots[i].deleted) {
+          _confirmRemoveExercise(context, i);
+        }
       },
       onCreate: vm.submitNewExercise,
       isCreating: () => vm.state.value.newExCreating,
     );
   }
 
-  /// Remove-exercise confirmation, addressed by slot index. Lives on the screen
-  /// rather than on the card because the exercise picker identifies an exercise
-  /// by id, not by the tab the card happens to be showing.
-  void _confirmRemoveExercise(int index) {
-    final state = widget.viewModel.state.value;
+  /// Remove-exercise confirmation, addressed by slot index. Lives on the body
+  /// rather than on the card because the exercise picker identifies an
+  /// exercise by id, not by the tab the card happens to be showing.
+  void _confirmRemoveExercise(BuildContext context, int index) {
+    final state = viewModel.state.value;
     final slot = state.exerciseSlots[index];
-    final name = toProperCase(widget.viewModel.exerciseDisplayName(slot.exerciseId));
+    final name = toProperCase(viewModel.exerciseDisplayName(slot.exerciseId));
     final setCount = state.setsFor(slot.groupOrder).length;
 
     showDialog<void>(
@@ -333,17 +626,20 @@ class _SessionDetailViewState extends State<SessionDetailView> {
         ),
         content: Text(
           'Remove $name from this workout?\n$setCount set${setCount == 1 ? '' : 's'} will be removed.',
-          style: AppFonts.ui(color: AppColors.muted),
+          style: AppFonts.ui(color: AppColors.inkSecondary, height: 1.4),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: Text('Keep', style: AppFonts.ui(color: AppColors.muted)),
+            child: Text(
+              'Keep',
+              style: AppFonts.ui(color: AppColors.inkSecondary),
+            ),
           ),
           TextButton(
             onPressed: () {
               Navigator.of(ctx).pop();
-              widget.viewModel.removeExerciseGroup(index);
+              viewModel.removeExerciseGroup(index);
             },
             child: Text(
               'Remove',
@@ -354,152 +650,6 @@ class _SessionDetailViewState extends State<SessionDetailView> {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-// ── Reflection tab ────────────────────────────────────────────────────────────
-
-/// The session's bookends and reflection — the same layout as the prep
-/// page's LAST SESSION card, minus its date row and session pager (this
-/// screen is a focused view of one session). Order per spec: pre-training
-/// data, then LESSONS, then post-training data.
-class _SessionReflectionBody extends StatelessWidget {
-  const _SessionReflectionBody({required this.viewModel, required this.state});
-
-  final SessionDetailViewModel viewModel;
-  final SessionDetailState state;
-
-  @override
-  Widget build(BuildContext context) {
-    final session = state.session;
-
-    // Session-scoped lessons only — mirrors the prep card, where only
-    // lessons born in the shown session count toward its preview.
-    final lessonsByExercise = <String, List<String>>{};
-    for (final e in state.lessonsByExercise.entries) {
-      lessonsByExercise[e.key] = [
-        for (final l in e.value)
-          if (l.sessionId == session?.sessionId) l.text,
-      ];
-    }
-    final exerciseIds = [
-      for (final sl in state.exerciseSlots) sl.exerciseId,
-    ];
-
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.lg,
-        AppSpacing.md,
-        AppSpacing.lg,
-        AppSpacing.xxl,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // Pre card: planned source (if any) + the PRE-WORKOUT bookend.
-          AppCard(
-            padding: const EdgeInsets.all(AppSpacing.md),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (session?.plannedSessionName != null) ...[
-                  PlannedBanner(name: session!.plannedSessionName!),
-                  const SizedBox(height: AppSpacing.lg),
-                ],
-                SessionBookend(
-                  label: 'PRE-WORKOUT',
-                  feeling: state.isEditing
-                      ? state.preFeelingDraft
-                      : session?.preFeeling,
-                  notes: state.isEditing ? state.preNotesDraft : session?.preNotes,
-                  emptyNotes: 'No pre-workout notes',
-                  question: 'How well do you think you\'re going to do',
-                  notesLabel: 'Why do you feel that way',
-                  onFeelingChanged:
-                      state.isEditing ? viewModel.setPreFeelingDraft : null,
-                  onNotesChanged:
-                      state.isEditing ? viewModel.setPreNotesDraft : null,
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: AppSpacing.md),
-          // The LESSONS section — PRs moved to their own tab. The section
-          // carries its own empty note.
-          AppCard(
-            padding: const EdgeInsets.all(AppSpacing.md),
-            child: ReflectionSummary(
-              exerciseIds: exerciseIds,
-              prsByExercise: const {},
-              lessonsByExercise: lessonsByExercise,
-              exerciseNameFor: viewModel.exerciseDisplayName,
-              showPrs: false,
-            ),
-          ),
-          const SizedBox(height: AppSpacing.md),
-          // Post card: the POST-WORKOUT bookend.
-          AppCard(
-            padding: const EdgeInsets.all(AppSpacing.md),
-            child: SessionBookend(
-              label: 'POST-WORKOUT',
-              feeling: state.isEditing
-                  ? state.postFeelingDraft
-                  : session?.feeling,
-              notes:
-                  state.isEditing ? state.postNotesDraft : session?.postNotes,
-              emptyNotes: 'No post-workout notes',
-              question: 'How well did you do this session',
-              notesLabel: 'What could have made this session better',
-              onFeelingChanged:
-                  state.isEditing ? viewModel.setPostFeelingDraft : null,
-              onNotesChanged:
-                  state.isEditing ? viewModel.setPostNotesDraft : null,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ── PRs tab ───────────────────────────────────────────────────────────────────
-
-/// The PRs tab — the session's PR events only, one card per event grouped
-/// under its exercise (the same ReflectionSummary section styling as the
-/// live reflection page).
-class _SessionPrsBody extends StatelessWidget {
-  const _SessionPrsBody({required this.viewModel, required this.state});
-
-  final SessionDetailViewModel viewModel;
-  final SessionDetailState state;
-
-  @override
-  Widget build(BuildContext context) {
-    final prsByExercise = <String, List<PrEvent>>{};
-    for (final p in state.prEvents) {
-      prsByExercise.putIfAbsent(p.exerciseId, () => []).add(p);
-    }
-    final exerciseIds = [
-      for (final sl in state.exerciseSlots) sl.exerciseId,
-    ];
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.lg,
-        AppSpacing.md,
-        AppSpacing.lg,
-        AppSpacing.xxl,
-      ),
-      child: AppCard(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        child: ReflectionSummary(
-          exerciseIds: exerciseIds,
-          prsByExercise: prsByExercise,
-          lessonsByExercise: const {},
-          exerciseNameFor: viewModel.exerciseDisplayName,
-          showLessons: false,
-        ),
       ),
     );
   }
@@ -517,12 +667,17 @@ class _DetailCardBuilder extends StatelessWidget {
     required this.state,
     required this.slot,
     required this.onAddExercise,
+    required this.readOnly,
   });
 
   final SessionDetailViewModel viewModel;
   final SessionDetailState state;
   final SessionDetailExerciseSlot slot;
   final VoidCallback onAddExercise;
+
+  /// A friend's record: no Restore button, no lessons composer — the card
+  /// shows what is there and offers no way to change it (2026-10-23).
+  final bool readOnly;
 
   static String _fmtNum(num n) =>
       n == n.roundToDouble() ? n.toInt().toString() : n.toString();
@@ -536,7 +691,10 @@ class _DetailCardBuilder extends StatelessWidget {
   }
 
   /// Delete with the PR-count warning — cascade so PRs recompute.
-  Future<void> _confirmDeleteSet(SessionExerciseSet set, BuildContext context) async {
+  Future<void> _confirmDeleteSet(
+    SessionExerciseSet set,
+    BuildContext context,
+  ) async {
     // In-memory PR count from the already-computed workout PR events.
     final prCount = state.prEvents
         .where((r) => r.sessionExerciseSetId == set.sessionExerciseSetId)
@@ -557,12 +715,15 @@ class _DetailCardBuilder extends StatelessWidget {
           prCount > 0
               ? 'This set holds $prCount PR record${prCount == 1 ? '' : 's'}, which will be deleted too. Remove this set?'
               : 'Remove this set from the workout?',
-          style: AppFonts.ui(color: AppColors.muted),
+          style: AppFonts.ui(color: AppColors.inkSecondary, height: 1.4),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text('Cancel', style: AppFonts.ui(color: AppColors.muted)),
+            child: Text(
+              'Cancel',
+              style: AppFonts.ui(color: AppColors.inkSecondary),
+            ),
           ),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(true),
@@ -630,6 +791,12 @@ class _DetailCardBuilder extends StatelessWidget {
       updateLesson: viewModel.updateLessonText,
       exerciseId: exerciseId,
       exerciseName: name,
+      // The record being read, not "whatever is live" — this session's
+      // lessons form the sheet's first group, and its start splits the rest
+      // into before and after (2026-10-23).
+      sessionId: state.session?.sessionId,
+      sessionStartedAt: state.session?.createdDatetime,
+      readOnly: readOnly,
     );
 
     final variationOptions = [
@@ -639,8 +806,7 @@ class _DetailCardBuilder extends StatelessWidget {
       ),
     ];
     final allVariations = [
-      for (final v in state.allVariations)
-        (id: v.variationId, name: v.name),
+      for (final v in state.allVariations) (id: v.variationId, name: v.name),
     ];
 
     List<Widget> rows = [];
@@ -653,8 +819,9 @@ class _DetailCardBuilder extends StatelessWidget {
           exerciseId: exerciseId,
           displayIndex: i + 1,
           isDraft: false,
-          // Only edit mode moves rows — view mode is a record.
-          dragIndex: state.isEditing ? i : null,
+          // Only edit mode moves rows — view mode is a record. A deleted
+          // row never moves: it is a fact being shown (2026-10-14).
+          dragIndex: state.isEditing && !set.isDeleted ? i : null,
           initialWeightText: set.weight != null ? _fmtNum(set.weight!) : '',
           initialRepsText: set.reps.isNotEmpty ? _fmtNum(set.reps.first) : '',
           initialVariationId: set.variationId,
@@ -662,6 +829,10 @@ class _DetailCardBuilder extends StatelessWidget {
           initialNotes: set.notes,
           hasNotes: set.notes?.isNotEmpty ?? false,
           isPr: prSetIds.contains(set.sessionExerciseSetId),
+          isGoal: state.goalSetIds.contains(set.sessionExerciseSetId),
+          // A soft-deleted row reads red and inert in either mode — the
+          // exercise-level Restore button is its way back.
+          deleted: set.isDeleted,
           readOnly: !state.isEditing,
           onCommit: (isDraft, v, {bool immediate = false}) async {
             if (!isDraft) {
@@ -741,10 +912,17 @@ class _DetailCardBuilder extends StatelessWidget {
       );
     }
 
-    return SessionExerciseCard(
+    final card = SessionExerciseCard(
       exerciseNames: [
         for (final sl in state.exerciseSlots)
           toProperCase(viewModel.exerciseDisplayName(sl.exerciseId)),
+      ],
+      // A deleted exercise is red with the minus — the historic trash
+      // reading, drawn in the field and every popover row (2026-10-14).
+      deletedExercises: [for (final sl in state.exerciseSlots) sl.deleted],
+      exerciseMarks: [
+        for (final sl in state.exerciseSlots)
+          sl.deleted ? ExerciseMark.removed : null,
       ],
       activeIndex: state.activeSlotIndex,
       onSelect: (i) => viewModel.tapTab(i),
@@ -761,28 +939,42 @@ class _DetailCardBuilder extends StatelessWidget {
             )
           : null,
       onPinnedLessonTap: openLessonsModal,
-      lessonsCount: viewModel.lessonsFor(exerciseId).length,
+      // Session-scoped, so the pill, the floor tile and the live card's
+      // count agree — a past session's lessons don't inflate this one.
+      lessonsCount: viewModel.sessionLessonsCount(exerciseId),
       onLessonsTap: openLessonsModal,
       prCount: viewModel.prCountFor(exerciseId),
-      // Gate on DISPLAYABLE records, not the countable count — a
-      // weight-max-only exercise still has PRs to show.
-      onPrTap: viewModel.displayPrsFor(exerciseId).isNotEmpty
-          ? () => showPrModal(
-              context,
-              prs: viewModel.displayPrsFor(exerciseId),
-            )
-          : null,
-      // The viewer no longer outlines the card in planned blue — the
-      // session's planned source lives in the identity card above the
-      // stats bar.
-      planned: false,
+      // Always a door, like the floor's trophy: the sheet holds the
+      // exercise's whole history, not only this record's gains (2026-10-23).
+      onPrTap: () => showPrHistorySheet(
+        context,
+        exerciseName: name,
+        prs: viewModel.prHistoryFor(exerciseId),
+        sessionSetIds: viewModel.sessionPrSetIdsFor(exerciseId),
+        sessionStartedAt: state.session?.createdDatetime,
+      ),
+      // The plan-linked blue is the selector field and the set rows,
+      // matching live (2026-10-23) — the session's plan is a fact about the
+      // values, not about the caption. A deleted exercise reads off its red
+      // selector name and rows, not a card rim.
+      planned: slot.planned,
+      // The viewer is the Training view read-only (2026-10-22): the same
+      // flat card, every row on the 22pt gutter.
+      flat: true,
       rows: rows,
       onAddSet: state.isEditing ? () => viewModel.addDraftSet(order) : null,
+      // View mode keeps the ADD SET row's place, greyed — the flip between
+      // looking and editing changes values, never the card's shape.
+      reserveAddSet: !state.isEditing,
       onReorderSets: state.isEditing
           ? (oldIndex, newIndex) =>
                 viewModel.reorderSets(order, oldIndex, newIndex)
           : null,
       history: history,
+      // The date bar's EXERCISE walk selects a performance (2026-10-23):
+      // the flat card has no pills row, so the stage hands the card the one
+      // it is showing. Home (the record's own sets) is null.
+      historySelection: state.viewedHistorySession,
       // The history viewer is the regular sets grid — read-only here (the
       // screen's own edit mode is the logs' editing surface), so the rows
       // are inert shared SessionSetRows with no edit gate.
@@ -798,8 +990,10 @@ class _DetailCardBuilder extends StatelessWidget {
         initialVariationName: s.variationName,
         initialNotes: s.notes,
         hasNotes: s.notes?.isNotEmpty ?? false,
-        // Past PR sets badge like the grid — events are keyed by set id.
+        // Past PR sets badge like the grid — events are keyed by set id — and
+        // a past set that achieved a goal reads green with the G.
         isPr: state.prEventSetIds.contains(s.sessionExerciseSetId),
+        isGoal: state.goalSetIds.contains(s.sessionExerciseSetId),
         readOnly: true,
         onCommit: (_, _, {bool immediate = false}) async {},
         onVariationChanged: (_) {},
@@ -813,6 +1007,74 @@ class _DetailCardBuilder extends StatelessWidget {
       ),
       // The picker tiles show each past session's PR count.
       isPrSet: (setId) => state.prEventSetIds.contains(setId),
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        card,
+        // The way back for deleted sets: a button under the card, so the
+        // reader sees exactly what comes back — everything under the
+        // exercise, whether it folded away entirely or kept active rows
+        // (2026-10-14). Edit mode restores directly; view mode confirms and
+        // enters edit mode FIRST — every restore lands in the edit session
+        // and is undoable. A friend's record draws no button: it is not
+        // theirs to restore (2026-10-23).
+        if (!readOnly && sets.any((s) => s.isDeleted)) ...[
+          const SizedBox(height: AppSpacing.md),
+          GlassButton(
+            label: 'Restore',
+            onPressed: () => _restoreDeleted(context),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Future<void> _restoreDeleted(BuildContext context) async {
+    if (!state.isEditing) {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: AppColors.surface,
+          title: Text(
+            'Restore Exercise',
+            style: AppFonts.ui(
+              fontWeight: FontWeight.w800,
+              color: AppColors.primary,
+            ),
+          ),
+          content: Text(
+            'This exercise was deleted from the workout. Restoring it changes '
+            'this session, so the workout enters edit mode.',
+            style: AppFonts.ui(color: AppColors.inkSecondary, height: 1.4),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: Text(
+                'Cancel',
+                style: AppFonts.ui(color: AppColors.inkSecondary),
+              ),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: Text(
+                'Enter Edit Mode',
+                style: AppFonts.ui(
+                  color: AppColors.primary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+      if (ok != true) return;
+      viewModel.startEditing();
+    }
+    await viewModel.restoreDeletedExercise(
+      state.exerciseSlots.indexWhere((sl) => sl.groupOrder == slot.groupOrder),
     );
   }
 }

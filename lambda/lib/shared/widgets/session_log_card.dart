@@ -90,8 +90,9 @@ class SessionLogCard extends StatelessWidget {
               actions: [
                 SwipeAction(
                   icon: Icons.delete_outline,
-                  
+
                   color: AppColors.danger,
+                  foreground: AppColors.dangerText,
                   onTap: onDelete!,
                 ),
               ],
@@ -105,10 +106,7 @@ class SessionLogCard extends StatelessWidget {
   /// live below it, centered.
   Widget _identityGrid(Session s) {
     return Container(
-      decoration: lambdaBox(
-        ContainerTone.outline,
-        radius: AppRadius.md,
-      ),
+      decoration: lambdaBox(ContainerTone.outline, radius: AppRadius.md),
       clipBehavior: Clip.antiAlias,
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -119,7 +117,13 @@ class SessionLogCard extends StatelessWidget {
                 child: _gridCell(
                   'DATE',
                   Text(
-                    DateFormat('MMM d, yyyy').format(s.createdDatetime),
+                    // The card's day and the detail's date bar are one fact:
+                    // `created_datetime` is UTC, and every date surface
+                    // converts (2026-10-22 — the card and the bar disagreed by
+                    // a day either side of midnight).
+                    DateFormat(
+                      'MMM d, yyyy',
+                    ).format(s.createdDatetime.toLocal()),
                     style: AppFonts.mono(
                       fontSize: AppTextStyles.sm,
                       fontWeight: FontWeight.w700,
@@ -202,9 +206,10 @@ class SessionLogCard extends StatelessWidget {
         Text(
           label,
           style: AppFonts.mono(
-            fontSize: 13,
+            fontSize: AppTextStyles.xs,
+            fontWeight: FontWeight.w600,
             letterSpacing: 0.8,
-            color: AppColors.muted,
+            color: AppColors.primary,
           ),
         ),
         const SizedBox(height: 3),
@@ -249,7 +254,7 @@ class SessionLogCard extends StatelessWidget {
               '$count ${count == 1 ? 'set' : 'sets'}',
               style: AppFonts.mono(
                 fontSize: AppTextStyles.sm,
-                color: AppColors.muted,
+                color: AppColors.inkSecondary,
               ),
             ),
             // The trophy + count after the set summary — accent is the PR

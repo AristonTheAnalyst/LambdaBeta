@@ -64,7 +64,10 @@ Future<void> seedLabWorld(String userId) async {
   ]) {
     lift[name] = (await exercises.createExercise(userId, name)).exerciseId;
   }
-  final paused = (await exercises.createVariation(userId, 'Paused')).variationId;
+  final paused = (await exercises.createVariation(
+    userId,
+    'Paused',
+  )).variationId;
 
   // One workout: its movements, each with its sets' shared target.
   Future<String> workout(
@@ -123,8 +126,9 @@ Future<void> seedLabWorld(String userId) async {
     int daysAgo, {
     double bump = 0,
   }) async {
-    final date =
-        DateTime.now().toUtc().subtract(Duration(days: daysAgo, hours: 1));
+    final date = DateTime.now().toUtc().subtract(
+      Duration(days: daysAgo, hours: 1),
+    );
     final sessionId = await sessions.createSession(
       userId,
       plannedSessionId: plannedSessionId,
@@ -286,7 +290,8 @@ Future<void> seedLabWorld(String userId) async {
       userId: userId,
       exerciseId: lift['Bench Press'],
       text: 'Bench Press',
-      description: 'Beltless, pause on the chest. Slow off the bottom, '
+      description:
+          'Beltless, pause on the chest. Slow off the bottom, '
           'fast through the middle.',
       targetWeight: 100,
       targetReps: 5,
@@ -368,7 +373,8 @@ Future<void> seedLabWorld(String userId) async {
     reviewed.reviewId,
     userId: userId,
     outcome: kOutcomeReviewed,
-    notes: 'Power clean moved well all block. Press stalled at the same weight '
+    notes:
+        'Power clean moved well all block. Press stalled at the same weight '
         'twice — worth a look before the next one.',
   );
 }
@@ -386,8 +392,13 @@ Future<bool> labWorldExists(String userId) async {
 /// One exercise's place in a workout: how many sets, and the target every one
 /// of them carries.
 class _Movement {
-  const _Movement(this.exercise, this.sets, this.weight, this.reps,
-      {this.variation});
+  const _Movement(
+    this.exercise,
+    this.sets,
+    this.weight,
+    this.reps, {
+    this.variation,
+  });
 
   final String exercise;
   final int sets;

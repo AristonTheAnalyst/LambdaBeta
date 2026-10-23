@@ -81,9 +81,7 @@ class MonthCalendar extends StatelessWidget {
             _monthNav(
               Icons.chevron_left,
               _canPrevMonth,
-              () => onMonthChanged(
-                DateTime(month.year, month.month - 1, 1),
-              ),
+              () => onMonthChanged(DateTime(month.year, month.month - 1, 1)),
             ),
             Expanded(
               child: Text(
@@ -99,9 +97,7 @@ class MonthCalendar extends StatelessWidget {
             _monthNav(
               Icons.chevron_right,
               _canNextMonth,
-              () => onMonthChanged(
-                DateTime(month.year, month.month + 1, 1),
-              ),
+              () => onMonthChanged(DateTime(month.year, month.month + 1, 1)),
             ),
           ],
         ),
@@ -113,7 +109,10 @@ class MonthCalendar extends StatelessWidget {
                 child: Text(
                   d,
                   textAlign: TextAlign.center,
-                  style: AppFonts.mono(fontSize: 13, color: AppColors.muted),
+                  style: AppFonts.mono(
+                    fontSize: AppTextStyles.caption,
+                    color: AppColors.inkSecondary,
+                  ),
                 ),
               ),
           ],
@@ -127,7 +126,10 @@ class MonthCalendar extends StatelessWidget {
             child: Text(
               'No selectable dates',
               textAlign: TextAlign.center,
-              style: AppFonts.mono(fontSize: 13, color: AppColors.muted),
+              style: AppFonts.mono(
+                fontSize: AppTextStyles.caption,
+                color: AppColors.inkSecondary,
+              ),
             ),
           )
         else

@@ -76,6 +76,8 @@ class _FakeSessionRepo extends Fake implements SessionRepository {
     bool clearVariation = false,
     String? notes,
     bool clearNotes = false,
+    bool isDeleted = false,
+    bool clearIsDeleted = false,
   }) async {
     if (failUpdate) {
       updateSetCalls++;
@@ -168,54 +170,69 @@ void main() {
     PastSetsTimelineCache.instance.invalidate();
   });
 
-  test('a keystroke storm merges into one write per settle, patching state', () {
-    fakeAsync((async) {
-      final vm = buildVm();
-      vm.load('w1');
-      async.flushMicrotasks();
-      // Heavy context read the timeline once through the cache.
-      expect(repo.timelineReads, 1);
-      final readsAfterLoad = repo.timelineReads;
+  test(
+    'a keystroke storm merges into one write per settle, patching state',
+    () {
+      fakeAsync((async) {
+        final vm = buildVm();
+        vm.load('w1');
+        async.flushMicrotasks();
+        // Heavy context read the timeline once through the cache.
+        expect(repo.timelineReads, 1);
+        final readsAfterLoad = repo.timelineReads;
 
-      repo.rows['s1'] = repo.row('s1');
-      vm.load('w1');
-      async.flushMicrotasks();
-      final set = repo.row('s1');
-      vm.quickUpdateSet(set, weight: 1, immediate: false);
-      vm.quickUpdateSet(set, weight: 10, immediate: false);
-      vm.quickUpdateSet(set, weight: 100, immediate: false);
-      expect(repo.updateSetCalls, 0,
-          reason: 'keystrokes merge — nothing writes inside the window');
-      expect(repo.timelineReads, readsAfterLoad,
-          reason: 'no timeline query rides on a keystroke');
+        repo.rows['s1'] = repo.row('s1');
+        vm.load('w1');
+        async.flushMicrotasks();
+        final set = repo.row('s1');
+        vm.quickUpdateSet(set, weight: 1, immediate: false);
+        vm.quickUpdateSet(set, weight: 10, immediate: false);
+        vm.quickUpdateSet(set, weight: 100, immediate: false);
+        expect(
+          repo.updateSetCalls,
+          0,
+          reason: 'keystrokes merge — nothing writes inside the window',
+        );
+        expect(
+          repo.timelineReads,
+          readsAfterLoad,
+          reason: 'no timeline query rides on a keystroke',
+        );
 
-      async.elapse(SessionDetailViewModel.kAutoCommitDebounce + const Duration(milliseconds: 10));
-      async.flushMicrotasks();
+        async.elapse(
+          SessionDetailViewModel.kAutoCommitDebounce +
+              const Duration(milliseconds: 10),
+        );
+        async.flushMicrotasks();
 
-      expect(repo.updateSetCalls, 1,
-          reason: 'one write per settle, however many keystrokes fed it');
-      expect(repo.updateLog.single.weight, 100);
-      expect(
-        vm.state.value.setsFor(1).single.weight,
-        100,
-        reason: 'the settle patches the grid row',
-      );
-      // The timeline's copy of the edited row carries the new value — the
-      // history picker reads this map.
-      final history = vm.state.value.historyByExercise['ex1']!;
-      expect(
-        history.first.sets.first.weight,
-        100,
-        reason: 'the settle patches the timeline copy too',
-      );
-      expect(
-        vm.state.value.prEvents,
-        isNotEmpty,
-        reason: 'PRs re-derive once per settle',
-      );
-      vm.dispose();
-    });
-  });
+        expect(
+          repo.updateSetCalls,
+          1,
+          reason: 'one write per settle, however many keystrokes fed it',
+        );
+        expect(repo.updateLog.single.weight, 100);
+        expect(
+          vm.state.value.setsFor(1).single.weight,
+          100,
+          reason: 'the settle patches the grid row',
+        );
+        // The timeline's copy of the edited row carries the new value — the
+        // history picker reads this map.
+        final history = vm.state.value.historyByExercise['ex1']!;
+        expect(
+          history.first.sets.first.weight,
+          100,
+          reason: 'the settle patches the timeline copy too',
+        );
+        expect(
+          vm.state.value.prEvents,
+          isNotEmpty,
+          reason: 'PRs re-derive once per settle',
+        );
+        vm.dispose();
+      });
+    },
+  );
 
   test('an immediate edit writes now and cancels the armed timer', () {
     fakeAsync((async) {
@@ -231,12 +248,18 @@ void main() {
       vm.quickUpdateSet(set, weight: 20, immediate: true);
       async.flushMicrotasks();
       expect(repo.updateSetCalls, 1);
-      expect(repo.updateLog.single.weight, 20,
-          reason: 'immediate merges the pending value and writes it');
+      expect(
+        repo.updateLog.single.weight,
+        20,
+        reason: 'immediate merges the pending value and writes it',
+      );
 
       async.elapse(const Duration(seconds: 1));
-      expect(repo.updateSetCalls, 1,
-          reason: 'the debounce timer was cancelled — no second write');
+      expect(
+        repo.updateSetCalls,
+        1,
+        reason: 'the debounce timer was cancelled — no second write',
+      );
       vm.dispose();
     });
   });
@@ -255,9 +278,13 @@ void main() {
       vm.quickUpdateSet(set, weight: 5, immediate: true);
       async.flushMicrotasks();
 
-      expect(vm.state.value.workoutSetDrafts[draftOrder], isNotEmpty,
-          reason: 'the old clearSessionSetDrafts wipe per keystroke is gone — '
-              'only structural reloads clear drafts');
+      expect(
+        vm.state.value.workoutSetDrafts[draftOrder],
+        isNotEmpty,
+        reason:
+            'the old clearSessionSetDrafts wipe per keystroke is gone — '
+            'only structural reloads clear drafts',
+      );
       vm.dispose();
     });
   });
@@ -274,7 +301,10 @@ void main() {
 
       final set = repo.row('s1');
       vm.quickUpdateSet(set, weight: 60, immediate: false);
-      async.elapse(SessionDetailViewModel.kAutoCommitDebounce + const Duration(milliseconds: 10));
+      async.elapse(
+        SessionDetailViewModel.kAutoCommitDebounce +
+            const Duration(milliseconds: 10),
+      );
       async.flushMicrotasks();
 
       expect(repo.updateSetCalls, 1);
@@ -282,7 +312,8 @@ void main() {
       expect(
         vm.state.value.setsFor(1).single.weight,
         0,
-        reason: 'the patch runs only after a successful write — the grid '
+        reason:
+            'the patch runs only after a successful write — the grid '
             'keeps the pre-edit row',
       );
       vm.dispose();

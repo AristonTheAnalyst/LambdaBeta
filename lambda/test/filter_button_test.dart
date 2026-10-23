@@ -38,8 +38,11 @@ void main() {
     expect(find.text('All'), findsOneWidget);
     expect(find.text('In this review'), findsOneWidget);
     expect(find.text('Not in this review'), findsOneWidget);
-    expect(find.byIcon(Icons.check), findsOneWidget,
-        reason: 'the narrowing in force is the one ticked');
+    expect(
+      find.byIcon(Icons.check),
+      findsOneWidget,
+      reason: 'the narrowing in force is the one ticked',
+    );
   });
 
   testWidgets('a pick applies and closes', (tester) async {

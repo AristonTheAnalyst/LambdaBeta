@@ -57,9 +57,11 @@ class SupabaseProgramRunRemote implements ProgramRunRemote {
 
   @override
   Future<void> pauseCurrentRun(String userId) async {
-    await _client.from('fact_program_run').update({
-      'is_current': false,
-    }).eq('user_id', userId).eq('is_current', true)
+    await _client
+        .from('fact_program_run')
+        .update({'is_current': false})
+        .eq('user_id', userId)
+        .eq('is_current', true)
         .timeout(const Duration(seconds: 5));
   }
 
@@ -95,11 +97,12 @@ class ProgramRunRepository {
   ProgramRunRepository({
     ProgramRepository? programRepository,
     ProgramRunRemote? remote,
-  })  : _programRepo = programRepository ?? ProgramRepository(),
-        _remote = remote ??
-            (labMode
-                ? const LocalOnlyProgramRunRemote()
-                : const SupabaseProgramRunRemote());
+  }) : _programRepo = programRepository ?? ProgramRepository(),
+       _remote =
+           remote ??
+           (labMode
+               ? const LocalOnlyProgramRunRemote()
+               : const SupabaseProgramRunRemote());
 
   final ProgramRepository _programRepo;
   final PlannedSessionRepository _plannedRepo = PlannedSessionRepository();
@@ -267,7 +270,9 @@ class ProgramRunRepository {
     if (clearWeeks) updates['target_weeks'] = null;
     if (targetWeeks != null) updates['target_weeks'] = targetWeeks;
     if (clearEndDate) updates['end_date'] = null;
-    if (endDate != null) updates['end_date'] = endDate.toUtc().toIso8601String();
+    if (endDate != null) {
+      updates['end_date'] = endDate.toUtc().toIso8601String();
+    }
     if (updates.isEmpty) return;
     final setClause = updates.keys.map((k) => '$k = ?').join(', ');
     await ps.safeExec(
@@ -442,9 +447,9 @@ class ProgramRunRepository {
     required Program program,
     required ProgramRun run,
   }) async {
-    final links = (await _plannedRepo.fetchProgramLinks(program.programId))
-        .where((l) => run.blockId == null || l.blockId == run.blockId)
-        .toList();
+    final links = (await _plannedRepo.fetchProgramLinks(
+      program.programId,
+    )).where((l) => run.blockId == null || l.blockId == run.blockId).toList();
     if (links.isEmpty) return null;
     final sessions = await _plannedRepo.fetchPlannedSessions(
       run.userId,
@@ -454,8 +459,7 @@ class ProgramRunRepository {
 
     if (run.progressionMode == 'frequency') {
       final today = DateTime.now().weekday; // 1=Mon..7=Sun
-      final daysSinceStart =
-          DateTime.now().difference(run.startedDate).inDays;
+      final daysSinceStart = DateTime.now().difference(run.startedDate).inDays;
       final fortnightWeek = (daysSinceStart ~/ 7) % 2;
       for (final link in links) {
         if (link.dayOfWeek == today &&
@@ -467,9 +471,7 @@ class ProgramRunRepository {
       return null;
     }
 
-    final ordered = links
-        .where((l) => l.sequenceOrder != null)
-        .toList()
+    final ordered = links.where((l) => l.sequenceOrder != null).toList()
       ..sort((a, b) => a.sequenceOrder!.compareTo(b.sequenceOrder!));
     final orderedSessions = ordered
         .map((l) => sessionById[l.plannedSessionId])
@@ -526,8 +528,7 @@ class ProgramRunRepository {
       for (var i = 0; i < blocks.length; i++) {
         if (blocks[i].blockId == run.blockId) {
           block = blocks[i];
-          blockNumber =
-              blocks[i].blockOrder > 0 ? blocks[i].blockOrder : i + 1;
+          blockNumber = blocks[i].blockOrder > 0 ? blocks[i].blockOrder : i + 1;
           break;
         }
       }
@@ -549,10 +550,12 @@ class ProgramRunRepository {
       blockTargetSessions: block?.targetSessions,
       progressionMode: run.progressionMode,
     );
-    final effectiveTotal =
-        sessionsBounded ? (targetSessions ?? totalInCycle) : totalInCycle;
-    final workoutsCompletedInCycle =
-        effectiveTotal == 0 ? 0 : completed % effectiveTotal;
+    final effectiveTotal = sessionsBounded
+        ? (targetSessions ?? totalInCycle)
+        : totalInCycle;
+    final workoutsCompletedInCycle = effectiveTotal == 0
+        ? 0
+        : completed % effectiveTotal;
 
     // Weeks count from the RUN's start, so a block run's week number is
     // block-relative by construction — which is what a coach means by "week 2"
@@ -572,10 +575,12 @@ class ProgramRunRepository {
     //
     // A length that declares no weeks at all is clamped by nothing: an
     // open-ended run has no ceiling to reach, and it has always counted upward.
-    final weekCeiling =
-        targetWeeks == null ? null : (targetWeeks < 1 ? 1 : targetWeeks);
-    final weekNumber =
-        weekCeiling != null && rawWeek > weekCeiling ? weekCeiling : rawWeek;
+    final weekCeiling = targetWeeks == null
+        ? null
+        : (targetWeeks < 1 ? 1 : targetWeeks);
+    final weekNumber = weekCeiling != null && rawWeek > weekCeiling
+        ? weekCeiling
+        : rawWeek;
 
     final next = await getNextPlannedSession(program: program, run: run);
 

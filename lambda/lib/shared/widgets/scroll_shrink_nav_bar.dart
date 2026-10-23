@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_radius.dart';
+import '../../core/theme/lambda_theme.dart';
 import 'floating_bar.dart';
 
 /// One destination on a [ScrollShrinkNavBar].
@@ -173,25 +174,32 @@ class _ScrollShrinkNavBarState extends State<ScrollShrinkNavBar>
 
   @override
   Widget build(BuildContext context) {
-    return FloatingBarOverlay(
-      above: widget.aboveBar,
-      bar: AnimatedBuilder(
-        animation: _t,
-        // Built once and handed to the builder: the bar inside does not
-        // change with the animation, only the transform over it does.
-        child: FloatingBar(child: _buildItems()),
-        builder: (context, bar) => Transform.scale(
-          // Uniform, and anchored at the bottom edge so the bar keeps
-          // floating in place while it recedes.
-          scale: ScrollShrinkNavBar.collapsedScale +
-              (1 - ScrollShrinkNavBar.collapsedScale) * _t.value,
-          alignment: Alignment.bottomCenter,
-          child: bar,
+    // The bar outlives the page and, while a pushed page is on top, nothing
+    // above it rebuilds for a palette change. Listening here keeps the bar in
+    // the same theme as the page it floats over (2026-10-22).
+    return ListenableBuilder(
+      listenable: themeNotifier,
+      builder: (context, _) => FloatingBarOverlay(
+        above: widget.aboveBar,
+        bar: AnimatedBuilder(
+          animation: _t,
+          // Built once and handed to the builder: the bar inside does not
+          // change with the animation, only the transform over it does.
+          child: FloatingBar(child: _buildItems()),
+          builder: (context, bar) => Transform.scale(
+            // Uniform, and anchored at the bottom edge so the bar keeps
+            // floating in place while it recedes.
+            scale:
+                ScrollShrinkNavBar.collapsedScale +
+                (1 - ScrollShrinkNavBar.collapsedScale) * _t.value,
+            alignment: Alignment.bottomCenter,
+            child: bar,
+          ),
         ),
-      ),
-      child: NotificationListener<ScrollNotification>(
-        onNotification: _onScrollNotification,
-        child: widget.child,
+        child: NotificationListener<ScrollNotification>(
+          onNotification: _onScrollNotification,
+          child: widget.child,
+        ),
       ),
     );
   }
@@ -282,8 +290,11 @@ class _NavButton extends StatelessWidget {
                           selected ? item.activeIcon : item.icon,
                           key: ValueKey<bool>(selected),
                           size: 24,
-                          color:
-                              Color.lerp(AppColors.primary, AppColors.accent, t),
+                          color: Color.lerp(
+                            AppColors.primary,
+                            AppColors.accent,
+                            t,
+                          ),
                         ),
                       ),
                       if (item.badge)

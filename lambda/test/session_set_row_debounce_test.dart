@@ -15,8 +15,12 @@ void main() {
   Future<void> pumpRow(
     WidgetTester tester, {
     required bool isDraft,
-    required Future<void> Function(bool isDraft, SetRowFieldValues values, {bool immediate})
-        onCommit,
+    required Future<void> Function(
+      bool isDraft,
+      SetRowFieldValues values, {
+      bool immediate,
+    })
+    onCommit,
     void Function(Future<void> Function())? onRegister,
   }) async {
     await tester.pumpWidget(
@@ -43,16 +47,27 @@ void main() {
             ],
             allVariations: const [],
             findSimilarVariations: (_) => const [],
-            submitNewVariation: (_, {required String exerciseId, String? useExistingId}) async => null,
+            submitNewVariation:
+                (
+                  _, {
+                  required String exerciseId,
+                  String? useExistingId,
+                }) async => null,
           ),
         ),
       ),
     );
   }
 
-  // The grid order is reps first, then kilos — the first TextField is the
-  // REPS cell, which is what these tests type into.
-  Finder repsField() => find.byType(TextField).first;
+  // The grid reads KG first, then REPS — these tests type into the reps
+  // cell, so target it by its stable key (real and draft rows spell it
+  // differently) rather than by position.
+  Finder repsField() => find.byWidgetPredicate(
+    (w) =>
+        w is TextField &&
+        w.key is ValueKey<String> &&
+        (w.key as ValueKey<String>).value.endsWith('-reps'),
+  );
 
   Future<void> type(WidgetTester tester, String text) async {
     await tester.enterText(repsField(), text);
@@ -103,12 +118,17 @@ void main() {
     await unfocus(tester);
 
     expect(commits, hasLength(2));
-    expect(commits.last.immediate, isTrue,
-        reason: 'blur is the safety net — it must never be debounced');
+    expect(
+      commits.last.immediate,
+      isTrue,
+      reason: 'blur is the safety net — it must never be debounced',
+    );
     expect(commits.last.reps, '40');
   });
 
-  testWidgets('the registered flush handle commits immediately', (tester) async {
+  testWidgets('the registered flush handle commits immediately', (
+    tester,
+  ) async {
     final commits = <({bool immediate, String? reps})>[];
     late Future<void> Function() flush;
     await pumpRow(
@@ -125,9 +145,13 @@ void main() {
     await tester.pump();
 
     expect(commits, hasLength(2));
-    expect(commits.last.immediate, isTrue,
-        reason: 'tab switches, page changes, lifecycle and session end all '
-            'flush through this handle — it writes now');
+    expect(
+      commits.last.immediate,
+      isTrue,
+      reason:
+          'tab switches, page changes, lifecycle and session end all '
+          'flush through this handle — it writes now',
+    );
   });
 
   testWidgets('draft rows still commit only on blur', (tester) async {
@@ -141,8 +165,11 @@ void main() {
     );
 
     await type(tester, '10');
-    expect(commits, isEmpty,
-        reason: 'a keystroke must not materialize a draft mid-typing');
+    expect(
+      commits,
+      isEmpty,
+      reason: 'a keystroke must not materialize a draft mid-typing',
+    );
 
     await unfocus(tester);
     expect(commits, hasLength(1));

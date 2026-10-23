@@ -61,21 +61,19 @@ class ExperimentalScreen extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: AppSpacing.sm),
-                    _ThemeOption(
-                      variant: LambdaThemeVariant.primary,
-                      label: 'Primary Theme',
-                      description: 'Dark warm palette with amber accent',
-                      preview: LambdaColors.dark,
-                      current: c,
-                    ),
-                    const SizedBox(height: AppSpacing.sm),
-                    _ThemeOption(
-                      variant: LambdaThemeVariant.monoLight,
-                      label: 'Mono Light',
-                      description: 'Clean white background with dark grey text',
-                      preview: LambdaColors.monoLight,
-                      current: c,
-                    ),
+                    // Every palette in the catalog, so the dev harness can
+                    // never fall behind Profile → Appearance.
+                    for (
+                      var i = 0;
+                      i < LambdaThemeVariant.values.length;
+                      i++
+                    ) ...[
+                      if (i > 0) const SizedBox(height: AppSpacing.sm),
+                      _ThemeOption(
+                        variant: LambdaThemeVariant.values[i],
+                        current: c,
+                      ),
+                    ],
                     const SizedBox(height: AppSpacing.xl),
                     Text(
                       'EXERCISE SELECTOR',
@@ -131,24 +129,16 @@ class ExperimentalScreen extends StatelessWidget {
 }
 
 class _ThemeOption extends StatelessWidget {
-  const _ThemeOption({
-    required this.variant,
-    required this.label,
-    required this.description,
-    required this.preview,
-    required this.current,
-  });
+  const _ThemeOption({required this.variant, required this.current});
 
   final LambdaThemeVariant variant;
-  final String label;
-  final String description;
-  final LambdaColors preview;
   final LambdaColors current;
 
   bool get _isSelected => themeNotifier.value == variant;
 
   @override
   Widget build(BuildContext context) {
+    final preview = variant.colors;
     return GestureDetector(
       onTap: () => themeNotifier.value = variant,
       child: AnimatedContainer(
@@ -211,7 +201,7 @@ class _ThemeOption extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    label,
+                    variant.label,
                     style: TextStyle(
                       fontSize: AppTextStyles.md,
                       fontWeight: FontWeight.w600,
@@ -220,7 +210,7 @@ class _ThemeOption extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    description,
+                    variant.description,
                     style: TextStyle(
                       fontSize: AppTextStyles.sm,
                       color: current.muted,
@@ -602,7 +592,6 @@ class _DropdownMenuSelectorState extends State<_DropdownMenuSelector> {
       _active = _exercises.length - 1;
     });
   }
-
 }
 
 /// The demo's choose-exercise sheet — search the available list or create a

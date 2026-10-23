@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lambda/core/styles/app_spacing.dart';
+import 'package:lambda/core/theme/lambda_theme.dart';
 import 'package:lambda/shared/widgets/scroll_shrink_nav_bar.dart';
 
 /// The scroll-driven half of [ScrollShrinkNavBar]. In tests the bottom safe
@@ -18,6 +19,9 @@ void main() {
       label: 'Search',
     ),
   ];
+
+  setUp(() => themeNotifier.value = LambdaThemeVariant.primary);
+  tearDown(() => themeNotifier.value = LambdaThemeVariant.primary);
 
   /// The bar takes no controller — it follows the list's scroll
   /// notifications. The test keeps one only so it can drive the scroll.
@@ -145,6 +149,24 @@ void main() {
     expect(tapped, 1);
   });
 
+  testWidgets('repaints when the palette changes under it', (tester) async {
+    // The bar outlives the page it floats over: in the shell, a pushed page
+    // sits on top of it and nothing above the bar rebuilds for a palette
+    // change. It has to listen for itself or it keeps the old theme while
+    // every page around it changes (2026-10-22).
+    await pumpBar(tester);
+    await tester.pumpAndSettle();
+
+    Color? selectedInk() => tester.widget<Icon>(find.byIcon(Icons.home)).color;
+
+    expect(selectedInk(), LambdaColors.dark.accent);
+
+    themeNotifier.value = LambdaThemeVariant.ruby;
+    await tester.pump();
+
+    expect(selectedInk(), LambdaColors.ruby.accent);
+  });
+
   testWidgets('drives from a list inside a horizontal pager', (tester) async {
     // The Session tab's shape: the list the page scrolls lives inside a
     // pager, and the bar still has to follow it.
@@ -236,8 +258,9 @@ void main() {
     expect(barHeight(tester), ScrollShrinkNavBar.collapsedHeight);
   });
 
-  testWidgets('contentInset answers for the bar, and only under one',
-      (tester) async {
+  testWidgets('contentInset answers for the bar, and only under one', (
+    tester,
+  ) async {
     double? beside;
     double? under;
 
@@ -265,6 +288,9 @@ void main() {
     );
 
     expect(beside, 0);
-    expect(under, ScrollShrinkNavBar.expandedHeight + AppSpacing.sm + AppSpacing.lg);
+    expect(
+      under,
+      ScrollShrinkNavBar.expandedHeight + AppSpacing.sm + AppSpacing.lg,
+    );
   });
 }

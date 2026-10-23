@@ -36,26 +36,24 @@ const _pkColumns = {
   'dim_planned_session_program': 'planned_session_program_id',
   'dim_pr_view_setting': 'pr_view_setting_id',
   'fact_goal': 'goal_id',
+  'dim_friend_code': 'user_id',
 };
 
-// coaching_relationship is the one remaining table with no single-column PK —
-// its real Postgres primary key is the composite pair below (there's no 'id'
-// column server-side at all). PUT upserts on the pair instead of a pkCol;
-// PATCH needs the pair's actual values, which aren't in a PATCH's opData
-// (only changed columns are), so those get looked up locally by PowerSync's
-// internal id first.
+// The tables with no single-column PK — their real Postgres primary key is
+// the composite pair below (there's no 'id' column server-side at all). PUT
+// upserts on the pair instead of a pkCol; PATCH needs the pair's actual
+// values, which aren't in a PATCH's opData (only changed columns are), so
+// those get looked up locally by PowerSync's internal id first.
 const _compositeKeyTables = {
   'coaching_relationship': ['coach_user_id', 'athlete_user_id'],
+  'friend_relationship': ['user_id', 'friend_user_id'],
 };
 
 // Postgres integer[] columns are mirrored locally as Column.text (written as
 // JSON-encoded strings, same as how they arrive via download sync). Undo that
 // encoding on the way back up, or PostgREST receives a string instead of an
 // array.
-const _arrayColumns = {
-  'reps',
-  'target_reps',
-};
+const _arrayColumns = {'reps', 'target_reps'};
 
 Map<String, dynamic> _decodeArrayColumns(Map<String, dynamic> data) {
   final result = Map<String, dynamic>.of(data);
@@ -74,14 +72,14 @@ final _fatalCodes = [
   RegExp(r'^22...$'), // data exception
   RegExp(r'^23502$'), // NOT NULL violation (permanent)
   RegExp(r'^23503$'), // FK violation (permanent — dims are archive-only, so a
-                      // violating fact ref is unrecoverable data; quarantining
-                      // it keeps the checkpoint from stalling on it forever)
+  // violating fact ref is unrecoverable data; quarantining
+  // it keeps the checkpoint from stalling on it forever)
   RegExp(r'^23505$'), // unique violation (permanent)
   RegExp(r'^23514$'), // check violation (permanent)
   RegExp(r'^42501$'), // insufficient privilege / RLS
   RegExp(r'^PGRST205$'), // table not found in schema cache (transient but
-                         // unrecoverable — the row won't change, and retrying
-                         // the same op keeps failing the same way)
+  // unrecoverable — the row won't change, and retrying
+  // the same op keeps failing the same way)
 ];
 
 class SupabaseConnector extends PowerSyncBackendConnector {
@@ -149,8 +147,10 @@ class SupabaseConnector extends PowerSyncBackendConnector {
           }
         } else if (op.op == UpdateType.patch) {
           if (compositeKey != null) {
-            final localRows = await database
-                .getAll('SELECT * FROM ${op.table} WHERE id = ?', [op.id]);
+            final localRows = await database.getAll(
+              'SELECT * FROM ${op.table} WHERE id = ?',
+              [op.id],
+            );
             if (localRows.isEmpty) continue;
             final patchData = _decodeArrayColumns(op.opData!);
             patchData.remove('id');
@@ -160,12 +160,16 @@ class SupabaseConnector extends PowerSyncBackendConnector {
             }
             await query;
           } else {
-            await table.update(_decodeArrayColumns(op.opData!)).eq(pkCol, op.id);
+            await table
+                .update(_decodeArrayColumns(op.opData!))
+                .eq(pkCol, op.id);
           }
         } else if (op.op == UpdateType.delete) {
           if (compositeKey != null) {
-            final localRows = await database
-                .getAll('SELECT * FROM ${op.table} WHERE id = ?', [op.id]);
+            final localRows = await database.getAll(
+              'SELECT * FROM ${op.table} WHERE id = ?',
+              [op.id],
+            );
             if (localRows.isEmpty) continue;
             var query = table.delete();
             for (final col in compositeKey) {
@@ -272,19 +276,14 @@ void resetForSignOut() {
 ///
 /// Prefer [safeWriteTransaction] for multi-statement work that must be atomic.
 Future<void> safeExec(String sql, [List<Object?> params = const []]) async {
-  await db
-      .execute(sql, params)
-      .timeout(Duration(seconds: _execTimeoutSeconds));
+  await db.execute(sql, params).timeout(Duration(seconds: _execTimeoutSeconds));
 }
 
 /// Transactional wrapper — all statements run atomically or not at all.
 /// The callback receives the database transaction; prefer this over multiple
 /// standalone [safeExec] calls when the writes must be atomic.
-Future<void> safeWriteTransaction(
-    Future<void> Function(dynamic tx) fn) async {
-  await db
-      .writeTransaction(fn)
-      .timeout(Duration(seconds: _execTimeoutSeconds));
+Future<void> safeWriteTransaction(Future<void> Function(dynamic tx) fn) async {
+  await db.writeTransaction(fn).timeout(Duration(seconds: _execTimeoutSeconds));
 }
 
 /// How long a single PowerSync write may take before the helper gives up.
@@ -360,10 +359,7 @@ Future<void> openDatabase() async {
         // upload against a table the schema no longer has.
         'fact_program_revision',
       ]) {
-        await tx.execute(
-          'DELETE FROM ps_crud WHERE table_name = ?',
-          [old],
-        );
+        await tx.execute('DELETE FROM ps_crud WHERE table_name = ?', [old]);
       }
     });
   } catch (_) {

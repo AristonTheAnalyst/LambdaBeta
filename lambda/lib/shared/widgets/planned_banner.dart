@@ -4,6 +4,7 @@ import '../../core/styles/app_fonts.dart';
 import '../../core/styles/app_radius.dart';
 import '../../core/styles/app_spacing.dart';
 import '../../core/styles/app_text_styles.dart';
+import 'user_name_text.dart';
 
 /// The planned-source banner — planned-blue ghost container with the event
 /// icon and the planned session's name. Shared between the prep page's LAST
@@ -30,7 +31,8 @@ class PlannedBanner extends StatelessWidget {
           Icon(Icons.event_outlined, size: 16, color: AppColors.planned),
           const SizedBox(width: AppSpacing.sm),
           Expanded(
-            child: Text(
+            // A workout name the user typed — one line, however long.
+            child: UserNameText(
               name,
               style: AppFonts.mono(
                 fontSize: AppTextStyles.xs,

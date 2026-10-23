@@ -7,14 +7,18 @@ import '../../../../core/styles/app_radius.dart';
 import '../../../../core/styles/app_spacing.dart';
 import '../../../../core/styles/app_text_styles.dart';
 import '../../../../core/utils/session_format.dart';
+import '../../../../core/utils/name_limit.dart';
 import '../../../../data/models/planned_session.dart';
 import '../../../../data/repositories/planned_session_repository.dart';
 import '../../../../shared/widgets/app_card.dart';
 import '../../../../shared/widgets/container_styles.dart';
 import '../../../../shared/widgets/glass_button.dart';
 import '../../../../shared/widgets/lambda_input.dart';
+import '../../../../shared/widgets/name_limit_counter.dart';
+import '../../../../shared/widgets/header_icon_button.dart';
 import '../../../../shared/widgets/page_header.dart';
 import '../../../../shared/widgets/swipe_actions.dart';
+import '../../../../shared/widgets/user_name_text.dart';
 import '../viewmodel/program_detail_viewmodel.dart';
 import 'plan_session_screen.dart';
 
@@ -82,10 +86,10 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
   /// list shows, so the indicator does not move under the user's finger; once
   /// a blocked program is chosen the workouts step is gone for good.
   List<_WizardStep> get _steps => [
-        _WizardStep.shape,
-        _WizardStep.name,
-        if (_usesBlocks != true) _WizardStep.workouts,
-      ];
+    _WizardStep.shape,
+    _WizardStep.name,
+    if (_usesBlocks != true) _WizardStep.workouts,
+  ];
 
   _WizardStep get _step => _steps[_stepIndex];
 
@@ -112,9 +116,10 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
     _WizardStep.shape =>
       'A list of workouts, or phases you work through. This is set when the '
           'program is made.',
-    _WizardStep.name => _isBlocked
-        ? 'Name it — then give it its first block.'
-        : 'Give it a name and, optionally, a description.',
+    _WizardStep.name =>
+      _isBlocked
+          ? 'Name it — then give it its first block.'
+          : 'Give it a name and, optionally, a description.',
     _WizardStep.workouts => 'Add the workouts in the order they repeat.',
   };
 
@@ -291,8 +296,7 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
   Future<void> _openWorkout(PlannedSession w) async {
     await Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(
-        builder: (_) =>
-            PlanSessionScreen(viewModel: _vm.editor, workout: w),
+        builder: (_) => PlanSessionScreen(viewModel: _vm.editor, workout: w),
       ),
     );
     await _reloadWorkouts();
@@ -307,13 +311,11 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
           children: [
             PageHeader(
               title: 'New Program',
-              left: GestureDetector(
-                onTap: () => context.pop(),
-                child: Icon(
-                  Icons.arrow_back_ios_new,
-                  size: 18,
-                  color: AppColors.accent,
-                ),
+              left: HeaderIconButton(
+                icon: Icons.arrow_back_ios_new,
+                semanticsLabel: 'Back',
+                glyphSize: 18,
+                onPressed: () => context.pop(),
               ),
             ),
             _stepIndicator(),
@@ -341,7 +343,7 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
                     _stepSubtitle,
                     style: AppFonts.ui(
                       fontSize: AppTextStyles.sm,
-                      color: AppColors.muted,
+                      color: AppColors.inkSecondary,
                     ),
                   ),
                 ],
@@ -370,7 +372,7 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
                     Expanded(
                       child: GlassButton(
                         label: 'Back',
-                        color: AppColors.muted,
+                        color: AppColors.primary,
                         onPressed: () => setState(() => _stepIndex--),
                       ),
                     ),
@@ -437,13 +439,15 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
           title: 'Simple',
           blurb: 'A list of workouts, worked through in order.',
           selected: _usesBlocks == false,
-          onTap:
-              _shapeLocked ? null : () => setState(() => _usesBlocks = false),
+          onTap: _shapeLocked
+              ? null
+              : () => setState(() => _usesBlocks = false),
         ),
         const SizedBox(height: AppSpacing.md),
         _shapeOption(
           title: 'Blocks',
-          blurb: 'Phases worked through one at a time — each with its own '
+          blurb:
+              'Phases worked through one at a time — each with its own '
               'workouts and goals.',
           selected: _usesBlocks == true,
           onTap: _shapeLocked ? null : () => setState(() => _usesBlocks = true),
@@ -453,10 +457,11 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
           _shapeLocked
               ? 'This program is made, and its shape is set for good.'
               : 'The shape is decided once, when the program is made — it '
-                  'cannot be changed after.',
+                    'cannot be changed after.',
           style: AppFonts.ui(
             fontSize: AppTextStyles.xs,
-            color: AppColors.muted,
+            color: AppColors.inkSecondary,
+            height: 1.4,
           ),
         ),
       ],
@@ -477,9 +482,11 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Icon(
-            selected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+            selected
+                ? Icons.radio_button_checked
+                : Icons.radio_button_unchecked,
             size: 20,
-            color: selected ? AppColors.accentText : AppColors.muted,
+            color: selected ? AppColors.accent : AppColors.muted,
           ),
           const SizedBox(width: AppSpacing.md),
           Expanded(
@@ -499,7 +506,8 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
                   blurb,
                   style: AppFonts.ui(
                     fontSize: AppTextStyles.sm,
-                    color: AppColors.muted,
+                    color: AppColors.inkSecondary,
+                    height: 1.4,
                   ),
                 ),
               ],
@@ -519,8 +527,18 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
           label: 'Program name',
           placeholder: 'e.g. Strength Block 1',
           textCapitalization: TextCapitalization.words,
+          maxLength: kMaxProgramNameLength,
           onChanged: (_) => setState(() {}),
           required: true,
+        ),
+        // A program name is an identifier on a card, not a sentence: the
+        // field states the limit before the card has to enforce it.
+        Align(
+          alignment: Alignment.centerRight,
+          child: NameLimitCounter(
+            length: _nameCtrl.text.trim().length,
+            max: kMaxProgramNameLength,
+          ),
         ),
         const SizedBox(height: AppSpacing.md),
         LambdaInput(
@@ -566,7 +584,7 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
                 'No workouts yet — add at least one.',
                 style: AppFonts.ui(
                   fontSize: AppTextStyles.sm,
-                  color: AppColors.muted,
+                  color: AppColors.inkSecondary,
                 ),
               ),
             ),
@@ -596,14 +614,16 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
                 actions: [
                   SwipeAction(
                     icon: Icons.copy_rounded,
-                    
+
                     color: AppColors.accent,
+                    foreground: AppColors.accentText,
                     onTap: () => _vm.duplicatePlannedSession(workouts[i]),
                   ),
                   SwipeAction(
                     icon: Icons.delete_outline,
-                    
+
                     color: AppColors.danger,
+                    foreground: AppColors.dangerText,
                     onTap: () {
                       _vm.removePlannedSession(workouts[i]);
                       setState(() {});
@@ -618,7 +638,7 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
+                            UserNameText(
                               toProperCase(workouts[i].name),
                               style: AppFonts.ui(
                                 fontSize: AppTextStyles.md,
@@ -631,7 +651,7 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
                                 workouts[i].notes!,
                                 style: AppFonts.ui(
                                   fontSize: AppTextStyles.xs,
-                                  color: AppColors.muted,
+                                  color: AppColors.inkSecondary,
                                 ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
@@ -639,10 +659,7 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
                           ],
                         ),
                       ),
-                      _badge(
-                        'Session ${i + 1}',
-                        AppColors.accent,
-                      ),
+                      _badge('Session ${i + 1}', AppColors.accent),
                       const SizedBox(width: AppSpacing.sm),
                       ReorderableDragStartListener(
                         index: i,
@@ -670,7 +687,10 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
         borderRadius: BorderRadius.circular(999),
         border: Border.all(color: color.withValues(alpha: 0.3)),
       ),
-      child: Text(text, style: AppFonts.mono(fontSize: 13, color: color)),
+      child: Text(
+        text,
+        style: AppFonts.mono(fontSize: AppTextStyles.caption, color: color),
+      ),
     );
   }
 }

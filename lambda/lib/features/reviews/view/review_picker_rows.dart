@@ -82,7 +82,7 @@ class ReviewTickRow extends StatelessWidget {
                           target,
                           style: AppFonts.mono(
                             fontSize: AppTextStyles.xs,
-                            color: AppColors.muted,
+                            color: AppColors.inkSecondary,
                           ),
                         ),
                       ],
@@ -95,7 +95,7 @@ class ReviewTickRow extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: AppFonts.ui(
                         fontSize: AppTextStyles.xs,
-                        color: AppColors.muted,
+                        color: AppColors.inkSecondary,
                       ),
                     ),
                 ],
@@ -125,7 +125,8 @@ class ReviewSectionLabel extends StatelessWidget {
     text,
     style: AppFonts.mono(
       fontSize: AppTextStyles.xs,
-      color: AppColors.muted,
+      fontWeight: FontWeight.w600,
+      color: AppColors.primary,
       letterSpacing: 0.8,
     ),
   );

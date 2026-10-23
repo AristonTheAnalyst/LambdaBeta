@@ -50,13 +50,15 @@ void main() {
     expect(
       (value.dy - label.dy).abs(),
       lessThan(3),
-      reason: 'one line, baselined — the two type sizes sit on a shared '
+      reason:
+          'one line, baselined — the two type sizes sit on a shared '
           'baseline, not stacked a row apart',
     );
     expect(
       tester.widget<Text>(find.text('SETS')).style!.fontSize,
       tester.widget<Text>(find.text('25')).style!.fontSize,
-      reason: 'one reading, one size: the label steps up to its number, since '
+      reason:
+          'one reading, one size: the label steps up to its number, since '
           'a count reads better a touch large than a label does',
     );
   });

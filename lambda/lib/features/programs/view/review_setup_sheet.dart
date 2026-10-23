@@ -113,11 +113,7 @@ class _ReviewSetupSheetState extends State<_ReviewSetupSheet> {
     }
     return [
       for (final entry in byBlock.entries)
-        (
-          blockId: entry.key,
-          name: names[entry.key],
-          workouts: entry.value,
-        ),
+        (blockId: entry.key, name: names[entry.key], workouts: entry.value),
     ];
   }
 
@@ -222,7 +218,11 @@ class _ReviewSetupSheetState extends State<_ReviewSetupSheet> {
         'Opens each one so you can look through it and change what needs '
         'changing. Tick them off as you go — what it looks like when you '
         'finish is saved with the review.',
-        style: AppFonts.ui(fontSize: AppTextStyles.xs, color: AppColors.muted),
+        style: AppFonts.ui(
+          fontSize: AppTextStyles.xs,
+          color: AppColors.inkSecondary,
+          height: 1.4,
+        ),
       ),
     ];
   }
@@ -243,7 +243,11 @@ class _ReviewSetupSheetState extends State<_ReviewSetupSheet> {
     Text(
       'This program has no workouts in it. Add one first — then a review has '
       'something to look through.',
-      style: AppFonts.ui(fontSize: AppTextStyles.xs, color: AppColors.muted),
+      style: AppFonts.ui(
+        fontSize: AppTextStyles.xs,
+        color: AppColors.inkSecondary,
+        height: 1.4,
+      ),
     ),
   ];
 
@@ -272,7 +276,11 @@ class _ReviewSetupSheetState extends State<_ReviewSetupSheet> {
     const SizedBox(height: AppSpacing.xl),
     SizedBox(
       width: double.infinity,
-      child: GlassButton(label: 'Start review', solid: true, onPressed: _submit),
+      child: GlassButton(
+        label: 'Start review',
+        solid: true,
+        onPressed: _submit,
+      ),
     ),
     const SizedBox(height: AppSpacing.xs),
     Center(
@@ -280,7 +288,10 @@ class _ReviewSetupSheetState extends State<_ReviewSetupSheet> {
         onPressed: () => setState(() => _step = 1),
         child: Text(
           'Back',
-          style: AppFonts.ui(color: AppColors.accent, fontWeight: FontWeight.w600),
+          style: AppFonts.ui(
+            color: AppColors.accent,
+            fontWeight: FontWeight.w600,
+          ),
         ),
       ),
     ),
@@ -308,7 +319,8 @@ class _GroupHeading extends StatelessWidget {
         name.toUpperCase(),
         style: AppFonts.mono(
           fontSize: AppTextStyles.xs,
-          color: AppColors.muted,
+          fontWeight: FontWeight.w600,
+          color: AppColors.primary,
           letterSpacing: 0.8,
         ),
       ),
@@ -347,7 +359,7 @@ class _WorkoutRow extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: AppFonts.ui(
-                  fontSize: 14,
+                  fontSize: AppTextStyles.sm,
                   fontWeight: ticked ? FontWeight.w700 : FontWeight.w600,
                   color: ticked ? AppColors.accent : AppColors.primary,
                 ),
@@ -360,8 +372,8 @@ class _WorkoutRow extends StatelessWidget {
                   : '${workout.exerciseCount} EXERCISES',
               style: AppFonts.mono(
                 fontSize: AppTextStyles.xs,
-                color: AppColors.muted,
-                letterSpacing: 0.4,
+                color: AppColors.inkSecondary,
+                letterSpacing: 0.6,
               ),
             ),
             const SizedBox(width: 8),

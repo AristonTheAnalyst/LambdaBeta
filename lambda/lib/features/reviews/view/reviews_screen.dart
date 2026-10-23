@@ -5,8 +5,11 @@ import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
 import '../../../core/styles/app_spacing.dart';
 import '../../../core/styles/app_text_styles.dart';
+import '../../../core/utils/date_range.dart';
 import '../../../shared/widgets/app_card.dart';
+import '../../../shared/widgets/date_range_selector.dart';
 import '../../../shared/widgets/glass_button.dart';
+import '../../../shared/widgets/lambda_search_field.dart';
 import '../../../shared/widgets/page_header.dart';
 import '../../../shared/widgets/scroll_shrink_nav_bar.dart';
 import '../../../shared/widgets/swipe_actions.dart';
@@ -14,7 +17,7 @@ import '../../programs/view/review_container.dart';
 import '../../programs/viewmodel/program_history_viewmodel.dart'
     show StartedReview;
 import '../viewmodel/reviews_viewmodel.dart';
-import 'review_cancel_dialog.dart';
+import 'review_dialogs.dart';
 import 'review_name_sheet.dart';
 import 'review_selection_screen.dart';
 
@@ -27,9 +30,14 @@ import 'review_selection_screen.dart';
 /// points are retired while the concept is ironed out, and their plumbing is
 /// kept for the day it is not.
 ///
+/// The tab wears the library's toolbar (2026-10-19): search narrows both
+/// halves by name, and the date button opens the shared range sheet for the
+/// records. A date filter never hides an open pass — that is current work,
+/// not history — so it only narrows the COMPLETED half.
+///
 /// [showHeader] false is the embedded form — the Library's Reviews tab and the
 /// dev lab — the same idiom as the workout library: the host owns the header,
-/// and the compact + sits on a caption row instead.
+/// and the compact + stands in the toolbar instead.
 class ReviewsScreen extends StatefulWidget {
   const ReviewsScreen({super.key, this.showHeader = true, this.viewModel});
 
@@ -53,6 +61,17 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
   /// rather than sit there looking untouched.
   bool _busy = false;
 
+  final _searchController = TextEditingController();
+  String _query = '';
+
+  /// All time until the date button says otherwise. The same shared selection
+  /// the Logs and exercise-insights filters use, so the sheet and the list
+  /// cannot disagree about what a range means.
+  static const _allTime = DateRangeSelection.preset(DateRangePreset.all);
+  DateRangeSelection _dateSelection = _allTime;
+
+  bool get _dateActive => _dateSelection != _allTime;
+
   @override
   void initState() {
     super.initState();
@@ -60,6 +79,9 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
     _vm = injected ?? ReviewsViewModel();
     _ownsVm = injected == null;
     _vm.state.addListener(_onState);
+    _searchController.addListener(() {
+      if (mounted) setState(() => _query = _searchController.text);
+    });
     // A host test drives the load itself — it owns the VM's fakes. The screen
     // loads only when it owns the view model.
     if (_ownsVm) {
@@ -76,6 +98,7 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
 
   @override
   void dispose() {
+    _searchController.dispose();
     _vm.state.removeListener(_onState);
     if (_ownsVm) {
       _vm.dispose();
@@ -113,8 +136,8 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
     if (!mounted) return;
     setState(() => _busy = false);
 
-    final selection =
-        await Navigator.of(context, rootNavigator: true).push<ReviewSelection>(
+    final selection = await Navigator.of(context, rootNavigator: true)
+        .push<ReviewSelection>(
           MaterialPageRoute(
             builder: (_) => ReviewSelectionScreen(
               name: name,
@@ -211,6 +234,55 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
     _snack('Could not cancel the review.');
   }
 
+  /// Deletes a completed record: a confirm first — a record is the finished
+  /// thing the pass existed to make — then the write, then the list.
+  Future<void> _deleteCompleted(ReviewListEntry entry) async {
+    if (!await confirmDeleteCompletedReview(context, label: entry.label)) {
+      return;
+    }
+    if (!mounted) return;
+    final deleted = await _vm.deleteCompletedReview(entry.review.reviewId);
+    if (!mounted || deleted) return;
+    _snack('Could not delete the review.');
+  }
+
+  /// The shared range sheet, seeded with the range in force. Picking a preset
+  /// is one tap; a custom range is the calendar's.
+  Future<void> _pickDate() async {
+    final selection = await showDateRangeSelector(
+      context,
+      initial: _dateSelection,
+    );
+    if (selection != null && mounted) {
+      setState(() => _dateSelection = selection);
+    }
+  }
+
+  /// Search reads the whole row: the pass's label, its stored title, and the
+  /// workouts it covered — typing "bench" finds a pass by what was in it, not
+  /// only by what it was called.
+  bool _matchesSearch(ReviewListEntry entry) {
+    final query = _query.trim().toLowerCase();
+    if (query.isEmpty) return true;
+    final haystack = [
+      entry.label,
+      entry.review.title ?? '',
+      ...entry.workoutNames,
+    ].join(' ').toLowerCase();
+    return haystack.contains(query);
+  }
+
+  /// A date filter narrows the RECORDS only. An open pass is current work, not
+  /// history — hiding it because it sits outside the chosen range would take
+  /// the one thing still asking something of the user off the screen.
+  bool _matchesDate(ReviewListEntry entry) {
+    if (!_dateActive) return true;
+    final completed = entry.review.completedDate;
+    if (completed == null) return true;
+    final window = _dateSelection.window(DateTime.now());
+    return !completed.isBefore(window.from) && completed.isBefore(window.to);
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = _vm.state.value;
@@ -224,42 +296,64 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
               right: GlassButton(
                 label: '',
                 icon: Icons.add,
+                semanticsLabel: 'Start review',
                 compact: true,
                 loading: _busy,
                 onPressed: _start,
               ),
             ),
-          if (!widget.showHeader)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(
-                AppSpacing.lg,
-                AppSpacing.lg,
-                AppSpacing.lg,
-                0,
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      'Passes over the workouts and goals you pick.',
-                      style: AppFonts.ui(
-                        fontSize: AppTextStyles.xs,
-                        color: AppColors.muted,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.sm),
-                  GlassButton(
-                    label: '',
-                    icon: Icons.add,
-                    compact: true,
-                    loading: _busy,
-                    onPressed: _start,
-                  ),
-                ],
-              ),
-            ),
+          _toolbar(showAdd: !widget.showHeader),
           Expanded(child: _body(state)),
+        ],
+      ),
+    );
+  }
+
+  /// The toolbar every library tab wears (2026-10-19): search, then the date
+  /// button, then the tab's own + where the host header has none.
+  ///
+  /// The date button is icon-only to keep the search box wide on a phone —
+  /// its state reads off the accent, and the sheet it opens names the range
+  /// in words.
+  Widget _toolbar({required bool showAdd}) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.lg,
+        AppSpacing.lg,
+        AppSpacing.lg,
+        0,
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: LambdaSearchField(
+              controller: _searchController,
+              hint: 'Search reviews…',
+            ),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          Semantics(
+            button: true,
+            label: 'Date filter',
+            child: GlassButton(
+              label: '',
+              icon: Icons.date_range_outlined,
+              compact: true,
+              color: _dateActive ? AppColors.accent : null,
+              onPressed: _pickDate,
+            ),
+          ),
+          if (showAdd) ...[
+            const SizedBox(width: AppSpacing.sm),
+            GlassButton(
+              label: '',
+              icon: Icons.add,
+              semanticsLabel: 'Start review',
+              compact: true,
+              loading: _busy,
+              onPressed: _start,
+            ),
+          ],
         ],
       ),
     );
@@ -295,8 +389,28 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
     }
     if (state.entries.isEmpty) return const _EmptyState();
 
-    final open = state.open;
-    final completed = state.completed;
+    final open = state.open.where(_matchesSearch).toList();
+    final completed = state.completed
+        .where(_matchesSearch)
+        .where(_matchesDate)
+        .toList();
+    if (open.isEmpty && completed.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.xl),
+          child: Text(
+            _query.trim().isNotEmpty
+                ? 'No reviews match "${_query.trim()}".'
+                : 'No reviews in this range.',
+            textAlign: TextAlign.center,
+            style: AppFonts.ui(
+              fontSize: AppTextStyles.md,
+              color: AppColors.inkSecondary,
+            ),
+          ),
+        ),
+      );
+    }
     return ListView(
       padding: EdgeInsets.fromLTRB(
         AppSpacing.lg,
@@ -318,8 +432,9 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
               actions: [
                 SwipeAction(
                   icon: Icons.delete_outline,
-                  
+
                   color: AppColors.danger,
+                  foreground: AppColors.dangerText,
                   onTap: () => _cancel(entry),
                 ),
               ],
@@ -332,9 +447,23 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
           const _SectionLabel('COMPLETED'),
           const SizedBox(height: AppSpacing.sm),
           for (final entry in completed) ...[
-            _CompletedReviewCard(
-              entry: entry,
-              onTap: () => _openCompleted(entry),
+            SwipeActions(
+              // Keyed by review, like the open drawer: a delete must not hand
+              // one record's drawer state to the card that slides up into its
+              // place.
+              key: ValueKey(entry.review.reviewId),
+              actions: [
+                SwipeAction(
+                  icon: Icons.delete_outline,
+                  color: AppColors.danger,
+                  foreground: AppColors.dangerText,
+                  onTap: () => _deleteCompleted(entry),
+                ),
+              ],
+              child: _CompletedReviewCard(
+                entry: entry,
+                onTap: () => _openCompleted(entry),
+              ),
             ),
             const SizedBox(height: AppSpacing.md),
           ],
@@ -360,7 +489,7 @@ class _EmptyState extends StatelessWidget {
             'No reviews yet',
             style: AppFonts.ui(
               fontSize: AppTextStyles.md,
-              color: AppColors.muted,
+              color: AppColors.inkSecondary,
             ),
           ),
           const SizedBox(height: AppSpacing.sm),
@@ -371,7 +500,8 @@ class _EmptyState extends StatelessWidget {
             textAlign: TextAlign.center,
             style: AppFonts.ui(
               fontSize: AppTextStyles.xs,
-              color: AppColors.muted,
+              color: AppColors.inkSecondary,
+              height: 1.4,
             ),
           ),
         ],
@@ -475,7 +605,7 @@ class _CompletedReviewCard extends StatelessWidget {
                   caption,
                   style: AppFonts.mono(
                     fontSize: AppTextStyles.xs,
-                    color: AppColors.muted,
+                    color: AppColors.inkSecondary,
                   ),
                 ),
               ],
@@ -498,7 +628,8 @@ class _SectionLabel extends StatelessWidget {
     text,
     style: AppFonts.mono(
       fontSize: AppTextStyles.xs,
-      color: AppColors.muted,
+      fontWeight: FontWeight.w600,
+      color: AppColors.primary,
       letterSpacing: 0.8,
     ),
   );

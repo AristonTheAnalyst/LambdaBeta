@@ -38,26 +38,26 @@ class PlannedSession {
   bool get isCopy => baseSessionId != null;
 
   factory PlannedSession.fromMap(Map<String, dynamic> map) => PlannedSession(
-        sessionId: map['session_id'] as String,
-        userId: map['user_id'] as String,
-        name: map['name'] as String,
-        notes: map['notes'] as String?,
-        archivedDate: map['date_archived'] != null
-            ? DateTime.tryParse(map['date_archived'] as String)
-            : null,
-        createdDate: map['created_date'] != null
-            ? DateTime.tryParse(map['created_date'] as String)
-            : null,
-        baseSessionId: map['base_session_id'] as String?,
-      );
+    sessionId: map['session_id'] as String,
+    userId: map['user_id'] as String,
+    name: map['name'] as String,
+    notes: map['notes'] as String?,
+    archivedDate: map['date_archived'] != null
+        ? DateTime.tryParse(map['date_archived'] as String)
+        : null,
+    createdDate: map['created_date'] != null
+        ? DateTime.tryParse(map['created_date'] as String)
+        : null,
+    baseSessionId: map['base_session_id'] as String?,
+  );
 
   Map<String, dynamic> toMap() => {
-        'session_id': sessionId,
-        'user_id': userId,
-        'name': name,
-        'notes': notes,
-        'date_archived': archivedDate?.toIso8601String(),
-        'created_date': createdDate?.toIso8601String(),
-        'base_session_id': baseSessionId,
-      };
+    'session_id': sessionId,
+    'user_id': userId,
+    'name': name,
+    'notes': notes,
+    'date_archived': archivedDate?.toIso8601String(),
+    'created_date': createdDate?.toIso8601String(),
+    'base_session_id': baseSessionId,
+  };
 }

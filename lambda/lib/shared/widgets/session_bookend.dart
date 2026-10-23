@@ -46,8 +46,9 @@ class SessionBookend extends StatefulWidget {
 }
 
 class _SessionBookendState extends State<SessionBookend> {
-  late final TextEditingController _notesCtrl =
-      TextEditingController(text: widget.notes ?? '');
+  late final TextEditingController _notesCtrl = TextEditingController(
+    text: widget.notes ?? '',
+  );
   final FocusNode _notesFocus = FocusNode();
 
   @override
@@ -77,9 +78,10 @@ class _SessionBookendState extends State<SessionBookend> {
         Text(
           widget.label,
           style: AppFonts.mono(
-            fontSize: 13,
+            fontSize: AppTextStyles.xs,
+            fontWeight: FontWeight.w600,
             letterSpacing: 0.8,
-            color: AppColors.muted,
+            color: AppColors.primary,
           ),
         ),
         const SizedBox(height: AppSpacing.sm),
@@ -127,7 +129,7 @@ class _SessionBookendState extends State<SessionBookend> {
             widget.emptyNotes,
             style: AppFonts.ui(
               fontSize: AppTextStyles.xs,
-              color: AppColors.muted,
+              color: AppColors.inkSecondary,
             ),
           ),
       ],

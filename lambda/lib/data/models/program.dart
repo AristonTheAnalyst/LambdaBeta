@@ -62,16 +62,16 @@ class Program {
   }
 
   Map<String, dynamic> toMap() => {
-        'program_id': programId,
-        'user_id': userId,
-        'program_name': name,
-        'program_description': description,
-        'date_archived': archivedDate?.toIso8601String(),
-        'program_created_date': createdDate.toIso8601String(),
-        'program_updated_date': updatedDate.toIso8601String(),
-        'uses_blocks': usesBlocks ? 1 : 0,
-        'default_target_sessions': defaultTargetSessions,
-      };
+    'program_id': programId,
+    'user_id': userId,
+    'program_name': name,
+    'program_description': description,
+    'date_archived': archivedDate?.toIso8601String(),
+    'program_created_date': createdDate.toIso8601String(),
+    'program_updated_date': updatedDate.toIso8601String(),
+    'uses_blocks': usesBlocks ? 1 : 0,
+    'default_target_sessions': defaultTargetSessions,
+  };
 
   /// Note the opposite default from `ProgramRun._toBool`: NULL means false
   /// here, not true. A row the local mirror has not re-downloaded since the
@@ -94,7 +94,10 @@ class Program {
 }
 
 class ProgramWithSessions {
-  const ProgramWithSessions({required this.program, required this.plannedSessions});
+  const ProgramWithSessions({
+    required this.program,
+    required this.plannedSessions,
+  });
   final Program program;
   final List<PlannedSession> plannedSessions;
 }

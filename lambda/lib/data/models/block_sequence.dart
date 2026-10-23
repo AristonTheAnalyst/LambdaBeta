@@ -26,8 +26,8 @@ class BlockSequence {
   BlockSequence({
     required List<ProgramBlock> blocks,
     required Iterable<ProgramRun> runs,
-  })  : blocks = List.unmodifiable(blocks),
-        _runs = List.unmodifiable(runs);
+  }) : blocks = List.unmodifiable(blocks),
+       _runs = List.unmodifiable(runs);
 
   /// The program's active blocks, in `block_order`. The order is the answer to
   /// "what comes next", so it is the caller's job to have sorted them — every
@@ -69,7 +69,8 @@ class BlockSequence {
   /// phase, beginning again means starting from the first one, exactly as the
   /// first time. A dead end there would leave a completed program with nothing
   /// to offer, and "run it again" with no way to say so.
-  ProgramBlock? get nextBlock => pending ?? (blocks.isEmpty ? null : blocks.first);
+  ProgramBlock? get nextBlock =>
+      pending ?? (blocks.isEmpty ? null : blocks.first);
 
   /// Whether [blockId] may be begun now: it is the block the sequence is on,
   /// and the program has no run open.
@@ -77,6 +78,5 @@ class BlockSequence {
   /// The run half matters even for the next block: mid-phase, the affordance
   /// is Resume, and beginning over it is Restart — a different act with a
   /// different consequence for the record.
-  bool canBegin(String blockId) =>
-      !hasOpenRun && nextBlock?.blockId == blockId;
+  bool canBegin(String blockId) => !hasOpenRun && nextBlock?.blockId == blockId;
 }

@@ -171,7 +171,7 @@ void main() {
     await tester.tap(find.text('Push Day'));
     await tester.pump();
 
-    await tester.tap(find.byIcon(Icons.arrow_back));
+    await tester.tap(find.byIcon(Icons.arrow_back_ios_new));
     await tester.pumpAndSettle();
     expect(result, isNull);
   });

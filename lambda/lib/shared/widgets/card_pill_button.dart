@@ -49,7 +49,7 @@ class CardPillButton extends StatelessWidget {
               icon,
               size: 14,
               color: enabled
-                  ? (active ? c : AppColors.muted)
+                  ? (active ? c : AppColors.inkSecondary)
                   : AppColors.muted.withValues(alpha: 0.4),
             ),
             const SizedBox(width: 5),
@@ -64,7 +64,7 @@ class CardPillButton extends StatelessWidget {
                   fontSize: 13,
                   letterSpacing: 0.4,
                   color: enabled
-                      ? (active ? c : AppColors.muted)
+                      ? (active ? c : AppColors.inkSecondary)
                       : AppColors.muted.withValues(alpha: 0.4),
                 ),
               ),

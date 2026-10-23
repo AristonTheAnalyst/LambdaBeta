@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:uuid/uuid.dart';
 
 import '../../core/powersync/database.dart' as ps;
+import '../../core/utils/name_limit.dart';
 import '../models/block_sequence.dart';
 import '../models/planned_session_exercise.dart';
 import '../models/planned_session_exercise_set.dart';
@@ -25,7 +26,11 @@ const _unordered = 1 << 30;
 /// Where a review's comparison starts — see
 /// [ProgramHistoryRepository.comparisonBase].
 class ComparisonBase {
-  const ComparisonBase(this.content, {this.completedDate, this.notes = const {}});
+  const ComparisonBase(
+    this.content, {
+    this.completedDate,
+    this.notes = const {},
+  });
 
   final ProgramContent content;
 
@@ -52,6 +57,22 @@ class ComparisonBase {
 /// review complete inside a single local transaction — neither belongs on the
 /// CRUD repository the rest of the screens already depend on.
 class ProgramHistoryRepository {
+  /// Refuses a review title longer than the name sheet allows, at the column.
+  ///
+  /// The sheet caps its field; this catches a programmatic start. The local
+  /// mirror cannot check (`Column.text`, no CHECK), so an over-long title
+  /// would insert locally and only die at upload — quarantined server-side
+  /// while the device keeps drawing it.
+  void _assertTitleFits(String? title) {
+    if (title != null && nameTooLong(title, kMaxReviewTitleLength)) {
+      throw ArgumentError.value(
+        title,
+        'title',
+        'exceeds $kMaxReviewTitleLength characters',
+      );
+    }
+  }
+
   ProgramHistoryRepository({
     PlannedSessionRepository? plannedSessionRepository,
     ProgramRunRepository? programRunRepository,
@@ -419,6 +440,7 @@ class ProgramHistoryRepository {
         'A review covers at least one workout: sessionIds cannot be empty',
       );
     }
+    _assertTitleFits(title);
     final reviewId = _uuid.v4();
     final now = DateTime.now().toUtc();
 
@@ -733,6 +755,21 @@ class ProgramHistoryRepository {
     [reviewId],
   );
 
+  /// Deletes a completed review — the Reviews list's record verb, and the
+  /// mirror of [deleteReview]: the row is hard-deleted, locally and on the
+  /// server, and nothing else goes with it. The one deliberate difference is
+  /// the guard, `completed_date IS NOT NULL`: a swipe made against a stale
+  /// list must never take an open pass out from under a walk in progress — the
+  /// open pass's ticks and notes are live work, while a record is what the
+  /// list is allowed to take back.
+  Future<void> deleteCompletedReview(String reviewId) => ps.safeExec(
+    '''
+    DELETE FROM fact_program_review
+    WHERE review_id = ? AND completed_date IS NOT NULL
+    ''',
+    [reviewId],
+  );
+
   /// Records that [plannedSessionId] is finished inside [reviewId]'s pass.
   ///
   /// Read-modify-write of the whole `reviewed_sessions_json` map — the same
@@ -948,9 +985,8 @@ class ProgramHistoryRepository {
     ];
     final everySession = [for (final link in links) link.plannedSessionId];
 
-    final candidates = [
-      for (final row in rows) ProgramReview.fromMap(row),
-    ]..sort((a, b) => b.effectiveDate.compareTo(a.effectiveDate));
+    final candidates = [for (final row in rows) ProgramReview.fromMap(row)]
+      ..sort((a, b) => b.effectiveDate.compareTo(a.effectiveDate));
 
     for (final review in candidates) {
       final set = review.sessionsIn(sessionLinks);

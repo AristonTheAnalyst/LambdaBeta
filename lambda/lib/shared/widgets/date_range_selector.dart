@@ -13,21 +13,35 @@ import 'slide_up_modal.dart';
 
 /// Opens the date-range selector sheet. Returns the new selection, or null
 /// when cancelled. Nothing commits until Apply — the sheet is pure.
+///
+/// [firstDate] and [lastDate] bound the calendar. Null keeps the running
+/// history default — a year back to today — because most callers narrow
+/// something that has already happened; a caller filtering deadlines passes a
+/// future [lastDate], since a target can stand ahead of the clock
+/// (2026-10-20).
 Future<DateRangeSelection?> showDateRangeSelector(
   BuildContext context, {
   required DateRangeSelection initial,
+  DateTime? firstDate,
+  DateTime? lastDate,
 }) {
   return showLambdaModal<DateRangeSelection>(
     context,
     fitContent: true,
-    child: _DateRangeSheet(initial: initial),
+    child: _DateRangeSheet(
+      initial: initial,
+      firstDate: firstDate,
+      lastDate: lastDate,
+    ),
   );
 }
 
 class _DateRangeSheet extends StatefulWidget {
-  const _DateRangeSheet({required this.initial});
+  const _DateRangeSheet({required this.initial, this.firstDate, this.lastDate});
 
   final DateRangeSelection initial;
+  final DateTime? firstDate;
+  final DateTime? lastDate;
 
   @override
   State<_DateRangeSheet> createState() => _DateRangeSheetState();
@@ -47,10 +61,15 @@ class _DateRangeSheetState extends State<_DateRangeSheet> {
     return DateTime(now.year, now.month, now.day);
   }
 
-  /// The range filter looks back a year and never past today — running history
-  /// has no future to show. These are the only bounds the calendar gets; the
-  /// grid itself has no opinion about what is selectable.
-  DateTime get _firstDate => DateTime(_today.year - 1, 1, 1);
+  /// The calendar's bounds. The host may narrow them — a deadline filter
+  /// reaches forward — and with none given the default is the running-history
+  /// window this sheet was built for: a year back, never past today. These are
+  /// the only bounds the calendar gets; the grid itself has no opinion about
+  /// what is selectable.
+  DateTime get _firstDate =>
+      widget.firstDate ?? DateTime(_today.year - 1, 1, 1);
+
+  DateTime get _lastDate => widget.lastDate ?? _today;
 
   @override
   void initState() {
@@ -79,9 +98,7 @@ class _DateRangeSheetState extends State<_DateRangeSheet> {
       // First tap (or a restart): begin a fresh single-day range.
       setState(() {
         _rangeStart = d;
-        _selection = DateRangeSelection.custom(
-          DateTimeRange(start: d, end: d),
-        );
+        _selection = DateRangeSelection.custom(DateTimeRange(start: d, end: d));
       });
     } else {
       setState(() {
@@ -140,9 +157,10 @@ class _DateRangeSheetState extends State<_DateRangeSheet> {
               'OR CUSTOM',
               textAlign: TextAlign.center,
               style: AppFonts.mono(
-                fontSize: 13,
-                letterSpacing: 1.2,
-                color: AppColors.muted,
+                fontSize: AppTextStyles.xs,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.8,
+                color: AppColors.primary,
               ),
             ),
             const SizedBox(height: AppSpacing.md),
@@ -151,7 +169,7 @@ class _DateRangeSheetState extends State<_DateRangeSheet> {
               month: _month,
               onMonthChanged: (m) => setState(() => _month = m),
               firstDate: _firstDate,
-              lastDate: _today,
+              lastDate: _lastDate,
               isSelected: _isEdge,
               isInRange: _inRange,
               onDayTap: _onDayTap,
@@ -159,21 +177,12 @@ class _DateRangeSheetState extends State<_DateRangeSheet> {
             const SizedBox(height: AppSpacing.md),
             // ── Live label ──
             Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 8,
-              ),
-              decoration: lambdaBox(
-                ContainerTone.ghost,
-                radius: AppRadius.md,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: lambdaBox(ContainerTone.ghost, radius: AppRadius.md),
               child: Text(
                 _selection.label(_today),
                 textAlign: TextAlign.center,
-                style: AppFonts.mono(
-                  fontSize: 13,
-                  color: AppColors.primary,
-                ),
+                style: AppFonts.mono(fontSize: 13, color: AppColors.primary),
               ),
             ),
             const SizedBox(height: AppSpacing.lg),
@@ -209,7 +218,7 @@ class _DateRangeSheetState extends State<_DateRangeSheet> {
   Widget _presetChip(DateRangePreset p) {
     final active = _selection.preset == p && _selection.customRange == null;
     final label = switch (p) {
-      DateRangePreset.all => 'All',
+      DateRangePreset.all => 'All time',
       DateRangePreset.m1 => '1M',
       DateRangePreset.m3 => '3M',
       DateRangePreset.m6 => '6M',
@@ -230,11 +239,10 @@ class _DateRangeSheetState extends State<_DateRangeSheet> {
           style: AppFonts.ui(
             fontSize: AppTextStyles.sm,
             fontWeight: FontWeight.w600,
-            color: active ? AppColors.accent : AppColors.muted,
+            color: active ? AppColors.accent : AppColors.inkSecondary,
           ),
         ),
       ),
     );
   }
-
 }

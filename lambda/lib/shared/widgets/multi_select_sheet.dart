@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_fonts.dart';
 import '../../core/styles/app_spacing.dart';
@@ -101,11 +101,14 @@ class _MultiSelectSheetState<T> extends State<_MultiSelectSheet<T>> {
             child: Row(
               children: [
                 Expanded(
-                  child: Text(widget.title,
-                      style: AppFonts.ui(
-                          fontSize: AppTextStyles.lg,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.primary)),
+                  child: Text(
+                    widget.title,
+                    style: AppFonts.ui(
+                      fontSize: AppTextStyles.lg,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.primary,
+                    ),
+                  ),
                 ),
                 if (widget.onCreateNew != null)
                   GestureDetector(
@@ -116,9 +119,10 @@ class _MultiSelectSheetState<T> extends State<_MultiSelectSheet<T>> {
                     child: Text(
                       '+ ${widget.createNewLabel}',
                       style: AppFonts.ui(
-                          fontSize: AppTextStyles.sm,
-                          color: AppColors.accent,
-                          fontWeight: FontWeight.w600),
+                        fontSize: AppTextStyles.sm,
+                        color: AppColors.accent,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
               ],
@@ -156,28 +160,28 @@ class _MultiSelectSheetState<T> extends State<_MultiSelectSheet<T>> {
                   }),
                   child: Container(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 20, vertical: 14),
-                    color: isSelected
-                        ? AppColors.accentBg
-                        : Colors.transparent,
+                      horizontal: 20,
+                      vertical: 14,
+                    ),
+                    color: isSelected ? AppColors.accentBg : Colors.transparent,
                     child: Row(
                       children: [
                         Expanded(
                           child: Text(
                             opt.label,
                             style: AppFonts.ui(
-                                fontSize: AppTextStyles.md,
-                                color: isSelected
-                                    ? AppColors.accent
-                                    : AppColors.primary,
-                                fontWeight: isSelected
-                                    ? FontWeight.w600
-                                    : FontWeight.w400),
+                              fontSize: AppTextStyles.md,
+                              color: isSelected
+                                  ? AppColors.accent
+                                  : AppColors.primary,
+                              fontWeight: isSelected
+                                  ? FontWeight.w600
+                                  : FontWeight.w400,
+                            ),
                           ),
                         ),
                         if (isSelected)
-                          Icon(Icons.check,
-                              size: 18, color: AppColors.accent),
+                          Icon(Icons.check, size: 18, color: AppColors.accent),
                       ],
                     ),
                   ),
@@ -193,8 +197,10 @@ class _MultiSelectSheetState<T> extends State<_MultiSelectSheet<T>> {
                 label: effectiveLabel,
                 color: AppColors.accent,
                 solid: true,
-                onPressed: () => Navigator.of(context, rootNavigator: true)
-                    .pop(_selected.toList()),
+                onPressed: () => Navigator.of(
+                  context,
+                  rootNavigator: true,
+                ).pop(_selected.toList()),
               ),
             ),
           ),

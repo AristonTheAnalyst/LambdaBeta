@@ -59,8 +59,9 @@ Future<bool> confirmStartRun(
   // Named when a name could be read, generically when it could not — the
   // sentence has to make sense either way, and the quoting is the dialog's
   // business, not each caller's.
-  final displaced =
-      displacedName == null ? 'another program' : '"$displacedName"';
+  final displaced = displacedName == null
+      ? 'another program'
+      : '"$displacedName"';
 
   final String body;
   if (displacesCurrentRun) {
@@ -68,7 +69,8 @@ Future<bool> confirmStartRun(
     // config, its block, every session logged against it — and the question
     // says so, because copy that cried destruction over a pause is how a user
     // learns to fear switching.
-    body = 'Your current run on $displaced will be paused, not ended. You can '
+    body =
+        'Your current run on $displaced will be paused, not ended. You can '
         'pick it back up any time — the sessions you logged stay intact.';
   } else {
     final act = switch (entry) {
@@ -95,11 +97,17 @@ Future<bool> confirmStartRun(
           color: AppColors.primary,
         ),
       ),
-      content: Text(body, style: AppFonts.ui(color: AppColors.muted)),
+      content: Text(
+        body,
+        style: AppFonts.ui(color: AppColors.inkSecondary, height: 1.4),
+      ),
       actions: [
         TextButton(
           onPressed: () => Navigator.of(ctx).pop(false),
-          child: Text('Cancel', style: AppFonts.ui(color: AppColors.muted)),
+          child: Text(
+            'Cancel',
+            style: AppFonts.ui(color: AppColors.inkSecondary),
+          ),
         ),
         TextButton(
           onPressed: () => Navigator.of(ctx).pop(true),

@@ -7,6 +7,7 @@ import '../../core/styles/app_spacing.dart';
 import '../../core/styles/app_text_styles.dart';
 import '../../core/utils/session_format.dart';
 import '../../features/session/model/pr_engine.dart';
+import 'user_name_text.dart';
 
 /// The PR showcase + Lessons list of a session's reflection — two dedicated
 /// sections (PRS, LESSONS), each with an explicit empty note when the session
@@ -69,10 +70,13 @@ class ReflectionSummary extends StatelessWidget {
       ],
       if (showPrs && showLessons) const SizedBox(height: AppSpacing.xl),
       if (showLessons) ...[
-        _sectionLabel(Icons.menu_book_outlined, 'LESSONS'),
+        _sectionLabel(Icons.sticky_note_2_outlined, 'EXERCISE NOTES'),
         const SizedBox(height: AppSpacing.sm),
         ..._sectionContent(
-            lessonExercises, 'No lessons this session', _lessonRowsFor),
+          lessonExercises,
+          'No exercise notes this session',
+          _lessonRowsFor,
+        ),
       ],
     ];
     return Column(
@@ -84,8 +88,11 @@ class ReflectionSummary extends StatelessWidget {
 
   /// One section's body: the empty note, or each exercise's name header +
   /// its content blocks with a consistent gap between exercises.
-  List<Widget> _sectionContent(List<String> exercises, String emptyText,
-      List<Widget> Function(String) contentFor) {
+  List<Widget> _sectionContent(
+    List<String> exercises,
+    String emptyText,
+    List<Widget> Function(String) contentFor,
+  ) {
     if (exercises.isEmpty) return [_emptyNote(emptyText)];
     final blocks = <Widget>[];
     for (var i = 0; i < exercises.length; i++) {
@@ -97,57 +104,78 @@ class ReflectionSummary extends StatelessWidget {
   }
 
   Widget _sectionLabel(IconData icon, String text) => Row(
-        children: [
-          Icon(icon, size: 14, color: AppColors.accent),
-          const SizedBox(width: 6),
-          Text(text,
-              style: AppFonts.mono(
-                  fontSize: 13, letterSpacing: 0.8, color: AppColors.primary)),
-        ],
-      );
+    children: [
+      Icon(icon, size: 14, color: AppColors.accent),
+      const SizedBox(width: 6),
+      Text(
+        text,
+        style: AppFonts.mono(
+          fontSize: 13,
+          letterSpacing: 0.8,
+          color: AppColors.primary,
+        ),
+      ),
+    ],
+  );
 
-  Widget _emptyNote(String text) => Text(text,
-      style: AppFonts.ui(fontSize: AppTextStyles.xs, color: AppColors.muted));
+  Widget _emptyNote(String text) => Text(
+    text,
+    style: AppFonts.ui(
+      fontSize: AppTextStyles.xs,
+      color: AppColors.inkSecondary,
+    ),
+  );
 
   Widget _exerciseHeader(String exerciseId) => Padding(
-        padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-        child: Text(toProperCase(exerciseNameFor(exerciseId)),
-            style: AppFonts.ui(
-                fontSize: AppTextStyles.md,
-                fontWeight: FontWeight.w700,
-                color: AppColors.primary)),
-      );
+    padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+    // The recap is a narrow bookend card, so a long exercise name holds one
+    // line here like it does everywhere else.
+    child: UserNameText(
+      toProperCase(exerciseNameFor(exerciseId)),
+      tooltip: true,
+      style: AppFonts.ui(
+        fontSize: AppTextStyles.md,
+        fontWeight: FontWeight.w700,
+        color: AppColors.primary,
+      ),
+    ),
+  );
 
   /// PR cards for one exercise — one card per event (one per PR set).
   List<Widget> _prCardsFor(String exerciseId) => [
-        for (final e in prsByExercise[exerciseId] ?? const <PrEvent>[])
-          _prCard(e),
-      ];
+    for (final e in prsByExercise[exerciseId] ?? const <PrEvent>[]) _prCard(e),
+  ];
 
   List<Widget> _lessonRowsFor(String exerciseId) => [
-        for (final lesson in lessonsByExercise[exerciseId] ?? const [])
-          Padding(
-            padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-            child: Container(
-              padding: const EdgeInsets.all(AppSpacing.sm),
-              decoration: lambdaBox(ContainerTone.ghost, radius: AppRadius.md),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(Icons.menu_book_outlined,
-                      size: 16, color: AppColors.primary),
-                  const SizedBox(width: AppSpacing.sm),
-                  Expanded(
-                    child: Text(lesson,
-                        style: AppFonts.ui(
-                            fontSize: AppTextStyles.sm,
-                            color: AppColors.primary)),
-                  ),
-                ],
+    for (final lesson in lessonsByExercise[exerciseId] ?? const [])
+      Padding(
+        padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+        child: Container(
+          padding: const EdgeInsets.all(AppSpacing.sm),
+          decoration: lambdaBox(ContainerTone.ghost, radius: AppRadius.md),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                Icons.sticky_note_2_outlined,
+                size: 16,
+                color: AppColors.primary,
               ),
-            ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Text(
+                  lesson,
+                  style: AppFonts.ui(
+                    fontSize: AppTextStyles.sm,
+                    color: AppColors.primary,
+                  ),
+                ),
+              ),
+            ],
           ),
-      ];
+        ),
+      ),
+  ];
 
   /// One PR row — the set, plus the previous frontier values it beat. Both
   /// dimensions can be beaten at once ("was 6 × 10 · 100 × 3"): one PR, two
@@ -165,11 +193,10 @@ class ReflectionSummary extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.only(bottom: AppSpacing.sm),
       padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.md, vertical: AppSpacing.sm),
-      decoration: lambdaBox(
-        ContainerTone.accent,
-        radius: AppRadius.md,
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.sm,
       ),
+      decoration: lambdaBox(ContainerTone.accent, radius: AppRadius.md),
       child: Row(
         children: [
           Icon(Icons.emoji_events_outlined, size: 16, color: AppColors.accent),
@@ -179,20 +206,26 @@ class ReflectionSummary extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 if (e.variationName != null)
-                  Text(toProperCase(e.variationName!),
-                      style: AppFonts.mono(
-                          fontSize: 13,
-                          letterSpacing: 0.6,
-                          color: AppColors.accent)),
-                Text('${_fmt(e.weight)}kg × ${_fmt(e.reps)}',
+                  UserNameText(
+                    toProperCase(e.variationName!),
                     style: AppFonts.mono(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.accent)),
-                Text(before,
-                    style: AppFonts.mono(
-                        fontSize: 14,
-                        color: AppColors.accent)),
+                      fontSize: 13,
+                      letterSpacing: 0.6,
+                      color: AppColors.accent,
+                    ),
+                  ),
+                Text(
+                  '${_fmt(e.weight)}kg × ${_fmt(e.reps)}',
+                  style: AppFonts.mono(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.accent,
+                  ),
+                ),
+                Text(
+                  before,
+                  style: AppFonts.mono(fontSize: 14, color: AppColors.accent),
+                ),
               ],
             ),
           ),

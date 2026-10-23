@@ -10,38 +10,39 @@ class AuthNotifier extends ChangeNotifier {
     // Fetch onboarding status for any session that's already active on startup
     if (_session != null) _fetchOnboardingStatus();
 
-    _subscription = Supabase.instance.client.auth.onAuthStateChange.listen(
-      (data) {
-        _session = data.session;
+    _subscription = Supabase.instance.client.auth.onAuthStateChange.listen((
+      data,
+    ) {
+      _session = data.session;
 
-        if (data.event == AuthChangeEvent.passwordRecovery) {
-          _isPasswordRecovery = true;
-        } else if (data.event == AuthChangeEvent.userUpdated &&
-            _isPasswordRecovery) {
-          _isPasswordRecovery = false;
-        } else if (data.event == AuthChangeEvent.signedOut) {
-          _isPasswordRecovery = false;
-          _isOnboarded = null;
-          _expiryTimer?.cancel();
-          _expiryTimer = null;
-        }
+      if (data.event == AuthChangeEvent.passwordRecovery) {
+        _isPasswordRecovery = true;
+      } else if (data.event == AuthChangeEvent.userUpdated &&
+          _isPasswordRecovery) {
+        _isPasswordRecovery = false;
+      } else if (data.event == AuthChangeEvent.signedOut) {
+        _isPasswordRecovery = false;
+        _isOnboarded = null;
+        _expiryTimer?.cancel();
+        _expiryTimer = null;
+      }
 
-        // Fetch onboarding status whenever a new sign-in occurs
-        if (data.event == AuthChangeEvent.signedIn ||
-            data.event == AuthChangeEvent.tokenRefreshed) {
-          _fetchOnboardingStatus();
-        }
+      // Fetch onboarding status whenever a new sign-in occurs
+      if (data.event == AuthChangeEvent.signedIn ||
+          data.event == AuthChangeEvent.tokenRefreshed) {
+        _fetchOnboardingStatus();
+      }
 
-        _scheduleExpiryCheck();
+      _scheduleExpiryCheck();
 
-        notifyListeners();
-      },
-    );
+      notifyListeners();
+    });
   }
 
   Session? _session;
   bool _isPasswordRecovery = false;
-  bool? _isOnboarded; // null = not yet fetched, false = needs onboarding, true = done
+  bool?
+  _isOnboarded; // null = not yet fetched, false = needs onboarding, true = done
   late final StreamSubscription<AuthState> _subscription;
   Timer? _expiryTimer;
   final _userRepo = UserRepository();
@@ -77,11 +78,13 @@ class AuthNotifier extends ChangeNotifier {
     _expiryTimer = Timer(Duration(milliseconds: msUntilExpiry), () {
       final cur = _session;
       if (cur == null || !_isSessionExpired(cur)) return;
-      Supabase.instance.client.auth
-          .refreshSession()
-          .then((_) {}, onError: (_) {});
+      Supabase.instance.client.auth.refreshSession().then(
+        (_) {},
+        onError: (_) {},
+      );
     });
   }
+
   bool get isPasswordRecovery => _isPasswordRecovery;
   bool? get isOnboarded => _isOnboarded;
 

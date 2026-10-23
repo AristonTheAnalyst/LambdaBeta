@@ -12,6 +12,7 @@ import '../../../../shared/widgets/app_card.dart';
 import '../../../../shared/widgets/archived_sheet.dart';
 import '../../../../shared/widgets/slide_up_modal.dart';
 import '../../../../shared/widgets/swipe_actions.dart';
+import '../../../../shared/widgets/user_name_text.dart';
 import '../../../../shared/widgets/glass_button.dart';
 import '../../../../shared/widgets/lambda_search_field.dart';
 import '../../../../shared/widgets/page_header.dart';
@@ -91,7 +92,8 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
     final vm = WorkoutEditorViewModel();
     await Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(
-          builder: (_) => PlanSessionScreen(viewModel: vm, standalone: true)),
+        builder: (_) => PlanSessionScreen(viewModel: vm, standalone: true),
+      ),
     );
     vm.dispose();
     await _load();
@@ -101,8 +103,9 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
     final vm = WorkoutEditorViewModel();
     await Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(
-          builder: (_) => PlanSessionScreen(
-              viewModel: vm, standaloneWorkoutId: w.sessionId)),
+        builder: (_) =>
+            PlanSessionScreen(viewModel: vm, standaloneWorkoutId: w.sessionId),
+      ),
     );
     vm.dispose();
     await _load();
@@ -142,24 +145,39 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
-        title: Text(used ? 'Archive Session' : 'Delete Session',
-            style: AppFonts.ui(fontWeight: FontWeight.w800, color: AppColors.danger)),
+        title: Text(
+          used ? 'Archive Session' : 'Delete Session',
+          style: AppFonts.ui(
+            fontWeight: FontWeight.w800,
+            color: AppColors.danger,
+          ),
+        ),
         content: Text(
-            used
-                ? 'Archive "$name"? It has been used, so it can\'t be fully '
-                  'deleted — it will disappear from this list, but the '
-                  'sessions logged from it stay intact.'
-                : 'Delete "$name"? This can\'t be undone.',
-            style: AppFonts.ui(color: AppColors.muted)),
+          used
+              ? 'Archive "$name"? It has been used, so it can\'t be fully '
+                    'deleted — it will disappear from this list, but the '
+                    'sessions logged from it stay intact.'
+              : 'Delete "$name"? This can\'t be undone.',
+          style: AppFonts.ui(color: AppColors.inkSecondary, height: 1.4),
+        ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: Text('Cancel', style: AppFonts.ui(color: AppColors.muted))),
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(
+              'Cancel',
+              style: AppFonts.ui(color: AppColors.inkSecondary),
+            ),
+          ),
           TextButton(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: Text(used ? 'Archive' : 'Delete',
-                  style: AppFonts.ui(
-                      color: AppColors.danger, fontWeight: FontWeight.w600))),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(
+              used ? 'Archive' : 'Delete',
+              style: AppFonts.ui(
+                color: AppColors.danger,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -185,6 +203,7 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
               right: GlassButton(
                 label: '',
                 icon: Icons.add,
+                semanticsLabel: 'New workout',
                 compact: true,
                 onPressed: _create,
               ),
@@ -193,37 +212,44 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
                 : _error != null
-                    ? Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(AppSpacing.xl),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text('Could not load workouts.',
-                                  style: AppFonts.ui(
-                                      fontSize: AppTextStyles.md,
-                                      color: AppColors.danger)),
-                              const SizedBox(height: AppSpacing.sm),
-                              Text(_error!,
-                                  textAlign: TextAlign.center,
-                                  style: AppFonts.ui(
-                                      fontSize: AppTextStyles.xs,
-                                      color: AppColors.muted)),
-                              const SizedBox(height: AppSpacing.lg),
-                              GlassButton(
-                                label: 'Retry',
-                                onPressed: _load,
-                              ),
-                            ],
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(AppSpacing.xl),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'Could not load workouts.',
+                            style: AppFonts.ui(
+                              fontSize: AppTextStyles.md,
+                              color: AppColors.danger,
+                            ),
                           ),
-                        ),
-                      )
-                    : Column(
+                          const SizedBox(height: AppSpacing.sm),
+                          Text(
+                            _error!,
+                            textAlign: TextAlign.center,
+                            style: AppFonts.ui(
+                              fontSize: AppTextStyles.xs,
+                              color: AppColors.danger,
+                            ),
+                          ),
+                          const SizedBox(height: AppSpacing.lg),
+                          GlassButton(label: 'Retry', onPressed: _load),
+                        ],
+                      ),
+                    ),
+                  )
+                : Column(
                     children: [
                       if (!widget.showHeader)
                         Padding(
                           padding: const EdgeInsets.fromLTRB(
-                              AppSpacing.lg, AppSpacing.lg, AppSpacing.lg, 0),
+                            AppSpacing.lg,
+                            AppSpacing.lg,
+                            AppSpacing.lg,
+                            0,
+                          ),
                           child: Row(
                             children: [
                               Expanded(
@@ -235,6 +261,7 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
                               GlassButton(
                                 label: '',
                                 icon: Icons.add,
+                                semanticsLabel: 'New workout',
                                 onPressed: _create,
                                 compact: true,
                               ),
@@ -242,6 +269,7 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
                               GlassButton(
                                 label: '',
                                 icon: Icons.archive_outlined,
+                                semanticsLabel: 'Archived workouts',
                                 onPressed: _openArchived,
                                 compact: true,
                               ),
@@ -251,82 +279,106 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
                       Expanded(
                         child: _workouts.isEmpty
                             ? Center(
-                                child: Text('No workouts yet — create one to get started.',
-                                    style: AppFonts.ui(
-                                        fontSize: AppTextStyles.md, color: AppColors.muted)),
-                              )
-                            : _filtered.isEmpty
-                                ? Center(
-                                    child: Text(
-                                      'No matches for "$_query".',
-                                      style: AppFonts.ui(
-                                        fontSize: AppTextStyles.sm,
-                                        color: AppColors.muted,
-                                      ),
-                                    ),
-                                  )
-                                : ListView.separated(
-                        // Zero unless the shell's bar is floating over this
-                        // list, which is where the Library's Workouts tab
-                        // lives.
-                        padding: EdgeInsets.fromLTRB(
-                          AppSpacing.lg,
-                          AppSpacing.lg,
-                          AppSpacing.lg,
-                          AppSpacing.lg +
-                              ScrollShrinkNavBar.contentInset(context),
-                        ),
-                        itemCount: _filtered.length,
-                        separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.md),
-                        itemBuilder: (context, i) {
-                          final w = _filtered[i];
-                          return SwipeActions(
-                            actions: [
-                              SwipeAction(
-                                icon: Icons.copy_rounded,
-                                
-                                color: AppColors.accent,
-                                onTap: () => _duplicate(w),
-                              ),
-                              SwipeAction(
-                                icon: Icons.delete_outline,
-                                
-                                color: AppColors.danger,
-                                onTap: () => _delete(w),
-                              ),
-                            ],
-                            child: AppCard(
-                            onTap: () => _edit(w),
-                            background: AppColors.plannedBg,
-                            borderColor:
-                                AppColors.planned.withValues(alpha: 0.35),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(toProperCase(w.name),
-                                          style: AppFonts.ui(
-                                              fontSize: AppTextStyles.md,
-                                              fontWeight: FontWeight.w600,
-                                              color: AppColors.primary)),
-                                      if (w.notes?.isNotEmpty == true)
-                                        Text(w.notes!,
-                                            style: AppFonts.ui(
-                                                fontSize: AppTextStyles.xs,
-                                                color: AppColors.muted),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis),
-                                    ],
+                                child: Text(
+                                  'No workouts yet — create one to get started.',
+                                  style: AppFonts.ui(
+                                    fontSize: AppTextStyles.md,
+                                    color: AppColors.inkSecondary,
                                   ),
                                 ),
-                              ],
-                            ),
-                            ),
-                          );
-                        },
-                      ),
+                              )
+                            : _filtered.isEmpty
+                            ? Center(
+                                child: Text(
+                                  'No matches for "$_query".',
+                                  style: AppFonts.ui(
+                                    fontSize: AppTextStyles.sm,
+                                    color: AppColors.inkSecondary,
+                                  ),
+                                ),
+                              )
+                            : ListView.separated(
+                                // Zero unless the shell's bar is floating over this
+                                // list, which is where the Library's Workouts tab
+                                // lives.
+                                padding: EdgeInsets.fromLTRB(
+                                  AppSpacing.lg,
+                                  AppSpacing.lg,
+                                  AppSpacing.lg,
+                                  AppSpacing.lg +
+                                      ScrollShrinkNavBar.contentInset(context),
+                                ),
+                                itemCount: _filtered.length,
+                                separatorBuilder: (_, _) =>
+                                    const SizedBox(height: AppSpacing.md),
+                                itemBuilder: (context, i) {
+                                  final w = _filtered[i];
+                                  return SwipeActions(
+                                    actions: [
+                                      SwipeAction(
+                                        icon: Icons.copy_rounded,
+
+                                        color: AppColors.accent,
+                                        foreground: AppColors.accentText,
+                                        onTap: () => _duplicate(w),
+                                      ),
+                                      SwipeAction(
+                                        icon: Icons.delete_outline,
+
+                                        color: AppColors.danger,
+                                        foreground: AppColors.dangerText,
+                                        onTap: () => _delete(w),
+                                      ),
+                                    ],
+                                    child: AppCard(
+                                      onTap: () => _edit(w),
+                                      background: AppColors.plannedBg,
+                                      borderColor: AppColors.planned.withValues(
+                                        alpha: 0.35,
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                // One line, ellipsized — the
+                                                // notes under it already hold
+                                                // their own, and a wrapping
+                                                // name moves the card's shape
+                                                // (2026-10-20).
+                                                UserNameText(
+                                                  toProperCase(w.name),
+                                                  tooltip: true,
+                                                  style: AppFonts.ui(
+                                                    fontSize: AppTextStyles.md,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: AppColors.primary,
+                                                  ),
+                                                ),
+                                                if (w.notes?.isNotEmpty == true)
+                                                  Text(
+                                                    w.notes!,
+                                                    style: AppFonts.ui(
+                                                      fontSize:
+                                                          AppTextStyles.xs,
+                                                      color: AppColors
+                                                          .inkSecondary,
+                                                    ),
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                  ),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
                       ),
                     ],
                   ),

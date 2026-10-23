@@ -130,82 +130,114 @@ void main() {
     expect(vm.state.value.digestFor('r1').vsPrevious, isNull);
   });
 
-  test('a later checkpoint diffs against the one before it at the same scope', () async {
-    final vm = await load([
-      // Newest first: r2 was taken after the 60 → 65 edit.
-      checkpoint('r2', snapshot: content(sessions: [session('s1', weight: '65')])),
-      checkpoint('r1', snapshot: content()),
-    ]);
+  test(
+    'a later checkpoint diffs against the one before it at the same scope',
+    () async {
+      final vm = await load([
+        // Newest first: r2 was taken after the 60 → 65 edit.
+        checkpoint(
+          'r2',
+          snapshot: content(sessions: [session('s1', weight: '65')]),
+        ),
+        checkpoint('r1', snapshot: content()),
+      ]);
 
-    final diff = vm.state.value.digestFor('r2').vsPrevious;
-    expect(diff, isNotNull);
-    expect(diff!.summary, contains('~1'));
-    expect(diff.changes.single.detail, '60 × 5 → 65 × 5');
+      final diff = vm.state.value.digestFor('r2').vsPrevious;
+      expect(diff, isNotNull);
+      expect(diff!.summary, contains('~1'));
+      expect(diff.changes.single.detail, '60 × 5 → 65 × 5');
 
-    // The oldest one still has no predecessor — the walk must not wrap.
-    expect(vm.state.value.digestFor('r1').vsPrevious, isNull);
-  });
+      // The oldest one still has no predecessor — the walk must not wrap.
+      expect(vm.state.value.digestFor('r1').vsPrevious, isNull);
+    },
+  );
 
-  test('workouts do not compare across scopes: a workout review answers to the '
-      'last review of that workout, not to the block checkpoint in between', () async {
+  test(
+    'workouts do not compare across scopes: a workout review answers to the '
+    'last review of that workout, not to the block checkpoint in between',
+    () async {
+      final vm = await load(
+        blocks: [block('b1', 'Accumulation', 1)],
+        [
+          // Newest first. s1 was reviewed, then the block was, then s1 again.
+          checkpoint(
+            'r3',
+            sessionId: 's1',
+            blockId: 'b1',
+            snapshot: content(sessions: [session('s1', weight: '65')]),
+          ),
+          checkpoint(
+            'r2',
+            blockId: 'b1',
+            snapshot: content(sessions: [session('s1', weight: '90')]),
+          ),
+          checkpoint('r1', sessionId: 's1', blockId: 'b1', snapshot: content()),
+        ],
+      );
+
+      final digests = vm.state.value.digests;
+
+      // r3's predecessor is r1 — the last time THIS workout was reviewed. Against
+      // the block checkpoint it would have read 90 → 65, an edit nobody made.
+      expect(digests['r3']!.vsPrevious, isNotNull);
+      expect(
+        digests['r3']!.vsPrevious!.changes.single.detail,
+        '60 × 5 → 65 × 5',
+      );
+
+      // And the block's own stream starts fresh: it has never been reviewed
+      // before, however many workout checkpoints came first.
+      expect(digests['r2']!.vsPrevious, isNull);
+      expect(digests['r1']!.vsPrevious, isNull);
+    },
+  );
+
+  test(
+    'a block review and a program review never see each other either',
+    () async {
+      final vm = await load(
+        blocks: [block('b1', 'Accumulation', 1)],
+        [
+          checkpoint(
+            'r2',
+            snapshot: content(sessions: [session('s1', weight: '65')]),
+          ),
+          checkpoint(
+            'r1',
+            blockId: 'b1',
+            snapshot: content(sessions: [session('s1', weight: '90')]),
+          ),
+        ],
+      );
+
+      final digests = vm.state.value.digests;
+      expect(
+        digests['r2']!.vsPrevious,
+        isNull,
+        reason: 'the program was never reviewed',
+      );
+      expect(digests['r1']!.vsPrevious, isNull, reason: 'nor was the block');
+    },
+  );
+
+  test('two blocks are two streams: one block’s checkpoint is not the other’s '
+      'predecessor', () async {
     final vm = await load(
-      blocks: [block('b1', 'Accumulation', 1)],
+      blocks: [
+        block('b1', 'Accumulation', 1),
+        block('b2', 'Intensification', 2),
+      ],
       [
-        // Newest first. s1 was reviewed, then the block was, then s1 again.
         checkpoint(
           'r3',
-          sessionId: 's1',
           blockId: 'b1',
           snapshot: content(sessions: [session('s1', weight: '65')]),
         ),
         checkpoint(
           'r2',
-          blockId: 'b1',
+          blockId: 'b2',
           snapshot: content(sessions: [session('s1', weight: '90')]),
         ),
-        checkpoint('r1', sessionId: 's1', blockId: 'b1', snapshot: content()),
-      ],
-    );
-
-    final digests = vm.state.value.digests;
-
-    // r3's predecessor is r1 — the last time THIS workout was reviewed. Against
-    // the block checkpoint it would have read 90 → 65, an edit nobody made.
-    expect(digests['r3']!.vsPrevious, isNotNull);
-    expect(digests['r3']!.vsPrevious!.changes.single.detail, '60 × 5 → 65 × 5');
-
-    // And the block's own stream starts fresh: it has never been reviewed
-    // before, however many workout checkpoints came first.
-    expect(digests['r2']!.vsPrevious, isNull);
-    expect(digests['r1']!.vsPrevious, isNull);
-  });
-
-  test('a block review and a program review never see each other either',
-      () async {
-    final vm = await load(
-      blocks: [block('b1', 'Accumulation', 1)],
-      [
-        checkpoint('r2', snapshot: content(sessions: [session('s1', weight: '65')])),
-        checkpoint(
-          'r1',
-          blockId: 'b1',
-          snapshot: content(sessions: [session('s1', weight: '90')]),
-        ),
-      ],
-    );
-
-    final digests = vm.state.value.digests;
-    expect(digests['r2']!.vsPrevious, isNull, reason: 'the program was never reviewed');
-    expect(digests['r1']!.vsPrevious, isNull, reason: 'nor was the block');
-  });
-
-  test('two blocks are two streams: one block’s checkpoint is not the other’s '
-      'predecessor', () async {
-    final vm = await load(
-      blocks: [block('b1', 'Accumulation', 1), block('b2', 'Intensification', 2)],
-      [
-        checkpoint('r3', blockId: 'b1', snapshot: content(sessions: [session('s1', weight: '65')])),
-        checkpoint('r2', blockId: 'b2', snapshot: content(sessions: [session('s1', weight: '90')])),
         checkpoint('r1', blockId: 'b1', snapshot: content()),
       ],
     );
@@ -224,7 +256,10 @@ void main() {
         'r2',
         sessionIds: ['s2', 's1'],
         snapshot: content(
-          sessions: [session('s1', weight: '65'), session('s2')],
+          sessions: [
+            session('s1', weight: '65'),
+            session('s2'),
+          ],
         ),
       ),
       checkpoint(
@@ -259,15 +294,16 @@ void main() {
         'r2',
         sessionIds: ['s1'],
         snapshot: content(
-          sessions: [session('s1', weight: '65'), session('s2', weight: '90')],
+          sessions: [
+            session('s1', weight: '65'),
+            session('s2', weight: '90'),
+          ],
         ),
       ),
       checkpoint(
         'r1',
         sessionIds: ['s1'],
-        snapshot: content(
-          sessions: [session('s1'), session('s2')],
-        ),
+        snapshot: content(sessions: [session('s1'), session('s2')]),
       ),
     ]);
 
@@ -277,7 +313,8 @@ void main() {
     expect(
       diff.changes.single.detail,
       '60 × 5 → 65 × 5',
-      reason: 's2 changed too, but not inside this review — reporting it '
+      reason:
+          's2 changed too, but not inside this review — reporting it '
           'would answer a question nobody asked',
     );
   });
@@ -301,9 +338,16 @@ void main() {
   test('a dismissal is not a predecessor — it recorded nothing to compare '
       'against', () async {
     final vm = await load([
-      checkpoint('r3', snapshot: content(sessions: [session('s1', weight: '65')])),
+      checkpoint(
+        'r3',
+        snapshot: content(sessions: [session('s1', weight: '65')]),
+      ),
       // Dismissed: completed, no snapshot. It sits between the two real ones.
-      checkpoint('r2', outcome: kOutcomeDismissed, completed: DateTime(2026, 1, 2)),
+      checkpoint(
+        'r2',
+        outcome: kOutcomeDismissed,
+        completed: DateTime(2026, 1, 2),
+      ),
       checkpoint('r1', snapshot: content()),
     ]);
 
@@ -323,7 +367,10 @@ void main() {
     final vm = await load([
       // Open: no completed date at all.
       checkpoint('r3', completed: null, outcome: null),
-      checkpoint('r2', snapshot: content(sessions: [session('s1', weight: '65')])),
+      checkpoint(
+        'r2',
+        snapshot: content(sessions: [session('s1', weight: '65')]),
+      ),
       checkpoint('r1', snapshot: content()),
     ]);
 

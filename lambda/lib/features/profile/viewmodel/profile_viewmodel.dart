@@ -33,21 +33,20 @@ class ProfileState {
     String? error,
     bool clearError = false,
     UserProfile? profile,
-  }) =>
-      ProfileState(
-        isLoading: isLoading ?? this.isLoading,
-        isSaving: isSaving ?? this.isSaving,
-        isDeleting: isDeleting ?? this.isDeleting,
-        isEditing: isEditing ?? this.isEditing,
-        saveSuccess: saveSuccess ?? false,
-        error: clearError ? null : error ?? this.error,
-        profile: profile ?? this.profile,
-      );
+  }) => ProfileState(
+    isLoading: isLoading ?? this.isLoading,
+    isSaving: isSaving ?? this.isSaving,
+    isDeleting: isDeleting ?? this.isDeleting,
+    isEditing: isEditing ?? this.isEditing,
+    saveSuccess: saveSuccess ?? false,
+    error: clearError ? null : error ?? this.error,
+    profile: profile ?? this.profile,
+  );
 }
 
 class ProfileViewModel {
   ProfileViewModel({UserRepository? userRepository})
-      : _repo = userRepository ?? UserRepository();
+    : _repo = userRepository ?? UserRepository();
 
   final UserRepository _repo;
   final state = ValueNotifier(const ProfileState());
@@ -60,8 +59,7 @@ class ProfileViewModel {
       final profile = await _repo.fetchProfile(userId);
       state.value = state.value.copyWith(isLoading: false, profile: profile);
     } catch (e) {
-      state.value =
-          state.value.copyWith(isLoading: false, error: e.toString());
+      state.value = state.value.copyWith(isLoading: false, error: e.toString());
     }
   }
 
@@ -80,13 +78,13 @@ class ProfileViewModel {
     required double? weightKg,
   }) async {
     if (firstName.trim().isEmpty) {
-      state.value =
-          state.value.copyWith(error: 'First name is required.');
+      state.value = state.value.copyWith(error: 'First name is required.');
       return;
     }
     if (weightKg != null && (weightKg < 20 || weightKg > 300)) {
-      state.value =
-          state.value.copyWith(error: 'Weight must be between 20 and 300 kg.');
+      state.value = state.value.copyWith(
+        error: 'Weight must be between 20 and 300 kg.',
+      );
       return;
     }
 
@@ -123,7 +121,9 @@ class ProfileViewModel {
       });
     } catch (e) {
       state.value = state.value.copyWith(
-          isSaving: false, error: 'Failed to save changes.');
+        isSaving: false,
+        error: 'Failed to save changes.',
+      );
     }
   }
 
@@ -141,7 +141,9 @@ class ProfileViewModel {
       return true;
     } catch (e) {
       state.value = state.value.copyWith(
-          isDeleting: false, error: 'Failed to delete account. Please try again.');
+        isDeleting: false,
+        error: 'Failed to delete account. Please try again.',
+      );
       return false;
     }
   }

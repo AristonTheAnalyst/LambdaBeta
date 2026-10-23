@@ -65,8 +65,11 @@ void main() {
 
     expect(repo.sessionsReads, 1);
     expect(timelineReads, 1);
-    expect(vm.state.value.prCountsBySession['w1']?['ex1'], 1,
-        reason: 'the lone 100×5 with no prior history is a first PR');
+    expect(
+      vm.state.value.prCountsBySession['w1']?['ex1'],
+      1,
+      reason: 'the lone 100×5 with no prior history is a first PR',
+    );
     vm.dispose();
   });
 
@@ -76,8 +79,11 @@ void main() {
     await vm.load();
 
     expect(repo.sessionsReads, 2, reason: 'the sessions list still re-reads');
-    expect(timelineReads, 1,
-        reason: 'the timeline is cached — reloads pay nothing');
+    expect(
+      timelineReads,
+      1,
+      reason: 'the timeline is cached — reloads pay nothing',
+    );
     vm.dispose();
   });
 }

@@ -51,13 +51,13 @@ class PlannedSessionProgram {
   }
 
   Map<String, dynamic> toMap() => {
-        'planned_session_program_id': plannedSessionProgramId,
-        'program_id': programId,
-        'planned_session_id': plannedSessionId,
-        'user_id': userId,
-        'sequence_order': sequenceOrder,
-        'day_of_week': dayOfWeek,
-        'week_offset': weekOffset,
-        'block_id': blockId,
-      };
+    'planned_session_program_id': plannedSessionProgramId,
+    'program_id': programId,
+    'planned_session_id': plannedSessionId,
+    'user_id': userId,
+    'sequence_order': sequenceOrder,
+    'day_of_week': dayOfWeek,
+    'week_offset': weekOffset,
+    'block_id': blockId,
+  };
 }

@@ -610,14 +610,33 @@ class FakeProgramHistoryRepository implements ProgramHistoryRepository {
   /// DELETE leaves it.
   final deletedReviews = <String>[];
 
-  /// Set to make [deleteReview] throw — the cancel's failure path.
+  /// Set to make either delete throw — the cancel's and the record's failure
+  /// paths.
   bool failDelete = false;
 
   @override
   Future<void> deleteReview(String reviewId) async {
     if (failDelete) throw StateError('delete failed');
     deletedReviews.add(reviewId);
-    reviews = [for (final r in reviews) if (r.reviewId != reviewId) r];
+    reviews = [
+      for (final r in reviews)
+        if (r.reviewId != reviewId) r,
+    ];
+  }
+
+  /// Every completed record a caller asked to delete, in order — kept apart
+  /// from [deletedReviews] so a test can tell the two verbs (and their
+  /// guards) apart.
+  final deletedCompletedReviews = <String>[];
+
+  @override
+  Future<void> deleteCompletedReview(String reviewId) async {
+    if (failDelete) throw StateError('delete failed');
+    deletedCompletedReviews.add(reviewId);
+    reviews = [
+      for (final r in reviews)
+        if (r.reviewId != reviewId) r,
+    ];
   }
 
   @override
@@ -825,10 +844,7 @@ class FakeProgramRepository implements ProgramRepository {
   final goalDescriptionWrites = <({String goalId, String? description})>[];
 
   @override
-  Future<void> updateGoalDescription(
-    String goalId,
-    String? description,
-  ) async {
+  Future<void> updateGoalDescription(String goalId, String? description) async {
     goalDescriptionWrites.add((goalId: goalId, description: description));
     goals = [
       for (final g in goals)
@@ -839,6 +855,118 @@ class FakeProgramRepository implements ProgramRepository {
         else
           g,
     ];
+  }
+
+  /// Every target-date move a view model has made, in order — and applied with
+  /// the same history append the real read-modify-write makes, so a sheet
+  /// re-opened after a move reads the adjustment back, exactly as the real
+  /// row does (2026-10-19).
+  final goalTargetDateWrites = <({String goalId, DateTime? targetDate})>[];
+
+  @override
+  Future<Goal?> updateGoalTargetDate(
+    String goalId,
+    DateTime? targetDate,
+  ) async {
+    goalTargetDateWrites.add((goalId: goalId, targetDate: targetDate));
+    final index = goals.indexWhere((g) => g.goalId == goalId);
+    if (index < 0) return null;
+    final before = goals[index];
+    // Picking the day already stored writes nothing — the real repository
+    // makes the same refusal, and a fake that recorded a no-op would hide a
+    // caller spamming the history.
+    if (_sameGoalDay(before.targetDate, targetDate)) return before;
+    final updated = before.copyWith(
+      targetDate: targetDate,
+      clearTargetDate: targetDate == null,
+      targetDateHistory: [
+        ...before.targetDateHistory,
+        GoalTargetDateChange(
+          from: before.targetDate,
+          to: targetDate,
+          changedAt: DateTime.now(),
+        ),
+      ],
+    );
+    goals = [...goals]..[index] = updated;
+    return updated;
+  }
+
+  /// Every whole-goal rewrite a view model has made, in order — and applied
+  /// with the repository's own normalization: blank notes are none, and a
+  /// moved deadline appends its adjustment, so a sheet that saved reads back
+  /// exactly the row the real UPDATE would leave (2026-10-19).
+  final goalWrites =
+      <
+        ({
+          String goalId,
+          String? exerciseId,
+          String? exerciseName,
+          String? variationId,
+          num? targetWeight,
+          int? targetReps,
+          String? description,
+          DateTime? targetDate,
+        })
+      >[];
+
+  @override
+  Future<Goal?> updateGoal(
+    String goalId, {
+    required String? exerciseId,
+    String? exerciseName,
+    String? variationId,
+    num? targetWeight,
+    int? targetReps,
+    String? description,
+    DateTime? targetDate,
+  }) async {
+    goalWrites.add((
+      goalId: goalId,
+      exerciseId: exerciseId,
+      exerciseName: exerciseName,
+      variationId: variationId,
+      targetWeight: targetWeight,
+      targetReps: targetReps,
+      description: description,
+      targetDate: targetDate,
+    ));
+    final index = goals.indexWhere((g) => g.goalId == goalId);
+    if (index < 0) return null;
+    final before = goals[index];
+    final notes = description?.trim();
+    final next = targetDate == null ? null : dateOnly(targetDate);
+    final updated = Goal(
+      goalId: before.goalId,
+      userId: before.userId,
+      programId: before.programId,
+      blockId: before.blockId,
+      programRunId: before.programRunId,
+      // The name is only replaced when the caller carried one — a goal keeps
+      // the label it was given otherwise, the real repository's rule.
+      text: exerciseName ?? before.text,
+      description: notes == null || notes.isEmpty ? null : notes,
+      exerciseId: exerciseId,
+      variationId: variationId,
+      targetWeight: targetWeight,
+      targetReps: targetReps,
+      targetDate: next,
+      targetDateHistory: _sameGoalDay(before.targetDate, next)
+          ? before.targetDateHistory
+          : [
+              ...before.targetDateHistory,
+              GoalTargetDateChange(
+                from: before.targetDate,
+                to: next,
+                changedAt: DateTime.now(),
+              ),
+            ],
+      // Stamped at insert and never rewritten — the real UPDATE leaves the
+      // column alone.
+      createdDate: before.createdDate,
+    );
+    goals = [...goals]..[index] = updated;
+    return updated;
   }
 
   @override
@@ -1023,4 +1151,12 @@ class FakeExercises implements ExerciseRepository {
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+/// Whether two goal dates name the same calendar day. Null is "no deadline",
+/// and equals only itself — the real repository's rule, mirrored so a fake
+/// write refuses a no-op the same way.
+bool _sameGoalDay(DateTime? a, DateTime? b) {
+  if (a == null || b == null) return a == null && b == null;
+  return a.year == b.year && a.month == b.month && a.day == b.day;
 }

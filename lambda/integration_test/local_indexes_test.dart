@@ -58,13 +58,15 @@ void main() {
     List<String> columns,
   ) {
     final match = indexes.where(
-      (r) =>
-          r.$2.contains(tablePart) &&
-          columns.every((c) => r.$2.contains(c)),
+      (r) => r.$2.contains(tablePart) && columns.every((c) => r.$2.contains(c)),
     );
-    expect(match, isNotEmpty,
-        reason: 'no local index covers $tablePart(${columns.join(', ')}) — '
-            'sqlite_master holds: ${indexes.map((r) => r.$1).toList()}');
+    expect(
+      match,
+      isNotEmpty,
+      reason:
+          'no local index covers $tablePart(${columns.join(', ')}) — '
+          'sqlite_master holds: ${indexes.map((r) => r.$1).toList()}',
+    );
   }
 
   /// The plan rows for [sql], as the planner's detail lines.
@@ -78,30 +80,22 @@ void main() {
 
     expectIndexed(indexes, 'fact_session', ['user_id', 'end_datetime']);
     expectIndexed(indexes, 'fact_session_exercise', ['session_id']);
-    expectIndexed(
-      indexes,
-      'fact_session_exercise_set',
-      ['session_exercise_id'],
-    );
+    expectIndexed(indexes, 'fact_session_exercise_set', [
+      'session_exercise_id',
+    ]);
     expectIndexed(indexes, 'dim_exercise', ['user_id']);
     expectIndexed(indexes, 'dim_variation', ['user_id']);
     expectIndexed(indexes, 'dim_lesson', ['user_id', 'custom_exercise_id']);
     expectIndexed(indexes, 'dim_planned_session', ['user_id']);
-    expectIndexed(
-      indexes,
-      'dim_planned_session_exercise',
-      ['planned_session_id'],
-    );
-    expectIndexed(
-      indexes,
-      'dim_planned_session_exercise_set',
-      ['planned_exercise_id'],
-    );
-    expectIndexed(
-      indexes,
-      'dim_planned_session_program',
-      ['planned_session_id'],
-    );
+    expectIndexed(indexes, 'dim_planned_session_exercise', [
+      'planned_session_id',
+    ]);
+    expectIndexed(indexes, 'dim_planned_session_exercise_set', [
+      'planned_exercise_id',
+    ]);
+    expectIndexed(indexes, 'dim_planned_session_program', [
+      'planned_session_id',
+    ]);
   });
 
   test('the hot set reads use the session_exercise_id index', () async {
@@ -120,10 +114,16 @@ void main() {
     ''';
 
     final planText = await plan(setsJoin, ['s1']);
-    expect(planText, contains('USING INDEX'),
-        reason: 'the sets join should walk an index, not scan — plan:\n$planText');
-    expect(planText.toLowerCase(), isNot(contains('scan fact_session_exercise_set')),
-        reason: 'plan:\n$planText');
+    expect(
+      planText,
+      contains('USING INDEX'),
+      reason: 'the sets join should walk an index, not scan — plan:\n$planText',
+    );
+    expect(
+      planText.toLowerCase(),
+      isNot(contains('scan fact_session_exercise_set')),
+      reason: 'plan:\n$planText',
+    );
   });
 
   test('the timeline read uses the fact_session user index', () async {
@@ -136,12 +136,17 @@ void main() {
       LEFT JOIN dim_exercise e ON e.custom_exercise_id = fe.custom_exercise_id
       LEFT JOIN dim_variation v ON v.custom_variation_id = s.custom_variation_id
       WHERE w.user_id = ? AND w.end_datetime IS NOT NULL
+        AND COALESCE(s.is_deleted, 0) = 0
       ORDER BY w.created_datetime DESC, fe.exercise_order, s.set_number
     ''';
 
     final planText = await plan(timeline, [userId]);
-    expect(planText.toLowerCase(), isNot(contains('scan fact_session')),
-        reason: 'the timeline entry point is fact_session by user — plan:\n$planText');
+    expect(
+      planText.toLowerCase(),
+      isNot(contains('scan fact_session')),
+      reason:
+          'the timeline entry point is fact_session by user — plan:\n$planText',
+    );
   });
 
   test('a write through the repo still queues for upload', () async {
@@ -163,8 +168,12 @@ void main() {
     await repo.updateSet(set.sessionExerciseSetId, weight: 5);
 
     final crud = await db.getAll('SELECT COUNT(*) AS c FROM ps_crud');
-    expect(crud.single['c'], greaterThan(0),
-        reason: 'the update must still reach ps_crud — the local index is '
-            'read-side only and cannot disturb the write triggers');
+    expect(
+      crud.single['c'],
+      greaterThan(0),
+      reason:
+          'the update must still reach ps_crud — the local index is '
+          'read-side only and cannot disturb the write triggers',
+    );
   });
 }

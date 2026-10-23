@@ -69,16 +69,33 @@ class DevScreen extends StatelessWidget {
                     subtitle: 'The real review flow, on fake data',
                     onTap: () => context.push('/dev/lab'),
                   ),
+                  const SizedBox(height: AppSpacing.sm),
+                  _NavCard(
+                    icon: Icons.emoji_events_outlined,
+                    label: 'PR History',
+                    subtitle: 'The session screen on fake data — tap PRs',
+                    onTap: () => context.push('/dev/pr-history'),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  _NavCard(
+                    icon: Icons.science_outlined,
+                    label: 'PR Lab',
+                    subtitle: 'Layout sandbox — isolated copies, nothing leaks',
+                    onTap: () => context.push('/dev/pr-lab'),
+                  ),
                   const SizedBox(height: AppSpacing.xl),
                   AppCard(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Session Info',
-                            style: TextStyle(
-                                fontSize: AppTextStyles.md,
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.primary)),
+                        Text(
+                          'Session Info',
+                          style: TextStyle(
+                            fontSize: AppTextStyles.md,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.primary,
+                          ),
+                        ),
                         const SizedBox(height: AppSpacing.sm),
                         _InfoRow('User ID', session?.user.id ?? 'none'),
                         _InfoRow('Email', session?.user.email ?? 'none'),
@@ -86,9 +103,8 @@ class DevScreen extends StatelessWidget {
                           'Expires',
                           session?.expiresAt != null
                               ? DateTime.fromMillisecondsSinceEpoch(
-                                      session!.expiresAt! * 1000)
-                                  .toLocal()
-                                  .toString()
+                                  session!.expiresAt! * 1000,
+                                ).toLocal().toString()
                               : 'none',
                         ),
                       ],
@@ -125,18 +141,26 @@ class _SampleDataCardState extends State<_SampleDataCard> {
     try {
       final count = await _service.insertSampleData(widget.userId);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        backgroundColor: AppColors.surface,
-        content: Text('Inserted $count sample sessions (test1/test2).',
-            style: AppFonts.ui(color: AppColors.success)),
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: AppColors.surface,
+          content: Text(
+            'Inserted $count sample sessions (test1/test2).',
+            style: AppFonts.ui(color: AppColors.success),
+          ),
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        backgroundColor: AppColors.surface,
-        content: Text('Insert failed: $e',
-            style: AppFonts.ui(color: AppColors.danger)),
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: AppColors.surface,
+          content: Text(
+            'Insert failed: $e',
+            style: AppFonts.ui(color: AppColors.danger),
+          ),
+        ),
+      );
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -148,18 +172,26 @@ class _SampleDataCardState extends State<_SampleDataCard> {
     try {
       final count = await _service.deleteSampleData(widget.userId);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        backgroundColor: AppColors.surface,
-        content: Text('Deleted $count sample sessions.',
-            style: AppFonts.ui(color: AppColors.success)),
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: AppColors.surface,
+          content: Text(
+            'Deleted $count sample sessions.',
+            style: AppFonts.ui(color: AppColors.success),
+          ),
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        backgroundColor: AppColors.surface,
-        content: Text('Delete failed: $e',
-            style: AppFonts.ui(color: AppColors.danger)),
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: AppColors.surface,
+          content: Text(
+            'Delete failed: $e',
+            style: AppFonts.ui(color: AppColors.danger),
+          ),
+        ),
+      );
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -171,18 +203,24 @@ class _SampleDataCardState extends State<_SampleDataCard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Sample Data',
-              style: TextStyle(
-                  fontSize: AppTextStyles.md,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.primary)),
+          Text(
+            'Sample Data',
+            style: TextStyle(
+              fontSize: AppTextStyles.md,
+              fontWeight: FontWeight.w600,
+              color: AppColors.primary,
+            ),
+          ),
           const SizedBox(height: AppSpacing.xs),
           Text(
-              '12 weeks of backdated sessions: test1 (no variation) + '
-              'test2 (variation1), 3 sets each, weight up 2.5kg per session '
-              'so every session PRs.',
-              style: TextStyle(
-                  fontSize: AppTextStyles.sm, color: AppColors.muted)),
+            '12 weeks of backdated sessions: test1 (no variation) + '
+            'test2 (variation1), 3 sets each, weight up 2.5kg per session '
+            'so every session PRs.',
+            style: TextStyle(
+              fontSize: AppTextStyles.sm,
+              color: AppColors.muted,
+            ),
+          ),
           const SizedBox(height: AppSpacing.sm),
           Row(
             children: [
@@ -232,7 +270,9 @@ class _NavCard extends StatelessWidget {
     return AppCard(
       onTap: onTap,
       padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.lg, vertical: AppSpacing.md),
+        horizontal: AppSpacing.lg,
+        vertical: AppSpacing.md,
+      ),
       child: Row(
         children: [
           Icon(icon, size: 20, color: AppColors.muted),
@@ -241,14 +281,21 @@ class _NavCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(label,
-                    style: TextStyle(
-                        fontSize: AppTextStyles.md,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.primary)),
-                Text(subtitle,
-                    style: TextStyle(
-                        fontSize: AppTextStyles.sm, color: AppColors.muted)),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: AppTextStyles.md,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.primary,
+                  ),
+                ),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    fontSize: AppTextStyles.sm,
+                    color: AppColors.muted,
+                  ),
+                ),
               ],
             ),
           ),
@@ -258,7 +305,6 @@ class _NavCard extends StatelessWidget {
     );
   }
 }
-
 
 class _InfoRow extends StatelessWidget {
   const _InfoRow(this.label, this.value);
@@ -272,15 +318,22 @@ class _InfoRow extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('$label: ',
-              style: TextStyle(
-                  fontSize: AppTextStyles.sm,
-                  color: AppColors.muted,
-                  fontWeight: FontWeight.w600)),
+          Text(
+            '$label: ',
+            style: TextStyle(
+              fontSize: AppTextStyles.sm,
+              color: AppColors.muted,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
           Expanded(
-            child: Text(value,
-                style:
-                    TextStyle(fontSize: AppTextStyles.sm, color: AppColors.primary)),
+            child: Text(
+              value,
+              style: TextStyle(
+                fontSize: AppTextStyles.sm,
+                color: AppColors.primary,
+              ),
+            ),
           ),
         ],
       ),

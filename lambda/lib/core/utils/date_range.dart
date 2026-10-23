@@ -76,20 +76,19 @@ class DateRangeSelection {
         range.end.day == today.day;
   }
 
-  /// The compact pill text: "1M · 24 Jul – 24 Aug"; ALL is just "All".
+  /// The compact pill text: "1M · 24 Jul – 24 Aug"; ALL is "All time".
   String label(DateTime today) {
-    if (preset == DateRangePreset.all) return 'All';
+    if (preset == DateRangePreset.all) return 'All time';
     final w = window(today);
     final fmt = DateFormat('d MMM');
     final end = w.to.subtract(const Duration(days: 1));
     final name = switch (preset) {
-      DateRangePreset.all => 'All', // unreachable — early-returned above
+      DateRangePreset.all => 'All time', // unreachable — early-returned above
       DateRangePreset.m1 => '1M',
       DateRangePreset.m3 => '3M',
       DateRangePreset.m6 => '6M',
       DateRangePreset.y1 => '1Y',
-      DateRangePreset.custom =>
-        isMonthToDate(today) ? 'This Month' : 'Custom',
+      DateRangePreset.custom => isMonthToDate(today) ? 'This Month' : 'Custom',
     };
     return '$name · ${fmt.format(w.from)} – ${fmt.format(end)}';
   }

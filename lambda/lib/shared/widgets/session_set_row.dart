@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_fonts.dart';
 import '../../core/styles/app_radius.dart';
+import '../../core/utils/planned_target.dart';
 import './container_styles.dart';
 import '../../data/models/planned_session_exercise_set.dart';
 import '../../data/models/program_content.dart';
@@ -11,6 +12,7 @@ import '../../features/session/view/notes_modal.dart';
 import '../utils/pop_dialog.dart';
 import 'dropdown_select.dart';
 import 'swipe_actions.dart';
+import 'user_name_text.dart';
 import 'variation_name_dialog.dart';
 
 /// Which kind of set data this row edits — the one shared row for the live
@@ -116,7 +118,9 @@ class SessionSetRow extends StatefulWidget {
     this.plannedTarget,
     // Orthogonal state:
     this.isPr = false,
+    this.isGoal = false,
     this.readOnly = false,
+    this.deleted = false,
     // ── History-edit gate (the history viewer's tap-to-edit confirm) ──
     // A non-null [onEditConfirm] puts the row in gate mode: it renders
     // read-only until [editConfirmed] turns true, and any tap on a field
@@ -164,7 +168,26 @@ class SessionSetRow extends StatefulWidget {
 
   final PlannedSessionExerciseSet? plannedTarget;
   final bool isPr;
+
+  /// The set that achieved a goal (2026-10-20): the container fills
+  /// [AppColors.successBg] with a [AppColors.success] outline, and the
+  /// number cell reads `G` instead of the set's number — the exact shape
+  /// [isPr] draws in accent.
+  ///
+  /// A set can be both a goal's achieving set and a PR. The goal treatment
+  /// is what is DRAWN (it outranks the PR's, and the row shows `G`, not
+  /// `PR`), while the PR itself still counts everywhere PRs are counted —
+  /// the stats tile and the PR modal. Visually a goal set, schematically
+  /// both.
+  final bool isGoal;
   final bool readOnly;
+
+  /// A soft-deleted row (flag `is_deleted`) in the past-session viewer: the
+  /// container and its text draw in [AppColors.danger] on [AppColors.dangerBg],
+  /// and the row is read-only whatever the mode — the deletion is a fact
+  /// being shown, and the restore happens at the exercise's own button
+  /// (2026-10-14). Outranks the PR and planned treatments.
+  final bool deleted;
 
   /// See the constructor doc — gate mode is the history viewer's
   /// tap-to-edit confirm; a non-null [onEditConfirm] enables it.
@@ -188,7 +211,8 @@ class SessionSetRow extends StatefulWidget {
     bool isDraft,
     SetRowFieldValues values, {
     bool immediate,
-  }) onCommit;
+  })
+  onCommit;
 
   /// Variation dropdown change on a REAL set — the screen maps null to
   /// clearVariation. Drafts keep the variation row-locally.
@@ -234,6 +258,11 @@ class _SessionSetRowState extends State<SessionSetRow> {
   String? _draftVariationId;
   String? _draftNotes;
 
+  /// A keystroke since the seeds last moved has queued a debounced write.
+  /// Reverting to the seed text within the settle window must supersede that
+  /// write, or the stale value lands while the field shows the seed.
+  bool _hasPendingCommit = false;
+
   bool get _isDraft => widget.isDraft;
 
   /// Gate mode (the history viewer): the row renders read-only until the
@@ -241,7 +270,7 @@ class _SessionSetRowState extends State<SessionSetRow> {
   /// [SessionSetRow.editConfirmed].
   bool get _gated => widget.onEditConfirm != null && !widget.editConfirmed;
 
-  bool get _effectiveReadOnly => widget.readOnly || _gated;
+  bool get _effectiveReadOnly => widget.readOnly || _gated || widget.deleted;
 
   /// Real (non-draft) rows commit on every keystroke — the value is
   /// recognized as it's being typed, so navigating away (back, switching
@@ -254,31 +283,30 @@ class _SessionSetRowState extends State<SessionSetRow> {
   bool get _commitOnChange => !_effectiveReadOnly && !_isDraft;
 
   /// Planned styling applies to planner rows always (the fields ARE the
-  /// targets), and to live rows only while the row is still untouched —
-  /// blue means "planned value pending", so any actual value (weight,
-  /// reps, or note) retires the tint. Variation is planned when it's
-  /// "No Variation" or matches the plan's variation. Controllers are read
-  /// because they track keystrokes before the commit reload lands. (Only
-  /// evaluated inside build(), so the late controllers are initialized.)
+  /// targets), and to live rows while the row still FOLLOWS the plan
+  /// (2026-10-23): a real value that contradicts a parseable target retires
+  /// the tint, a value that meets it keeps it. Empty cells don't deviate;
+  /// non-numeric targets ("AMRAP", "3 RIR") constrain nothing; the variation
+  /// counts as planned when it is null or the plan's. Notes are a remark, not
+  /// a value — they never retire the tint. Controllers are read because they
+  /// track keystrokes before the commit reload lands. (Only evaluated inside
+  /// build(), so the late controllers are initialized.)
   bool get _isPlannedRow {
     if (widget.mode == SetRowMode.planned) return true;
     if (widget.mode != SetRowMode.live || widget.plannedTarget == null) {
       return false;
     }
-    final weightEmpty = _weightCtrl.text.trim().isEmpty;
-    final repsEmpty = _repsCtrl.text.trim().isEmpty;
-    // Variation counts as still-planned when it's "No Variation" (null) or
-    // when it matches the plan's variation — the plan is satisfied, not
-    // deviated from. A different pick retires the tint like any other
-    // entered value.
+    final target = widget.plannedTarget!;
     final variationPlanned = _isDraft
         ? _draftVariationId == null
         : (widget.initialVariationId == null ||
-            widget.initialVariationId == widget.plannedTarget?.variationId);
-    final notesEmpty = _isDraft
-        ? (_draftNotes?.trim().isEmpty ?? true)
-        : !widget.hasNotes;
-    return weightEmpty && repsEmpty && variationPlanned && notesEmpty;
+              widget.initialVariationId == target.variationId);
+    return variationPlanned &&
+        weightInPlan(
+          target.targetWeight,
+          num.tryParse(_weightCtrl.text.trim()),
+        ) &&
+        repsInPlan(target.targetReps, num.tryParse(_repsCtrl.text.trim()));
   }
 
   @override
@@ -312,10 +340,12 @@ class _SessionSetRowState extends State<SessionSetRow> {
     if (!_weightFocus.hasFocus &&
         widget.initialWeightText != oldWidget.initialWeightText) {
       _weightCtrl.text = widget.initialWeightText;
+      _hasPendingCommit = false;
     }
     if (!_repsFocus.hasFocus &&
         widget.initialRepsText != oldWidget.initialRepsText) {
       _repsCtrl.text = widget.initialRepsText;
+      _hasPendingCommit = false;
     }
     if (_isDraft &&
         widget.plannedTarget?.variationId !=
@@ -355,7 +385,9 @@ class _SessionSetRowState extends State<SessionSetRow> {
         case SetRowMode.live:
           // Weight, reps, or a variation present (a reps-only planned row
           // stays a ghost).
-          final weight = weightText.isEmpty ? null : double.tryParse(weightText);
+          final weight = weightText.isEmpty
+              ? null
+              : double.tryParse(weightText);
           final reps = repsText.isEmpty ? null : num.tryParse(repsText);
           if (weight == null && reps == null && _draftVariationId == null) {
             return;
@@ -381,20 +413,26 @@ class _SessionSetRowState extends State<SessionSetRow> {
           weight: weightText.isEmpty ? null : weightText,
           reps: repsText.isEmpty ? null : repsText,
           variationId: _draftVariationId,
-          notes: _draftNotes?.trim().isEmpty == true ? null : _draftNotes?.trim(),
+          notes: _draftNotes?.trim().isEmpty == true
+              ? null
+              : _draftNotes?.trim(),
         ),
         immediate: immediate,
       );
       return;
     }
 
-    // Real set: skip when the text is unchanged from the seeds (a cosmetic
-    // re-format like "100" → "100.0" still commits — the VM write is a
-    // harmless no-op).
-    if (weightText == widget.initialWeightText &&
-        repsText == widget.initialRepsText) {
-      return;
-    }
+    // Real set: the text is back where it started. Plain focus/blur with no
+    // edit writes nothing — but if a keystroke already queued a debounced
+    // write, this submit supersedes it: reverting 65 → 60 within the settle
+    // window must leave 60 stored, not let the stale 65 land behind a field
+    // that reads 60 (2026-10-23). A cosmetic re-format ("100" → "100.0")
+    // still commits; the VM write is a harmless no-op.
+    final atSeed =
+        weightText == widget.initialWeightText &&
+        repsText == widget.initialRepsText;
+    if (atSeed && !_hasPendingCommit) return;
+    _hasPendingCommit = !atSeed;
     await widget.onCommit(
       false,
       SetRowFieldValues(
@@ -403,6 +441,15 @@ class _SessionSetRowState extends State<SessionSetRow> {
       ),
       immediate: immediate,
     );
+  }
+
+  /// A keystroke repaints before it commits: the chip and the row tint are
+  /// read off the controllers in build(), so the value's planned styling has
+  /// to flip on the keystroke rather than whenever the row reloads — the
+  /// commit itself settles on the debounce.
+  void _onCellChanged(String _) {
+    setState(() {});
+    _commit();
   }
 
   /// The history viewer's tap-to-edit gate: while gated, any field tap
@@ -427,12 +474,15 @@ class _SessionSetRowState extends State<SessionSetRow> {
         ),
         content: Text(
           "You're about to update past data — this changes your historical record for this workout, including any PRs based on it.",
-          style: TextStyle(color: AppColors.muted),
+          style: TextStyle(color: AppColors.inkSecondary, height: 1.4),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text('Cancel', style: TextStyle(color: AppColors.muted)),
+            child: Text(
+              'Cancel',
+              style: TextStyle(color: AppColors.inkSecondary),
+            ),
           ),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(true),
@@ -574,11 +624,14 @@ class _SessionSetRowState extends State<SessionSetRow> {
                       horizontal: 12,
                       vertical: 10,
                     ),
-                    decoration: lambdaBox(ContainerTone.ghost, radius: AppRadius.md),
+                    decoration: lambdaBox(
+                      ContainerTone.ghost,
+                      radius: AppRadius.md,
+                    ),
                     child: Row(
                       children: [
                         Expanded(
-                          child: Text(
+                          child: UserNameText(
                             s.name,
                             style: TextStyle(
                               color: AppColors.accent,
@@ -589,7 +642,7 @@ class _SessionSetRowState extends State<SessionSetRow> {
                         Text(
                           '${s.exerciseCount} exercise${s.exerciseCount == 1 ? '' : 's'}',
                           style: TextStyle(
-                            color: AppColors.muted,
+                            color: AppColors.inkSecondary,
                             fontSize: 14,
                           ),
                         ),
@@ -603,7 +656,10 @@ class _SessionSetRowState extends State<SessionSetRow> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: Text('Cancel', style: TextStyle(color: AppColors.muted)),
+            child: Text(
+              'Cancel',
+              style: TextStyle(color: AppColors.inkSecondary),
+            ),
           ),
           TextButton(
             onPressed: () =>
@@ -630,7 +686,9 @@ class _SessionSetRowState extends State<SessionSetRow> {
 
   @override
   Widget build(BuildContext context) {
-    final variationId = _isDraft ? _draftVariationId : widget.initialVariationId;
+    final variationId = _isDraft
+        ? _draftVariationId
+        : widget.initialVariationId;
 
     // Drafts track notes row-locally; real sets report through [hasNotes].
     final hasNotes = _isDraft
@@ -644,22 +702,46 @@ class _SessionSetRowState extends State<SessionSetRow> {
         )
         .label;
 
-    // Live rows ghost the planned variation the way the kg/reps cells ghost
-    // their targets — the planned name in planned color until the row has
-    // an actual variation of its own.
-    final ghostVariationName = !_isDraft &&
+    // The read-only variation cell's label: the row's own snapshot name
+    // where it has one, so a variation archived since the session is still
+    // readable on the record; "No Variation" is the live cell's own word
+    // for the empty pick.
+    final readOnlyVariationLabel = variationId != null
+        ? (widget.initialVariationName ?? '')
+        : 'No Variation';
+
+    // The planned variation is a REAL VALUE, never a guide (2026-10-23): a
+    // variation is categorical — the plan names the one the set is performed
+    // with, and the row's first commit adopts it (live_exercise_card's
+    // `onCommit`). Until that write lands the cell still shows the plan's
+    // name, in real-value ink — not the blue guide the kg/reps targets wear.
+    final plannedVariationName =
+        !_isDraft &&
             widget.mode == SetRowMode.live &&
             variationId == null &&
             widget.plannedTarget?.variationName != null
         ? widget.plannedTarget!.variationName
         : null;
 
+    // A deleted row never took the plan's variation: the cell still names it
+    // as a guide, so what the set was meant to do survives the deletion
+    // (2026-10-23).
+    final deletedVariationGuide =
+        widget.deleted && plannedVariationName != null
+        ? plannedVariationName
+        : null;
+
     // Planned targets are raw text — ranges ("8-15", "60-70") show as-is.
     final plannedWeight = widget.plannedTarget?.targetWeight;
     final plannedReps = widget.plannedTarget?.targetReps;
 
-    // The container's edge styling — PR rows get the accent treatment, and
-    // planned rows the planned tint.
+    // The container's edge styling — a goal set wears the shared achieved
+    // chrome (successBox, the same green the New Goal form turns when history
+    // already beats the target — 2026-10-19), which outranks a PR's accent:
+    // the row can be both, and the goal is the rarer fact (2026-10-20). Then
+    // PR rows get the accent, then planned rows the planned tint; deleted
+    // rows wear the shared danger recipe instead (deletedBox, the same chrome
+    // the exercise selector's deleted name draws — 2026-10-14).
     final borderColor = widget.isPr
         ? AppColors.accent
         : _isPlannedRow
@@ -668,43 +750,40 @@ class _SessionSetRowState extends State<SessionSetRow> {
     final borderWidth = widget.isPr ? 1.2 : 0.5;
 
     Widget row = Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      decoration: BoxDecoration(
-        color: widget.isPr
-            ? AppColors.accentBg
-            : _isPlannedRow
-            ? AppColors.plannedBg
-            : AppColors.surfaceHigh,
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(color: borderColor, width: borderWidth),
+      // Stable chrome key so tests can read the row's tint/edges.
+      key: ValueKey(
+        'session-set-row-${widget.mode.name}-'
+        '${widget.isDraft ? 'draft' : 'set'}-${widget.displayIndex}',
       ),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: widget.deleted
+          ? deletedBox()
+          : widget.isGoal
+          ? successBox()
+          : BoxDecoration(
+              color: widget.isPr
+                  ? AppColors.accentBg
+                  : _isPlannedRow
+                  ? AppColors.plannedBg
+                  : AppColors.surfaceHigh,
+              borderRadius: BorderRadius.circular(AppRadius.md),
+              border: Border.all(color: borderColor, width: borderWidth),
+            ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           _numberCell(),
           const SizedBox(width: 6),
+          // The grid reads KG · REPS · VARIATION — weight first, then reps,
+          // the way every PR, goal and log line in the app names a set
+          // ("100 kg × 5"). The order was REPS-first once; it is flipped
+          // everywhere at once so no surface can read the pair backwards
+          // (2026-10-22).
           Expanded(
             child: _cell(
               // Stable per-row cell keys so driver/tooling can target an
               // exact row's field (mode prefix keeps them unique across the
               // live/planned/history surfaces).
-              key: ValueKey(
-                '${widget.mode.name}-${widget.isDraft ? 'draft' : 'set'}-${widget.displayIndex}-reps',
-              ),
-              controller: _repsCtrl,
-              focusNode: _repsFocus,
-              ghost:
-                  widget.mode == SetRowMode.live &&
-                  plannedReps != null &&
-                  _repsCtrl.text.trim().isEmpty,
-              hint: plannedReps ?? '—',
-              onTap: _gated ? () => _requestGateEdit(focus: _repsFocus) : null,
-              onChanged: _commitOnChange ? (_) => _commit() : null,
-            ),
-          ),
-          const SizedBox(width: 6),
-          Expanded(
-            child: _cell(
               key: ValueKey(
                 '${widget.mode.name}-${widget.isDraft ? 'draft' : 'set'}-${widget.displayIndex}-kg',
               ),
@@ -715,13 +794,49 @@ class _SessionSetRowState extends State<SessionSetRow> {
                   plannedWeight != null &&
                   _weightCtrl.text.trim().isEmpty,
               hint: plannedWeight ?? '—',
-              onTap: _gated ? () => _requestGateEdit(focus: _weightFocus) : null,
-              onChanged: _commitOnChange ? (_) => _commit() : null,
+              // The chip: a real weight equal to a single planned number.
+              // A weight range is a guide and never chips.
+              planValue:
+                  widget.mode == SetRowMode.live &&
+                  weightIsPlan(
+                    plannedWeight,
+                    num.tryParse(_weightCtrl.text.trim()),
+                  ),
+              onTap: _gated
+                  ? () => _requestGateEdit(focus: _weightFocus)
+                  : null,
+              onChanged: _commitOnChange ? _onCellChanged : null,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: _cell(
+              key: ValueKey(
+                '${widget.mode.name}-${widget.isDraft ? 'draft' : 'set'}-${widget.displayIndex}-reps',
+              ),
+              controller: _repsCtrl,
+              focusNode: _repsFocus,
+              ghost:
+                  widget.mode == SetRowMode.live &&
+                  plannedReps != null &&
+                  _repsCtrl.text.trim().isEmpty,
+              hint: plannedReps ?? '—',
+              // The chip: a typed rep count equal to the planned number or
+              // inside its inclusive range. Reps are never adopted, so this
+              // always reads the user's own entry.
+              planValue:
+                  widget.mode == SetRowMode.live &&
+                  repsMatchPlan(
+                    plannedReps,
+                    num.tryParse(_repsCtrl.text.trim()),
+                  ),
+              onTap: _gated ? () => _requestGateEdit(focus: _repsFocus) : null,
+              onChanged: _commitOnChange ? _onCellChanged : null,
             ),
           ),
           const SizedBox(width: 6),
           // Tooltip so long variation names stay visible even though the
-          // cell truncates them. Twice the reps/kg width — number cells
+          // cell truncates them. Twice the kg/reps width — number cells
           // only need ~4 digits, variation names need the room.
           Expanded(
             flex: 2,
@@ -731,42 +846,72 @@ class _SessionSetRowState extends State<SessionSetRow> {
                     // field like any other in the history viewer.
                     onTap: _gated ? () => _requestGateEdit() : null,
                     child: Tooltip(
-                      message: variationId != null
-                          ? (widget.initialVariationName ?? '')
-                          : '',
-                      child: Text(
-                        variationId != null
-                            ? (widget.initialVariationName ?? '')
-                            : '—',
-                        textAlign: TextAlign.center,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppFonts.ui(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.muted,
-                        ),
-                      ),
+                      message: readOnlyVariationLabel,
+                      child: widget.deleted
+                          // A deleted row is red and inert as ONE surface —
+                          // no inner boxes inside its danger fill. The plan's
+                          // variation still shows as a blue guide when the
+                          // row never took one.
+                          ? Center(
+                              child: Text(
+                                deletedVariationGuide ?? readOnlyVariationLabel,
+                                textAlign: TextAlign.center,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: AppFonts.ui(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                  color: deletedVariationGuide != null
+                                      ? AppColors.planned
+                                      : AppColors.danger,
+                                ),
+                              ),
+                            )
+                          // The live cell's box, drawn without its picker:
+                          // a past session's row and a live one read as the
+                          // same grid (2026-10-22). Same label, same ink,
+                          // same chevron as DropdownSelect's compact row.
+                          : _variationBox(
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Flexible(
+                                    child: UserNameText(
+                                      readOnlyVariationLabel,
+                                      style: AppFonts.ui(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w500,
+                                        color: variationId != null
+                                            ? AppColors.primary
+                                            : AppColors.inkSecondary,
+                                      ),
+                                    ),
+                                  ),
+                                  Icon(
+                                    Icons.keyboard_arrow_down,
+                                    size: 14,
+                                    color: AppColors.muted,
+                                  ),
+                                ],
+                              ),
+                            ),
                     ),
                   )
                 : Tooltip(
-                    message: variationLabel,
-                    child: Container(
-                      height: 38,
-                      alignment: Alignment.center,
-                      // Neutral chrome — planned-ness lives on the row
-                      // container, never inside the fields.
-                      decoration: BoxDecoration(
-                        color: AppColors.bg,
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: AppColors.border, width: 0.5),
-                      ),
-                      child: DropdownSelect<String?>(
+                    // The tooltip names what the cell DRAWS — the plan's
+                    // variation while the row has none of its own.
+                    message: plannedVariationName ?? variationLabel,
+                    child: _variationBox(
+                      DropdownSelect<String?>(
                         options: widget.variationOptions,
                         value: variationId,
-                        placeholder: ghostVariationName ?? 'No Variation',
-                        placeholderColor: ghostVariationName != null
-                            ? AppColors.planned
+                        placeholder: plannedVariationName ?? 'No Variation',
+                        // Real-value ink: a planned variation IS the row's
+                        // value, not a target to reach (2026-10-23). The
+                        // dropdown's own placeholder grey stays for the
+                        // genuine "No Variation" case.
+                        placeholderColor: plannedVariationName != null
+                            ? AppColors.primary
                             : null,
                         compact: true,
                         valueColor: AppColors.primary,
@@ -800,7 +945,7 @@ class _SessionSetRowState extends State<SessionSetRow> {
             child: Container(
               width: 3,
               decoration: BoxDecoration(
-                color: AppColors.primary,
+                color: widget.deleted ? AppColors.danger : AppColors.primary,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -818,8 +963,9 @@ class _SessionSetRowState extends State<SessionSetRow> {
         actions: [
           SwipeAction(
             icon: Icons.sticky_note_2_outlined,
-            
+
             color: AppColors.primary,
+            foreground: AppColors.bg,
             onTap: _gated
                 ? () => _requestGateEdit(after: _openNotes)
                 : _openNotes,
@@ -834,20 +980,23 @@ class _SessionSetRowState extends State<SessionSetRow> {
           if (!_isDraft)
             SwipeAction(
               icon: Icons.copy_rounded,
-              
+
               color: AppColors.accent,
+              foreground: AppColors.accentText,
               onTap: _duplicate,
             ),
           SwipeAction(
             icon: Icons.sticky_note_2_outlined,
-            
+
             color: AppColors.primary,
+            foreground: AppColors.bg,
             onTap: _openNotes,
           ),
           SwipeAction(
             icon: Icons.delete_outline,
-            
+
             color: AppColors.danger,
+            foreground: AppColors.dangerText,
             onTap: _delete,
           ),
         ],
@@ -862,8 +1011,9 @@ class _SessionSetRowState extends State<SessionSetRow> {
         actions: [
           SwipeAction(
             icon: Icons.sticky_note_2_outlined,
-            
+
             color: AppColors.primary,
+            foreground: AppColors.bg,
             onTap: _openNotes,
           ),
         ],
@@ -887,7 +1037,20 @@ class _SessionSetRowState extends State<SessionSetRow> {
   /// other. The walk is paced to be followed by eye: quick enough to still
   /// read as the tail end of the drop, slow enough not to flicker.
   Widget _numberCell() {
-    final ValueKey<String> numberKey = widget.isPr
+    // A goal set reads `G`, a PR `PR` — and a set that is both reads `G`:
+    // the badge says which chrome the row wears, and the goal's is the one
+    // drawn. The PR still counts in the stats and the PR modal, so nothing
+    // is lost by the number cell speaking the goal (2026-10-20).
+    final badge = widget.deleted
+        ? null
+        : widget.isGoal
+        ? 'G'
+        : widget.isPr
+        ? 'PR'
+        : null;
+    final ValueKey<String> numberKey = badge == 'G'
+        ? const ValueKey('goal')
+        : badge == 'PR'
         ? const ValueKey('pr')
         : ValueKey('set-${widget.displayIndex}');
 
@@ -911,20 +1074,25 @@ class _SessionSetRowState extends State<SessionSetRow> {
           ),
         );
       },
-      child: widget.isPr
+      child: badge != null
           ? Text(
-              'PR',
+              badge,
               key: numberKey,
               style: AppFonts.mono(
                 fontSize: 14,
                 fontWeight: FontWeight.w800,
-                color: AppColors.accent,
+                color: badge == 'G' ? AppColors.success : AppColors.accent,
               ),
             )
           : Text(
               '${widget.displayIndex}',
               key: numberKey,
-              style: AppFonts.mono(fontSize: 13, color: AppColors.muted),
+              style: AppFonts.mono(
+                fontSize: 13,
+                color: widget.deleted
+                    ? AppColors.danger
+                    : AppColors.inkSecondary,
+              ),
             ),
     );
 
@@ -948,16 +1116,40 @@ class _SessionSetRowState extends State<SessionSetRow> {
     );
   }
 
+  /// The variation cell's box — one chrome recipe for the picker and its
+  /// read-only twin, so a past session's row and a live one read as the same
+  /// grid (2026-10-22). Neutral chrome: a planned variation is a REAL value
+  /// shown in `primary` (2026-10-23), and only the two numeric cells carry
+  /// the value chip.
+  Widget _variationBox(Widget child) => Container(
+    height: 38,
+    alignment: Alignment.center,
+    decoration: BoxDecoration(
+      color: AppColors.bg,
+      borderRadius: BorderRadius.circular(6),
+      border: Border.all(color: AppColors.border, width: 0.5),
+    ),
+    child: child,
+  );
+
   /// The reps/kg cell. Ghost = live's planned-target overlay — the planned
-  /// hint TEXT in planned color; the cell chrome itself stays neutral
-  /// (planned-ness lives on the row container, never inside the fields).
-  /// History view mode is a transparent read-only TextField.
+  /// hint TEXT in planned color, the plan as a **guide only**.
+  ///
+  /// [planValue] is the other half of the grammar (2026-10-23): a REAL value
+  /// that is what was planned — white ink on the solid plannedFill chip. A
+  /// real value off the plan stays neutral with primary ink. A deleted row is
+  /// one red surface and never chips.
+  ///
+  /// A read-only cell keeps the box (2026-10-22): the past-session viewer is
+  /// the live grid, not a bare-number list. Only a deleted row drops the
+  /// inner chrome, because the whole row is one red surface.
   Widget _cell({
     Key? key,
     required TextEditingController controller,
     required FocusNode focusNode,
     required bool ghost,
     required String hint,
+    bool planValue = false,
     VoidCallback? onTap,
     ValueChanged<String>? onChanged,
   }) {
@@ -973,10 +1165,7 @@ class _SessionSetRowState extends State<SessionSetRow> {
         textAlign: TextAlign.center,
         keyboardType: widget.mode == SetRowMode.planned
             // Free text — planned targets can be ranges ("8-15", "60-70").
-            ? const TextInputType.numberWithOptions(
-                decimal: true,
-                signed: true,
-              )
+            ? const TextInputType.numberWithOptions(decimal: true, signed: true)
             : const TextInputType.numberWithOptions(decimal: true),
         inputFormatters: [
           FilteringTextInputFormatter.allow(
@@ -990,7 +1179,14 @@ class _SessionSetRowState extends State<SessionSetRow> {
         style: AppFonts.mono(
           fontSize: 15,
           fontWeight: FontWeight.w500,
-          color: AppColors.primary,
+          // A deleted row's values read red — the deletion is the row's
+          // whole surface, text included. A planned chip's ink is plannedText
+          // (white everywhere, AA on every plannedFill).
+          color: widget.deleted
+              ? AppColors.danger
+              : planValue
+              ? AppColors.plannedText
+              : AppColors.primary,
         ),
         decoration: InputDecoration(
           isDense: true,
@@ -1000,17 +1196,26 @@ class _SessionSetRowState extends State<SessionSetRow> {
             fontSize: 14,
             color: ghost
                 ? AppColors.planned
+                : widget.deleted
+                ? AppColors.danger.withValues(alpha: 0.6)
                 : AppColors.muted.withValues(alpha: 0.6),
           ),
           filled: true,
-          fillColor: _effectiveReadOnly
+          fillColor: widget.deleted
               ? Colors.transparent
+              : planValue
+              ? AppColors.plannedFill
               : AppColors.bg,
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(6),
             borderSide: BorderSide(
-              color: _effectiveReadOnly
+              // The chip's edge is `planned`, not its own fill: the lighter
+              // signal clears 3:1 against the planned row ground in every
+              // palette, while the fill stays deep enough to carry white ink.
+              color: widget.deleted
                   ? Colors.transparent
+                  : planValue
+                  ? AppColors.planned
                   : AppColors.border,
               width: 0.5,
             ),

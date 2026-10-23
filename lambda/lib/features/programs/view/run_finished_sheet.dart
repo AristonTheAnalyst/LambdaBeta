@@ -74,7 +74,8 @@ class _RunFinishedSheet extends StatelessWidget {
             'attempt runs, or end it here.',
             style: AppFonts.ui(
               fontSize: AppTextStyles.sm,
-              color: AppColors.muted,
+              color: AppColors.inkSecondary,
+              height: 1.4,
             ),
           ),
           const SizedBox(height: AppSpacing.md),

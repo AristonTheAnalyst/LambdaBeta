@@ -83,7 +83,9 @@ void main() {
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.reset);
     await tester.pumpWidget(
-      MaterialApp(home: ProgramDetailScreen(programId: 'p1', viewModel: vm)),
+      MaterialApp(
+        home: ProgramDetailScreen(programId: 'p1', viewModel: vm),
+      ),
     );
     await tester.pumpAndSettle();
   }
@@ -95,8 +97,9 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('an unfiled workout is shown under Unfiled, with both actions',
-      (tester) async {
+  testWidgets('an unfiled workout is shown under Unfiled, with both actions', (
+    tester,
+  ) async {
     await pump(tester, usesBlocks: true);
 
     expect(find.text('Unfiled'), findsOneWidget);
@@ -104,19 +107,30 @@ void main() {
 
     await reveal(tester);
 
-    expect(find.byIcon(Icons.drive_file_move_outline), findsOneWidget,
-        reason: 'filing it into a block is the fix the group exists to offer');
-    expect(find.byIcon(Icons.delete_outline), findsOneWidget,
-        reason: 'and removing it from the program is the other answer — an '
-            'archived block\'s leftovers are not all wanted back');
+    expect(
+      find.byIcon(Icons.drive_file_move_outline),
+      findsOneWidget,
+      reason: 'filing it into a block is the fix the group exists to offer',
+    );
+    expect(
+      find.byIcon(Icons.delete_outline),
+      findsOneWidget,
+      reason:
+          'and removing it from the program is the other answer — an '
+          'archived block\'s leftovers are not all wanted back',
+    );
   });
 
   testWidgets('a simple program has no Unfiled group', (tester) async {
     await pump(tester, usesBlocks: false);
 
-    expect(find.text('Unfiled'), findsNothing,
-        reason: 'a simple program has no blocks to be unfiled from — its '
-            'Workouts tab already lists every one of them');
+    expect(
+      find.text('Unfiled'),
+      findsNothing,
+      reason:
+          'a simple program has no blocks to be unfiled from — its '
+          'Workouts tab already lists every one of them',
+    );
   });
 
   testWidgets('filing asks which block, then moves that link', (tester) async {
@@ -139,7 +153,8 @@ void main() {
     expect(
       call.linkIds,
       ['l9'],
-      reason: 'the link of the workout that was swiped, not the workout id — '
+      reason:
+          'the link of the workout that was swiped, not the workout id — '
           'the server keys membership off the join row',
     );
     expect(call.programId, 'p1');

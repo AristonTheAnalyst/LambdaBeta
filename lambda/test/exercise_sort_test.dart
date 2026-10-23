@@ -40,28 +40,39 @@ ExerciseState _state({
   varSortDesc: descending,
 );
 
-List<String> _names(ExerciseState s) =>
-    [for (final e in s.sortedExercises) e.name];
-List<String> _varNames(ExerciseState s) =>
-    [for (final v in s.sortedVariations) v.name];
+List<String> _names(ExerciseState s) => [
+  for (final e in s.sortedExercises) e.name,
+];
+List<String> _varNames(ExerciseState s) => [
+  for (final v in s.sortedVariations) v.name,
+];
 
 void main() {
   test('last used, descending — the historical default', () {
-    expect(_names(_state()), ['Bench Press', 'Zercher', 'Deadlift', 'Squat'],
-        reason: 'newest first, the date tie broken by name, never-used last');
+    expect(_names(_state()), [
+      'Bench Press',
+      'Zercher',
+      'Deadlift',
+      'Squat',
+    ], reason: 'newest first, the date tie broken by name, never-used last');
   });
 
   test('last used, ascending — never-used still sinks', () {
-    expect(_names(_state(descending: false)),
-        ['Deadlift', 'Bench Press', 'Zercher', 'Squat'],
-        reason: 'oldest first among dated entries; a never-used one is not '
-            '"infinitely long ago", it is absent, and absent has no place at '
-            'the head of a chronology');
+    expect(
+      _names(_state(descending: false)),
+      ['Deadlift', 'Bench Press', 'Zercher', 'Squat'],
+      reason:
+          'oldest first among dated entries; a never-used one is not '
+          '"infinitely long ago", it is absent, and absent has no place at '
+          'the head of a chronology',
+    );
   });
 
   test('A–Z in both directions', () {
-    expect(_names(_state(sort: ExerciseSortCriterion.name, descending: false)),
-        ['Bench Press', 'Deadlift', 'Squat', 'Zercher']);
+    expect(
+      _names(_state(sort: ExerciseSortCriterion.name, descending: false)),
+      ['Bench Press', 'Deadlift', 'Squat', 'Zercher'],
+    );
     expect(_names(_state(sort: ExerciseSortCriterion.name)), [
       'Zercher',
       'Squat',
@@ -71,28 +82,39 @@ void main() {
   });
 
   test('most used, descending', () {
-    expect(_names(_state(sort: ExerciseSortCriterion.mostUsed)),
-        ['Bench Press', 'Zercher', 'Deadlift', 'Squat'],
-        reason: '12, 7, 3, then the never-used 0');
+    expect(_names(_state(sort: ExerciseSortCriterion.mostUsed)), [
+      'Bench Press',
+      'Zercher',
+      'Deadlift',
+      'Squat',
+    ], reason: '12, 7, 3, then the never-used 0');
   });
 
   test('most used, ascending — the never-used ARE the least used', () {
-    expect(_names(_state(sort: ExerciseSortCriterion.mostUsed, descending: false)),
-        ['Squat', 'Deadlift', 'Zercher', 'Bench Press'],
-        reason: 'unlike a missing date, a zero count is data: "least used '
-            'first" leads with the one that was never used at all');
+    expect(
+      _names(_state(sort: ExerciseSortCriterion.mostUsed, descending: false)),
+      ['Squat', 'Deadlift', 'Zercher', 'Bench Press'],
+      reason:
+          'unlike a missing date, a zero count is data: "least used '
+          'first" leads with the one that was never used at all',
+    );
   });
 
   test('search filters before sorting, not after', () {
     final s = _state().copyWith(exSearch: 'e');
-    expect(_names(s), ['Bench Press', 'Zercher', 'Deadlift'],
-        reason: 'Squat is filtered out of view, and sorted out with it');
+    expect(_names(s), [
+      'Bench Press',
+      'Zercher',
+      'Deadlift',
+    ], reason: 'Squat is filtered out of view, and sorted out with it');
   });
 
   test('the two lists sort independently', () {
     final s = _state();
-    expect(_varNames(s), ['Paused', 'Tempo'],
-        reason: 'variations read the same criteria — used first, never last');
+    expect(_varNames(s), [
+      'Paused',
+      'Tempo',
+    ], reason: 'variations read the same criteria — used first, never last');
   });
 
   test('changing a sort lands on the state and resets that list\'s page', () {
@@ -103,11 +125,17 @@ void main() {
 
     vm.setExSort(ExerciseSortCriterion.name, false);
 
-    expect(vm.state.value.exPage, 0,
-        reason: 'page 3 of one ordering is not page 3 of another');
+    expect(
+      vm.state.value.exPage,
+      0,
+      reason: 'page 3 of one ordering is not page 3 of another',
+    );
     expect(vm.state.value.exSort, ExerciseSortCriterion.name);
     expect(vm.state.value.exSortDesc, isFalse);
-    expect(vm.state.value.varSort, ExerciseSortCriterion.lastUsed,
-        reason: 'the variations list was not asked to change');
+    expect(
+      vm.state.value.varSort,
+      ExerciseSortCriterion.lastUsed,
+      reason: 'the variations list was not asked to change',
+    );
   });
 }

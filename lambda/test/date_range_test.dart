@@ -18,10 +18,7 @@ void main() {
 
   test('custom windows use picked days, end exclusive', () {
     final sel = DateRangeSelection.custom(
-      DateTimeRange(
-        start: DateTime(2026, 8, 1),
-        end: DateTime(2026, 8, 20),
-      ),
+      DateTimeRange(start: DateTime(2026, 8, 1), end: DateTime(2026, 8, 20)),
     );
     final w = sel.window(today);
     expect(w.from, DateTime(2026, 8, 1));
@@ -30,10 +27,7 @@ void main() {
 
   test('single-day custom ranges are legal', () {
     final sel = DateRangeSelection.custom(
-      DateTimeRange(
-        start: DateTime(2026, 8, 10),
-        end: DateTime(2026, 8, 10),
-      ),
+      DateTimeRange(start: DateTime(2026, 8, 10), end: DateTime(2026, 8, 10)),
     );
     final w = sel.window(today);
     expect(w.from, DateTime(2026, 8, 10));
@@ -66,10 +60,7 @@ void main() {
     // A non-MTD custom range stays labelled Custom.
     expect(
       DateRangeSelection.custom(
-        DateTimeRange(
-          start: DateTime(2026, 7, 10),
-          end: DateTime(2026, 8, 10),
-        ),
+        DateTimeRange(start: DateTime(2026, 7, 10), end: DateTime(2026, 8, 10)),
       ).label(today),
       'Custom · 10 Jul – 10 Aug',
     );

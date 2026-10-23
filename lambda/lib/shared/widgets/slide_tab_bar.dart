@@ -36,7 +36,10 @@ class SlideTabBar extends StatelessWidget {
             child: GestureDetector(
               onTap: () => onTap(i),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 12,
+                ),
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
                   border: Border(
@@ -62,7 +65,9 @@ class SlideTabBar extends StatelessWidget {
                         style: TextStyle(
                           fontSize: AppTextStyles.sm,
                           fontWeight: FontWeight.w600,
-                          color: isActive ? AppColors.primary : AppColors.muted,
+                          color: isActive
+                              ? AppColors.primary
+                              : AppColors.inkSecondary,
                         ),
                       ),
                       if (dotTabs.contains(i)) ...[

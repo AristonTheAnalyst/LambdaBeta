@@ -36,8 +36,9 @@ class AuthFormState {
 }
 
 class AuthViewModel {
-  final ValueNotifier<AuthFormState> state =
-      ValueNotifier(const AuthFormState());
+  final ValueNotifier<AuthFormState> state = ValueNotifier(
+    const AuthFormState(),
+  );
   final AuthRepository _repo;
 
   AuthViewModel({AuthRepository? repo}) : _repo = repo ?? AuthRepository();

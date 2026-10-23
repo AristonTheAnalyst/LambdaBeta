@@ -18,6 +18,7 @@ import '../../../../shared/widgets/lambda_button.dart';
 import '../../../../shared/widgets/lambda_input.dart';
 import '../../../../shared/widgets/lambda_search_field.dart';
 import '../../../../shared/widgets/name_limit_counter.dart';
+import '../../../../shared/widgets/header_icon_button.dart';
 import '../../../../shared/widgets/page_header.dart';
 import '../../../../shared/widgets/scroll_shrink_nav_bar.dart';
 import '../../../../shared/widgets/slide_tab_bar.dart';
@@ -228,15 +229,18 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
         content: Text(
           used
               ? 'Archive "$name"? It has been used, so it can\'t be fully '
-                'deleted — it will disappear from pickers, but your logged '
-                'history keeps it.'
+                    'deleted — it will disappear from pickers, but your logged '
+                    'history keeps it.'
               : 'Delete "$name"? This can\'t be undone.',
-          style: AppFonts.ui(color: AppColors.muted),
+          style: AppFonts.ui(color: AppColors.inkSecondary, height: 1.4),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: Text('Cancel', style: AppFonts.ui(color: AppColors.muted)),
+            child: Text(
+              'Cancel',
+              style: AppFonts.ui(color: AppColors.inkSecondary),
+            ),
           ),
           TextButton(
             onPressed: () {
@@ -288,14 +292,12 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
             children: [
               if (!widget.embedded) ...[
                 PageHeader(
-                  title: 'Exercises & Variations',
-                  left: GestureDetector(
-                    onTap: () => context.pop(),
-                    child: Icon(
-                      Icons.arrow_back_ios_new,
-                      size: 18,
-                      color: AppColors.accent,
-                    ),
+                  title: 'Exercise Library',
+                  left: HeaderIconButton(
+                    icon: Icons.arrow_back_ios_new,
+                    semanticsLabel: 'Back',
+                    glyphSize: 18,
+                    onPressed: () => context.pop(),
                   ),
                 ),
                 SlideTabBar(
@@ -325,9 +327,7 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
                 ),
               if (widget.embedded)
                 Expanded(
-                  child: widget.panel == 0
-                      ? exercisesPanel
-                      : variationsPanel,
+                  child: widget.panel == 0 ? exercisesPanel : variationsPanel,
                 )
               else
                 SlideTabView(
@@ -384,9 +384,7 @@ class _ExercisesPanel extends StatelessWidget {
                 children: [
                   if (state.exercises.isNotEmpty)
                     Expanded(
-                      child: LambdaSearchField(
-                        controller: searchController,
-                      ),
+                      child: LambdaSearchField(controller: searchController),
                     ),
                   const SizedBox(width: AppSpacing.sm),
                   SortButton<ExerciseSortCriterion>(
@@ -399,6 +397,7 @@ class _ExercisesPanel extends StatelessWidget {
                   GlassButton(
                     label: '',
                     icon: Icons.add,
+                    semanticsLabel: 'Add exercise',
                     onPressed: onAdd,
                     compact: true,
                   ),
@@ -406,6 +405,7 @@ class _ExercisesPanel extends StatelessWidget {
                   GlassButton(
                     label: '',
                     icon: Icons.archive_outlined,
+                    semanticsLabel: 'Archived exercises',
                     onPressed: onShowArchived,
                     compact: true,
                   ),
@@ -431,7 +431,8 @@ class _ExercisesPanel extends StatelessWidget {
                           'Tap + to create your first exercise.',
                           style: AppFonts.ui(
                             fontSize: AppTextStyles.sm,
-                            color: AppColors.muted,
+                            height: 1.4,
+                            color: AppColors.inkSecondary,
                           ),
                         ),
                       ],
@@ -442,7 +443,7 @@ class _ExercisesPanel extends StatelessWidget {
                 Text(
                   'No results.',
                   style: AppFonts.ui(
-                    color: AppColors.muted,
+                    color: AppColors.inkSecondary,
                     fontSize: AppTextStyles.sm,
                   ),
                 )
@@ -478,7 +479,7 @@ class _ExercisesPanel extends StatelessWidget {
                                     ),
                                     style: AppFonts.ui(
                                       fontSize: AppTextStyles.xs,
-                                      color: AppColors.muted,
+                                      color: AppColors.inkSecondary,
                                     ),
                                   ),
                               ],
@@ -543,9 +544,7 @@ class _VariationsPanel extends StatelessWidget {
                 children: [
                   if (state.variations.isNotEmpty)
                     Expanded(
-                      child: LambdaSearchField(
-                        controller: searchController,
-                      ),
+                      child: LambdaSearchField(controller: searchController),
                     ),
                   const SizedBox(width: AppSpacing.sm),
                   SortButton<ExerciseSortCriterion>(
@@ -558,6 +557,7 @@ class _VariationsPanel extends StatelessWidget {
                   GlassButton(
                     label: '',
                     icon: Icons.add,
+                    semanticsLabel: 'Add variation',
                     onPressed: onAdd,
                     compact: true,
                   ),
@@ -565,6 +565,7 @@ class _VariationsPanel extends StatelessWidget {
                   GlassButton(
                     label: '',
                     icon: Icons.archive_outlined,
+                    semanticsLabel: 'Archived variations',
                     onPressed: onShowArchived,
                     compact: true,
                   ),
@@ -590,7 +591,8 @@ class _VariationsPanel extends StatelessWidget {
                           'Tap + to create your first variation.',
                           style: AppFonts.ui(
                             fontSize: AppTextStyles.sm,
-                            color: AppColors.muted,
+                            height: 1.4,
+                            color: AppColors.inkSecondary,
                           ),
                         ),
                       ],
@@ -601,7 +603,7 @@ class _VariationsPanel extends StatelessWidget {
                 Text(
                   'No results.',
                   style: AppFonts.ui(
-                    color: AppColors.muted,
+                    color: AppColors.inkSecondary,
                     fontSize: AppTextStyles.sm,
                   ),
                 )
@@ -637,7 +639,7 @@ class _VariationsPanel extends StatelessWidget {
                                     ),
                                     style: AppFonts.ui(
                                       fontSize: AppTextStyles.xs,
-                                      color: AppColors.muted,
+                                      color: AppColors.inkSecondary,
                                     ),
                                   ),
                               ],
@@ -667,7 +669,7 @@ class _VariationsPanel extends StatelessWidget {
 
 const _pageSize = 10;
 
-/// Builds the muted usage line under an exercise/variation name — just the
+/// Builds the secondary usage line under an exercise/variation name — just the
 /// last-used label (workout/set counts intentionally not shown).
 String _usageLine(ExerciseUsage u, {required bool isExercise}) =>
     u.lastUsedLabel;
@@ -716,7 +718,10 @@ class _PaginationBar extends StatelessWidget {
             // Cumulative: everything shown up to this page, not just the
             // rows on the current one.
             '${((page + 1) * _pageSize).clamp(0, total)} of $total',
-            style: AppFonts.mono(fontSize: 13, color: AppColors.muted),
+            style: AppFonts.mono(
+              fontSize: AppTextStyles.caption,
+              color: AppColors.inkSecondary,
+            ),
           ),
           const SizedBox(width: AppSpacing.md),
           GestureDetector(
@@ -741,6 +746,28 @@ class _PaginationBar extends StatelessWidget {
 }
 
 // ── Create Exercise Modal ───────────────────────────────────────────────────────
+
+/// A failed write's reason, drawn inside the sheet that attempted it.
+///
+/// The library's error banner sits on the screen *beneath* the modal, so a
+/// sheet that stays open on a failure would otherwise say nothing at all.
+class _ModalError extends StatelessWidget {
+  const _ModalError(this.message);
+
+  final String? message;
+
+  @override
+  Widget build(BuildContext context) {
+    if (message == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: AppSpacing.sm),
+      child: Text(
+        message!,
+        style: AppFonts.ui(fontSize: AppTextStyles.sm, color: AppColors.danger),
+      ),
+    );
+  }
+}
 
 class _CreateExerciseModal extends StatelessWidget {
   const _CreateExerciseModal({
@@ -787,6 +814,7 @@ class _CreateExerciseModal extends StatelessWidget {
                   const SizedBox(height: 4),
                   NameLimitCounter(length: state.createExName.trim().length),
                 ],
+                _ModalError(state.error),
                 const SizedBox(height: AppSpacing.lg),
                 Row(
                   children: [
@@ -873,6 +901,7 @@ class _CreateVariationModal extends StatelessWidget {
                   const SizedBox(height: 4),
                   NameLimitCounter(length: state.createVarName.trim().length),
                 ],
+                _ModalError(state.error),
                 const SizedBox(height: AppSpacing.lg),
                 Row(
                   children: [
@@ -951,6 +980,7 @@ class _EditVariationModal extends StatelessWidget {
                     GlassButton(
                       label: '',
                       icon: Icons.delete_outline,
+                      semanticsLabel: 'Delete variation',
                       color: AppColors.danger,
                       compact: true,
                       onPressed: () => onDelete(
@@ -975,6 +1005,7 @@ class _EditVariationModal extends StatelessWidget {
                   const SizedBox(height: 4),
                   NameLimitCounter(length: state.editVarName.trim().length),
                 ],
+                _ModalError(state.error),
                 const SizedBox(height: AppSpacing.lg),
                 Row(
                   children: [
@@ -994,11 +1025,15 @@ class _EditVariationModal extends StatelessWidget {
                       child: LambdaButton(
                         label: 'Save',
                         // Nothing to write until the name differs from the
-                        // one being renamed — Cancel is the dismissal.
-                        disabled: state.isSaving ||
+                        // one being renamed — Cancel is the dismissal. Nor
+                        // when the write would be refused for length: the
+                        // counter above is already at the cap.
+                        disabled:
+                            state.isSaving ||
                             state.editVarName.trim().isEmpty ||
                             state.editVarName.trim() ==
-                                state.editVariation!.name,
+                                state.editVariation!.name ||
+                            nameTooLong(state.editVarName),
                         onPressed: () async {
                           final original = state.editVariation!.name;
                           final renamed = state.editVarName.trim() != original;
@@ -1016,7 +1051,10 @@ class _EditVariationModal extends StatelessWidget {
                                 ),
                                 content: Text(
                                   'This updates the variation name everywhere — all past sessions included.',
-                                  style: AppFonts.ui(color: AppColors.muted),
+                                  style: AppFonts.ui(
+                                    color: AppColors.inkSecondary,
+                                    height: 1.4,
+                                  ),
                                 ),
                                 actions: [
                                   TextButton(
@@ -1025,7 +1063,7 @@ class _EditVariationModal extends StatelessWidget {
                                     child: Text(
                                       'Cancel',
                                       style: AppFonts.ui(
-                                        color: AppColors.muted,
+                                        color: AppColors.inkSecondary,
                                       ),
                                     ),
                                   ),
@@ -1045,8 +1083,11 @@ class _EditVariationModal extends StatelessWidget {
                             );
                             if (ok != true || !context.mounted) return;
                           }
-                          await viewModel.saveEditVariation();
-                          if (context.mounted) {
+                          // Stay open on a failed write: its error is drawn
+                          // here, and closing would hide it behind the sheet
+                          // (the banner lives on the screen below).
+                          final ok = await viewModel.saveEditVariation();
+                          if (ok && context.mounted) {
                             Navigator.of(context, rootNavigator: true).pop();
                           }
                         },

@@ -24,7 +24,7 @@ String uniqueName(
   final fmt = numbered ?? (int n) => '$trimmedBase $n';
   final lower = existing.map((e) => e.trim().toLowerCase()).toSet();
   if (!lower.contains(trimmedBase.toLowerCase())) return trimmedBase;
-  for (var n = 2;; n++) {
+  for (var n = 2; ; n++) {
     final c = fmt(n);
     if (!lower.contains(c.trim().toLowerCase())) return c;
   }

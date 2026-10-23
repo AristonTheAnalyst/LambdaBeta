@@ -17,8 +17,8 @@ import './container_styles.dart';
 ///
 /// The empty case is the caller's, in one of three shapes: the box is not
 /// drawn (the review note on a snapshot), the surrounding section speaks
-/// instead (the bookend), or [placeholder] answers inside the box — muted
-/// copy in the value's own place, so a record that left no note still shows
+/// instead (the bookend), or [placeholder] answers inside the box — secondary
+/// ink in the value's own place, so a record that left no note still shows
 /// the box it would have filled (the review note while Compare is up, where
 /// dropping the row mid-flip would move the card under the eye that just
 /// tapped it).
@@ -36,9 +36,9 @@ class LambdaReadout extends StatelessWidget {
 
   final String value;
 
-  /// What the box reads when [value] is blank — muted, like [LambdaInput]'s
-  /// own placeholder, so it reads as the absence of a note rather than a
-  /// note. Null leaves a blank box blank.
+  /// What the box reads when [value] is blank — `inkSecondary`, like
+  /// [LambdaInput]'s own placeholder: readable, but one step down from a
+  /// real note. Null leaves a blank box blank.
   final String? placeholder;
 
   @override
@@ -72,7 +72,7 @@ class LambdaReadout extends StatelessWidget {
                 style: AppFonts.ui(
                   fontSize: AppTextStyles.sm,
                   color: isBlank && placeholder != null
-                      ? AppColors.muted
+                      ? AppColors.inkSecondary
                       : AppColors.primary,
                 ),
               ),

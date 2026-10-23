@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 import '../../core/powersync/database.dart' as ps;
 import '../../core/utils/lambda_exception.dart';
+import '../../core/utils/name_limit.dart';
 import '../cache/past_sets_timeline_cache.dart';
 import '../models/planned_session_exercise.dart';
 import '../models/planned_session_exercise_set.dart';
@@ -123,11 +124,25 @@ class SupabaseProgramRemote implements ProgramRemote {
 /// goals. Programs are soft-deleted via is_archived so run history never
 /// dangles. Planned-session reads/writes delegate to [PlannedSessionRepository].
 class ProgramRepository {
+  /// Refuses a name longer than its field allows, at the column.
+  ///
+  /// The screens cap their inputs; this catches a programmatic write. The
+  /// local mirror cannot check (`Column.text`, no CHECK), so an over-long row
+  /// would insert locally and only die at upload — quarantined server-side
+  /// while the device keeps drawing it. [max] differs by surface: a program
+  /// name and a block name are not the same width.
+  void _assertNameFits(String name, int max) {
+    if (nameTooLong(name, max)) {
+      throw ArgumentError.value(name, 'name', 'exceeds $max characters');
+    }
+  }
+
   ProgramRepository({ProgramRemote? remote})
-      : _remote = remote ??
-            (labMode
-                ? const LocalOnlyProgramRemote()
-                : const SupabaseProgramRemote());
+    : _remote =
+          remote ??
+          (labMode
+              ? const LocalOnlyProgramRemote()
+              : const SupabaseProgramRemote());
 
   final ProgramRemote _remote;
   final PlannedSessionRepository _plannedRepo = PlannedSessionRepository();
@@ -144,8 +159,11 @@ class ProgramRepository {
 
   /// Returns true if another program owned by `userId` already has [name]
   /// (ignoring [excludeProgramId] when provided).
-  Future<bool> _programNameExists(String userId, String name,
-      {String? excludeProgramId}) async {
+  Future<bool> _programNameExists(
+    String userId,
+    String name, {
+    String? excludeProgramId,
+  }) async {
     final rows = await ps.db.getAll(
       '''
       SELECT 1 FROM dim_program
@@ -153,11 +171,7 @@ class ProgramRepository {
         ${excludeProgramId != null ? 'AND program_id != ?' : ''}
       LIMIT 1
       ''',
-      [
-        userId,
-        name.trim(),
-        ?excludeProgramId,
-      ],
+      [userId, name.trim(), ?excludeProgramId],
     );
     return rows.isNotEmpty;
   }
@@ -165,9 +179,15 @@ class ProgramRepository {
   /// Throws a [LambdaException] if another program owned by `userId` already
   /// has [name] — the message is shown to the user as it stands.
   Future<void> _assertProgramNameUnique(
-      String userId, String name, {String? excludeProgramId}) async {
-    if (await _programNameExists(userId, name,
-        excludeProgramId: excludeProgramId)) {
+    String userId,
+    String name, {
+    String? excludeProgramId,
+  }) async {
+    if (await _programNameExists(
+      userId,
+      name,
+      excludeProgramId: excludeProgramId,
+    )) {
       throw LambdaException('A program named "$name" already exists.');
     }
   }
@@ -175,10 +195,12 @@ class ProgramRepository {
   Future<List<Program>> fetchPrograms(String userId) async {
     // 1. Try the local PowerSync mirror.
     try {
-      final rows = await ps.db.getAll(
-        'SELECT * FROM dim_program WHERE user_id = ? AND date_archived IS NULL ORDER BY program_created_date DESC',
-        [userId],
-      ).timeout(const Duration(seconds: 3));
+      final rows = await ps.db
+          .getAll(
+            'SELECT * FROM dim_program WHERE user_id = ? AND date_archived IS NULL ORDER BY program_created_date DESC',
+            [userId],
+          )
+          .timeout(const Duration(seconds: 3));
       if (rows.isNotEmpty) return rows.map((r) => Program.fromMap(r)).toList();
     } catch (_) {
       // Timed out — fall through to REST.
@@ -214,10 +236,9 @@ class ProgramRepository {
   Future<Program?> fetchProgram(String programId) async {
     // 1. Try the local PowerSync mirror.
     try {
-      final rows = await ps.db.getAll(
-        'SELECT * FROM dim_program WHERE program_id = ?',
-        [programId],
-      ).timeout(const Duration(seconds: 3));
+      final rows = await ps.db
+          .getAll('SELECT * FROM dim_program WHERE program_id = ?', [programId])
+          .timeout(const Duration(seconds: 3));
       if (rows.isNotEmpty) return Program.fromMap(rows.first);
     } catch (_) {
       // Timed out — fall through to REST.
@@ -251,6 +272,7 @@ class ProgramRepository {
       final names = await _programNames(userId);
       finalName = uniqueName('New Program', names);
     } else {
+      _assertNameFits(finalName, kMaxProgramNameLength);
       await _assertProgramNameUnique(userId, finalName);
     }
     final id = _uuid.v4();
@@ -326,6 +348,7 @@ class ProgramRepository {
     String userId = '',
   }) async {
     if (name != null) {
+      _assertNameFits(name, kMaxProgramNameLength);
       await _assertProgramNameUnique(userId, name, excludeProgramId: programId);
     }
     final updates = <String, dynamic>{};
@@ -366,8 +389,10 @@ class ProgramRepository {
         [targetSessions, programId],
       );
     } catch (e) {
-      debugPrint('ProgramRepository: could not remember the target length of '
-          '$programId: $e');
+      debugPrint(
+        'ProgramRepository: could not remember the target length of '
+        '$programId: $e',
+      );
     }
   }
 
@@ -379,13 +404,16 @@ class ProgramRepository {
   /// begin, and N queries to answer one question about N rows is the shape of
   /// read that gets slower the more the user owns.
   Future<Map<String, int>> fetchActiveBlockCounts(String userId) async {
-    final rows = await ps.db.getAll('''
+    final rows = await ps.db.getAll(
+      '''
       SELECT b.program_id AS program_id, COUNT(*) AS n
       FROM dim_program_block b
       JOIN dim_program p ON p.program_id = b.program_id
       WHERE p.user_id = ? AND b.date_archived IS NULL
       GROUP BY b.program_id
-      ''', [userId]);
+      ''',
+      [userId],
+    );
     return {
       for (final r in rows) r['program_id'] as String: (r['n'] as num).toInt(),
     };
@@ -404,7 +432,8 @@ class ProgramRepository {
   /// template's session joins one link row per program it sits in, and a
   /// session must count once per program, never once per link.
   Future<Map<String, ProgramUsage>> fetchProgramUsage(String userId) async {
-    final rows = await ps.db.getAll('''
+    final rows = await ps.db.getAll(
+      '''
       SELECT l.program_id AS program_id,
              MAX(s.created_datetime) AS last_used,
              COUNT(DISTINCT s.session_id) AS session_count
@@ -413,7 +442,9 @@ class ProgramRepository {
         ON l.planned_session_id = s.planned_session_id
       WHERE s.user_id = ? AND s.end_datetime IS NOT NULL
       GROUP BY l.program_id
-      ''', [userId]);
+      ''',
+      [userId],
+    );
     return {
       for (final r in rows)
         r['program_id'] as String: ProgramUsage(
@@ -515,10 +546,9 @@ class ProgramRepository {
   Future<void> hardDeleteProgram(String programId) async {
     await ps.db.writeTransaction((tx) async {
       // Leaves — nothing references these, so they can go first.
-      await tx.execute(
-        'DELETE FROM fact_program_review WHERE program_id = ?',
-        [programId],
-      );
+      await tx.execute('DELETE FROM fact_program_review WHERE program_id = ?', [
+        programId,
+      ]);
       // Goals FK block_id AND program_run_id — they block both of the next two.
       // Matching on block as well as program is belt-and-braces. The server
       // cannot hold the gap: fact_goal_block_scope_check requires program_id
@@ -556,18 +586,15 @@ class ProgramRepository {
       // fact_session write — invalidate so the funnel rule has no exception
       // to remember (2026-10-13).
       PastSetsTimelineCache.instance.invalidate();
-      await tx.execute(
-        'DELETE FROM fact_program_run WHERE program_id = ?',
-        [programId],
-      );
-      await tx.execute(
-        'DELETE FROM dim_program_block WHERE program_id = ?',
-        [programId],
-      );
-      await tx.execute(
-        'DELETE FROM dim_program WHERE program_id = ?',
-        [programId],
-      );
+      await tx.execute('DELETE FROM fact_program_run WHERE program_id = ?', [
+        programId,
+      ]);
+      await tx.execute('DELETE FROM dim_program_block WHERE program_id = ?', [
+        programId,
+      ]);
+      await tx.execute('DELETE FROM dim_program WHERE program_id = ?', [
+        programId,
+      ]);
     });
   }
 
@@ -578,18 +605,23 @@ class ProgramRepository {
     // program up locally first for its owner.
     final program = await fetchProgram(programId);
     if (program == null) return [];
-    return _plannedRepo.fetchPlannedSessions(program.userId,
-        programId: programId);
+    return _plannedRepo.fetchPlannedSessions(
+      program.userId,
+      programId: programId,
+    );
   }
 
   Future<List<PlannedSessionExerciseSet>> fetchPlannedSessionExerciseSets(
-      String sessionId) async {
+    String sessionId,
+  ) async {
     return _plannedRepo.fetchPlannedSets(sessionId);
   }
 
   /// Deep-copies one standalone planned session (workout-library flow).
   Future<String> duplicatePlannedSession(
-      String userId, PlannedSession source) async {
+    String userId,
+    PlannedSession source,
+  ) async {
     return _plannedRepo.duplicatePlannedSession(userId, source);
   }
 
@@ -672,7 +704,9 @@ class ProgramRepository {
 
   // ── Composite reads / duplication ────────────────────────────────────────
 
-  Future<ProgramWithSessions?> fetchProgramWithSessions(String programId) async {
+  Future<ProgramWithSessions?> fetchProgramWithSessions(
+    String programId,
+  ) async {
     final program = await fetchProgram(programId);
     if (program == null) return null;
     final sessions = await fetchPlannedSessions(programId);
@@ -698,20 +732,22 @@ class ProgramRepository {
     // more, so it is not part of the copy either — and its workouts come
     // across unassigned rather than pointing at a block that was never copied.
     final sourceBlocks = await fetchBlocks(programId);
-    final exercisesBySessionId =
-        <String, List<PlannedSessionExercise>>{};
-    final setsBySessionId =
-        <String, List<PlannedSessionExerciseSet>>{};
+    final exercisesBySessionId = <String, List<PlannedSessionExercise>>{};
+    final setsBySessionId = <String, List<PlannedSessionExerciseSet>>{};
     for (final session in source.plannedSessions) {
-      exercisesBySessionId[session.sessionId] =
-          await _plannedRepo.fetchPlannedExercises(session.sessionId);
-      setsBySessionId[session.sessionId] =
-          await _plannedRepo.fetchPlannedSets(session.sessionId);
+      exercisesBySessionId[session.sessionId] = await _plannedRepo
+          .fetchPlannedExercises(session.sessionId);
+      setsBySessionId[session.sessionId] = await _plannedRepo.fetchPlannedSets(
+        session.sessionId,
+      );
     }
 
     final programNames = await _programNames(userId);
-    final name = uniqueName('${source.program.name} (Copy)', programNames,
-        numbered: (n) => '${source.program.name} (Copy $n)');
+    final name = uniqueName(
+      '${source.program.name} (Copy)',
+      programNames,
+      numbered: (n) => '${source.program.name} (Copy $n)',
+    );
 
     final newProgramId = _uuid.v4();
 
@@ -804,7 +840,9 @@ class ProgramRepository {
           ],
         );
 
-        for (final exercise in exercisesBySessionId[session.sessionId] ?? const <PlannedSessionExercise>[]) {
+        for (final exercise
+            in exercisesBySessionId[session.sessionId] ??
+                const <PlannedSessionExercise>[]) {
           final newExerciseId = _uuid.v4();
           await tx.execute(
             '''
@@ -824,9 +862,13 @@ class ProgramRepository {
             ],
           );
 
-          final exerciseSets = (setsBySessionId[session.sessionId] ?? const <PlannedSessionExerciseSet>[])
-              .where((s) => s.plannedExerciseId == exercise.plannedExerciseId)
-              .toList();
+          final exerciseSets =
+              (setsBySessionId[session.sessionId] ??
+                      const <PlannedSessionExerciseSet>[])
+                  .where(
+                    (s) => s.plannedExerciseId == exercise.plannedExerciseId,
+                  )
+                  .toList();
           for (final set in exerciseSets) {
             final newSetId = _uuid.v4();
             await tx.execute(
@@ -951,6 +993,7 @@ class ProgramRepository {
       final names = existing.map((b) => b.name).toSet();
       finalName = uniqueName('Block ${existing.length + 1}', names);
     }
+    _assertNameFits(finalName, kMaxBlockNameLength);
 
     // Append: read the current maximum rather than trusting a list the caller
     // happens to hold, so two offline creations cannot both claim one order.
@@ -960,7 +1003,7 @@ class ProgramRepository {
     );
     final order =
         (_toInt(orderRows.isEmpty ? null : orderRows.first['max_order']) ?? 0) +
-            1;
+        1;
 
     final id = _uuid.v4();
     final now = DateTime.now().toUtc();
@@ -1102,6 +1145,7 @@ class ProgramRepository {
     DateTime? endDate,
     bool clearEndDate = false,
   }) async {
+    if (name != null) _assertNameFits(name, kMaxBlockNameLength);
     final updates = <String, dynamic>{};
     if (name != null) updates['name'] = name;
     if (clearNotes) {
@@ -1241,18 +1285,21 @@ class ProgramRepository {
     final exercisesBySessionId = <String, List<PlannedSessionExercise>>{};
     final setsBySessionId = <String, List<PlannedSessionExerciseSet>>{};
     for (final link in links) {
-      final session =
-          await _plannedRepo.fetchPlannedSessionById(link.plannedSessionId);
+      final session = await _plannedRepo.fetchPlannedSessionById(
+        link.plannedSessionId,
+      );
       if (session == null) continue;
       sessions[link.plannedSessionId] = session;
-      exercisesBySessionId[session.sessionId] =
-          await _plannedRepo.fetchPlannedExercises(session.sessionId);
-      setsBySessionId[session.sessionId] =
-          await _plannedRepo.fetchPlannedSets(session.sessionId);
+      exercisesBySessionId[session.sessionId] = await _plannedRepo
+          .fetchPlannedExercises(session.sessionId);
+      setsBySessionId[session.sessionId] = await _plannedRepo.fetchPlannedSets(
+        session.sessionId,
+      );
     }
 
     final existing = await fetchBlocks(source.programId);
-    final finalName = name ??
+    final finalName =
+        name ??
         uniqueName(
           '${source.name} (Copy)',
           existing.map((b) => b.name).toSet(),
@@ -1265,7 +1312,7 @@ class ProgramRepository {
     );
     final newOrder =
         (_toInt(orderRows.isEmpty ? null : orderRows.first['max_order']) ?? 0) +
-            1;
+        1;
 
     final newBlockId = _uuid.v4();
     final now = DateTime.now().toUtc();
@@ -1309,8 +1356,7 @@ class ProgramRepository {
           tx,
           userId,
           source: session,
-          exercises:
-              exercisesBySessionId[session.sessionId] ?? const [],
+          exercises: exercisesBySessionId[session.sessionId] ?? const [],
           sets: setsBySessionId[session.sessionId] ?? const [],
           baseSessionId: session.baseSessionId,
         );
@@ -1420,17 +1466,14 @@ class ProgramRepository {
   fetchGoalOptionsByIds(List<String> goalIds) async {
     if (goalIds.isEmpty) return const [];
     final placeholders = List.filled(goalIds.length, '?').join(', ');
-    final rows = await ps.db.getAll(
-      '''
+    final rows = await ps.db.getAll('''
       SELECT g.*, p.program_name AS program_name, b.name AS block_name
       FROM fact_goal g
       LEFT JOIN dim_program p ON p.program_id = g.program_id
       LEFT JOIN dim_program_block b ON b.block_id = g.block_id
       WHERE g.goal_id IN ($placeholders)
       ORDER BY g.goal_created_date, g.goal_id
-      ''',
-      goalIds,
-    );
+      ''', goalIds);
     return rows.map(_goalOption).toList();
   }
 
@@ -1451,8 +1494,9 @@ class ProgramRepository {
       INSERT INTO fact_goal
         (id, goal_id, user_id, program_id, block_id, program_run_id, goal_text,
          goal_description, custom_exercise_id, custom_variation_id,
-         target_weight, target_reps, goal_created_date)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         target_weight, target_reps, target_date,
+         target_date_history_json, goal_created_date)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ''',
       [
         goal.goalId,
@@ -1467,13 +1511,19 @@ class ProgramRepository {
         goal.variationId,
         goal.targetWeight,
         goal.targetReps,
+        // Time-of-day-free: "the 5th" is the same day on every device.
+        // Stored as ISO-8601 like every date column — SQLite binds no
+        // `DateTime`, and a raw one throws the whole insert away.
+        goal.targetDate == null
+            ? null
+            : dateOnly(goal.targetDate!).toIso8601String(),
+        encodeGoalTargetDateHistory(goal.targetDateHistory),
         DateTime.now().toUtc().toIso8601String(),
       ],
     );
   }
 
-  /// Rewrites a goal's description — the notes attached to the goal itself,
-  /// typed in the focused goal sheet.
+  /// Rewrites a goal's description — the notes attached to the goal itself.
   ///
   /// Local-only like every UPDATE here: PowerSync uploads it, there is no REST
   /// half (the two REST-first paths are creates — see the class doc). Nothing
@@ -1482,10 +1532,7 @@ class ProgramRepository {
   ///
   /// Blank (or whitespace) clears the column, so "no notes" has one spelling
   /// on the row and the read side never sees "".
-  Future<void> updateGoalDescription(
-    String goalId,
-    String? description,
-  ) async {
+  Future<void> updateGoalDescription(String goalId, String? description) async {
     final text = description?.trim();
     await ps.safeExec(
       'UPDATE fact_goal SET goal_description = ? WHERE goal_id = ?',
@@ -1493,12 +1540,135 @@ class ProgramRepository {
     );
   }
 
-  Future<void> deleteGoal(String goalId) async {
-    await ps.db.execute(
-      'DELETE FROM fact_goal WHERE goal_id = ?',
+  /// Rewrites a whole goal from the focused sheet's form (2026-10-19): its
+  /// exercise, variation, target, notes and deadline in one statement.
+  ///
+  /// The deadline is a **move** like any other, and the history lives on the
+  /// row being written — so this reads first and appends only when the day
+  /// actually changed. Re-saving a goal whose date held still must not litter
+  /// the history with no-ops, the same rule [updateGoalTargetDate] follows.
+  ///
+  /// [exerciseName] is the label's fallback (`goal_text`), a goal outliving
+  /// the exercise it names. Null leaves the label stored: a goal with no
+  /// exercise has no new name to take, and blanking the column would leave the
+  /// row anonymous. Notes are trimmed, and blank clears them.
+  ///
+  /// Returns the row as stored (null when the goal is gone), so the caller
+  /// mirrors exactly what the next read will see — history included.
+  Future<Goal?> updateGoal(
+    String goalId, {
+    required String? exerciseId,
+    String? exerciseName,
+    String? variationId,
+    num? targetWeight,
+    int? targetReps,
+    String? description,
+    DateTime? targetDate,
+  }) async {
+    final rows = await ps.db.getAll(
+      'SELECT goal_text, target_date, target_date_history_json '
+      'FROM fact_goal WHERE goal_id = ? LIMIT 1',
       [goalId],
     );
+    if (rows.isEmpty) return null;
+
+    final existing = parseGoalDate(rows.first['target_date']);
+    final next = targetDate == null ? null : dateOnly(targetDate);
+    var history = decodeGoalTargetDateHistory(
+      rows.first['target_date_history_json'] as String?,
+    );
+    if (!_sameDay(existing, next)) {
+      history = [
+        ...history,
+        GoalTargetDateChange(
+          from: existing,
+          to: next,
+          changedAt: DateTime.now(),
+        ),
+      ];
+    }
+
+    final notes = description?.trim();
+    await ps.safeExec(
+      '''
+      UPDATE fact_goal
+      SET goal_text = ?, goal_description = ?, custom_exercise_id = ?,
+          custom_variation_id = ?, target_weight = ?, target_reps = ?,
+          target_date = ?, target_date_history_json = ?
+      WHERE goal_id = ?
+      ''',
+      [
+        exerciseName ?? rows.first['goal_text'] as String?,
+        notes == null || notes.isEmpty ? null : notes,
+        exerciseId,
+        variationId,
+        targetWeight,
+        targetReps,
+        next?.toIso8601String(),
+        encodeGoalTargetDateHistory(history),
+        goalId,
+      ],
+    );
+    return _readGoal(goalId);
   }
+
+  /// Moves a goal's target date, recording the move in the row's own history
+  /// (`target_date_history_json`) — a deadline that slipped is a fact, not an
+  /// overwrite (2026-10-19).
+  ///
+  /// Read-modify-write because the history lives on the row being written: the
+  /// append has to start from what is stored, not from what the caller last
+  /// saw. Picking the day already stored writes nothing — an adjustment means
+  /// a different day, and re-picking one must not litter the history with
+  /// no-ops. Returns the row as stored (null when the goal is gone), so the
+  /// caller mirrors exactly what the next read will see.
+  Future<Goal?> updateGoalTargetDate(
+    String goalId,
+    DateTime? targetDate,
+  ) async {
+    final rows = await ps.db.getAll(
+      'SELECT target_date, target_date_history_json FROM fact_goal '
+      'WHERE goal_id = ? LIMIT 1',
+      [goalId],
+    );
+    if (rows.isEmpty) return null;
+
+    final existing = parseGoalDate(rows.first['target_date']);
+    final next = targetDate == null ? null : dateOnly(targetDate);
+    if (_sameDay(existing, next)) return _readGoal(goalId);
+
+    final history = [
+      ...decodeGoalTargetDateHistory(
+        rows.first['target_date_history_json'] as String?,
+      ),
+      GoalTargetDateChange(from: existing, to: next, changedAt: DateTime.now()),
+    ];
+    await ps.safeExec(
+      'UPDATE fact_goal SET target_date = ?, target_date_history_json = ? '
+      'WHERE goal_id = ?',
+      [next?.toIso8601String(), encodeGoalTargetDateHistory(history), goalId],
+    );
+    return _readGoal(goalId);
+  }
+
+  Future<Goal?> _readGoal(String goalId) async {
+    final rows = await ps.db.getAll(
+      'SELECT * FROM fact_goal WHERE goal_id = ? LIMIT 1',
+      [goalId],
+    );
+    return rows.isEmpty ? null : Goal.fromMap(rows.first);
+  }
+
+  Future<void> deleteGoal(String goalId) async {
+    await ps.db.execute('DELETE FROM fact_goal WHERE goal_id = ?', [goalId]);
+  }
+}
+
+/// Whether two goal dates name the same calendar day. Null is "no deadline",
+/// and equals only itself.
+bool _sameDay(DateTime? a, DateTime? b) {
+  if (a == null || b == null) return a == null && b == null;
+  return a.year == b.year && a.month == b.month && a.day == b.day;
 }
 
 int? _toInt(dynamic v) {

@@ -18,6 +18,7 @@ void main() {
     List<String> exercises = const ['Back Squat', 'Bench Press'],
     int activeIndex = 0,
     List<ExerciseMark?> marks = const [],
+    List<bool> deleted = const [],
   }) => tester.pumpWidget(
     MaterialApp(
       home: Scaffold(
@@ -25,24 +26,39 @@ void main() {
           exercises: exercises,
           activeIndex: activeIndex,
           onSelect: (_) {},
-          onMove: null,
+          onMove: (_, _) {},
           onAdd: null,
           marks: marks,
+          deleted: deleted,
         ),
       ),
     ),
   );
+
+  /// The colour the name at [index] draws in — the field's text while it is
+  /// the open one, the popover row's text otherwise.
+  Color? nameColor(WidgetTester tester, String name) =>
+      tester.widget<Text>(find.text(name).first).style?.color;
+
+  /// The box around the name — the field's own container or the popover
+  /// row's, whichever holds [f] most closely.
+  BoxDecoration? boxAround(WidgetTester tester, Finder f) {
+    final container = tester.widget<Container>(
+      find.ancestor(of: f, matching: find.byType(Container)).first,
+    );
+    return container.decoration as BoxDecoration?;
+  }
 
   /// The glyph drawn beside [name], read off the name's own row: the mark
   /// rides in the same [Row] as the name it belongs to (name first), so that
   /// row is what "next to the name" means. Null when the name wears nothing.
   ///
   /// With the popover open a name can be drawn twice — the field and its own
-  /// row — and the field comes first, so a test that means the row asks about
-  /// a name the field is not holding.
-  Icon? markOf(WidgetTester tester, String name) {
+  /// row — and the field comes first, so a test that means the row passes
+  /// `index: 1`.
+  Icon? markOf(WidgetTester tester, String name, {int index = 0}) {
     Element? row;
-    tester.element(find.text(name).first).visitAncestorElements((e) {
+    tester.element(find.text(name).at(index)).visitAncestorElements((e) {
       if (e.widget is Row) {
         row = e;
         return false;
@@ -113,7 +129,8 @@ void main() {
     expect(
       minus?.color,
       AppColors.danger,
-      reason: 'the minus is red wherever it is drawn — the field here, and '
+      reason:
+          'the minus is red wherever it is drawn — the field here, and '
           'the popover rows below, are one rule',
     );
   });
@@ -158,6 +175,62 @@ void main() {
       markOf(tester, 'Broad Jump')?.icon,
       ExerciseMark.added.icon,
       reason: 'the record did not hold this one, and the side on screen does',
+    );
+  });
+
+  testWidgets('a deleted exercise wears the deleted SET\'s container — on '
+      'the field and in every popover row, its text left alone', (
+    tester,
+  ) async {
+    // The historic trash reading (2026-10-14): one recipe for both readings
+    // — the deleted set row's box (`deletedBox`: danger fill, the
+    // full-strength edge at the heavier width) — and the name inside stays
+    // the row's own colour: the container is the signal.
+    await pumpSelector(
+      tester,
+      exercises: const ['Back Squat', 'Bench Press', 'Overhead Press'],
+      activeIndex: 0,
+      deleted: const [true, false, true],
+      marks: const [ExerciseMark.removed, null, ExerciseMark.removed],
+    );
+
+    final fieldBox = boxAround(tester, find.text('Back Squat').first);
+    expect(fieldBox?.color, AppColors.dangerBg, reason: 'the field fill');
+    expect(
+      (fieldBox?.border! as Border).top.color,
+      AppColors.danger,
+      reason: 'the set row\'s edge, exactly — one recipe',
+    );
+    expect(
+      (fieldBox?.border! as Border).top.width,
+      1.2,
+      reason: 'the set row\'s heavier edge, not a hairline',
+    );
+    expect(
+      nameColor(tester, 'Back Squat'),
+      AppColors.primary,
+      reason: 'the text itself is not painted red — the box is',
+    );
+
+    await tester.tap(find.byKey(const ValueKey('exercise-selector-field')));
+    await tester.pumpAndSettle();
+    final rowBox = boxAround(tester, find.text('Overhead Press').first);
+    expect(
+      rowBox?.color,
+      AppColors.dangerBg,
+      reason: 'a deleted popover row wears the same box',
+    );
+    expect((rowBox?.border! as Border).top.color, AppColors.danger);
+    expect((rowBox?.border! as Border).top.width, 1.2);
+    expect(
+      nameColor(tester, 'Overhead Press'),
+      AppColors.inkSecondary,
+      reason: 'an unselected row keeps its quiet, readable name',
+    );
+    expect(
+      boxAround(tester, find.text('Bench Press').first)?.color,
+      Colors.transparent,
+      reason: 'an ordinary unselected row is untouched',
     );
   });
 

@@ -7,6 +7,7 @@ import '../../../core/styles/app_radius.dart';
 import '../../../core/styles/app_spacing.dart';
 import '../../../core/styles/app_text_styles.dart';
 import '../../../core/utils/session_format.dart';
+import '../../../data/models/custom_variation.dart';
 import '../../../data/models/exercise_detail.dart';
 import '../../../data/models/goal.dart';
 import '../../../shared/widgets/container_styles.dart';
@@ -20,117 +21,193 @@ import '../../programs/model/program_achievements.dart';
 String goalExerciseNameFor(Goal goal, Map<String, ExerciseDetail> detailMap) =>
     toProperCase(detailMap[goal.exerciseId]?.name ?? goal.text ?? '');
 
-/// One goal: what it is, and how it is going.
+/// The variation a goal was set on, by name — "No Variation" for the plain
+/// lift, because the picker that wrote the goal says it the same way.
 ///
-/// The name and the target are the two things a goal is, and the row draws
-/// each as its own — the name left, the target right-aligned — so the targets
-/// line up in a column down the list instead of trailing the names in a dash
-/// string (2026-10-10). The same split the review sheets' rows make, so a
-/// goal reads identically on the library, the landing and the scope sheet.
+/// Null when the goal names a variation the active list no longer holds (an
+/// archived one): the caller reads that as "can't name it", and the goal list
+/// says "Archived variation" where its subsection would be.
+String? goalVariationNameFor(Goal goal, List<CustomVariation> variations) {
+  final id = goal.variationId;
+  if (id == null) return 'No Variation';
+  for (final v in variations) {
+    if (v.variationId == id) return v.name;
+  }
+  return null;
+}
+
+/// One goal card: its target, and how it stands.
 ///
-/// Goals carry no scope while they are unattached (2026-10-08): the chip that
-/// named a program or block is retired from the UI, along with every way of
-/// writing one. The `program_id`/`block_id` columns and the resolution around
-/// them stay in the data layer, dormant, like day scheduling.
+/// The library draws these under section headers that name the exercise and
+/// the variation (2026-10-19), so those cards pass neither name and lead with
+/// the target — a goal IS its weight × reps. The target is set at the set
+/// grid's own scale (mono 17 w700; 2026-10-20), so the card speaks the
+/// session's vocabulary and never shouts over the section header it hangs
+/// under.
 ///
-/// The outcome line is the reason the panel exists. A goal met shows the set
-/// that met it — often heavier than the target, which is the interesting part.
-/// A goal missed shows the best attempt, so a near miss reads as progress
-/// rather than as a blank; a goal with no attempt at all says so in words,
-/// because "0 kg × 0" is not a fact about anyone's training.
+/// **The whole card reads on one line** (2026-10-20): the target at the left
+/// and the dates it exists to answer at the right — "5 × 5 kg  ◎ 31 Oct 2026
+/// ✓ 13 Oct 2026" — so a card is one row tall. The target alone takes the
+/// squeeze (it scale-to-fits, never ellipsizes), which keeps the dates at a
+/// steady right column across every card in the list.
+///
+/// **The card states one date, never both** (2026-10-20): a met goal answers
+/// "when did I hit it" with the completion day, a standing one answers "when
+/// is it due" with the deadline — the date that matters is the one it has
+/// not settled yet. The date reads by symbol: a green tick before the
+/// completion, a bullseye ([_targetIcon]) before the deadline; the glyph
+/// carries what the words "Target date" and "Completed" said, and the date is
+/// the only text left to read. A standing goal with no deadline says "None"
+/// rather than leaving the slot blank. Each mark carries its meaning again as
+/// a semantics label, because a glyph is nothing to a screen reader.
+///
+/// **A met goal wears the success chrome** (2026-10-20): [successBox], the
+/// same green fill and green outline the New Goal form's set row turns when
+/// the history already beats the target. The card itself says "done" — a
+/// check in the corner said it twice.
+///
+/// A review's goal rows are their own list with no headers, so they pass the
+/// exercise name and draw it above the target; they pass no [targetDate] and
+/// no [outcome] — an open pass has nothing to say about either yet — and the
+/// date line is omitted rather than guessed.
+///
+/// The row carries no delete control: deleting is the swipe drawer's alone
+/// (2026-10-19), where a gesture can be taken back before the question is
+/// even asked.
 class GoalRow extends StatelessWidget {
   const GoalRow({
     super.key,
-    required this.exerciseName,
+    this.exerciseName,
+    this.variationName,
     this.target = '',
+    this.targetDate,
     this.outcome,
-    required this.onDelete,
   });
 
   /// Built by the caller with [goalExerciseNameFor], because the caller is
-  /// the one holding the exercise detail map.
-  final String exerciseName;
+  /// the one holding the exercise detail map. Null = the section headers name
+  /// the exercise (the library's cards), and the line is omitted.
+  final String? exerciseName;
 
-  /// The target, as its own right-aligned element ("100 kg × 5 reps"), built
-  /// with `goalTargetValue`. Mono, because it is a numeric readout like the
-  /// set grid's cells. Empty = there is no target to state.
+  /// The goal's variation, built with [goalVariationNameFor]. Null = the
+  /// caller has none to draw (the library's headed cards, the review's
+  /// compact rows), and the line is omitted rather than guessed.
+  final String? variationName;
+
+  /// The target — "100 kg × 5", built with `goalTargetValue`. Mono and
+  /// large, because it is the number the goal is. Empty = there is no target
+  /// to state.
   final String target;
+
+  /// The day the goal should be hit by; null = no deadline. Drawn in the
+  /// left half of the date line, so the card always answers the question.
+  final DateTime? targetDate;
 
   /// Null when this row has no verdict to show — the review's goal cards pass
   /// none, and the goals list derives a lifetime one. A goal with no verdict
-  /// is not a failed one, and the row draws nothing rather than claiming
-  /// otherwise.
+  /// is not a failed one, and the row draws no Completed line rather than
+  /// claiming otherwise.
   final GoalAchievement? outcome;
-
-  /// Null when the row has nothing to delete — the review's read-only goal
-  /// view, where the × would offer an action the pass does not have.
-  final VoidCallback? onDelete;
 
   @override
   Widget build(BuildContext context) {
     final o = outcome;
+    final achieved = o?.achieved ?? false;
+    // One date, never two (2026-10-20): a met goal states the day it was hit;
+    // a standing one states the day it is due. The open-ended goal still says
+    // "None" where a standing card would carry its deadline.
+    final targetDay = targetDate == null ? 'None' : _day(targetDate!);
+    final completedDay = achieved
+        ? (o!.evidenceDate == null ? 'Hit' : _day(o.evidenceDate!))
+        : null;
+    // A review's goal rows pass no outcome and no dates, and are owed no mark;
+    // every other card states one of the two questions.
+    final hasMark = achieved || targetDate != null || o != null;
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(AppSpacing.md),
-      decoration: lambdaBox(ContainerTone.surface, radius: AppRadius.md),
-      child: Row(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.sm,
+      ),
+      decoration: achieved
+          ? successBox()
+          : lambdaBox(ContainerTone.surface, radius: AppRadius.md),
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          if (exerciseName != null)
+            Text(
+              exerciseName!,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppFonts.ui(
+                fontSize: AppTextStyles.md,
+                fontWeight: FontWeight.w700,
+                color: AppColors.primary,
+              ),
+            ),
+          if (exerciseName != null && variationName != null) ...[
+            const SizedBox(height: 2),
+            Text(
+              variationName!,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppFonts.ui(
+                fontSize: AppTextStyles.sm,
+                color: AppColors.inkSecondary,
+              ),
+            ),
+          ],
+          if (exerciseName != null && target.isNotEmpty)
+            const SizedBox(height: AppSpacing.md),
+          if (target.isNotEmpty || hasMark)
+            // One line (2026-10-20): the target — the goal itself — at the
+            // left, its single date at the right, so a card is a single row.
+            // The target alone takes the squeeze: it scale-to-fits inside
+            // whatever the date leaves, so a long target never pushes the
+            // date off the card.
+            Row(
               children: [
-                Row(
-                  children: [
-                    if (o?.achieved ?? false) ...[
-                      Icon(
-                        Icons.check_circle,
-                        size: 14,
-                        color: AppColors.success,
-                      ),
-                      const SizedBox(width: 6),
-                    ],
-                    Expanded(
-                      child: Text(
-                        exerciseName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppFonts.ui(
-                          fontSize: AppTextStyles.sm,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.primary,
+                Expanded(
+                  child: target.isEmpty
+                      ? const SizedBox.shrink()
+                      : FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            target,
+                            maxLines: 1,
+                            // The set grid's scale — a goal is one set to
+                            // beat (2026-10-20).
+                            style: AppFonts.mono(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.primary,
+                            ),
+                          ),
                         ),
-                      ),
-                    ),
-                    if (target.isNotEmpty) ...[
-                      const SizedBox(width: 8),
-                      Text(
-                        target,
-                        style: AppFonts.mono(
-                          fontSize: AppTextStyles.xs,
-                          color: AppColors.muted,
-                        ),
-                      ),
-                    ],
-                  ],
                 ),
-                if (o != null) ...[
-                  const SizedBox(height: AppSpacing.xs),
-                  Text(
-                    outcomeLabel(o),
-                    style: AppFonts.mono(
-                      fontSize: AppTextStyles.xs,
-                      color: o.achieved ? AppColors.success : AppColors.muted,
+                if (hasMark) ...[
+                  const SizedBox(width: AppSpacing.sm),
+                  // The settled question outranks the open one (2026-10-20):
+                  // a hit goal states its completion, and its deadline — now
+                  // answered — is not drawn at all.
+                  if (achieved)
+                    _dateMark(
+                      'Completed $completedDay',
+                      completedDay!,
+                      icon: Icons.check,
+                      success: true,
+                    )
+                  else
+                    _dateMark(
+                      'Target date $targetDay',
+                      targetDay,
+                      icon: _targetIcon,
+                      muted: targetDate == null,
                     ),
-                  ),
                 ],
               ],
-            ),
-          ),
-          if (onDelete != null)
-            GestureDetector(
-              onTap: onDelete,
-              child: Icon(Icons.close, size: 16, color: AppColors.muted),
             ),
         ],
       ),
@@ -138,26 +215,53 @@ class GoalRow extends StatelessWidget {
   }
 }
 
-/// The verdict, in one line.
+/// The deadline's mark: Material's bullseye ([Icons.track_changes]) — a mark
+/// to hit, rather than the calendar the form's date field already wears.
+const _targetIcon = Icons.track_changes;
+
+/// One symbol and its date, read as one phrase — "◎ 31 Oct 2026".
 ///
-/// Evidence is optional even on a hit — a goal whose target recorded only one of
-/// the two numbers has nothing to quantify — so every clause stands alone and
-/// the line degrades to "Hit" rather than to a dangling separator.
-String outcomeLabel(GoalAchievement o) {
-  final w = o.evidenceWeight;
-  final r = o.evidenceReps;
-  final value = (w == null || r == null) ? null : '${_fmtNum(w)} kg × $r';
-  final when = o.evidenceDate == null
-      ? null
-      : DateFormat('d MMM').format(o.evidenceDate!.toLocal());
+/// The glyph says what the date is (deadline or completion) and the value says
+/// which day. The pair never wraps: it sits in the card's one line at its
+/// intrinsic width, and the target beside it is the part that gives.
+///
+/// [semanticsLabel] restates the pair in words for a screen reader, which
+/// cannot see the glyph; the [Row] is excluded so the label is all assistive
+/// tech hears.
+Widget _dateMark(
+  String semanticsLabel,
+  String value, {
+  required IconData icon,
+  bool muted = false,
+  bool success = false,
+}) => Semantics(
+  container: true,
+  label: semanticsLabel,
+  excludeSemantics: true,
+  child: Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Icon(
+        icon,
+        size: 14,
+        color: success ? AppColors.success : AppColors.muted,
+      ),
+      const SizedBox(width: AppSpacing.xs),
+      Text(
+        value,
+        maxLines: 1,
+        style: AppFonts.mono(
+          fontSize: AppTextStyles.xs,
+          fontWeight: FontWeight.w700,
+          color: success
+              ? AppColors.success
+              : muted
+              ? AppColors.inkSecondary
+              : AppColors.primary,
+        ),
+      ),
+    ],
+  ),
+);
 
-  if (o.achieved) {
-    final parts = [?value, ?when];
-    return parts.isEmpty ? 'Hit' : 'Hit · ${parts.join(' · ')}';
-  }
-  if (value == null) return 'Not attempted yet';
-  return 'Best ${[value, ?when].join(' · ')}';
-}
-
-String _fmtNum(num n) =>
-    n == n.roundToDouble() ? n.toInt().toString() : n.toString();
+String _day(DateTime date) => DateFormat('d MMM yyyy').format(date.toLocal());

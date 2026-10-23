@@ -155,23 +155,33 @@ class GoalsViewModel {
   /// columns are dormant, and every goal added here is the user's own. A goal
   /// can be created with no run active; a target is a thing to chase, and
   /// nothing about an attempt at it decides whether it can exist.
-  Future<void> addGoal({
+  ///
+  /// True when the row was written. The add sheet keeps its target up on a
+  /// false so a failed write is not also a lost form (2026-10-19).
+  Future<bool> addGoal({
     required String exerciseId,
     required String exerciseName,
     String? variationId,
     num? targetWeight,
     int? targetReps,
+    String? description,
+    DateTime? targetDate,
   }) async {
+    // The add form's notes are the goal's description — blank is no notes,
+    // never an empty string (the same normalization the in-place edit applies).
+    final notes = description?.trim();
     final goal = Goal(
       goalId: _uuid.v4(),
       userId: _userId,
       // The name is captured as the label's fallback: a goal outlives the
       // exercise it names, and a deleted exercise must not leave it blank.
       text: exerciseName,
+      description: (notes?.isEmpty ?? true) ? null : notes,
       exerciseId: exerciseId,
       variationId: variationId,
       targetWeight: targetWeight,
       targetReps: targetReps,
+      targetDate: targetDate == null ? null : dateOnly(targetDate),
     );
     try {
       await _programRepo.createGoal(_userId, goal);
@@ -179,9 +189,11 @@ class GoalsViewModel {
       // yet intact, and its outcome has to be derived against the timeline
       // like every other row's.
       await load();
+      return true;
     } catch (e) {
-      if (_disposed) return;
+      if (_disposed) return false;
       state.value = state.value.copyWith(error: friendlyError(e));
+      return false;
     }
   }
 
@@ -206,28 +218,63 @@ class GoalsViewModel {
     }
   }
 
-  /// Writes a goal's notes, then mirrors the row in state — the sheet reads
-  /// the goal it was opened with, so a stale row would show old text on the
-  /// next open. Blank clears the column, one spelling of "no notes".
+  /// Rewrites a goal from the focused sheet's form — the exercise, variation,
+  /// target, notes and deadline together (2026-10-19).
   ///
-  /// Rethrows: the write is typed straight into a live box, so the failure
-  /// belongs to the sheet that owns that box (it keeps the text and says so),
-  /// not to a state error the screen would surface somewhere else.
-  Future<void> setGoalDescription(String goalId, String description) async {
-    await _programRepo.updateGoalDescription(goalId, description);
-    if (_disposed) return;
-    final text = description.trim();
-    state.value = state.value.copyWith(
-      goals: [
-        for (final g in state.value.goals)
-          if (g.goalId == goalId)
-            text.isEmpty
-                ? g.copyWith(clearDescription: true)
-                : g.copyWith(description: text)
-          else
-            g,
-      ],
+  /// Mirrors the row the repository read back (adjustment history included) and
+  /// re-derives that goal's standing: the target may have moved, and the
+  /// list's verdict is a reading of the numbers. Only the edited row is
+  /// re-derived — the rest of the load is not affected by one goal's target.
+  ///
+  /// Rethrows: the write belongs to the sheet that asked for it, which keeps
+  /// the form standing and says so, not to a state error somewhere else.
+  /// Null = the goal no longer exists; state is left alone.
+  Future<Goal?> updateGoal(
+    String goalId, {
+    required String? exerciseId,
+    String? exerciseName,
+    String? variationId,
+    num? targetWeight,
+    int? targetReps,
+    String? description,
+    DateTime? targetDate,
+  }) async {
+    final updated = await _programRepo.updateGoal(
+      goalId,
+      exerciseId: exerciseId,
+      exerciseName: exerciseName,
+      variationId: variationId,
+      targetWeight: targetWeight,
+      targetReps: targetReps,
+      description: description,
+      targetDate: targetDate,
     );
+    if (_disposed || updated == null) return updated;
+
+    final current = state.value;
+    final outcomes = Map<String, GoalAchievement>.of(current.outcomes);
+    // Lifetime, the same window the load derives every other row's standing
+    // over — one rule, so an edited row cannot disagree with the list.
+    final derived = evaluateGoals(
+      goals: [updated],
+      sets: current.pastSets,
+      from: DateTime.utc(1970),
+      to: DateTime.now().add(const Duration(days: 1)),
+    );
+    if (derived.isEmpty) {
+      outcomes.remove(goalId);
+    } else {
+      outcomes[goalId] = derived.first;
+    }
+
+    state.value = current.copyWith(
+      goals: [
+        for (final g in current.goals)
+          if (g.goalId == goalId) updated else g,
+      ],
+      outcomes: outcomes,
+    );
+    return updated;
   }
 
   void dispose() {

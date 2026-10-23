@@ -3,53 +3,67 @@ import 'package:intl/intl.dart';
 
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
-import '../../../core/styles/app_radius.dart';
 import '../../../core/styles/app_spacing.dart';
 import '../../../core/styles/app_text_styles.dart';
+import '../../../data/models/custom_variation.dart';
+import '../../../data/models/exercise_detail.dart';
+import '../../../data/models/exercise_usage.dart';
 import '../../../data/models/goal.dart';
 import '../../../data/models/session_exercise_set.dart';
 import '../../../shared/widgets/container_styles.dart';
 import '../../../shared/widgets/exercise_target_picker.dart';
-import '../../../shared/widgets/lambda_input.dart';
-import '../../../shared/widgets/lambda_readout.dart';
-import '../../../shared/widgets/pr_event_row.dart' show formatPrNumber;
+import '../../../shared/widgets/glass_button.dart';
 import '../../../shared/widgets/slide_up_modal.dart';
-import '../../exercises/model/exercise_insights.dart';
-import '../../session/model/pr_engine.dart';
-import 'goal_row.dart';
+import '../../programs/model/program_achievements.dart';
 
-/// The focused view of one goal — what it is, what to say about it, and the
-/// history that measures it.
+/// The focused view of one goal — the same form the New goal sheet composes,
+/// resting (2026-10-19).
 ///
-/// "Similar to PRs" is the whole idea. A goal is a set to beat (weight × reps
-/// on one exercise × variation), and the PR lenses already answer the two
-/// questions that set raises: every set that raised the best reps at exactly
-/// this weight ([weightAxisHistory]), and every set that raised the best
-/// weight at this many reps or better ([repAxisHistory]) — the same
-/// equal-or-better reading `evaluateGoals` uses. The sheet invents no
-/// comparison of its own; it shows the two histories the target sits on.
+/// Previewing a goal and creating one are the same act seen from two sides:
+/// the exercise selector, the KG · REPS · VARIATION row, the notes, the
+/// deadline and the floor button are the [ExerciseTargetPicker], the identical
+/// control the add sheet draws. The difference is mode, not layout — the sheet
+/// **rests** in a reading, where every field shows its value and none can be
+/// entered, and Edit (top right) turns the same form live. SAVE replaces ADD
+/// at the floor and stays disabled until the draft actually differs from the
+/// stored goal; saving writes the whole row and returns the sheet to rest.
 ///
-/// The description is writable here and only here, but the sheet **rests** in
-/// view mode: looking at a goal must not be able to change it, so the notes
-/// read back through [LambdaReadout] and edit mode is entered on purpose.
-/// Writes fire per keystroke through [onDescriptionChanged] — one less thing
-/// to lose to a dismiss — and nothing else on this sheet is editable.
+/// There is no per-keystroke write and no "Add a note…" invite any more: a
+/// goal's notes are one of its fields, edited with the rest of it.
 ///
-/// A null [onDescriptionChanged] is the **record** state — a completed
-/// review's goal opened to be read. The notes then rest read-only with no way
-/// into edit mode at all: no pencil, no tap-to-edit, no "Add a note…" invite
-/// on a goal the record left nothing about, and an empty section not drawn.
-/// The two states differ in what can be reached, never in what is shown.
+/// A null [onSave] is the **record** state — a completed review's goal opened
+/// to be read. There is no Edit and no way in; the form is the same form, and
+/// a goal the record left nothing about gets no NOTES section at all rather
+/// than an empty box offering a place to write. The two states differ in what
+/// can be reached, never in what is shown.
 ///
 /// [exerciseName] is built by the caller with `goalExerciseNameFor`, because
-/// the caller is the one holding the exercise detail map. The target needs no
-/// such help — it is the goal's own two numbers ([goalTargetValue]).
+/// the caller is the one holding the exercise detail map — and it is the name
+/// a goal keeps when its exercise has left the library, which the picker
+/// falls back to for an id its [detailMap] no longer holds.
+///
+/// Under the title sits the **created date** — stamped by the row at insert,
+/// never editable — and right of the deadline sits a **history button** (a
+/// clock) that opens the vertical list of every move of that deadline
+/// (2026-10-19). The draft's moves are not recorded until SAVE: a change that
+/// was never written is not a fact.
+///
+/// **The completion reads under the deadline** (2026-10-20): once the stored
+/// target has been met, "Completed 13 Oct 2026" sits beneath the TARGET DATE
+/// field — the goal's two dates, one above the other — and tapping it opens
+/// the workout that hit the goal, the same door the creation form's "you've
+/// already beat this" caption offers. That caption is the creation form's
+/// alone: a stored goal does not need its own target re-checked, and the
+/// completion row says the settled fact instead.
 Future<void> showGoalSheet(
   BuildContext context, {
   required Goal goal,
   required String exerciseName,
-  required Future<void> Function(String description)? onDescriptionChanged,
+  Map<String, ExerciseDetail> detailMap = const {},
+  List<CustomVariation> variations = const [],
   required Future<List<PastSetRow>> Function() loadPastSets,
+  Future<Goal?> Function(ExerciseTarget target)? onSave,
+  void Function(PastSetRow set)? onOpenWorkout,
 }) => showLambdaModal<void>(
   context,
   fitContent: true,
@@ -57,8 +71,11 @@ Future<void> showGoalSheet(
   child: _GoalSheet(
     goal: goal,
     exerciseName: exerciseName,
-    onDescriptionChanged: onDescriptionChanged,
+    detailMap: detailMap,
+    variations: variations,
     loadPastSets: loadPastSets,
+    onSave: onSave,
+    onOpenWorkout: onOpenWorkout,
   ),
 );
 
@@ -66,104 +83,163 @@ class _GoalSheet extends StatefulWidget {
   const _GoalSheet({
     required this.goal,
     required this.exerciseName,
-    required this.onDescriptionChanged,
+    required this.detailMap,
+    required this.variations,
     required this.loadPastSets,
+    required this.onSave,
+    required this.onOpenWorkout,
   });
 
   final Goal goal;
   final String exerciseName;
-
-  /// Writes the notes as they are typed. Null on a record: the sheet is a
-  /// reading, and every way into edit mode is gone with the callback.
-  final Future<void> Function(String description)? onDescriptionChanged;
-
+  final Map<String, ExerciseDetail> detailMap;
+  final List<CustomVariation> variations;
   final Future<List<PastSetRow>> Function() loadPastSets;
+
+  /// Writes the whole goal, returning the row as stored. Null on a record:
+  /// the report it would take is already made, so every way into edit mode —
+  /// and the Edit control itself — is gone with it.
+  final Future<Goal?> Function(ExerciseTarget target)? onSave;
+
+  final void Function(PastSetRow set)? onOpenWorkout;
 
   @override
   State<_GoalSheet> createState() => _GoalSheetState();
 }
 
 class _GoalSheetState extends State<_GoalSheet> {
-  late final TextEditingController _ctrl;
+  /// The goal as it now stands — the row the save read back, so the form, the
+  /// notes and the deadline history follow the write without closing.
+  late Goal _goal = widget.goal;
 
-  /// The last text a write carried — the per-keystroke guard. Opening and
-  /// closing the sheet writes nothing (the seed is the stored value), and
-  /// A → B → A writes each step. It only advances on success, so a failed
-  /// write is carried again by the next keystroke: the whole text is written
-  /// every time, so nothing can be stranded by one failure.
-  late String _lastWritten;
+  /// The form's contents, seeded from the goal. Sheet-local rather than held
+  /// by the list: an edit is committed by SAVE, and a dismissal before it is
+  /// a discarded edit, not a lost draft.
+  final _draft = ExerciseTargetDraft();
+
+  /// The timeline the "already beat this" check reads, empty until it
+  /// arrives. A failed read leaves it empty: the sentence is an extra, and
+  /// claiming nothing is the only honest answer a read that never happened
+  /// has.
+  List<PastSetRow> _sets = const [];
+
+  /// The set that met the stored goal, when one has — the workout the
+  /// completion row under the deadline opens, and the day it states
+  /// (2026-10-20). Derived with the same rule the goal list's cards use
+  /// ([earliestSetReaching] over the list's own "earliest set" evidence), so
+  /// the sheet and the card can never disagree about which day the goal was
+  /// hit.
+  PastSetRow? _completedSet;
 
   bool _editing = false;
-
-  /// The exercise's whole logged history, null until it arrives. A failed
-  /// read is [_historyFailed] rather than an empty list — "no sets at this
-  /// weight" must never be claimed for a read that never happened.
-  List<PastSetRow>? _sets;
-  bool _historyFailed = false;
 
   @override
   void initState() {
     super.initState();
-    _ctrl = TextEditingController(text: widget.goal.description ?? '');
-    _lastWritten = _ctrl.text;
-    // Only an exercise goal with a target has axes to read for; a text-only
-    // goal never touches the timeline.
-    if (_hasAxes) _load();
+    _seedFrom(_goal);
+    // A goal with no exercise has nothing to measure; opening it never reads
+    // the timeline.
+    if (_goal.exerciseId != null) _load();
   }
 
   @override
   void dispose() {
-    _ctrl.dispose();
+    _draft.dispose();
     super.dispose();
   }
 
-  bool get _hasAxes =>
-      widget.goal.exerciseId != null &&
-      (widget.goal.targetWeight != null || widget.goal.targetReps != null);
+  void _seedFrom(Goal goal) => _draft.seed(
+    exerciseId: goal.exerciseId,
+    variationId: goal.variationId,
+    weight: goal.targetWeight,
+    reps: goal.targetReps,
+    notes: goal.description,
+    targetDate: goal.targetDate,
+  );
 
   Future<void> _load() async {
     try {
       final sets = await widget.loadPastSets();
       if (!mounted) return;
-      setState(() => _sets = sets);
+      setState(() {
+        _sets = sets;
+        _completedSet = _deriveCompletedSet();
+      });
     } catch (_) {
-      if (!mounted) return;
-      setState(() => _historyFailed = true);
+      // Silent by design: the achieved sentence is a caption on the form, not
+      // the form's reason to exist, and an error line would outrank the goal
+      // it is about.
     }
   }
 
-  /// Whether the notes can be written at all — false on a record, where the
-  /// sheet shows and writes nothing.
-  bool get _editable => widget.onDescriptionChanged != null;
+  /// The first set that met the STORED target — the set that achieved the
+  /// goal, which is the one the grids mark with `G` and the one whose workout
+  /// the completion row opens (2026-10-20). Read against the stored goal
+  /// rather than the draft: the completion day belongs to the target that was
+  /// actually met, and an edit in progress has not met anything yet.
+  PastSetRow? _deriveCompletedSet() {
+    final goal = _goal;
+    final exerciseId = goal.exerciseId;
+    if (exerciseId == null) return null;
+    return earliestSetReaching(
+      sets: _sets,
+      exerciseId: exerciseId,
+      variationId: goal.variationId,
+      weight: goal.targetWeight,
+      reps: goal.targetReps,
+    );
+  }
 
-  Future<void> _write(String text) async {
-    final onDescriptionChanged = widget.onDescriptionChanged;
-    if (onDescriptionChanged == null || text == _lastWritten) return;
+  /// Whether the draft says something the stored goal does not. Text is
+  /// compared trimmed (blank and absent are one spelling of no notes) and the
+  /// day by calendar day, never by clock.
+  bool get _dirty {
+    final goal = _goal;
+    final weight = double.tryParse(_draft.weightCtrl.text.trim());
+    final reps = int.tryParse(_draft.repsCtrl.text.trim());
+    return _draft.exerciseId != goal.exerciseId ||
+        _draft.variationId != goal.variationId ||
+        weight != goal.targetWeight ||
+        reps != goal.targetReps ||
+        _draft.notesCtrl.text.trim() != (goal.description ?? '') ||
+        !_sameDay(_draft.targetDate, goal.targetDate);
+  }
+
+  /// SAVE: the picker composed the whole form, the host writes it. A success
+  /// adopts the row as stored — re-seeding the boxes from it is what makes
+  /// SAVE go quiet again (the stored notes are trimmed, the date is a day) —
+  /// and returns the sheet to its reading.
+  Future<void> _save(ExerciseTarget target) async {
+    final onSave = widget.onSave;
+    if (onSave == null) return;
     try {
-      await onDescriptionChanged(text);
-      _lastWritten = text;
+      final updated = await onSave(target);
+      if (!mounted || updated == null) return;
+      setState(() {
+        _goal = updated;
+        _seedFrom(updated);
+        // A saved target can change the verdict — the completion row under
+        // the deadline must agree with the card the list will draw
+        // (2026-10-20).
+        _completedSet = _deriveCompletedSet();
+        _editing = false;
+      });
     } catch (_) {
       if (!mounted) return;
-      // The box keeps what was typed — the next keystroke carries it again.
       ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-        const SnackBar(content: Text('Could not save the description.')),
+        const SnackBar(content: Text('Could not save the goal.')),
       );
     }
   }
 
-  void _startEditing() => setState(() => _editing = true);
+  /// A goal day as the app writes it — "19 Oct 2026".
+  String _dayLabel(DateTime date) =>
+      DateFormat('d MMM yyyy').format(date.toLocal());
 
   @override
   Widget build(BuildContext context) {
-    final goal = widget.goal;
-    final description = goal.description?.trim() ?? '';
-    final sets = _sets;
-    // Scoped to the goal's exact pair: null variation is its own scope, the
-    // same rule the lenses and evaluateGoals apply.
-    final pairSets = (goal.exerciseId == null || sets == null)
-        ? const <PastSetRow>[]
-        : setsScoped(sets, goal.exerciseId!, goal.variationId);
-
+    final writable = widget.onSave != null;
+    final hasNotes = (_goal.description ?? '').trim().isNotEmpty;
     return SafeArea(
       child: SingleChildScrollView(
         child: Padding(
@@ -172,220 +248,186 @@ class _GoalSheetState extends State<_GoalSheet> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(
-                'Goal',
-                style: AppFonts.ui(
-                  fontSize: AppTextStyles.lg,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.primary,
-                ),
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              GoalRow(
-                exerciseName: widget.exerciseName,
-                target: goalTargetValue(goal.targetWeight, goal.targetReps),
-                onDelete: null,
-              ),
-              const SizedBox(height: AppSpacing.lg),
-              // A record that left nothing about this goal gets no NOTES
-              // section at all: there is nothing to read back, and an empty
-              // header over an empty space would only promise one.
-              if (_editable || description.isNotEmpty) ...[
-                Row(
-                  children: [
-                    const _SectionLabel('NOTES'),
-                    const Spacer(),
-                    if (_editable && !_editing && description.isNotEmpty)
-                      GestureDetector(
-                        onTap: _startEditing,
-                        child: Icon(
-                          Icons.edit_outlined,
-                          size: 16,
-                          color: AppColors.muted,
-                        ),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                if (_editing)
-                  LambdaInput(
-                    controller: _ctrl,
-                    autofocus: true,
-                    minLines: 2,
-                    maxLines: 5,
-                    elevated: true,
-                    placeholder: 'Why this goal, or what to watch…',
-                    textCapitalization: TextCapitalization.sentences,
-                    onChanged: _write,
-                  )
-                else if (description.isNotEmpty)
-                  GestureDetector(
-                    // Inert on a record — the box is read there, not entered.
-                    onTap: _editable ? _startEditing : null,
-                    child: LambdaReadout(value: description),
-                  )
-                else
-                  GestureDetector(
-                    onTap: _startEditing,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.add_circle_outline,
-                            size: 16,
-                            color: AppColors.accent,
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Goal',
+                          style: AppFonts.ui(
+                            fontSize: AppTextStyles.lg,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.primary,
                           ),
-                          const SizedBox(width: 8),
+                        ),
+                        // When the goal was said — the one date on this sheet
+                        // nothing edits, so it reads as the title's subtext
+                        // rather than as a field (2026-10-19).
+                        if (_goal.createdDate != null) ...[
+                          const SizedBox(height: AppSpacing.xs),
                           Text(
-                            'Add a note…',
-                            style: AppFonts.ui(
-                              fontSize: AppTextStyles.sm,
-                              color: AppColors.accent,
-                              fontWeight: FontWeight.w600,
+                            'Created ${_dayLabel(_goal.createdDate!)}',
+                            style: AppFonts.mono(
+                              fontSize: AppTextStyles.xs,
+                              color: AppColors.inkSecondary,
                             ),
                           ),
                         ],
-                      ),
+                      ],
                     ),
                   ),
-              ],
-              // One section per axis the target carries: the picker takes
-              // weight and reps independently, so a goal may have only one.
-              if (_hasAxes) ...[
-                if (goal.targetWeight != null) ...[
-                  const SizedBox(height: AppSpacing.lg),
-                  _axis(
-                    title: 'AT ${formatPrNumber(goal.targetWeight!)} KG',
-                    empty: 'No sets at ${formatPrNumber(goal.targetWeight!)} '
-                        'kg yet.',
-                    rungs: sets == null
-                        ? null
-                        : weightAxisHistory(pairSets, goal.targetWeight!),
-                    // Every rung is at the same weight — the reps are what
-                    // moved.
-                    value: (s) => '${_repsOf(s)} reps',
-                  ),
+                  if (writable && !_editing)
+                    GlassButton(
+                      label: '',
+                      icon: Icons.edit_outlined,
+                      semanticsLabel: 'Edit goal',
+                      compact: true,
+                      onPressed: () => setState(() => _editing = true),
+                    ),
                 ],
-                if (goal.targetReps != null) ...[
-                  const SizedBox(height: AppSpacing.lg),
-                  _axis(
-                    title: 'AT ${goal.targetReps} REPS',
-                    empty: 'No sets of ${goal.targetReps}+ reps yet.',
-                    rungs: sets == null
-                        ? null
-                        : repAxisHistory(pairSets, goal.targetReps!),
-                    // The rung's weight is the value; the reps it was done for
-                    // are the context (a better rung may beat the target).
-                    value: (s) =>
-                        '${formatPrNumber(s.weight ?? 0)} kg × ${_repsOf(s)}',
-                  ),
-                ],
-              ],
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              ExerciseTargetPicker(
+                detailMap: widget.detailMap,
+                variations: widget.variations,
+                // Read for two things: the order the selector opens on, and
+                // the "already beat this" verdict the row answers with.
+                lastUsed: lastUsedByEntity(_sets),
+                pastSets: _sets,
+                draft: _draft,
+                enabled: _editing,
+                actionLabel: 'SAVE',
+                // Enabled only for a real change, computed on each rebuild so
+                // the form's own keystrokes reach it.
+                actionEnabled: () =>
+                    _editing && _dirty && _draft.exerciseId != null,
+                fallbackExerciseName: widget.exerciseName,
+                // The clock beside the deadline, when there is a history to
+                // read — null on a goal that never moved it (2026-10-19).
+                onOpenTargetDateHistory: _goal.targetDateHistory.isEmpty
+                    ? null
+                    : () => showTargetDateHistorySheet(
+                        context,
+                        history: _goal.targetDateHistory,
+                      ),
+                // A record that left no notes gets no section: an empty box
+                // would offer a place to write on a surface that cannot.
+                showNotes: writable || hasNotes,
+                // The creation caption answers a draft target being composed;
+                // a stored goal states its completion under the deadline
+                // instead (2026-10-20).
+                showAchievedNote: false,
+                completedSet: _completedSet,
+                onOpenWorkout: widget.onOpenWorkout,
+                onAdd: _save,
+              ),
             ],
           ),
         ),
       ),
     );
   }
-
-  /// One axis: its header, then the rungs newest-first.
-  ///
-  /// A null [rungs] is the read still in flight. Capped and scrollable like
-  /// every other list on a sheet — a long history must not push the notes box
-  /// off the sheet, and the keyboard makes the room smaller still.
-  Widget _axis({
-    required String title,
-    required String empty,
-    required List<PastSetRow>? rungs,
-    required String Function(PastSetRow) value,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _SectionLabel(title),
-        const SizedBox(height: AppSpacing.sm),
-        if (_historyFailed)
-          _muted("Couldn't read your history.")
-        else if (rungs == null)
-          _muted('Loading…')
-        else if (rungs.isEmpty)
-          _muted(empty)
-        else
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 200),
-            child: SingleChildScrollView(
-              child: Column(
-                children: [
-                  for (final (i, s) in rungs.reversed.indexed)
-                    _RungRow(
-                      value: value(s),
-                      date: _shortDate(s.sessionCreatedDate.toLocal()),
-                      // The lens returns oldest-first; the newest entry is
-                      // the current best and wears the accent.
-                      newest: i == 0,
-                    ),
-                ],
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-
-  Widget _muted(String text) => Text(
-    text,
-    style: AppFonts.ui(fontSize: AppTextStyles.sm, color: AppColors.muted),
-  );
 }
 
-/// One rung of an axis — a set that raised the best on that axis, with the
-/// day it happened.
+/// The goal's deadline history as a vertical list (2026-10-19) — the sheet
+/// behind the clock button beside the deadline.
 ///
-/// Not [PrEventRow]: that row states the before-facts of a [PrEvent] ("was
-/// 100 kg × 3"), which a lens rung never claims — a rung is the progression
-/// itself, one value. The mono numbers and the accent on the latest are the
-/// same, because the latest rung *is* the current best.
-class _RungRow extends StatelessWidget {
-  const _RungRow({
-    required this.value,
-    required this.date,
-    required this.newest,
-  });
+/// Newest first: the row nearest the top is the move that produced the date
+/// on screen. Each row names the day the deadline became and, under it, when
+/// it changed and what it was before. A null side is "no deadline" and reads
+/// as the history's own spelling, "no date".
+Future<void> showTargetDateHistorySheet(
+  BuildContext context, {
+  required List<GoalTargetDateChange> history,
+}) => showLambdaModal<void>(
+  context,
+  fitContent: true,
+  child: _TargetDateHistorySheet(history: history),
+);
 
-  final String value;
-  final String date;
-  final bool newest;
+class _TargetDateHistorySheet extends StatelessWidget {
+  const _TargetDateHistorySheet({required this.history});
+
+  final List<GoalTargetDateChange> history;
+
+  String _day(DateTime? date) => date == null
+      ? 'no date'
+      : DateFormat('d MMM yyyy').format(date.toLocal());
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: AppSpacing.xs),
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.md,
-        vertical: AppSpacing.sm,
-      ),
-      decoration: lambdaBox(
-        newest ? ContainerTone.accent : ContainerTone.outline,
-        radius: AppRadius.md,
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              value,
-              style: AppFonts.mono(
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                color: newest ? AppColors.accent : AppColors.muted,
+    // Stored oldest first; read newest first — a history is read from what
+    // just happened.
+    final changes = history.reversed.toList();
+    return SafeArea(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(AppSpacing.xl),
+        child: Column(
+          key: const ValueKey('goal-target-date-history-sheet'),
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Target date changes',
+              style: AppFonts.ui(
+                fontSize: AppTextStyles.lg,
+                fontWeight: FontWeight.w800,
+                color: AppColors.primary,
               ),
             ),
+            const SizedBox(height: AppSpacing.lg),
+            for (var i = 0; i < changes.length; i++) ...[
+              if (i > 0) const SizedBox(height: AppSpacing.sm),
+              _row(changes[i]),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _row(GoalTargetDateChange change) {
+    final to = change.to;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      // The field the clock sits in, worn by every row — one chrome for the
+      // deadline and the moves it made.
+      decoration: glassBox(AppColors.primary),
+      child: Row(
+        children: [
+          Icon(
+            Icons.event_outlined,
+            size: 16,
+            color: to == null ? AppColors.muted : AppColors.primary,
           ),
-          Text(
-            date,
-            style: AppFonts.mono(
-              fontSize: AppTextStyles.xs,
-              color: AppColors.muted,
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  to == null ? 'No target date' : _day(to),
+                  style: AppFonts.ui(
+                    fontSize: AppTextStyles.sm,
+                    fontWeight: to == null ? FontWeight.w500 : FontWeight.w700,
+                    color: to == null
+                        ? AppColors.inkSecondary
+                        : AppColors.primary,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Changed ${_day(change.changedAt)} · was ${_day(change.from)}',
+                  style: AppFonts.mono(
+                    fontSize: AppTextStyles.xs,
+                    color: AppColors.inkSecondary,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -394,26 +436,9 @@ class _RungRow extends StatelessWidget {
   }
 }
 
-class _SectionLabel extends StatelessWidget {
-  const _SectionLabel(this.text);
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) => Text(
-    text,
-    style: AppFonts.mono(
-      fontSize: AppTextStyles.xs,
-      fontWeight: FontWeight.w700,
-      letterSpacing: 1.0,
-      color: AppColors.muted,
-    ),
-  );
+/// Whether two goal dates name the same calendar day. Null is "no deadline",
+/// and equals only itself.
+bool _sameDay(DateTime? a, DateTime? b) {
+  if (a == null || b == null) return a == null && b == null;
+  return a.year == b.year && a.month == b.month && a.day == b.day;
 }
-
-/// The reps a set logged. A lens never emits a set without them, but the row
-/// degrades to a dash rather than crashing on one that somehow has none.
-String _repsOf(PastSetRow s) =>
-    s.reps.isEmpty ? '—' : formatPrNumber(s.reps.first);
-
-String _shortDate(DateTime d) => DateFormat('d MMM').format(d);

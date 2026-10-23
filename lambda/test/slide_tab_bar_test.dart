@@ -23,21 +23,19 @@ void main() {
         decoration.color == AppColors.accent;
   });
 
-  Future<void> pump(
-    WidgetTester tester, {
-    Set<int> dotTabs = const {},
-  }) => tester.pumpWidget(
-    MaterialApp(
-      home: Scaffold(
-        body: SlideTabBar(
-          tabs: const ['Workouts', 'Goals'],
-          activeIndex: 0,
-          onTap: (_) {},
-          dotTabs: dotTabs,
+  Future<void> pump(WidgetTester tester, {Set<int> dotTabs = const {}}) =>
+      tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SlideTabBar(
+              tabs: const ['Workouts', 'Goals'],
+              activeIndex: 0,
+              onTap: (_) {},
+              dotTabs: dotTabs,
+            ),
+          ),
         ),
-      ),
-    ),
-  );
+      );
 
   testWidgets('a strip with nothing pending is labels alone', (tester) async {
     await pump(tester);

@@ -238,7 +238,8 @@ class _RunConfigSheetState extends State<_RunConfigSheet> {
               widget.warning!,
               style: AppFonts.ui(
                 fontSize: AppTextStyles.sm,
-                color: AppColors.muted,
+                color: AppColors.inkSecondary,
+                height: 1.4,
               ),
             ),
           ],
@@ -256,7 +257,8 @@ class _RunConfigSheetState extends State<_RunConfigSheet> {
                 'blocks, and this one has none yet.',
                 style: AppFonts.ui(
                   fontSize: AppTextStyles.sm,
-                  color: AppColors.muted,
+                  color: AppColors.inkSecondary,
+                  height: 1.4,
                 ),
               )
             else
@@ -282,7 +284,7 @@ class _RunConfigSheetState extends State<_RunConfigSheet> {
                   : _blockLengthLine(widget.block!),
               style: AppFonts.ui(
                 fontSize: AppTextStyles.sm,
-                color: AppColors.muted,
+                color: AppColors.inkSecondary,
               ),
             ),
           ] else if (widget.run != null || !widget.usesBlocks) ...[
@@ -324,13 +326,13 @@ class _RunConfigSheetState extends State<_RunConfigSheet> {
   }
 
   Widget _label(String text) => Text(
-        text,
-        style: AppFonts.ui(
-          fontSize: AppTextStyles.sm,
-          fontWeight: FontWeight.w600,
-          color: AppColors.primary,
-        ),
-      );
+    text,
+    style: AppFonts.ui(
+      fontSize: AppTextStyles.sm,
+      fontWeight: FontWeight.w600,
+      color: AppColors.primary,
+    ),
+  );
 }
 
 /// The block this run will follow, named.

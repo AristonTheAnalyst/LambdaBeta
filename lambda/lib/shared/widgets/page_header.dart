@@ -31,22 +31,24 @@ class PageHeader extends StatelessWidget {
           padding: EdgeInsets.only(top: topPadding),
           decoration: BoxDecoration(
             color: AppColors.bg,
-            border: Border(bottom: BorderSide(color: AppColors.border, width: 1)),
+            border: Border(
+              bottom: BorderSide(color: AppColors.border, width: 1),
+            ),
           ),
           child: SizedBox(
             height: 52,
             child: Stack(
               alignment: Alignment.center,
               children: [
-                if (left != null)
-                  Positioned(left: 16, child: left!),
+                if (left != null) Positioned(left: 16, child: left!),
                 Positioned(
                   left: 88,
                   right: 88,
                   top: 0,
                   bottom: 0,
                   child: Center(
-                    child: titleWidget ??
+                    child:
+                        titleWidget ??
                         Text(
                           title,
                           style: AppFonts.ui(
@@ -59,8 +61,7 @@ class PageHeader extends StatelessWidget {
                         ),
                   ),
                 ),
-                if (right != null)
-                  Positioned(right: 16, child: right!),
+                if (right != null) Positioned(right: 16, child: right!),
               ],
             ),
           ),

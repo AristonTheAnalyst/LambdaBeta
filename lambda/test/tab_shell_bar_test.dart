@@ -10,7 +10,13 @@ import 'package:lambda/shared/router/app_router.dart';
 void main() {
   group('showBottomNavFor', () {
     test('every tab root carries the bar', () {
-      for (final root in ['/session', '/exercises', '/profile', '/dev']) {
+      for (final root in [
+        '/session',
+        '/exercises',
+        '/friends',
+        '/profile',
+        '/dev',
+      ]) {
         expect(showBottomNavFor(root), isTrue, reason: root);
       }
     });
@@ -22,8 +28,10 @@ void main() {
         '/exercises/programs/p1/history',
         '/exercises/guide',
         '/exercises/exercise/e1',
+        '/friends/u1',
         '/profile/detail',
         '/dev/gallery',
+        '/dev/pr-history',
       ]) {
         expect(showBottomNavFor(nested), isTrue, reason: nested);
       }
@@ -48,6 +56,45 @@ void main() {
       // Library branch — only the full segment counts.
       expect(showBottomNavFor('/exerciseshelf'), isFalse);
       expect(showBottomNavFor('/profiles'), isFalse);
+      expect(showBottomNavFor('/friendship'), isFalse);
+    });
+
+    test('the friend surfaces light the Friends tab', () {
+      // The friend list sits in the shell; the friend's record is a
+      // top-level route outside it, but it draws its own bar and lights the
+      // tab that opened it (`navRoute: '/friends'`, 2026-10-23).
+      final friends = tabIndexFor('/friends');
+      expect(tabIndexFor('/friends/u1'), friends);
+      expect(tabIndexFor('/friends/u1/sessions/s1'), friends);
+      expect(friends, isNot(tabIndexFor('/session')));
+      expect(friends, isNot(tabIndexFor('/exercises')));
+    });
+  });
+
+  /// The PR Lab's stage keeps its floor under the keyboard; every other page
+  /// lifts it. The whole point is that the rule reaches exactly one route.
+  group('shellResizesForKeyboard', () {
+    test('every production page lifts its floor for the keyboard', () {
+      for (final location in [
+        '/session',
+        '/exercises',
+        '/exercises/programs/p1/history',
+        '/logs',
+        '/profile',
+        '/dev',
+        '/dev/pr-history',
+      ]) {
+        expect(shellResizesForKeyboard(location), isTrue, reason: location);
+      }
+    });
+
+    test('the PR Lab lets the keyboard paint over its floor', () {
+      expect(shellResizesForKeyboard('/dev/pr-lab'), isFalse);
+    });
+
+    test('a path that merely starts with the lab route still lifts', () {
+      // Only the full segment counts — the same rule the bar's branches use.
+      expect(shellResizesForKeyboard('/dev/pr-labs'), isTrue);
     });
   });
 }

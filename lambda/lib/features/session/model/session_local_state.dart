@@ -12,10 +12,26 @@ class ExerciseHistorySession {
   final List<PastSetRow> sets;
 }
 
+/// What the date bar's arrows walk (2026-10-23).
+///
+/// EXERCISE is the default on both session surfaces: a step reads the
+/// exercise on the card in the neighbouring session, swapping only the
+/// card's sets — the PR Lab's pager. SESSION walks whole records, swapping
+/// the page underneath the bar (the live page's peek, the viewer's
+/// `walkTo`).
+enum SessionDateMode {
+  /// The card's exercise, performance by performance, newest first.
+  exercise,
+
+  /// Whole completed sessions, newest first.
+  session,
+}
+
 /// Groups a user's full past-sets timeline into one [ExerciseHistorySession]
 /// per exercise per workout, newest first.
 Map<String, List<ExerciseHistorySession>> groupHistoryByExercise(
-    List<PastSetRow> pastSets) {
+  List<PastSetRow> pastSets,
+) {
   final byExercise = <String, Map<String, List<PastSetRow>>>{};
   for (final s in pastSets) {
     final exId = s.exerciseId;
@@ -24,13 +40,16 @@ Map<String, List<ExerciseHistorySession>> groupHistoryByExercise(
     byWorkout.putIfAbsent(s.sessionId, () => []).add(s);
   }
   return byExercise.map((exerciseId, byWorkout) {
-    final sessions = byWorkout.values
-        .map((sets) => ExerciseHistorySession(
-              date: sets.first.sessionCreatedDate,
-              sets: sets,
-            ))
-        .toList()
-      ..sort((a, b) => b.date.compareTo(a.date));
+    final sessions =
+        byWorkout.values
+            .map(
+              (sets) => ExerciseHistorySession(
+                date: sets.first.sessionCreatedDate,
+                sets: sets,
+              ),
+            )
+            .toList()
+          ..sort((a, b) => b.date.compareTo(a.date));
     return MapEntry(exerciseId, sessions);
   });
 }
@@ -51,7 +70,11 @@ int levenshteinDistance(String a, String b) {
       final deletion = prev[j] + 1;
       final insertion = cur[j - 1] + 1;
       final substitution = prev[j - 1] + cost;
-      cur[j] = [deletion, insertion, substitution].reduce((x, y) => x < y ? x : y);
+      cur[j] = [
+        deletion,
+        insertion,
+        substitution,
+      ].reduce((x, y) => x < y ? x : y);
     }
     prev = cur;
   }

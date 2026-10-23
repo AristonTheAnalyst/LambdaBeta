@@ -178,8 +178,9 @@ class FloatingBarOverlay extends StatelessWidget {
   Widget build(BuildContext context) {
     // A bar stacked above is a bar's height plus the gap it floats on: bars
     // stack at the rhythm they float at.
-    final aboveInset =
-        above == null ? 0.0 : FloatingBar.barHeight + FloatingBar.floatGap;
+    final aboveInset = above == null
+        ? 0.0
+        : FloatingBar.barHeight + FloatingBar.floatGap;
     return Stack(
       children: [
         _FloatingBarScope(aboveInset: aboveInset, child: child),

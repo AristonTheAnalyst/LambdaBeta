@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_fonts.dart';
 import '../../core/styles/app_spacing.dart';
+import '../../core/styles/app_text_styles.dart';
 import '../../core/utils/name_limit.dart';
 import '../../features/session/model/session_local_state.dart';
 import './container_styles.dart';
@@ -60,6 +61,11 @@ DateTime? lastUsedFromHistory(
 /// [onAdd] null leaves unticked rows inert and muted, [onRemoveRequest] null
 /// leaves a tick as information rather than a control, and [onCreate] null
 /// hides the create row.
+///
+/// [autofocusSearch] defaults to true — the session screens open the picker to
+/// search, so the keyboard rising with it is the point. The goals filter
+/// passes false (2026-10-20): it already opens on a narrowed list, so the
+/// sheet arrives list-first and the keyboard waits for a tap on the field.
 void showAddExerciseModal(
   BuildContext context, {
   required Listenable listenable,
@@ -70,6 +76,7 @@ void showAddExerciseModal(
   Future<String?> Function(String name)? onCreate,
   bool Function()? isCreating,
   String title = 'Add/Remove Exercises',
+  bool autofocusSearch = true,
 }) {
   showLambdaModal(
     context,
@@ -84,6 +91,7 @@ void showAddExerciseModal(
       onCreate: onCreate,
       isCreating: isCreating,
       title: title,
+      autofocusSearch: autofocusSearch,
     ),
   );
 }
@@ -94,6 +102,7 @@ class _AddExerciseModalContent extends StatefulWidget {
     required this.entries,
     required this.isAdded,
     required this.title,
+    required this.autofocusSearch,
     this.onAdd,
     this.onRemoveRequest,
     this.onCreate,
@@ -108,6 +117,7 @@ class _AddExerciseModalContent extends StatefulWidget {
   final Future<String?> Function(String name)? onCreate;
   final bool Function()? isCreating;
   final String title;
+  final bool autofocusSearch;
 
   @override
   State<_AddExerciseModalContent> createState() =>
@@ -138,8 +148,10 @@ class _AddExerciseModalContentState extends State<_AddExerciseModalContent> {
   /// recently used (never-used last), then alphabetically.
   List<AddExerciseEntry> get _filtered {
     final q = _query.toLowerCase();
-    final matches =
-        widget.entries().where((e) => e.name.toLowerCase().contains(q)).toList();
+    final matches = widget
+        .entries()
+        .where((e) => e.name.toLowerCase().contains(q))
+        .toList();
     matches.sort((a, b) {
       // What is already in the workout rises to the top: the sheet answers
       // "what is active" before "what else could be".
@@ -221,8 +233,9 @@ class _AddExerciseModalContentState extends State<_AddExerciseModalContent> {
             ),
             const SizedBox(height: AppSpacing.lg),
             LambdaSearchField(
+              key: const ValueKey('add-exercise-search'),
               controller: _searchController,
-              autofocus: true,
+              autofocus: widget.autofocusSearch,
               showIcon: true,
               hint: 'Search exercises…',
               // The text *is* the new name when the create row is used, so the
@@ -233,7 +246,10 @@ class _AddExerciseModalContentState extends State<_AddExerciseModalContent> {
               elevated: true,
               onChanged: (v) => setState(() => _query = v),
             ),
-            if (_isNaming) ...[
+            // The counter belongs to naming a new exercise, so it only shows
+            // where the create row does — a caller with no `onCreate` (the
+            // goals filter) is searching, not naming.
+            if (_isNaming && widget.onCreate != null) ...[
               const SizedBox(height: 4),
               NameLimitCounter(length: _query.trim().length),
             ],
@@ -261,10 +277,14 @@ class _AddExerciseModalContentState extends State<_AddExerciseModalContent> {
                         // Visible but inert while a create is in flight — a row
                         // that vanished under the finger would read as a
                         // mis-tap.
-                        onTap: (widget.isCreating?.call() ?? false) ? null : _create,
+                        onTap: (widget.isCreating?.call() ?? false)
+                            ? null
+                            : _create,
                         accent: true,
                       ),
-                    if (_filtered.isEmpty && !_canCreate && _query.trim().isNotEmpty)
+                    if (_filtered.isEmpty &&
+                        !_canCreate &&
+                        _query.trim().isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.symmetric(
                           vertical: AppSpacing.lg,
@@ -273,8 +293,8 @@ class _AddExerciseModalContentState extends State<_AddExerciseModalContent> {
                           child: Text(
                             'No exercises found',
                             style: AppFonts.ui(
-                              fontSize: 13,
-                              color: AppColors.muted,
+                              fontSize: AppTextStyles.caption,
+                              color: AppColors.inkSecondary,
                             ),
                           ),
                         ),

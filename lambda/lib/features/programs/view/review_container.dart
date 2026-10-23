@@ -8,6 +8,7 @@ import '../../../core/styles/app_radius.dart';
 import '../../../core/styles/app_spacing.dart';
 import '../../../core/styles/app_text_styles.dart';
 import '../../../core/utils/session_format.dart';
+import '../../../data/models/custom_variation.dart';
 import '../../../data/models/exercise_detail.dart';
 import '../../../data/models/goal.dart';
 import '../../../data/models/planned_session.dart';
@@ -24,6 +25,7 @@ import '../../../shared/widgets/container_styles.dart';
 import '../../../shared/widgets/exercise_target_picker.dart';
 import '../../../shared/widgets/floating_bar.dart';
 import '../../../shared/widgets/glass_button.dart';
+import '../../../shared/widgets/header_icon_button.dart';
 import '../../../shared/widgets/page_header.dart';
 import '../../../shared/widgets/scroll_shrink_nav_bar.dart';
 import '../../../shared/widgets/slide_tab_bar.dart';
@@ -212,8 +214,7 @@ class ReviewSession {
   ReviewSession get asLanding => copyWith(clearActiveSession: true);
 
   /// How many of the set have been Done.
-  int get reviewedCount =>
-      sessionIds.where(reviewed.containsKey).length;
+  int get reviewedCount => sessionIds.where(reviewed.containsKey).length;
 
   /// The same pass with the scope, the ticks, or the open workout moved on.
   ///
@@ -270,9 +271,9 @@ class ReviewScope extends InheritedNotifier<ValueNotifier<ReviewSession?>> {
 /// this is the backstop behind them.
 Future<bool?> startReview(BuildContext context, ReviewSession session) {
   if (reviewSessionNotifier.value != null) {
-    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-      const SnackBar(content: Text('A review is already open.')),
-    );
+    ScaffoldMessenger.maybeOf(
+      context,
+    )?.showSnackBar(const SnackBar(content: Text('A review is already open.')));
     return Future<bool?>.value();
   }
   reviewSessionNotifier.value = session;
@@ -336,14 +337,11 @@ ReviewSession completedReviewSession({
 /// [ReviewRoute]'s dispose never clears a session it did not set. Refuses
 /// while a pass is live for the mirror-image reason [startReview] refuses:
 /// the notifier and the ceremony answer for one review at a time.
-Future<bool?> openCompletedReview(
-  BuildContext context,
-  ReviewSession session,
-) {
+Future<bool?> openCompletedReview(BuildContext context, ReviewSession session) {
   if (reviewSessionNotifier.value != null) {
-    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-      const SnackBar(content: Text('A review is already open.')),
-    );
+    ScaffoldMessenger.maybeOf(
+      context,
+    )?.showSnackBar(const SnackBar(content: Text('A review is already open.')));
     return Future<bool?>.value();
   }
   return Navigator.of(context, rootNavigator: true).push<bool>(
@@ -416,8 +414,7 @@ class _ReviewRouteState extends State<ReviewRoute> {
   late final _planned = widget.plannedRepository ?? PlannedSessionRepository();
   late final _programs = widget.programRepository ?? ProgramRepository();
   late final _exercises = widget.exerciseRepository ?? ExerciseRepository();
-  late final _history =
-      widget.historyRepository ?? ProgramHistoryRepository();
+  late final _history = widget.historyRepository ?? ProgramHistoryRepository();
 
   /// The set as the landing shows it, resolved from the live rows — null
   /// until the read lands, so a card never shows a workout the read has not
@@ -428,6 +425,12 @@ class _ReviewRouteState extends State<ReviewRoute> {
   /// read lands. An id that no longer resolves is dropped, not shown as a
   /// hole.
   List<_GoalCard>? _goals;
+
+  /// The live dims the card names resolve through, kept for the focused goal
+  /// sheet: a goal opened from a card names its exercise and its variation
+  /// from the identical maps the card itself used (2026-10-19).
+  Map<String, ExerciseDetail> _details = const {};
+  List<CustomVariation> _variations = const [];
 
   bool get _loading => _cards == null || _goals == null;
 
@@ -491,6 +494,11 @@ class _ReviewRouteState extends State<ReviewRoute> {
     final details = byId.isEmpty
         ? const <String, ExerciseDetail>{}
         : await _exercises.fetchExerciseDetailMap(_userId);
+    // The focused sheet's variation cell needs the library, and a card's goal
+    // may well carry a variation — read with the names, once.
+    final variations = byId.isEmpty
+        ? const <CustomVariation>[]
+        : await _exercises.fetchVariations(_userId);
 
     final goals = <_GoalCard>[];
     for (final id in ids) {
@@ -508,7 +516,11 @@ class _ReviewRouteState extends State<ReviewRoute> {
       );
     }
     if (!mounted) return;
-    setState(() => _goals = goals);
+    setState(() {
+      _goals = goals;
+      _details = details;
+      _variations = variations;
+    });
   }
 
   /// Loads the notes the review already carries — it may be a resume, and the
@@ -529,10 +541,12 @@ class _ReviewRouteState extends State<ReviewRoute> {
       if (reviewSessionNotifier.value?.reviewId != widget.session.reviewId) {
         return;
       }
-      reviewNotesNotifier.value =
-          Map<String, String>.unmodifiable(row.exerciseNotes);
-      reviewWorkoutNotesNotifier.value =
-          Map<String, String>.unmodifiable(row.workoutNotes);
+      reviewNotesNotifier.value = Map<String, String>.unmodifiable(
+        row.exerciseNotes,
+      );
+      reviewWorkoutNotesNotifier.value = Map<String, String>.unmodifiable(
+        row.workoutNotes,
+      );
     });
   }
 
@@ -554,8 +568,7 @@ class _ReviewRouteState extends State<ReviewRoute> {
     // open. A record never owns the notifier, and says so structurally rather
     // than by the id happening not to match.
     final reviewId = widget.session.reviewId;
-    if (!widget.readOnly &&
-        reviewSessionNotifier.value?.reviewId == reviewId) {
+    if (!widget.readOnly && reviewSessionNotifier.value?.reviewId == reviewId) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (reviewSessionNotifier.value?.reviewId == reviewId) {
           reviewSessionNotifier.value = null;
@@ -584,7 +597,8 @@ class _ReviewRouteState extends State<ReviewRoute> {
     // it. The lookup still happens (`maybeOf`) so the dependency is declared
     // in the one branch that wants it.
     final scoped = ReviewScope.maybeOf(context);
-    final live = (!widget.readOnly &&
+    final live =
+        (!widget.readOnly &&
             scoped != null &&
             scoped.reviewId == widget.session.reviewId)
         ? scoped
@@ -611,6 +625,8 @@ class _ReviewRouteState extends State<ReviewRoute> {
       session: live,
       cards: cards,
       goals: _goals!,
+      detailMap: _details,
+      variations: _variations,
       missingCount: live.sessionIds.length - cards.length,
       readOnly: widget.readOnly,
       // A pass opens the real editor; a record opens the workout as the
@@ -619,7 +635,7 @@ class _ReviewRouteState extends State<ReviewRoute> {
           ? _openRecordWorkout
           : (card) => _openWorkout(live, card),
       onScopeChanged: _syncScope,
-      onGoalDescriptionChanged: _setGoalDescription,
+      onGoalSaved: _saveGoal,
       onFinish: widget.readOnly
           ? null
           : () => _finishPass(
@@ -664,33 +680,45 @@ class _ReviewRouteState extends State<ReviewRoute> {
     await _loadGoals();
   }
 
-  /// Writes a goal's notes from the landing's focused sheet, then rebuilds
-  /// the card in place — the sheet reads the goal row it was opened with, so
-  /// a card left stale would show the old text on the next tap.
+  /// Writes a goal from the landing's focused sheet, then rebuilds the card in
+  /// place — the sheet reads the goal row it was opened with, and the card's
+  /// name and target are live readings, so a card left stale would show the
+  /// old target on the next tap (2026-10-19).
   ///
-  /// Failures propagate: the write comes from a live box, and the sheet that
-  /// owns it is the one that keeps the text and says it could not save.
-  Future<void> _setGoalDescription(String goalId, String description) async {
-    await ProgramRepository().updateGoalDescription(goalId, description);
-    if (!mounted) return;
+  /// Failures propagate: the sheet that asked for the write is the one that
+  /// keeps its form standing and says it could not save.
+  Future<Goal?> _saveGoal(String goalId, ExerciseTarget target) async {
+    final updated = await _programs.updateGoal(
+      goalId,
+      exerciseId: target.exerciseId,
+      exerciseName: target.exerciseName,
+      variationId: target.variationId,
+      targetWeight: target.weight,
+      targetReps: target.reps,
+      description: target.notes,
+      targetDate: target.targetDate,
+    );
+    if (!mounted || updated == null) return updated;
     final goals = _goals;
-    if (goals == null) return;
-    final text = description.trim();
-    setState(() {
-      _goals = [
-        for (final card in goals)
-          if (card.goal.goalId == goalId)
-            _GoalCard(
-              goal: text.isEmpty
-                  ? card.goal.copyWith(clearDescription: true)
-                  : card.goal.copyWith(description: text),
-              exerciseName: card.exerciseName,
-              target: card.target,
-            )
-          else
-            card,
-      ];
-    });
+    if (goals != null) {
+      setState(() {
+        _goals = [
+          for (final card in goals)
+            if (card.goal.goalId == goalId)
+              _GoalCard(
+                goal: updated,
+                exerciseName: goalExerciseNameFor(updated, _details),
+                target: goalTargetValue(
+                  updated.targetWeight,
+                  updated.targetReps,
+                ),
+              )
+            else
+              card,
+        ];
+      });
+    }
+    return updated;
   }
 
   /// Opens one workout: the real editor, on the root navigator, with the
@@ -862,7 +890,7 @@ class _ReviewRouteState extends State<ReviewRoute> {
             Text(
               'The workouts in this review are no longer available.',
               textAlign: TextAlign.center,
-              style: AppFonts.ui(color: AppColors.muted),
+              style: AppFonts.ui(color: AppColors.inkSecondary, height: 1.4),
             ),
             const SizedBox(height: AppSpacing.lg),
             TextButton(
@@ -914,14 +942,14 @@ Future<bool> confirmPartialFinish(
       content: Text(
         'Finish anyway? The workouts left unticked are saved with the '
         'review as they stand.',
-        style: AppFonts.ui(color: AppColors.muted),
+        style: AppFonts.ui(color: AppColors.inkSecondary, height: 1.4),
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(false),
           child: Text(
             'Keep reviewing',
-            style: AppFonts.ui(color: AppColors.muted),
+            style: AppFonts.ui(color: AppColors.inkSecondary),
           ),
         ),
         TextButton(
@@ -1047,10 +1075,12 @@ class _ReviewLanding extends StatefulWidget {
     required this.session,
     required this.cards,
     required this.goals,
+    required this.detailMap,
+    required this.variations,
     required this.missingCount,
     required this.onOpen,
     required this.onScopeChanged,
-    required this.onGoalDescriptionChanged,
+    required this.onGoalSaved,
     required this.onFinish,
     this.readOnly = false,
   });
@@ -1061,6 +1091,11 @@ class _ReviewLanding extends StatefulWidget {
   /// The goals the pass covers, resolved. A goal has no editor — it is read,
   /// not walked — so its card opens the focused sheet instead of a route.
   final List<_GoalCard> goals;
+
+  /// The names the focused sheet resolves its picker against — the same maps
+  /// the cards' names were built from.
+  final Map<String, ExerciseDetail> detailMap;
+  final List<CustomVariation> variations;
 
   /// Workouts in the set that no longer resolve — dropped from the cards but
   /// still part of what the review covers.
@@ -1077,10 +1112,13 @@ class _ReviewLanding extends StatefulWidget {
   /// workouts and goals now, and the route above re-reads it.
   final Future<void> Function() onScopeChanged;
 
-  /// Writes a goal's notes from the focused sheet. The route above owns the
-  /// row and the rebuild; this page only hands the write through.
-  final Future<void> Function(String goalId, String description)
-  onGoalDescriptionChanged;
+  /// Writes a goal from the focused sheet. A pass opens the same form the
+  /// Library's Goals tab opens, so an edit reaches the goal row itself; the
+  /// route above owns the row and the rebuild, and this page only hands the
+  /// write through. A record never calls it — its sheet is opened with no
+  /// writer at all.
+  final Future<Goal?> Function(String goalId, ExerciseTarget target)
+  onGoalSaved;
 
   /// Finishes the pass. Null on a record — it is closed already.
   final Future<void> Function()? onFinish;
@@ -1161,8 +1199,11 @@ class _ReviewLandingState extends State<_ReviewLanding> {
             children: [
               PageHeader(
                 title: session.title ?? 'Review',
-                left: IconButton(
-                  icon: Icon(Icons.arrow_back, color: AppColors.primary),
+                left: HeaderIconButton(
+                  icon: Icons.arrow_back_ios_new,
+                  semanticsLabel: 'Back',
+                  glyphSize: 18,
+                  color: AppColors.primary,
                   // A record is not unwound — nothing is open to unwind — so
                   // its arrow pops the route it is on.
                   onPressed: () => widget.readOnly
@@ -1303,8 +1344,9 @@ class _ReviewLandingState extends State<_ReviewLanding> {
             actions: [
               SwipeAction(
                 icon: Icons.remove_circle_outline,
-                
+
                 color: AppColors.danger,
+                foreground: AppColors.dangerText,
                 onTap: () => _removeWorkout(card),
               ),
             ],
@@ -1336,7 +1378,10 @@ class _ReviewLandingState extends State<_ReviewLanding> {
           missingCount == 1
               ? '1 workout in this review is no longer available.'
               : '$missingCount workouts in this review are no longer available.',
-          style: AppFonts.ui(fontSize: AppTextStyles.xs, color: AppColors.muted),
+          style: AppFonts.ui(
+            fontSize: AppTextStyles.xs,
+            color: AppColors.inkSecondary,
+          ),
         ),
       ],
     ];
@@ -1348,8 +1393,9 @@ class _ReviewLandingState extends State<_ReviewLanding> {
   /// rather than a second view.
   ///
   /// A record's rows open the same sheet with no writer wired: the report it
-  /// would take is already made, so the sheet reads the goal back whole — its
-  /// description and the history the axes stand on — with edit mode gone.
+  /// would take is already made, so the form rests — every value shown, none
+  /// enterable, no Edit — and a goal the record left nothing about draws its
+  /// NOTES section not at all.
   List<Widget> _goalList() => [
     for (final goal in widget.goals) ...[
       if (widget.readOnly)
@@ -1359,18 +1405,15 @@ class _ReviewLandingState extends State<_ReviewLanding> {
             context,
             goal: goal.goal,
             exerciseName: goal.exerciseName,
-            onDescriptionChanged: null,
+            detailMap: widget.detailMap,
+            variations: widget.variations,
             // The axes are the goal's live history, read the same way the
             // pass reads them: a goal is read, not walked, and a completed
             // review did not freeze the sets it measures.
             loadPastSets: () =>
                 SessionRepository().loadPastSetsTimeline(_currentUserId()),
           ),
-          child: GoalRow(
-            exerciseName: goal.exerciseName,
-            target: goal.target,
-            onDelete: null,
-          ),
+          child: GoalRow(exerciseName: goal.exerciseName, target: goal.target),
         )
       else
         GestureDetector(
@@ -1379,21 +1422,18 @@ class _ReviewLandingState extends State<_ReviewLanding> {
             context,
             goal: goal.goal,
             exerciseName: goal.exerciseName,
-            onDescriptionChanged: (description) =>
-                widget.onGoalDescriptionChanged(goal.goal.goalId, description),
+            detailMap: widget.detailMap,
+            variations: widget.variations,
+            // The pass edits the goal itself through the same form the
+            // Library opens — a goal ticked here is the row, not a copy.
+            onSave: (target) => widget.onGoalSaved(goal.goal.goalId, target),
             // The history is read here, not fetched with the card: a pass can
-            // run for a while, and the sheet's whole point is the axes as they
-            // stand now.
+            // run for a while, and the sheet's whole point is the story as it
+            // stands now.
             loadPastSets: () =>
                 SessionRepository().loadPastSetsTimeline(_currentUserId()),
           ),
-          child: GoalRow(
-            exerciseName: goal.exerciseName,
-            target: goal.target,
-            // No × on the review's copy: an open pass is not where a goal is
-            // deleted, and the row is read here, not managed.
-            onDelete: null,
-          ),
+          child: GoalRow(exerciseName: goal.exerciseName, target: goal.target),
         ),
       const SizedBox(height: AppSpacing.sm),
     ],
@@ -1416,7 +1456,10 @@ class _ReviewLandingState extends State<_ReviewLanding> {
       child: Text(
         'Nothing here yet.',
         textAlign: TextAlign.center,
-        style: AppFonts.ui(fontSize: AppTextStyles.sm, color: AppColors.muted),
+        style: AppFonts.ui(
+          fontSize: AppTextStyles.sm,
+          color: AppColors.inkSecondary,
+        ),
       ),
     ),
   ];
@@ -1683,9 +1726,9 @@ Future<void> editActiveWorkoutNote(
     );
   } catch (e) {
     if (!context.mounted) return;
-    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-      SnackBar(content: Text('Could not save the note: $e')),
-    );
+    ScaffoldMessenger.maybeOf(
+      context,
+    )?.showSnackBar(SnackBar(content: Text('Could not save the note: $e')));
   }
 }
 
@@ -2408,9 +2451,9 @@ class _ReviewBarState extends State<ReviewBar> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _comparing = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not compare: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not compare: $e')));
     }
   }
 
@@ -2476,9 +2519,9 @@ class _ReviewBarState extends State<ReviewBar> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _readingChanges = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not read the changes: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not read the changes: $e')));
     }
   }
 }
@@ -2498,4 +2541,3 @@ String _currentUserId() {
   }
   return id;
 }
-

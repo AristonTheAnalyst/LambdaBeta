@@ -226,7 +226,10 @@ class ProgramReview {
     final known = {for (final l in links) l.sessionId};
     final stored = storedSessionIds;
     if (stored != null) {
-      final alive = [for (final id in stored) if (known.contains(id)) id];
+      final alive = [
+        for (final id in stored)
+          if (known.contains(id)) id,
+      ];
       if (alive.isNotEmpty) return alive;
     }
     final single = sessionId;

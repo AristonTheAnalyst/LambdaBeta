@@ -7,6 +7,7 @@ import '../../../core/styles/app_text_styles.dart';
 import '../../../data/models/program_content.dart';
 import '../../../shared/widgets/container_styles.dart';
 import '../../../shared/widgets/slide_up_modal.dart';
+import '../../../shared/widgets/user_name_text.dart';
 import '../model/program_content_diff.dart';
 
 /// The sheet's heading where the app supplies its own. Every review surface
@@ -137,7 +138,7 @@ class _ContentDiffSheet extends StatelessWidget {
               subtitle!,
               style: AppFonts.mono(
                 fontSize: AppTextStyles.xs,
-                color: AppColors.muted,
+                color: AppColors.inkSecondary,
               ),
             ),
           ],
@@ -237,7 +238,9 @@ class _ContentDiffSheet extends StatelessWidget {
       if (own.isEmpty) continue;
 
       widgets.add(_Heading(name: session.name, first: widgets.isEmpty));
-      for (final change in own.where((c) => c.entity == ContentEntity.session)) {
+      for (final change in own.where(
+        (c) => c.entity == ContentEntity.session,
+      )) {
         widgets.add(_Line(change: change, anchor: session.name));
       }
 
@@ -347,18 +350,15 @@ String _lineText(ContentChange change, String anchor) {
   final body = detail == null
       ? null
       : change.oldText != null || change.newText != null
-          ? 'note: $detail'
-          : detail;
+      ? 'note: $detail'
+      : detail;
   final verb = switch (change.kind) {
     ContentChangeKind.added => 'added',
     ContentChangeKind.removed => 'removed',
     ContentChangeKind.moved => 'moved',
     ContentChangeKind.edited => null,
   };
-  final head = <String>[
-    ?subject,
-    ?verb,
-  ].join(' ');
+  final head = <String>[?subject, ?verb].join(' ');
   if (body == null) return head.isEmpty ? change.label : head;
   return head.isEmpty ? body : '$head — $body';
 }
@@ -376,20 +376,20 @@ class _Heading extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-        padding: EdgeInsets.only(
-          top: first ? 0 : AppSpacing.md,
-          bottom: AppSpacing.xs,
-        ),
-        child: Text(
-          name.toUpperCase(),
-          style: AppFonts.mono(
-            fontSize: AppTextStyles.xs,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 1.0,
-            color: AppColors.accent,
-          ),
-        ),
-      );
+    padding: EdgeInsets.only(
+      top: first ? 0 : AppSpacing.md,
+      bottom: AppSpacing.xs,
+    ),
+    child: Text(
+      name.toUpperCase(),
+      style: AppFonts.mono(
+        fontSize: AppTextStyles.xs,
+        fontWeight: FontWeight.w700,
+        letterSpacing: 0.8,
+        color: AppColors.accent,
+      ),
+    ),
+  );
 }
 
 /// One subject's changes: its name, what that amounts to, and the changes as
@@ -435,7 +435,7 @@ class _ChangeCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
-                child: Text(
+                child: UserNameText(
                   title,
                   style: AppFonts.ui(
                     fontSize: AppTextStyles.sm,
@@ -450,7 +450,9 @@ class _ChangeCard extends StatelessWidget {
                 style: AppFonts.mono(
                   fontSize: AppTextStyles.xs,
                   fontWeight: FontWeight.w700,
-                  color: changed ? AppColors.accent : AppColors.muted,
+                  // Status text is read even when the status is "nothing
+                  // changed" — muted never carries a string (2026-10-22).
+                  color: changed ? AppColors.accent : AppColors.inkSecondary,
                 ),
               ),
               // The same rung a note line wears, for the same reason: there
@@ -500,7 +502,7 @@ class _Line extends StatelessWidget {
       _lineText(change, anchor),
       style: AppFonts.ui(
         fontSize: AppTextStyles.sm,
-        color: AppColors.muted,
+        color: AppColors.inkSecondary,
       ),
     );
     if (change.oldText == null && change.newText == null) return text;
@@ -554,7 +556,7 @@ void _showNoteChange(BuildContext context, ContentChange change) {
                   _changeTitle(change),
                   style: AppFonts.mono(
                     fontSize: AppTextStyles.xs,
-                    color: AppColors.muted,
+                    color: AppColors.inkSecondary,
                   ),
                 ),
                 const SizedBox(height: AppSpacing.lg),
@@ -604,9 +606,9 @@ class _NoteBlock extends StatelessWidget {
             label,
             style: AppFonts.mono(
               fontSize: AppTextStyles.xs,
-              fontWeight: FontWeight.w700,
+              fontWeight: FontWeight.w600,
               letterSpacing: 0.8,
-              color: AppColors.muted,
+              color: AppColors.primary,
             ),
           ),
           const SizedBox(height: AppSpacing.xs),
@@ -614,7 +616,8 @@ class _NoteBlock extends StatelessWidget {
             body.isEmpty ? 'No note' : body,
             style: AppFonts.ui(
               fontSize: AppTextStyles.sm,
-              color: body.isEmpty ? AppColors.muted : AppColors.primary,
+              height: 1.4,
+              color: body.isEmpty ? AppColors.inkSecondary : AppColors.primary,
             ),
           ),
         ],
@@ -642,8 +645,8 @@ class _StatLine extends StatelessWidget {
     final (glyph, color) = delta > 0
         ? ('+$delta', AppColors.success)
         : delta < 0
-            ? ('−${-delta}', AppColors.danger)
-            : ('±0', AppColors.muted);
+        ? ('−${-delta}', AppColors.danger)
+        : ('±0', AppColors.inkSecondary);
     return Padding(
       padding: const EdgeInsets.only(bottom: AppSpacing.xs),
       child: Row(
@@ -652,9 +655,9 @@ class _StatLine extends StatelessWidget {
             label,
             style: AppFonts.mono(
               fontSize: AppTextStyles.xs,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 1.0,
-              color: AppColors.muted,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.8,
+              color: AppColors.primary,
             ),
           ),
           const Spacer(),
@@ -688,10 +691,11 @@ class _Note extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Text(
-        text,
-        style: AppFonts.ui(
-          fontSize: AppTextStyles.sm,
-          color: AppColors.muted,
-        ),
-      );
+    text,
+    style: AppFonts.ui(
+      fontSize: AppTextStyles.sm,
+      color: AppColors.inkSecondary,
+      height: 1.4,
+    ),
+  );
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_fonts.dart';
+import '../../core/styles/app_text_styles.dart';
 
 /// The 1–5 feeling rating used by the session flow and the logs detail
 /// screen — one implementation so a feeling rating looks identical
@@ -41,7 +42,10 @@ class FeelingRating extends StatelessWidget {
         if (label != null) ...[
           Text(
             label!,
-            style: AppFonts.ui(fontSize: 13, color: AppColors.muted),
+            style: AppFonts.ui(
+              fontSize: AppTextStyles.caption,
+              color: AppColors.inkSecondary,
+            ),
           ),
           const SizedBox(width: 4),
         ],

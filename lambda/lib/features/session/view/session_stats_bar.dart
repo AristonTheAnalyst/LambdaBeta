@@ -3,134 +3,51 @@ import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
 import '../../../core/styles/app_radius.dart';
 import '../../../core/styles/app_spacing.dart';
-import '../../../core/styles/app_text_styles.dart';
 import '../../../core/utils/session_format.dart';
+import '../../../shared/widgets/bar_icon_button.dart';
 import '../../../shared/widgets/container_styles.dart';
-import '../../../shared/widgets/slide_up_modal.dart';
 import '../viewmodel/session_viewmodel.dart';
 import 'lessons_modal.dart';
+import 'pr_history_sheet.dart';
 
-/// PRS / LESSONS — the active workout's summary stats, in the Training
-/// page's sticky bottom bar.
-/// Both tiles are tappable: PRS opens the session PR breakdown, LESSONS
-/// opens the session lessons breakdown. Rows navigate to the exercise
-/// within the session (lessons also opens that exercise's lessons modal).
+/// The active workout's summary doors, in the Training page's sticky bottom
+/// bar: a trophy and a book, each carrying the ACTIVE exercise's session
+/// gains ([SessionStatsTiles], 2026-10-22). Both tiles are doors, like the PR
+/// Lab's own bar — a `0` gain still hides an exercise's history behind the
+/// trophy and its cues behind the book, so neither goes dead (2026-10-23).
+/// The trophy opens that exercise's PR History sheet, the book its lessons
+/// modal — scoped to the exercise on the card and the session on the desk.
 class SessionStatsBar extends StatelessWidget {
   const SessionStatsBar({super.key, required this.vm});
 
   final SessionViewModel vm;
 
-  /// PR sets grouped by (exerciseId, variationId) — one entry per row of
-  /// the PR breakdown. Derived from the same distinct-set ids the tile and
-  /// the row highlights use (explicit rep-max only), so the group counts
-  /// sum exactly to the tile.
-  List<({String exerciseId, String? variationId, String label, int count})>
-      _prBreakdown() {
-    final groups = <(String, String?), Set<String>>{};
-    final varNames = <(String, String?), String>{};
-    for (final s in vm.sets) {
-      final exerciseId = s.exerciseId;
-      if (exerciseId == null) continue;
-      if (!vm.prSetIds.contains(s.sessionExerciseSetId)) continue;
-      final key = (exerciseId, s.variationId);
-      groups.putIfAbsent(key, () => {}).add(s.sessionExerciseSetId);
-      if (s.variationName != null && s.variationName!.isNotEmpty) {
-        varNames.putIfAbsent(key, () => s.variationName!);
-      }
-    }
-    final out = <({String exerciseId, String? variationId, String label, int count})>[];
-    for (final e in groups.entries) {
-      final exerciseName =
-          toProperCase(vm.exerciseDisplayName(e.key.$1));
-      final varName = varNames[e.key];
-      final label = varName != null
-          ? '$exerciseName · ${toProperCase(varName)}'
-          : exerciseName;
-      out.add((
-        exerciseId: e.key.$1,
-        variationId: e.key.$2,
-        label: label,
-        count: e.value.length,
-      ));
-    }
-    out.sort((a, b) => b.count.compareTo(a.count));
-    return out;
-  }
-
-  /// Exercises in the current session with their lesson counts, in slot
-  /// order.
-  List<({String exerciseId, String label, int count})> _lessonsBreakdown() {
-    final seen = <String>{};
-    final out = <({String exerciseId, String label, int count})>[];
-    for (final slot in vm.exerciseSlots) {
-      for (final exerciseId in slot.exerciseIds) {
-        if (!seen.add(exerciseId)) continue;
-        final count = vm.lessonsThisSession(exerciseId).length;
-        out.add((
-          exerciseId: exerciseId,
-          label: toProperCase(vm.exerciseDisplayName(exerciseId)),
-          count: count,
-        ));
-      }
-    }
-    out.removeWhere((e) => e.count == 0);
-    return out;
-  }
-
-  int _sessionSlotIndexFor(String exerciseId) =>
-      vm.exerciseSlots.indexWhere((s) => s.exerciseIds.contains(exerciseId));
-
-  void _openPrBreakdown(BuildContext context) {
-    final rows = _prBreakdown();
-    showLambdaModal(
+  void _openPrHistory(BuildContext context, String exerciseId) {
+    showPrHistorySheet(
       context,
-      fitContent: true,
-      child: _BreakdownSheet(
-        title: 'Session PRs',
-        rows: [
-          for (final r in rows)
-            (label: r.label, count: r.count, exerciseId: r.exerciseId),
-        ],
-        onRowTap: (exerciseId) {
-          Navigator.of(context, rootNavigator: true).pop();
-          final idx = _sessionSlotIndexFor(exerciseId);
-          if (idx >= 0) vm.tapTab(idx);
-        },
-      ),
+      exerciseName: toProperCase(vm.exerciseDisplayName(exerciseId)),
+      prs: vm.prHistoryFor(exerciseId),
+      sessionSetIds: vm.sessionPrSetIdsFor(exerciseId),
+      sessionStartedAt: vm.workoutStartedAt,
+      sessionIsLive: true,
     );
   }
 
-  void _openLessonsBreakdown(BuildContext context) {
-    final rows = _lessonsBreakdown();
-    showLambdaModal(
+  void _openLessons(BuildContext context, String exerciseId) {
+    showLessonsModal(
       context,
-      fitContent: true,
-      child: _BreakdownSheet(
-        title: 'Session Lessons',
-        accent: false,
-        rows: [
-          for (final r in rows)
-            (label: r.label, count: r.count, exerciseId: r.exerciseId),
-        ],
-        onRowTap: (exerciseId) {
-          Navigator.of(context, rootNavigator: true).pop();
-          final idx = _sessionSlotIndexFor(exerciseId);
-          if (idx >= 0) vm.tapTab(idx);
-          showLessonsModal(
-            context,
-            listenable: vm,
-            lessonsFor: vm.lessonsFor,
-            loadLessonsFor: vm.loadLessonsFor,
-            addLesson: vm.addLesson,
-            toggleLessonPin: vm.toggleLessonPin,
-            deleteLesson: vm.deleteLesson,
-            updateLesson: vm.updateLessonText,
-            exerciseId: exerciseId,
-            exerciseName: toProperCase(vm.exerciseDisplayName(exerciseId)),
-            sessionId: vm.currentWorkoutId,
-          );
-        },
-      ),
+      listenable: vm,
+      lessonsFor: vm.lessonsFor,
+      loadLessonsFor: vm.loadLessonsFor,
+      addLesson: vm.addLesson,
+      toggleLessonPin: vm.toggleLessonPin,
+      deleteLesson: vm.deleteLesson,
+      updateLesson: vm.updateLessonText,
+      exerciseId: exerciseId,
+      exerciseName: toProperCase(vm.exerciseDisplayName(exerciseId)),
+      sessionId: vm.currentWorkoutId,
+      sessionStartedAt: vm.workoutStartedAt,
+      sessionIsLive: true,
     );
   }
 
@@ -139,166 +56,142 @@ class SessionStatsBar extends StatelessWidget {
     return ListenableBuilder(
       listenable: vm,
       builder: (context, _) {
-        final prs = vm.totalPRsThisSession;
-        final lessons =
-            vm.exerciseSlots.fold<int>(0, (sum, slot) {
-              var s = sum;
-              for (final exerciseId in slot.exerciseIds) {
-                s += vm.lessonsThisSession(exerciseId).length;
-              }
-              return s;
-            });
-        return Row(
-          children: [
-            Expanded(
-              child: _summaryTile(
-                label: 'PRS',
-                value: '$prs',
-                highlighted: prs > 0,
-                onTap: prs > 0 ? () => _openPrBreakdown(context) : null,
-              ),
-            ),
-            const SizedBox(width: AppSpacing.sm),
-            Expanded(
-              child: _summaryTile(
-                label: 'LESSONS',
-                value: '$lessons',
-                highlighted: lessons > 0,
-                highlightColor: AppColors.primary,
-                highlightBg: AppColors.surfaceHigh,
-                onTap: lessons > 0 ? () => _openLessonsBreakdown(context) : null,
-              ),
-            ),
-          ],
+        // The tiles speak for the exercise on screen: its own session gains,
+        // and its own doors. The lab's rule, so the number over a tile always
+        // names the feed behind it (2026-10-22).
+        final exerciseId = vm.activeSlot?.activeExerciseId;
+        final prs = exerciseId == null ? 0 : vm.sessionPrCountFor(exerciseId);
+        final lessons = exerciseId == null
+            ? 0
+            : vm.lessonsThisSession(exerciseId).length;
+        return SessionStatsTiles(
+          prCount: prs,
+          lessonCount: lessons,
+          // Doors at any count: the sheets hold the exercise's whole story,
+          // not only this session's additions (2026-10-23).
+          onPrTap: exerciseId == null
+              ? null
+              : () => _openPrHistory(context, exerciseId),
+          onLessonTap: exerciseId == null
+              ? null
+              : () => _openLessons(context, exerciseId),
         );
       },
     );
   }
-
-  /// One PRS/LESSONS tile, styled like a PR-highlighted set row: accentBg
-  /// fill with an accent 1.2 outline when there's something to show.
-  /// Label and value sit side by side so the tile reads as one line.
-  Widget _summaryTile({
-    required String label,
-    required String value,
-    required bool highlighted,
-    Color? highlightColor,
-    Color? highlightBg,
-    VoidCallback? onTap,
-  }) {
-    final color = highlightColor ?? AppColors.accent;
-    final tile = Container(
-      padding: const EdgeInsets.all(AppSpacing.md),
-      // Highlighted tiles are pressables — the glass recipe in the tile's
-      // semantic color, like every other control.
-      decoration: highlighted
-          ? glassBox(color)
-          : BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(AppRadius.md),
-              border: Border.all(color: AppColors.border, width: 0.5),
-            ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text('$label:',
-              style: AppFonts.mono(
-                  fontSize: 13,
-                  letterSpacing: 0.8,
-                  color: highlighted ? color : AppColors.muted)),
-          const SizedBox(width: 6),
-          Text(value,
-              style: AppFonts.mono(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w800,
-                  color: highlighted ? color : AppColors.primary)),
-        ],
-      ),
-    );
-    if (onTap == null) return tile;
-    return GestureDetector(onTap: onTap, child: tile);
-  }
 }
 
-// ── Breakdown sheet ──────────────────────────────────────────────────────────
-
-class _BreakdownSheet extends StatelessWidget {
-  const _BreakdownSheet({
-    required this.title,
-    required this.rows,
-    required this.onRowTap,
-    this.accent = true,
+/// The bar's two doors, drawn (2026-10-22): the trophy's session gain and the
+/// note's, each a glass tile the height of the undo/redo boxes beside them.
+/// Presentational only — the live bar binds a VM, the past-session viewer
+/// binds its own state, and both draw the same tiles.
+///
+/// The count is a gain: "+2", or "0" when the session added none (a "+0"
+/// would claim a change there wasn't). The count never decides whether the
+/// tile is a door: both session surfaces always hand it a tap — the PR Lab's
+/// bar does, and the sheets behind them hold more than this session's gains
+/// (2026-10-23). A null callback remains the no-exercise fallback: quiet
+/// surface fill, hairline, primary ink, no tap. The whole tile is one
+/// semantics node, so the number never arrives without its meaning.
+class SessionStatsTiles extends StatelessWidget {
+  const SessionStatsTiles({
+    super.key,
+    required this.prCount,
+    required this.lessonCount,
+    this.onPrTap,
+    this.onLessonTap,
   });
 
-  final String title;
-  final bool accent;
-  final List<({String label, int count, String exerciseId})> rows;
-  final void Function(String exerciseId) onRowTap;
+  final int prCount;
+  final int lessonCount;
+  final VoidCallback? onPrTap;
+  final VoidCallback? onLessonTap;
+
+  /// A gain reads "+2"; a session that added none reads "0".
+  static String _gain(int n) => n > 0 ? '+$n' : '0';
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.xl),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(title,
-                style: AppFonts.ui(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.primary)),
-            const SizedBox(height: AppSpacing.md),
-            if (rows.isEmpty)
-              Text('Nothing yet this session.',
-                  style: AppFonts.ui(fontSize: 13, color: AppColors.muted))
-            else
-              for (final r in rows)
-                InkWell(
-                  onTap: () => onRowTap(r.exerciseId),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: AppSpacing.sm, vertical: AppSpacing.md),
-                    decoration: const BoxDecoration(
-                      border: Border(
-                        bottom: BorderSide(width: 0.5),
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(r.label,
-                              style: AppFonts.ui(
-                                  fontSize: AppTextStyles.md,
-                                  fontWeight: FontWeight.w600,
-                                  color: AppColors.primary)),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: accent
-                                ? AppColors.accentBg
-                                : AppColors.surfaceHigh,
-                            borderRadius: BorderRadius.circular(AppRadius.md),
-                          ),
-                          child: Text('${r.count}',
-                              style: AppFonts.mono(
-                                  fontSize: 13,
-                                  color: accent
-                                      ? AppColors.accent
-                                      : AppColors.primary)),
-                        ),
-                        const SizedBox(width: AppSpacing.sm),
-                        Icon(Icons.chevron_right,
-                            size: 18, color: AppColors.muted),
-                      ],
+    return Row(
+      children: [
+        Expanded(
+          child: _tile(
+            key: const ValueKey('session-prs-tile'),
+            icon: Icons.emoji_events,
+            value: _gain(prCount),
+            semanticsLabel: '$prCount PRs this session',
+            onTap: onPrTap,
+          ),
+        ),
+        const SizedBox(width: AppSpacing.sm),
+        Expanded(
+          child: _tile(
+            key: const ValueKey('session-lessons-tile'),
+            icon: Icons.sticky_note_2_outlined,
+            value: _gain(lessonCount),
+            semanticsLabel: '$lessonCount exercise notes this session',
+            onTap: onLessonTap,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// The PR Lab's tile recipe (2026-10-22): [kSessionBarControlSize] tall so
+  /// the tiles stand level with the undo/redo boxes and the pencil beside
+  /// them, a 24px glyph and a mono 17 count — the doors read at the bar's
+  /// scale rather than as a smaller species of control. `FittedBox` narrows
+  /// the line rather than overflowing it on a small stage.
+  Widget _tile({
+    Key? key,
+    required IconData icon,
+    required String value,
+    required String semanticsLabel,
+    required VoidCallback? onTap,
+  }) {
+    final highlighted = onTap != null;
+    final color = highlighted ? AppColors.accent : AppColors.primary;
+    return Semantics(
+      button: true,
+      label: semanticsLabel,
+      // The reading is the whole tile; the glyph and bare number must not
+      // announce themselves separately.
+      excludeSemantics: true,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          key: key,
+          height: kSessionBarControlSize,
+          // 8, not the old 12: the pencil shares this row, and the two tiles
+          // each lost a third of their width to it (2026-10-22).
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          decoration: highlighted
+              ? glassBox(AppColors.accent)
+              : BoxDecoration(
+                  color: AppColors.surfaceHigh,
+                  borderRadius: BorderRadius.circular(AppRadius.md),
+                  border: Border.all(color: AppColors.border, width: 0.5),
+                ),
+          child: Center(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(icon, size: 24, color: color),
+                  const SizedBox(width: 8),
+                  Text(
+                    value,
+                    style: AppFonts.mono(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w800,
+                      color: color,
                     ),
                   ),
-                ),
-            const SizedBox(height: AppSpacing.sm),
-          ],
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );

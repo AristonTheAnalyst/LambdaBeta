@@ -83,10 +83,7 @@ void main() {
     ];
     await PastSetsTimelineCache.instance.get('u3');
     final asc = PastSetsTimelineCache.instance.asc('u3')!;
-    expect(
-      asc.map((r) => r.sessionExerciseSetId).toList(),
-      ['older', 'newer'],
-    );
+    expect(asc.map((r) => r.sessionExerciseSetId).toList(), ['older', 'newer']);
   });
 
   test('every fact-writing repo method invalidates the cache', () async {
@@ -99,35 +96,35 @@ void main() {
       try {
         await call();
       } catch (_) {}
-      expect(PastSetsTimelineCache.instance.invalidations, greaterThan(before),
-          reason: 'the write must invalidate the timeline cache');
+      expect(
+        PastSetsTimelineCache.instance.invalidations,
+        greaterThan(before),
+        reason: 'the write must invalidate the timeline cache',
+      );
     }
 
-    await attempt(
-      () => repo.createSession('u1'),
-    );
+    await attempt(() => repo.createSession('u1'));
     await attempt(() => repo.endSession('w1'));
-    await attempt(() => repo.updatePostQuestionnaire('w1'));
     await attempt(() => repo.updateSessionNotes('w1'));
     await attempt(() => repo.reorderSessionExercises('w1', const []));
-    await attempt(() => repo.insertSessionExercise(
-          sessionId: 'w1',
-          userId: 'u1',
-          exerciseOrder: 1,
-        ));
     await attempt(
-      () => repo.updateSessionExercise('se1', exerciseId: 'ex2'),
+      () => repo.insertSessionExercise(
+        sessionId: 'w1',
+        userId: 'u1',
+        exerciseOrder: 1,
+      ),
     );
+    await attempt(() => repo.updateSessionExercise('se1', exerciseId: 'ex2'));
+    await attempt(() => repo.updateSessionExercise('se1', clearExercise: true));
     await attempt(
-      () => repo.updateSessionExercise('se1', clearExercise: true),
+      () => repo.insertSet(
+        sessionExerciseId: 'se1',
+        sessionId: 'w1',
+        userId: 'u1',
+        setNumber: 1,
+        reps: const [],
+      ),
     );
-    await attempt(() => repo.insertSet(
-          sessionExerciseId: 'se1',
-          sessionId: 'w1',
-          userId: 'u1',
-          setNumber: 1,
-          reps: const [],
-        ));
     await attempt(() => repo.updateSet('s1', weight: 5));
     await attempt(() => repo.deleteSet('s1'));
     await attempt(() => repo.deleteSessionExercise('se1'));

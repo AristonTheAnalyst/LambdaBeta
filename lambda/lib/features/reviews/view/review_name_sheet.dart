@@ -4,8 +4,10 @@ import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
 import '../../../core/styles/app_spacing.dart';
 import '../../../core/styles/app_text_styles.dart';
+import '../../../core/utils/name_limit.dart';
 import '../../../shared/widgets/glass_button.dart';
 import '../../../shared/widgets/lambda_input.dart';
+import '../../../shared/widgets/name_limit_counter.dart';
 import '../../../shared/widgets/slide_up_modal.dart';
 
 /// What the pass is called — the first question the + button asks.
@@ -79,7 +81,9 @@ class _ReviewNameSheetState extends State<_ReviewNameSheet> {
                   ),
                 ),
                 GlassButton(
-                  label: 'Next',
+                  label: '',
+                  icon: Icons.arrow_forward_ios,
+                  semanticsLabel: 'Next',
                   compact: true,
                   disabled: !_hasName,
                   onPressed: _next,
@@ -94,9 +98,19 @@ class _ReviewNameSheetState extends State<_ReviewNameSheet> {
               placeholder: 'End of block 1',
               textCapitalization: TextCapitalization.sentences,
               textInputAction: TextInputAction.done,
+              maxLength: kMaxReviewTitleLength,
               // The sheet's default background is a surface ground.
               elevated: true,
               onSubmitted: (_) => _next(),
+            ),
+            // The title is drawn on a list card and in the history panel —
+            // one line, so the field says where the line ends.
+            Align(
+              alignment: Alignment.centerRight,
+              child: NameLimitCounter(
+                length: _ctrl.text.trim().length,
+                max: kMaxReviewTitleLength,
+              ),
             ),
             const SizedBox(height: AppSpacing.md),
             Text(
@@ -105,7 +119,8 @@ class _ReviewNameSheetState extends State<_ReviewNameSheet> {
               'finish it and it is kept here.',
               style: AppFonts.ui(
                 fontSize: AppTextStyles.xs,
-                color: AppColors.muted,
+                color: AppColors.inkSecondary,
+                height: 1.4,
               ),
             ),
           ],

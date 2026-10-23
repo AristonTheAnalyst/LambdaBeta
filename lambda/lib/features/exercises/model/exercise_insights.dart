@@ -19,12 +19,13 @@ List<PastSetRow> setsScoped(
   String exerciseId,
   String? variationId,
 ) {
-  final out = all
-      .where(
-        (s) => s.exerciseId == exerciseId && s.variationId == variationId,
-      )
-      .toList()
-    ..sort((a, b) => a.sessionCreatedDate.compareTo(b.sessionCreatedDate));
+  final out =
+      all
+          .where(
+            (s) => s.exerciseId == exerciseId && s.variationId == variationId,
+          )
+          .toList()
+        ..sort((a, b) => a.sessionCreatedDate.compareTo(b.sessionCreatedDate));
   return out;
 }
 
@@ -136,11 +137,7 @@ Map<int, num> curveAt(List<PastSetRow> scopedSets, DateTime before) {
 }
 
 /// Most reps performed at exactly [weight] before [before] — null when none.
-int? maxRepsAtWeight(
-  List<PastSetRow> scopedSets,
-  DateTime before,
-  num weight,
-) {
+int? maxRepsAtWeight(List<PastSetRow> scopedSets, DateTime before, num weight) {
   int? best;
   for (final s in scopedSets) {
     if (!s.sessionCreatedDate.isBefore(before)) continue;

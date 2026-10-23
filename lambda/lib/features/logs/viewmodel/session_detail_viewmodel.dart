@@ -2,20 +2,29 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide Session;
+import '../../../core/utils/device_id.dart';
 import '../../../core/utils/name_limit.dart';
+import '../../../core/utils/undo_history.dart';
 import '../../../data/cache/past_sets_timeline_cache.dart';
 import '../../../data/models/custom_variation.dart';
 import '../../../data/models/exercise_detail.dart';
+import '../../../data/models/goal.dart';
 import '../../../data/models/lesson.dart';
 import '../../../data/models/session.dart';
 import '../../../data/models/session_exercise.dart';
 import '../../../data/models/session_exercise_set.dart';
 import '../../../data/repositories/exercise_repository.dart';
 import '../../../data/repositories/lesson_repository.dart';
+import '../../../data/repositories/program_repository.dart';
 import '../../../data/repositories/session_repository.dart';
+import '../../programs/model/program_achievements.dart';
 import '../../session/model/pr_engine.dart';
 import '../../session/model/session_local_state.dart'
-    show ExerciseHistorySession, groupHistoryByExercise, isSimilarVariationName;
+    show
+        ExerciseHistorySession,
+        SessionDateMode,
+        groupHistoryByExercise,
+        isSimilarVariationName;
 
 /// One tab in the workout-detail screen — a single exercise that was logged
 /// in this workout, backed by its fact_session_exercise row.
@@ -24,10 +33,52 @@ class SessionDetailExerciseSlot {
     required this.groupOrder,
     required this.exerciseId,
     this.sessionExerciseId,
+    this.deleted = false,
+    this.planned = false,
   });
   final int groupOrder;
   final String exerciseId;
   final String? sessionExerciseId;
+
+  /// Every row this exercise holds is flagged (`is_deleted`) — it was
+  /// deleted during the workout (or a later edit) and is shown red, with a
+  /// Restore, but keeps its slot so the reader sees what went (2026-10-14).
+  final bool deleted;
+
+  /// The exercise came from the plan (`planned_exercise_id` set). Sets
+  /// deleted under a plan-linked exercise flag instead of hard-deleting —
+  /// the plan's rows and the user's own additions alike — so its Restore
+  /// brings back everything underneath it (2026-10-14).
+  final bool planned;
+
+  SessionDetailExerciseSlot copyWith({bool? deleted}) =>
+      SessionDetailExerciseSlot(
+        groupOrder: groupOrder,
+        exerciseId: exerciseId,
+        sessionExerciseId: sessionExerciseId,
+        deleted: deleted ?? this.deleted,
+        planned: planned,
+      );
+}
+
+/// The date bar's neighbours (2026-10-22): the completed sessions on either
+/// side of the record on screen, plus whether a live session stands past the
+/// newest record — the bar's right arrow at the top of the stack walks back
+/// onto "today" rather than dead-ending. Null until read; a failed read
+/// leaves the bar's arrows inert rather than failing the page.
+class SessionWalk {
+  const SessionWalk({this.olderId, this.newerId, this.hasLiveSession = false});
+
+  /// The next-older completed session; null when this record is the oldest.
+  final String? olderId;
+
+  /// The next-newer completed session; null at the top of the stack, where
+  /// [hasLiveSession] decides whether the right arrow has somewhere to go.
+  final String? newerId;
+
+  /// Whether this device has a live session right now — the "today" the
+  /// newest record steps forward onto.
+  final bool hasLiveSession;
 }
 
 /// Sentinel distinguishing "not provided" from "explicitly null" in
@@ -61,7 +112,13 @@ class SessionDetailState {
     this.prsByExercise = const {},
     this.totalPRCount = 0,
     this.prEvents = const [],
+    this.allPrEvents = const [],
     this.prEventSetIds = const {},
+    this.goalSetIds = const {},
+    this.walk,
+    this.dateBarMode = SessionDateMode.exercise,
+    this.exerciseHistoryIndex = 0,
+    this.exerciseHistoryForId,
   });
 
   final bool isLoading;
@@ -90,13 +147,89 @@ class SessionDetailState {
   final Map<String, int> prsByExercise;
   final int totalPRCount;
   final List<PrEvent> prEvents;
+
+  /// Every PR event on the merged timeline for the exercises this record
+  /// holds — history plus this record's own rows, oldest first. The PR
+  /// History sheet's full feed (2026-10-22).
+  final List<PrEvent> allPrEvents;
   final Set<String> prEventSetIds;
+
+  /// The sets that achieved one of the user's goals (2026-10-20) — green with
+  /// the `G` badge, the same marks the live grid draws. A set that is both a
+  /// goal's and a PR draws as the goal while still counting as a PR.
+  final Set<String> goalSetIds;
+
+  /// The date bar's neighbours — read alongside the session, not part of it
+  /// (2026-10-22). Null while unknown: the arrows hold their spent shape.
+  final SessionWalk? walk;
+
+  /// Which stack the date bar walks (2026-10-23). EXERCISE — the default on
+  /// this surface too — walks the active exercise's own past performances
+  /// and swaps only the card's sets; SESSION walks whole records
+  /// ([walk]), the page swapping under the bar.
+  final SessionDateMode dateBarMode;
+
+  /// EXERCISE mode's position in [exerciseHistoryStack]: 0 is the record on
+  /// screen, N its Nth-older performance of the active exercise. Only
+  /// meaningful for the exercise it was stepped on ([exerciseHistoryForId]);
+  /// a structural change that puts another exercise on the card reads as
+  /// home without a reset at every add/remove site (2026-10-23).
+  final int exerciseHistoryIndex;
+
+  /// The exercise [exerciseHistoryIndex] belongs to.
+  final String? exerciseHistoryForId;
+
+  /// The record's name in a header: the plan it followed at the time
+  /// (`fact_session.planned_session_name`), or Freestyle when it had no plan
+  /// (2026-10-23). Null while no record is loaded — the caller keeps whatever
+  /// it was naming until the record lands.
+  String? get sessionTitle => session == null
+      ? null
+      : (session!.plannedSessionName ?? 'Freestyle Session');
 
   SessionDetailExerciseSlot? get activeSlot => exerciseSlots.isEmpty
       ? null
       : exerciseSlots[activeSlotIndex.clamp(0, exerciseSlots.length - 1)];
 
-  List<SessionExerciseSet> setsFor(int groupOrder) => setsByOrder[groupOrder] ?? [];
+  List<SessionExerciseSet> setsFor(int groupOrder) =>
+      setsByOrder[groupOrder] ?? [];
+
+  /// The active exercise's performances EXERCISE mode can walk: the ones
+  /// strictly older than the record on screen, newest first (2026-10-23).
+  /// The record itself is home (index 0), drawn as the card's real grid —
+  /// edit mode and all — so it is not in the stack; sessions later than
+  /// this record are not walked either, because the page keeps naming the
+  /// record it opened on. Empty until the heavy read lands.
+  List<ExerciseHistorySession> get exerciseHistoryStack {
+    final slot = activeSlot;
+    final recordId = session?.sessionId;
+    if (slot == null || recordId == null) return const [];
+    final all = historyByExercise[slot.exerciseId] ?? const [];
+    final at = all.indexWhere(
+      (h) => h.sets.isNotEmpty && h.sets.first.sessionId == recordId,
+    );
+    if (at < 0) return const [];
+    return all.sublist(at + 1);
+  }
+
+  /// EXERCISE mode's effective position: [exerciseHistoryIndex] only while
+  /// the exercise it was stepped on still owns the card and the stack still
+  /// holds that far; home (0) otherwise.
+  int get effectiveExerciseHistoryIndex {
+    if (dateBarMode != SessionDateMode.exercise) return 0;
+    if (activeSlot?.exerciseId != exerciseHistoryForId) return 0;
+    return exerciseHistoryIndex.clamp(0, exerciseHistoryStack.length);
+  }
+
+  /// The performance the card is drawing in EXERCISE mode; null at home,
+  /// where the record's own sets are the card.
+  ExerciseHistorySession? get viewedHistorySession {
+    final position = effectiveExerciseHistoryIndex;
+    if (position <= 0) return null;
+    final stack = exerciseHistoryStack;
+    final index = position - 1;
+    return index < stack.length ? stack[index] : null;
+  }
 
   SessionDetailState copyWith({
     bool? isLoading,
@@ -125,7 +258,14 @@ class SessionDetailState {
     Map<String, int>? prsByExercise,
     int? totalPRCount,
     List<PrEvent>? prEvents,
+    List<PrEvent>? allPrEvents,
     Set<String>? prEventSetIds,
+    Set<String>? goalSetIds,
+    SessionWalk? walk,
+    bool clearWalk = false,
+    SessionDateMode? dateBarMode,
+    int? exerciseHistoryIndex,
+    String? exerciseHistoryForId,
   }) => SessionDetailState(
     isLoading: isLoading ?? this.isLoading,
     isSaving: isSaving ?? this.isSaving,
@@ -158,7 +298,13 @@ class SessionDetailState {
     prsByExercise: prsByExercise ?? this.prsByExercise,
     totalPRCount: totalPRCount ?? this.totalPRCount,
     prEvents: prEvents ?? this.prEvents,
+    allPrEvents: allPrEvents ?? this.allPrEvents,
     prEventSetIds: prEventSetIds ?? this.prEventSetIds,
+    goalSetIds: goalSetIds ?? this.goalSetIds,
+    walk: clearWalk ? null : (walk ?? this.walk),
+    dateBarMode: dateBarMode ?? this.dateBarMode,
+    exerciseHistoryIndex: exerciseHistoryIndex ?? this.exerciseHistoryIndex,
+    exerciseHistoryForId: exerciseHistoryForId ?? this.exerciseHistoryForId,
   );
 }
 
@@ -167,15 +313,18 @@ class SessionDetailViewModel {
     SessionRepository? sessionRepo,
     ExerciseRepository? exerciseRepo,
     LessonRepository? lessonRepo,
+    ProgramRepository? programRepo,
     String? userId,
   }) : _sessionRepo = sessionRepo ?? SessionRepository(),
        _exerciseRepo = exerciseRepo ?? ExerciseRepository(),
        _lessonRepo = lessonRepo ?? LessonRepository(),
+       _programRepo = programRepo ?? ProgramRepository(),
        _userIdOverride = userId;
 
   final SessionRepository _sessionRepo;
   final ExerciseRepository _exerciseRepo;
   final LessonRepository _lessonRepo;
+  final ProgramRepository _programRepo;
   final state = ValueNotifier(const SessionDetailState());
 
   int _nextDraftId = 1;
@@ -183,7 +332,8 @@ class SessionDetailViewModel {
   /// The host-test seam's answer; null reads the live Supabase session.
   final String? _userIdOverride;
 
-  String get _userId => _userIdOverride ?? Supabase.instance.client.auth.currentUser!.id;
+  String get _userId =>
+      _userIdOverride ?? Supabase.instance.client.auth.currentUser!.id;
 
   // ── Debounced set writes (the live VM's sibling machinery) ────────────────
   /// Same contract as `SessionViewModel.kAutoCommitDebounce` — keep the two
@@ -198,11 +348,72 @@ class SessionDetailViewModel {
   /// the shared cache, refreshed whenever a write invalidates it.
   List<PastSetRow> _timelineAsc = const [];
 
+  /// The user's goals, read with the heavy context so a set that achieved one
+  /// wears the G badge (2026-10-20). Empty when the read failed — the grid
+  /// renders bare rather than not at all.
+  List<Goal> _goals = const [];
+
+  // ── Undo/redo (structural actions only — 2026-10-13) ──────────────────────
+  final ActionUndoHistory undoHistory = ActionUndoHistory();
+  bool _suppressHistory = false;
+  bool _undoInFlight = false;
+
+  bool get canUndo => undoHistory.canUndo;
+  bool get canRedo => undoHistory.canRedo;
+
+  void _recordUndo(UndoAction action) {
+    if (_suppressHistory) return;
+    undoHistory.push(action);
+  }
+
+  /// Drains the debounce maps — an undo/redo must not race a typed edit's
+  /// settle (2026-10-13).
+  Future<void> flushPendingCommits() async {
+    for (final id in List.of(_pendingSetWrites.keys)) {
+      _setDebounceTimers.remove(id)?.cancel();
+      try {
+        await _flushSetWrite(id);
+      } catch (_) {}
+    }
+  }
+
+  Future<void> undo() async {
+    if (_undoInFlight || !undoHistory.canUndo) return;
+    _undoInFlight = true;
+    try {
+      await flushPendingCommits();
+      await undoHistory.undo();
+    } catch (e) {
+      state.value = state.value.copyWith(error: e.toString());
+    }
+    _undoInFlight = false;
+    state.value = state.value.copyWith();
+  }
+
+  Future<void> redo() async {
+    if (_undoInFlight || !undoHistory.canRedo) return;
+    _undoInFlight = true;
+    try {
+      await flushPendingCommits();
+      await undoHistory.redo();
+    } catch (e) {
+      state.value = state.value.copyWith(error: e.toString());
+    }
+    _undoInFlight = false;
+    state.value = state.value.copyWith();
+  }
+
   /// Builds slots in the order the user arranged them during the session —
   /// `fact_session_exercise.exercise_order` (a real column now; the old JSON
   /// blob is gone). Exercises with no logged row (null exercise) are skipped.
+  ///
+  /// An exercise whose rows are ALL flagged was deleted — during the workout
+  /// or in an edit — and still gets a slot, at its own number, with
+  /// `deleted: true`: the viewer draws it red and offers the restore, because
+  /// the deletion is a historic fact (2026-10-14).
   List<SessionDetailExerciseSlot> _buildSlots(
     List<SessionExercise> exercises,
+    List<SessionExerciseSet> sets,
   ) {
     final sorted = [...exercises]
       ..sort((a, b) => a.exerciseOrder.compareTo(b.exerciseOrder));
@@ -211,16 +422,26 @@ class SessionDetailViewModel {
     for (final e in sorted) {
       final exerciseId = e.exerciseId;
       if (exerciseId == null) continue;
+      final rows = [
+        for (final s in sets)
+          if (s.sessionExerciseId == e.sessionExerciseId) s,
+      ];
       slots.add(
         SessionDetailExerciseSlot(
           groupOrder: order++,
           exerciseId: exerciseId,
           sessionExerciseId: e.sessionExerciseId,
+          deleted: _rowsAllFlagged(rows),
+          planned: e.plannedExerciseId != null,
         ),
       );
     }
     return slots;
   }
+
+  /// True when there are rows and every one of them is flagged.
+  static bool _rowsAllFlagged(List<SessionExerciseSet> rows) =>
+      rows.isNotEmpty && rows.every((r) => r.isDeleted);
 
   Map<int, List<SessionExerciseSet>> _groupByOrder(
     List<SessionExerciseSet> sets,
@@ -242,8 +463,50 @@ class SessionDetailViewModel {
 
   // ── Loading ────────────────────────────────────────────────────────────────
 
-  Future<void> load(String sessionId) async {
-    state.value = state.value.copyWith(isLoading: true, clearError: true);
+  /// Opens a record — the route's first load, or a different route id under
+  /// a reused State. Shows the spinner: there is nothing on screen yet.
+  Future<void> load(String sessionId, {String? initialExerciseId}) =>
+      _loadSession(sessionId, initialExerciseId: initialExerciseId);
+
+  /// Steps the date bar onto a neighbouring record **in place** (2026-10-22):
+  /// the same screen and the same view model read the other session — the PR
+  /// Lab's pager, not a navigation. The record being left stays on screen
+  /// until the new read lands (never a spinner over a page that already has
+  /// sets), and nothing belonging to it survives the step: edit mode and its
+  /// drafts end, and the session-scoped reads (PRs, history, lessons) are
+  /// rebuilt for the record arriving.
+  Future<void> walkTo(String sessionId) =>
+      _loadSession(sessionId, inPlace: true);
+
+  /// The newest load wins: a fast second step must not be overwritten by the
+  /// slower read it overtook.
+  int _loadToken = 0;
+
+  Future<void> _loadSession(
+    String sessionId, {
+    String? initialExerciseId,
+    bool inPlace = false,
+  }) async {
+    final token = ++_loadToken;
+    final carried = state.value;
+    // The edit pass belongs to the record being left — its undo steps must
+    // not outlive it, or an undo on the arriving record would rewrite the
+    // one that left (2026-10-22).
+    if (inPlace) undoHistory.clear();
+    state.value = carried.copyWith(
+      isLoading: !inPlace,
+      clearError: true,
+      // A stepped-to record is a different session: the previous record's
+      // neighbours must not brief the bar while the new one loads.
+      clearWalk: true,
+      // A step leaves the old record's edit pass behind; the one arriving
+      // is read-only until its own Edit is tapped.
+      isEditing: false,
+      clearSessionSetDrafts: true,
+      // The card opens on the record's own sets, whatever the last one's
+      // exercise walk was showing.
+      exerciseHistoryIndex: 0,
+    );
     // Fast path: the workout + its own exercise rows and sets are all the
     // screen needs to render. The heavy queries (full past-sets timeline,
     // exercise catalog) load in the background and populate
@@ -254,19 +517,101 @@ class SessionDetailViewModel {
         _sessionRepo.loadSessionExercises(sessionId),
         _sessionRepo.loadSetsForSession(sessionId),
       ]);
+      if (token != _loadToken) return;
       final exercises = results[1] as List<SessionExercise>;
       final sets = results[2] as List<SessionExerciseSet>;
       final session = results[0] as Session?;
-      final slots = _buildSlots(exercises);
-      state.value = state.value.copyWith(
+      final slots = _buildSlots(exercises, sets);
+      // A step starts the record clean. The catalog, the variations, the
+      // user's history and the exercises' notes are the user's, not the
+      // record's, so they cross with the reader rather than blinking
+      // through an empty list — the swap frame can draw the card's history
+      // picker, notes and PR badges from the first paint (2026-10-23).
+      // The date bar's mode is the reader's reading, not the record's: a
+      // SESSION walk keeps walking sessions.
+      final base = inPlace
+          ? SessionDetailState(
+              exerciseDetailMap: carried.exerciseDetailMap,
+              allVariations: carried.allVariations,
+              historyByExercise: carried.historyByExercise,
+              pastSetsLoaded: carried.pastSetsLoaded,
+              lessonsByExercise: carried.lessonsByExercise,
+              dateBarMode: carried.dateBarMode,
+            )
+          : state.value;
+      state.value = base.copyWith(
         isLoading: false,
         session: session,
         exerciseSlots: slots,
         setsByOrder: _groupByOrder(sets, slots),
+        // The goal sheet's completion row opens the workout that hit the goal
+        // (2026-10-20): the reader lands on the exercise that achieved it.
+        activeSlotIndex: _slotForExercise(slots, initialExerciseId),
+        exerciseHistoryIndex: 0,
       );
+      // The timeline already in hand (the shared cache, or the record just
+      // left) re-derives this record's PRs NOW, so the swap frame carries
+      // its badges instead of waiting for the heavy wave to return.
+      if (_timelineAsc.isNotEmpty) _computePRs();
       _loadHeavyContext();
+      // The date bar's walk, alongside the page: the arrows fill in when the
+      // list answers, and an unanswerable read leaves them inert.
+      unawaited(_loadWalk(sessionId));
+      // Lessons for the session's exercises load with the session, so the
+      // card's pill and the floor tile count from the first frame — waiting
+      // for the modal to open would leave both reading zero (2026-10-22).
+      for (final id in {for (final sl in slots) sl.exerciseId}) {
+        unawaited(loadLessonsFor(id));
+      }
     } catch (e) {
+      if (token != _loadToken) return;
       state.value = state.value.copyWith(isLoading: false, error: e.toString());
+    }
+  }
+
+  /// The slot drawing [exerciseId], or 0 — a workout can hold the exercise
+  /// twice, and the first slot is as good an answer as the second.
+  int _slotForExercise(
+    List<SessionDetailExerciseSlot> slots,
+    String? exerciseId,
+  ) {
+    if (exerciseId == null) return 0;
+    final index = slots.indexWhere((s) => s.exerciseId == exerciseId);
+    return index < 0 ? 0 : index;
+  }
+
+  /// Reads the date bar's neighbours (2026-10-22): the completed sessions
+  /// either side of this record, and — at the newest record — whether a
+  /// live session stands past it ("today"). Chrome, so failure is silent:
+  /// the arrows stay spent rather than the page refusing to open.
+  Future<void> _loadWalk(String sessionId) async {
+    try {
+      final stamps = await _sessionRepo.loadCompletedSessionStamps(_userId);
+      final index = stamps.indexWhere((s) => s.sessionId == sessionId);
+      if (index < 0) return;
+      var hasLive = false;
+      if (index == 0) {
+        hasLive =
+            await _sessionRepo.getActiveSessionId(
+              _userId,
+              deviceId: await DeviceId.get(),
+            ) !=
+            null;
+      }
+      // A fast second step can land the old read after the new session's;
+      // the walk is only ever written for the record now on screen.
+      if (state.value.session?.sessionId != sessionId) return;
+      state.value = state.value.copyWith(
+        walk: SessionWalk(
+          olderId: index + 1 < stamps.length
+              ? stamps[index + 1].sessionId
+              : null,
+          newerId: index > 0 ? stamps[index - 1].sessionId : null,
+          hasLiveSession: hasLive,
+        ),
+      );
+    } catch (_) {
+      // The walk is chrome — a failed read leaves the arrows inert.
     }
   }
 
@@ -285,12 +630,24 @@ class SessionDetailViewModel {
       ]);
       final timeline = results[1] as List<PastSetRow>;
       _timelineAsc = PastSetsTimelineCache.instance.asc(_userId) ?? timeline;
+      final grouped = groupHistoryByExercise(timeline);
       state.value = state.value.copyWith(
         exerciseDetailMap: results[0] as Map<String, ExerciseDetail>,
-        historyByExercise: groupHistoryByExercise(timeline),
+        historyByExercise: grouped,
         pastSetsLoaded: true,
         allVariations: results[2] as List<CustomVariation>,
       );
+      // Goals ride along, non-fatal: the G badge is an extra on the grid, and
+      // a failed goal read must not take the timeline down with it
+      // (2026-10-20).
+      try {
+        _goals = [
+          for (final option in await _programRepo.fetchGoalOptions(_userId))
+            option.goal,
+        ];
+      } catch (_) {
+        _goals = const [];
+      }
       _computePRs();
     } catch (_) {
       // Background context is best-effort; core workout already rendered.
@@ -310,9 +667,7 @@ class SessionDetailViewModel {
     final thisWorkoutId = s.session?.sessionId;
     final thisDate = s.session?.createdDatetime ?? DateTime.now();
 
-    final slotExerciseIds = s.exerciseSlots
-        .map((sl) => sl.exerciseId)
-        .toSet();
+    final slotExerciseIds = s.exerciseSlots.map((sl) => sl.exerciseId).toSet();
 
     final combined = <PastSetRow>[];
     var inserted = false;
@@ -343,21 +698,29 @@ class SessionDetailViewModel {
       prsByExercise: prs,
       totalPRCount: events.length,
       prEvents: events,
+      // The full feed the PR History sheet reads — every PR the record's
+      // exercises ever landed, this record's own included (2026-10-22).
+      allPrEvents: allEvents,
       // Full-timeline event set ids — accents use the session events; the
       // history viewer's rows badge past sets via this map.
       prEventSetIds: {
         for (final e in allEvents)
           if (e.sessionExerciseSetId != null) e.sessionExerciseSetId!,
       },
+      // The goal sets over the same merged timeline — the earliest set that
+      // met each target, so only it wears the G (2026-10-20).
+      goalSetIds: goalAchievingSetIds(goals: _goals, sets: combined),
     );
   }
 
   /// This workout's current sets as timeline rows — set-number order, all
-  /// sharing the workout's session date.
+  /// sharing the workout's session date. Flagged (deleted) rows are left out:
+  /// a deleted set is not performed work and never earns a PR (2026-10-14).
   List<PastSetRow> _thisSessionRows(SessionDetailState s, DateTime date) {
     final rows = <PastSetRow>[];
     for (final sets in s.setsByOrder.values) {
       for (final set in sets) {
+        if (set.isDeleted) continue;
         rows.add(
           PastSetRow(
             sessionExerciseSetId: set.sessionExerciseSetId,
@@ -386,14 +749,27 @@ class SessionDetailViewModel {
 
   /// The events the PRs pill should DISPLAY for an exercise.
   List<PrEvent> displayPrsFor(String exerciseId) =>
-      state.value.prEvents
-          .where((p) => p.exerciseId == exerciseId)
-          .toList();
+      state.value.prEvents.where((p) => p.exerciseId == exerciseId).toList();
+
+  /// Every PR [exerciseId] ever landed — all its variations, oldest first —
+  /// the PR History sheet's full feed (2026-10-22).
+  List<PrEvent> prHistoryFor(String exerciseId) => [
+    for (final e in state.value.allPrEvents)
+      if (e.exerciseId == exerciseId) e,
+  ];
+
+  /// The set ids this record landed PRs on for [exerciseId] — what splits
+  /// [prHistoryFor] into `THIS SESSION` and `PREVIOUSLY`.
+  Set<String> sessionPrSetIdsFor(String exerciseId) => {
+    for (final e in state.value.prEvents)
+      if (e.exerciseId == exerciseId && e.sessionExerciseSetId != null)
+        e.sessionExerciseSetId!,
+  };
 
   Future<void> _reloadSets(String sessionId) async {
     final exercises = await _sessionRepo.loadSessionExercises(sessionId);
     final sets = await _sessionRepo.loadSetsForSession(sessionId);
-    final slots = _buildSlots(exercises);
+    final slots = _buildSlots(exercises, sets);
     // History derives from the same timeline — through the shared cache,
     // which the structural write that led here has already invalidated
     // (2026-10-13).
@@ -412,9 +788,13 @@ class SessionDetailViewModel {
   // ── Edit mode ──────────────────────────────────────────────────────────────
 
   void startEditing() {
+    undoHistory.clear();
     final w = state.value.session;
     state.value = state.value.copyWith(
       isEditing: true,
+      // The edit surface is the record's own grid: a past performance the
+      // date bar was showing steps aside for it (2026-10-23).
+      exerciseHistoryIndex: 0,
       preNotesDraft: w?.preNotes ?? '',
       postNotesDraft: w?.postNotes ?? '',
       preFeelingDraft: w?.preFeeling,
@@ -430,13 +810,23 @@ class SessionDetailViewModel {
   void setPostNotesDraft(String v) =>
       state.value = state.value.copyWith(postNotesDraft: v);
 
-  void setPreFeelingDraft(int? v) =>
-      state.value = state.value.copyWith(preFeelingDraft: v);
+  /// The star callbacks carry the tapped number, not the resulting value —
+  /// these setters own the toggle rule (tap the selected star to clear),
+  /// exactly like the live VM's `setSessionFeeling` / `setEndFeeling`, so
+  /// the ratings sheet and the stored value can never disagree (2026-10-22).
+  void setPreFeelingDraft(int? v) => state.value = state.value.copyWith(
+    preFeelingDraft: state.value.preFeelingDraft == v ? null : v,
+  );
 
-  void setPostFeelingDraft(int? v) =>
-      state.value = state.value.copyWith(postFeelingDraft: v);
+  void setPostFeelingDraft(int? v) => state.value = state.value.copyWith(
+    postFeelingDraft: state.value.postFeelingDraft == v ? null : v,
+  );
 
-  Future<void> saveNotes(String sessionId) async {
+  Future<void> saveNotes() async {
+    // The record on screen, not a route id: the date bar swaps records in
+    // place, so the URL keeps naming the page that opened (2026-10-22).
+    final sessionId = state.value.session?.sessionId;
+    if (sessionId == null) return;
     state.value = state.value.copyWith(isSaving: true);
     try {
       // The full bookend state persists — drafts, plus the feeling ratings
@@ -461,36 +851,183 @@ class SessionDetailViewModel {
 
   // ── Tabs ───────────────────────────────────────────────────────────────────
 
-  void tapTab(int index) =>
-      state.value = state.value.copyWith(activeSlotIndex: index);
+  void tapTab(int index) => state.value = state.value.copyWith(
+    activeSlotIndex: index,
+    // The card decides what EXERCISE mode walks: a new exercise starts home.
+    exerciseHistoryIndex: 0,
+  );
 
   void reorderExercises(int oldIndex, int newIndex) {
     if (oldIndex == newIndex) return;
     final s = state.value;
-    final slots = [...s.exerciseSlots];
-    final slot = slots.removeAt(oldIndex);
-    slots.insert(newIndex, slot);
-    int newActive = s.activeSlotIndex;
-    if (s.activeSlotIndex == oldIndex) {
-      newActive = newIndex;
-    } else if (oldIndex < s.activeSlotIndex && newIndex >= s.activeSlotIndex) {
-      newActive = s.activeSlotIndex - 1;
-    } else if (oldIndex > s.activeSlotIndex && newIndex <= s.activeSlotIndex) {
-      newActive = s.activeSlotIndex + 1;
+    // A deleted exercise is not movable — it sits at its historic number
+    // until restored (2026-10-14). The persisted arrangement below keeps it
+    // in the list, so its order column stays in step with the visible bar.
+    if (oldIndex < 0 ||
+        oldIndex >= s.exerciseSlots.length ||
+        s.exerciseSlots[oldIndex].deleted) {
+      return;
     }
-    state.value = s.copyWith(exerciseSlots: slots, activeSlotIndex: newActive);
-    // Persist the arrangement back to fact_session_exercise.exercise_order so
-    // a reorder made here sticks for the live viewer's restore too.
-    final w = state.value.session;
-    if (w != null) {
-      _sessionRepo.reorderSessionExercises(
-        w.sessionId,
-        [
+    final orderBefore = [for (final sl in s.exerciseSlots) sl.groupOrder];
+
+    Future<void> forward() async {
+      final cur = state.value;
+      final slots = [...cur.exerciseSlots];
+      final slot = slots.removeAt(oldIndex);
+      slots.insert(newIndex, slot);
+      int newActive = cur.activeSlotIndex;
+      if (cur.activeSlotIndex == oldIndex) {
+        newActive = newIndex;
+      } else if (oldIndex < cur.activeSlotIndex &&
+          newIndex >= cur.activeSlotIndex) {
+        newActive = cur.activeSlotIndex - 1;
+      } else if (oldIndex > cur.activeSlotIndex &&
+          newIndex <= cur.activeSlotIndex) {
+        newActive = cur.activeSlotIndex + 1;
+      }
+      state.value = cur.copyWith(
+        exerciseSlots: slots,
+        activeSlotIndex: newActive,
+      );
+      // Persist the arrangement back to fact_session_exercise.exercise_order so
+      // a reorder made here sticks for the live viewer's restore too.
+      final w = state.value.session;
+      if (w != null) {
+        await _sessionRepo.reorderSessionExercises(w.sessionId, [
           for (final slot in state.value.exerciseSlots)
             if (slot.sessionExerciseId != null) slot.sessionExerciseId!,
-        ],
-      );
+        ]);
+      }
     }
+
+    _recordUndo(
+      UndoAction(
+        inverse: () async {
+          final cur = state.value;
+          final byOrder = {
+            for (final sl in cur.exerciseSlots) sl.groupOrder: sl,
+          };
+          state.value = cur.copyWith(
+            exerciseSlots: [
+              for (final o in orderBefore)
+                if (byOrder[o] != null) byOrder[o]!,
+            ],
+            activeSlotIndex: cur.activeSlotIndex,
+          );
+          final w = state.value.session;
+          if (w != null) {
+            await _sessionRepo.reorderSessionExercises(w.sessionId, [
+              for (final slot in state.value.exerciseSlots)
+                if (slot.sessionExerciseId != null) slot.sessionExerciseId!,
+            ]);
+          }
+        },
+        replay: () async {
+          _suppressHistory = true;
+          try {
+            await forward();
+          } finally {
+            _suppressHistory = false;
+          }
+        },
+      ),
+    );
+    unawaited(forward());
+  }
+
+  // ── Deleted exercises — the historic trash (2026-10-14) ────────────────────
+
+  /// The workout's deleted exercises in arrangement (number) order — what
+  /// the past-session viewer's trash menu lists. Each entry reports the slot
+  /// it sits at, so a row tapped can be viewed. Historic deletion ORDER is
+  /// not stored (the live session's order list is memory-only); the stored
+  /// arrangement, which the deleted exercise keeps, stands in for it.
+  List<({int slotIndex, String name})> get deletedExerciseEntries => [
+    for (var i = 0; i < state.value.exerciseSlots.length; i++)
+      if (state.value.exerciseSlots[i].deleted)
+        (
+          slotIndex: i,
+          name: exerciseDisplayName(state.value.exerciseSlots[i].exerciseId),
+        ),
+  ];
+
+  bool get hasDeletedExercises =>
+      state.value.exerciseSlots.any((sl) => sl.deleted);
+
+  /// The trash menu's row callback: shows the deleted exercise — the reader
+  /// looks at what was deleted before deciding to restore (the Restore
+  /// button under the card is the write).
+  void viewDeletedExerciseAt(int entryIndex) {
+    final entries = deletedExerciseEntries;
+    if (entryIndex < 0 || entryIndex >= entries.length) return;
+    state.value = state.value.copyWith(
+      activeSlotIndex: entries[entryIndex].slotIndex,
+    );
+  }
+
+  /// Restores an exercise's deleted sets: un-flags every flagged row — the
+  /// sets rejoin the grid and the timeline, so PRs see them again — and,
+  /// when the exercise had folded away entirely, its slot stops reading
+  /// deleted (a partly-deleted exercise never left). One undo step; the
+  /// acting history is cleared when the edit session begins, so a restore
+  /// never mixes with actions from when the session was live.
+  Future<void> restoreDeletedExercise(int slotIndex) async {
+    final w = state.value.session;
+    if (w == null) return;
+    final slots = state.value.exerciseSlots;
+    if (slotIndex < 0 || slotIndex >= slots.length) return;
+    final slot = slots[slotIndex];
+    final rows = [
+      for (final s in state.value.setsFor(slot.groupOrder))
+        if (s.isDeleted) s,
+    ];
+    if (rows.isEmpty) return;
+
+    Future<void> forward() async {
+      for (final row in rows) {
+        await _sessionRepo.updateSet(
+          row.sessionExerciseSetId,
+          clearIsDeleted: true,
+        );
+      }
+      await _reloadSets(w.sessionId);
+      // The restored exercise is what the user wants to see.
+      state.value = state.value.copyWith(activeSlotIndex: slotIndex);
+    }
+
+    _recordUndo(
+      UndoAction(
+        inverse: () async {
+          // The soft-delete ids are stable, so the inverse is the cheap
+          // re-flag — no re-insert, no new ids.
+          for (final row in rows) {
+            await _sessionRepo.updateSet(
+              row.sessionExerciseSetId,
+              isDeleted: true,
+            );
+          }
+          await _reloadSets(w.sessionId);
+        },
+        replay: () async {
+          _suppressHistory = true;
+          try {
+            await forward();
+          } finally {
+            _suppressHistory = false;
+          }
+        },
+      ),
+    );
+    await forward();
+  }
+
+  /// The trash menu's restore half, addressed by entry index — used where a
+  /// row is known to be a restore (the Restore button flows through
+  /// [restoreDeletedExercise] directly).
+  Future<void> restoreDeletedExerciseAt(int entryIndex) async {
+    final entries = deletedExerciseEntries;
+    if (entryIndex < 0 || entryIndex >= entries.length) return;
+    await restoreDeletedExercise(entries[entryIndex].slotIndex);
   }
 
   /// The session-exercise row for [exerciseId], creating one (with the next
@@ -526,65 +1063,222 @@ class SessionDetailViewModel {
       (sl) => sl.exerciseId == exerciseId,
     );
     if (existingIndex != -1) {
+      // Adding back an exercise that was deleted restores it — a second
+      // exercise row would read as two tabs of one thing (the live screen's
+      // rule, 2026-10-13).
+      if (s.exerciseSlots[existingIndex].deleted) {
+        await restoreDeletedExercise(existingIndex);
+        return;
+      }
       state.value = s.copyWith(activeSlotIndex: existingIndex);
       return;
     }
-    // Persist the exercise row immediately so the tab survives a reload.
-    final sessionExerciseId = await _ensureSessionExercise(exerciseId);
-    final nextOrder = s.exerciseSlots.isEmpty
-        ? 1
-        : s.exerciseSlots.map((sl) => sl.groupOrder).reduce(
-              (a, b) => a > b ? a : b,
-            ) +
-              1;
-    final slots = [
-      ...s.exerciseSlots,
-      SessionDetailExerciseSlot(
-        groupOrder: nextOrder,
-        exerciseId: exerciseId,
-        sessionExerciseId: sessionExerciseId,
+    final box = UndoBox<String>();
+
+    Future<void> forward() async {
+      final s = state.value;
+      // Persist the exercise row immediately so the tab survives a reload.
+      final sessionExerciseId = await _ensureSessionExercise(exerciseId);
+      if (sessionExerciseId == null) return;
+      box.value = sessionExerciseId;
+      final nextOrder = s.exerciseSlots.isEmpty
+          ? 1
+          : s.exerciseSlots
+                    .map((sl) => sl.groupOrder)
+                    .reduce((a, b) => a > b ? a : b) +
+                1;
+      final slots = [
+        ...s.exerciseSlots,
+        SessionDetailExerciseSlot(
+          groupOrder: nextOrder,
+          exerciseId: exerciseId,
+          sessionExerciseId: sessionExerciseId,
+        ),
+      ];
+      final drafts = Map<int, List<int>>.from(s.workoutSetDrafts);
+      drafts.putIfAbsent(nextOrder, () => []).add(_nextDraftId++);
+      state.value = s.copyWith(
+        exerciseSlots: slots,
+        workoutSetDrafts: drafts,
+        activeSlotIndex: slots.length - 1,
+      );
+      loadLessonsFor(exerciseId);
+    }
+
+    _recordUndo(
+      UndoAction(
+        inverse: () async {
+          final seId = box.value;
+          if (seId != null) {
+            await _sessionRepo.deleteSessionExercise(seId);
+          }
+          final cur = state.value;
+          final order = cur.exerciseSlots
+              .firstWhere((sl) => sl.exerciseId == exerciseId)
+              .groupOrder;
+          state.value = cur.copyWith(
+            exerciseSlots: [
+              for (final sl in cur.exerciseSlots)
+                if (sl.exerciseId != exerciseId) sl,
+            ],
+            workoutSetDrafts: {
+              for (final e in cur.workoutSetDrafts.entries)
+                if (e.key != order) e.key: e.value,
+            },
+            activeSlotIndex: cur.activeSlotIndex > 0
+                ? cur.activeSlotIndex - 1
+                : 0,
+          );
+        },
+        replay: () async {
+          _suppressHistory = true;
+          try {
+            await forward();
+          } finally {
+            _suppressHistory = false;
+          }
+        },
       ),
-    ];
-    final drafts = Map<int, List<int>>.from(s.workoutSetDrafts);
-    drafts.putIfAbsent(nextOrder, () => []).add(_nextDraftId++);
-    state.value = s.copyWith(
-      exerciseSlots: slots,
-      workoutSetDrafts: drafts,
-      activeSlotIndex: slots.length - 1,
     );
-    loadLessonsFor(exerciseId);
+    await forward();
   }
 
-  /// Removes an exercise group (slot + all its sets) — the past-session
-  /// viewer's mirror of the planner's remove, so removing a ticked row in the
-  /// add-exercise modal works in edit mode. Sets go through
-  /// [deleteSetCascade] so PRs recompute from the remaining history.
+  /// Removes an exercise group — the past-session viewer's mirror of the
+  /// planner's remove, so removing a ticked row in the add-exercise modal
+  /// works in edit mode. Planned rows SOFT-delete (flagged, kept — the group
+  /// becomes a red, restorable entry at its number); user-added rows die hard
+  /// as they always have, and a group with no planned rows at all goes
+  /// entirely, as before (2026-10-14). One undo step for the whole group.
   Future<void> removeExerciseGroup(int index) async {
     final s = state.value;
     if (index < 0 || index >= s.exerciseSlots.length) return;
     final slot = s.exerciseSlots[index];
-    final sets = List<SessionExerciseSet>.of(s.setsFor(slot.groupOrder));
-    for (final set in sets) {
-      await deleteSetCascade(
-        set.sessionExerciseSetId,
-        set.exerciseId ?? slot.exerciseId,
-      );
-    }
-    final rowId = slot.sessionExerciseId;
-    if (rowId != null) {
-      try {
-        await _sessionRepo.deleteSessionExercise(rowId);
-      } catch (_) {}
-    }
-    final slots = [...state.value.exerciseSlots]..removeAt(index);
-    int newActive = state.value.activeSlotIndex;
-    if (newActive >= slots.length) {
-      newActive = slots.isEmpty ? 0 : slots.length - 1;
-    }
-    state.value = state.value.copyWith(
-      exerciseSlots: slots,
-      activeSlotIndex: newActive,
+    if (slot.deleted) return;
+    final capturedSets = List<SessionExerciseSet>.of(
+      s.setsFor(slot.groupOrder),
     );
+    final activeBefore = s.activeSlotIndex;
+    final boxes = <String, UndoBox<String>>{};
+
+    Future<void> forward() async {
+      final cur = state.value;
+      final idx = cur.exerciseSlots.indexWhere(
+        (sl) => sl.groupOrder == slot.groupOrder,
+      );
+      if (idx == -1) return;
+      final curSlot = cur.exerciseSlots[idx];
+      final sets = List<SessionExerciseSet>.of(cur.setsFor(curSlot.groupOrder));
+      var keptRows = 0;
+      for (final set in sets) {
+        // A plan-linked exercise keeps everything — the plan's rows and the
+        // user's additions alike; a user-added exercise's rows die hard, as
+        // they always have (2026-10-14).
+        if (curSlot.planned || set.plannedSetId != null) {
+          await _sessionRepo.updateSet(
+            set.sessionExerciseSetId,
+            isDeleted: true,
+          );
+          keptRows++;
+        } else {
+          try {
+            await _sessionRepo.deleteSet(set.sessionExerciseSetId);
+          } catch (_) {}
+        }
+      }
+      if (keptRows == 0) {
+        // Nothing planned was kept — the exercise row is residue, exactly
+        // like a group the user fully emptied (the pre-2026-10-14 behavior).
+        final rowId = curSlot.sessionExerciseId;
+        if (rowId != null) {
+          try {
+            await _sessionRepo.deleteSessionExercise(rowId);
+          } catch (_) {}
+        }
+      }
+      final w = state.value.session;
+      if (w == null) return;
+      await _reloadSets(w.sessionId);
+      final after = state.value;
+      if (after.activeSlotIndex >= after.exerciseSlots.length) {
+        state.value = after.copyWith(
+          activeSlotIndex: after.exerciseSlots.isEmpty
+              ? 0
+              : after.exerciseSlots.length - 1,
+        );
+      }
+    }
+
+    _recordUndo(
+      UndoAction(
+        inverse: () async {
+          final w = state.value.session;
+          if (w == null) return;
+          String? seId = slot.sessionExerciseId;
+          // Un-flag what the forward flagged — its ids are stable. A planned
+          // exercise kept every row; a user-added one hard-deleted them all.
+          final keepsAll = slot.planned;
+          for (final set in capturedSets) {
+            if (keepsAll || set.plannedSetId != null) {
+              await _sessionRepo.updateSet(
+                set.sessionExerciseSetId,
+                clearIsDeleted: true,
+              );
+            }
+          }
+          // Re-insert the hard-deleted rows, and the exercise row if the
+          // forward removed it — bound to the id it actually got, never the
+          // stale one.
+          final userRows = [
+            for (final s in capturedSets)
+              if (!(keepsAll || s.plannedSetId != null)) s,
+          ];
+          final seExists =
+              seId != null &&
+              state.value.exerciseSlots.any(
+                (sl) => sl.sessionExerciseId == seId,
+              );
+          if (!seExists) {
+            if (seId != null) {
+              seId = (await _sessionRepo.insertSessionExercise(
+                sessionId: w.sessionId,
+                userId: _userId,
+                exerciseId: slot.exerciseId,
+                exerciseOrder: slot.groupOrder,
+              )).sessionExerciseId;
+            } else {
+              seId = await _ensureSessionExercise(slot.exerciseId);
+            }
+          }
+          for (final set in userRows) {
+            final inserted = await _sessionRepo.insertSet(
+              sessionExerciseId: seId!,
+              sessionId: w.sessionId,
+              userId: _userId,
+              variationId: set.variationId,
+              setNumber: set.setNumber,
+              weight: set.weight,
+              reps: set.reps,
+              notes: set.notes,
+              plannedSetId: set.plannedSetId,
+            );
+            boxes[set.sessionExerciseSetId] = UndoBox<String>()
+              ..value = inserted.sessionExerciseSetId;
+          }
+          await _reloadSets(w.sessionId);
+          final cur = state.value;
+          state.value = cur.copyWith(activeSlotIndex: activeBefore);
+        },
+        replay: () async {
+          _suppressHistory = true;
+          try {
+            await forward();
+          } finally {
+            _suppressHistory = false;
+          }
+        },
+      ),
+    );
+    await forward();
   }
 
   // ── Draft set rows ─────────────────────────────────────────────────────────
@@ -602,33 +1296,71 @@ class SessionDetailViewModel {
   /// order real — the group renders in `set_number` order, so a reorder that
   /// left the numbers alone would undo itself on the next rebuild.
   void reorderSets(int groupOrder, int oldIndex, int newIndex) {
-    final group = [
-      ...state.value.setsFor(groupOrder),
-    ]..sort((a, b) => a.setNumber.compareTo(b.setNumber));
+    final group = [...state.value.setsFor(groupOrder)]
+      ..sort((a, b) => a.setNumber.compareTo(b.setNumber));
     if (group.length < 2) return;
     if (newIndex >= group.length) newIndex = group.length - 1;
     if (oldIndex == newIndex || oldIndex < 0 || oldIndex >= group.length) {
       return;
     }
+    final idsBefore = [for (final g in group) g.sessionExerciseSetId];
 
-    group.insert(newIndex, group.removeAt(oldIndex));
-    // The group list becomes the new order — this viewer has no sort of its
-    // own, it draws `setsFor` exactly as it finds it.
-    final ordered = [
-      for (var i = 0; i < group.length; i++) group[i].copyWith(setNumber: i + 1),
-    ];
-    final byOrder = Map<int, List<SessionExerciseSet>>.from(
-      state.value.setsByOrder,
-    );
-    byOrder[groupOrder] = ordered;
-    state.value = state.value.copyWith(setsByOrder: byOrder);
+    Future<void> forward() async {
+      final current = [...state.value.setsFor(groupOrder)]
+        ..sort((a, b) => a.setNumber.compareTo(b.setNumber));
+      if (current.length < 2 || newIndex >= current.length) return;
+      current.insert(newIndex, current.removeAt(oldIndex));
+      final ordered = [
+        for (var i = 0; i < current.length; i++)
+          current[i].copyWith(setNumber: i + 1),
+      ];
+      final byOrder = Map<int, List<SessionExerciseSet>>.from(
+        state.value.setsByOrder,
+      );
+      byOrder[groupOrder] = ordered;
+      state.value = state.value.copyWith(setsByOrder: byOrder);
 
-    final w = state.value.session;
-    if (w != null) {
-      _sessionRepo.reorderSets(w.sessionId, [
-        for (final s in ordered) s.sessionExerciseSetId,
-      ]);
+      final w = state.value.session;
+      if (w != null) {
+        await _sessionRepo.reorderSets(w.sessionId, [
+          for (final s in ordered) s.sessionExerciseSetId,
+        ]);
+      }
     }
+
+    _recordUndo(
+      UndoAction(
+        inverse: () async {
+          final w = state.value.session;
+          if (w != null) {
+            await _sessionRepo.reorderSets(w.sessionId, idsBefore);
+          }
+          final byId = {
+            for (final s in state.value.setsFor(groupOrder))
+              s.sessionExerciseSetId: s,
+          };
+          final ordered = [
+            for (var i = 0; i < idsBefore.length; i++)
+              byId[idsBefore[i]]!.copyWith(setNumber: i + 1),
+          ];
+          final byOrder = Map<int, List<SessionExerciseSet>>.from(
+            state.value.setsByOrder,
+          );
+          byOrder[groupOrder] = ordered;
+          state.value = state.value.copyWith(setsByOrder: byOrder);
+          _computePRs();
+        },
+        replay: () async {
+          _suppressHistory = true;
+          try {
+            await forward();
+          } finally {
+            _suppressHistory = false;
+          }
+        },
+      ),
+    );
+    unawaited(forward());
   }
 
   /// "+ ADD SET" in edit mode pre-creates an empty set in the DB so it
@@ -637,30 +1369,85 @@ class SessionDetailViewModel {
   Future<void> addDraftSet(int groupOrder) async {
     final w = state.value.session;
     if (w == null) return;
-    final slot = state.value.exerciseSlots.firstWhere(
-      (s) => s.groupOrder == groupOrder,
+    final box = UndoBox<String>();
+
+    Future<void> forward() async {
+      final w = state.value.session;
+      if (w == null) return;
+      final slot = state.value.exerciseSlots.firstWhere(
+        (s) => s.groupOrder == groupOrder,
+      );
+      final sessionExerciseId = await _ensureSessionExercise(slot.exerciseId);
+      if (sessionExerciseId == null) return;
+      final existing = state.value.setsFor(groupOrder);
+      final nextNum = existing.isEmpty
+          ? 1
+          : existing.map((s) => s.setNumber).reduce((a, b) => a > b ? a : b) +
+                1;
+      final inserted = await _sessionRepo.insertSet(
+        sessionExerciseId: sessionExerciseId,
+        sessionId: w.sessionId,
+        userId: _userId,
+        setNumber: nextNum,
+        weight: null,
+        reps: const [],
+      );
+      box.value = inserted.sessionExerciseSetId;
+      await _reloadSets(w.sessionId);
+    }
+
+    _recordUndo(
+      UndoAction(
+        inverse: () async {
+          final id = box.value;
+          if (id == null) return;
+          await _deleteSetFromState(id);
+          try {
+            await _sessionRepo.deleteSet(id);
+            await _reloadSets(w.sessionId);
+          } catch (e) {
+            state.value = state.value.copyWith(error: e.toString());
+          }
+        },
+        replay: () async {
+          _suppressHistory = true;
+          try {
+            await forward();
+          } finally {
+            _suppressHistory = false;
+          }
+        },
+      ),
     );
-    final sessionExerciseId = await _ensureSessionExercise(slot.exerciseId);
-    if (sessionExerciseId == null) return;
-    final existing = state.value.setsFor(groupOrder);
-    final nextNum = existing.isEmpty
-        ? 1
-        : existing.map((s) => s.setNumber).reduce((a, b) => a > b ? a : b) + 1;
-    await _sessionRepo.insertSet(
-      sessionExerciseId: sessionExerciseId,
-      sessionId: w.sessionId,
-      userId: _userId,
-      setNumber: nextNum,
-      weight: null,
-      reps: const [],
-    );
-    await _reloadSets(w.sessionId);
+    await forward();
   }
 
   void removeDraftSet(int groupOrder, int draftId) {
-    final drafts = Map<int, List<int>>.from(state.value.workoutSetDrafts);
-    drafts[groupOrder]?.remove(draftId);
-    state.value = state.value.copyWith(workoutSetDrafts: drafts);
+    Future<void> forward() {
+      final drafts = Map<int, List<int>>.from(state.value.workoutSetDrafts);
+      drafts[groupOrder]?.remove(draftId);
+      state.value = state.value.copyWith(workoutSetDrafts: drafts);
+      return Future.value();
+    }
+
+    _recordUndo(
+      UndoAction(
+        inverse: () async {
+          final drafts = Map<int, List<int>>.from(state.value.workoutSetDrafts);
+          drafts.putIfAbsent(groupOrder, () => []).add(draftId);
+          state.value = state.value.copyWith(workoutSetDrafts: drafts);
+        },
+        replay: () async {
+          _suppressHistory = true;
+          try {
+            await forward();
+          } finally {
+            _suppressHistory = false;
+          }
+        },
+      ),
+    );
+    unawaited(forward());
   }
 
   /// Commits a draft row — always inserts a fresh set row (mirrors the live
@@ -884,22 +1671,55 @@ class SessionDetailViewModel {
     );
     final nextNum =
         existing.map((s) => s.setNumber).reduce((a, b) => a > b ? a : b) + 1;
-    try {
-      await _sessionRepo.insertSet(
-        sessionExerciseId: set.sessionExerciseId,
-        sessionId: w.sessionId,
-        userId: _userId,
-        variationId: set.variationId,
-        setNumber: nextNum,
-        weight: weight ?? set.weight,
-        reps: reps ?? set.reps,
-        notes: set.notes,
-      );
-      await _reloadSets(w.sessionId);
-      _computePRs();
-    } catch (e) {
-      state.value = state.value.copyWith(error: e.toString());
+    final box = UndoBox<String>();
+
+    Future<void> forward() async {
+      final w = state.value.session;
+      if (w == null) return;
+      try {
+        final inserted = await _sessionRepo.insertSet(
+          sessionExerciseId: set.sessionExerciseId,
+          sessionId: w.sessionId,
+          userId: _userId,
+          variationId: set.variationId,
+          setNumber: nextNum,
+          weight: weight ?? set.weight,
+          reps: reps ?? set.reps,
+          notes: set.notes,
+        );
+        box.value = inserted.sessionExerciseSetId;
+        await _reloadSets(w.sessionId);
+        _computePRs();
+      } catch (e) {
+        state.value = state.value.copyWith(error: e.toString());
+      }
     }
+
+    _recordUndo(
+      UndoAction(
+        inverse: () async {
+          final id = box.value;
+          if (id == null) return;
+          await _deleteSetFromState(id);
+          try {
+            await _sessionRepo.deleteSet(id);
+            await _reloadSets(w.sessionId);
+            _computePRs();
+          } catch (e) {
+            state.value = state.value.copyWith(error: e.toString());
+          }
+        },
+        replay: () async {
+          _suppressHistory = true;
+          try {
+            await forward();
+          } finally {
+            _suppressHistory = false;
+          }
+        },
+      ),
+    );
+    await forward();
   }
 
   /// Removes [setId] from the in-memory setsByOrder immediately so the UI
@@ -920,17 +1740,96 @@ class SessionDetailViewModel {
   /// Deletes the set, then re-derives PRs from the remaining history so
   /// the next-best record is promoted (e.g. delete a 170 1RM → the 160 that
   /// once beat 150 becomes the 1RM again).
+  ///
+  /// A row that came from the plan SOFT-deletes (flagged, kept, shown red,
+  /// restorable — the exercise turns deleted when this was its last active
+  /// row); a user-added row hard-deletes as before (2026-10-14).
   Future<void> deleteSetCascade(String setId, String exerciseId) async {
     final w = state.value.session;
     if (w == null) return;
-    await _deleteSetFromState(setId);
-    try {
-      await _sessionRepo.deleteSet(setId);
-      _computePRs();
-      await _reloadSets(w.sessionId);
-    } catch (e) {
-      state.value = state.value.copyWith(error: e.toString());
+    final captured = state.value.setsByOrder.values
+        .expand((l) => l)
+        .where((s) => s.sessionExerciseSetId == setId)
+        .firstOrNull;
+    final box = UndoBox<String>();
+    // Flag when the row is planned or its exercise came from the plan — the
+    // whole of a planned exercise's deletions are kept, the user's own
+    // additions included, so its Restore brings back everything underneath
+    // it (2026-10-14). A row of a user-added exercise hard-deletes: the undo
+    // stack is its way back.
+    final slot = state.value.exerciseSlots.firstWhereOrNull(
+      (sl) => sl.sessionExerciseId == captured?.sessionExerciseId,
+    );
+    final isPlanned =
+        captured?.plannedSetId != null || (slot?.planned ?? false);
+
+    Future<void> forward() async {
+      final w = state.value.session;
+      if (w == null) return;
+      if (isPlanned) {
+        try {
+          await _sessionRepo.updateSet(setId, isDeleted: true);
+          await _reloadSets(w.sessionId);
+        } catch (e) {
+          state.value = state.value.copyWith(error: e.toString());
+        }
+        return;
+      }
+      await _deleteSetFromState(setId);
+      try {
+        await _sessionRepo.deleteSet(setId);
+        _computePRs();
+        await _reloadSets(w.sessionId);
+      } catch (e) {
+        state.value = state.value.copyWith(error: e.toString());
+      }
     }
+
+    _recordUndo(
+      UndoAction(
+        inverse: () async {
+          final w = state.value.session;
+          if (w == null || captured == null) return;
+          if (isPlanned) {
+            // Stable ids make the inverse the cheap un-flag.
+            try {
+              await _sessionRepo.updateSet(setId, clearIsDeleted: true);
+              await _reloadSets(w.sessionId);
+            } catch (e) {
+              state.value = state.value.copyWith(error: e.toString());
+            }
+            return;
+          }
+          try {
+            final inserted = await _sessionRepo.insertSet(
+              sessionExerciseId: captured.sessionExerciseId,
+              sessionId: w.sessionId,
+              userId: _userId,
+              variationId: captured.variationId,
+              setNumber: captured.setNumber,
+              weight: captured.weight,
+              reps: captured.reps,
+              notes: captured.notes,
+              plannedSetId: captured.plannedSetId,
+            );
+            box.value = inserted.sessionExerciseSetId;
+            await _reloadSets(w.sessionId);
+            _computePRs();
+          } catch (e) {
+            state.value = state.value.copyWith(error: e.toString());
+          }
+        },
+        replay: () async {
+          _suppressHistory = true;
+          try {
+            await forward();
+          } finally {
+            _suppressHistory = false;
+          }
+        },
+      ),
+    );
+    await forward();
   }
 
   // ── New exercise / variation ───────────────────────────────────────────────
@@ -1089,17 +1988,32 @@ class SessionDetailViewModel {
         }
       }
     }
-    return _variationsByRecencyCache =
-        CustomVariation.sortByLastUsed(variations, last);
+    return _variationsByRecencyCache = CustomVariation.sortByLastUsed(
+      variations,
+      last,
+    );
   }
 
   List<Lesson> lessonsFor(String exerciseId) =>
       state.value.lessonsByExercise[exerciseId] ?? const [];
 
+  /// The lessons born in THIS session for [exerciseId] — what the card's
+  /// pill, the floor tile and the breakdown sheet count. Past sessions'
+  /// lessons stay visible in the modal and the pinned bar but don't inflate
+  /// the number (the live session's rule, mirrored 2026-10-22).
+  int sessionLessonsCount(String exerciseId) {
+    final sessionId = state.value.session?.sessionId;
+    if (sessionId == null) return 0;
+    var count = 0;
+    for (final l in lessonsFor(exerciseId)) {
+      if (l.sessionId == sessionId) count++;
+    }
+    return count;
+  }
+
   Future<void> loadLessonsFor(String exerciseId) async {
     try {
       final lessons = await _lessonRepo.fetchLessons(_userId, exerciseId);
-      debugPrint('lessons loadLessonsFor($exerciseId) → ${lessons.length}');
       final map = Map<String, List<Lesson>>.from(state.value.lessonsByExercise);
       map[exerciseId] = lessons;
       state.value = state.value.copyWith(lessonsByExercise: map);
@@ -1111,12 +2025,12 @@ class SessionDetailViewModel {
   Future<void> addLesson(String exerciseId, String text) async {
     if (text.trim().isEmpty) return;
     try {
-      await _lessonRepo.createLesson(
-        _userId,
-        exerciseId,
-        text.trim(),
-        sessionId: state.value.session?.sessionId,
-      );
+      // A cue written while reading a record was learned NOW — stamping the
+      // record's id would back-date it into that past session's own shelf,
+      // editing a workout the reader only navigated to (2026-10-23). Left
+      // session-less, it lands under AFTER and the record's lessons stay
+      // untouched.
+      await _lessonRepo.createLesson(_userId, exerciseId, text.trim());
       await loadLessonsFor(exerciseId);
     } catch (e) {
       state.value = state.value.copyWith(error: e.toString());
@@ -1173,6 +2087,44 @@ class SessionDetailViewModel {
 
   List<ExerciseHistorySession> historyFor(String exerciseId) =>
       state.value.historyByExercise[exerciseId] ?? const [];
+
+  // ── The date bar's two stacks (2026-10-23) ────────────────────────────────
+
+  /// Switches the date bar's stacks. A mode change returns the card home —
+  /// the record's own sets — so each mode starts from the page being read.
+  void setDateBarMode(SessionDateMode mode) {
+    if (state.value.dateBarMode == mode) return;
+    state.value = state.value.copyWith(
+      dateBarMode: mode,
+      exerciseHistoryIndex: 0,
+    );
+  }
+
+  void toggleDateBarMode() => setDateBarMode(
+    state.value.dateBarMode == SessionDateMode.exercise
+        ? SessionDateMode.session
+        : SessionDateMode.exercise,
+  );
+
+  /// Steps EXERCISE mode: +1 older, -1 newer, both ends holding. The record
+  /// stays the page; only the card's sets move. Pending keystrokes settle
+  /// first — the rows on screen are about to be swapped out, the same rule
+  /// a tab switch follows.
+  Future<void> stepExerciseHistory(int delta) async {
+    if (state.value.dateBarMode != SessionDateMode.exercise) return;
+    final slot = state.value.activeSlot;
+    if (slot == null) return;
+    final position = state.value.effectiveExerciseHistoryIndex;
+    final next = position + delta;
+    if (next < 0 || next > state.value.exerciseHistoryStack.length) return;
+    if (next == position) return;
+    await flushPendingCommits();
+    if (state.value.dateBarMode != SessionDateMode.exercise) return;
+    state.value = state.value.copyWith(
+      exerciseHistoryIndex: next,
+      exerciseHistoryForId: slot.exerciseId,
+    );
+  }
 
   ExerciseDetail? getExerciseDetail(String exerciseId) =>
       state.value.exerciseDetailMap[exerciseId];

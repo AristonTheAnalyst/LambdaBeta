@@ -48,10 +48,9 @@ void main() {
   }) => tester.pumpWidget(
     MaterialApp(
       // Half-scale text. The test font's glyphs are far wider than the real
-      // one's, which wraps the 64pt action labels onto three lines — an
-      // overflow Flutter only reports when the drawer paints, i.e. only while
-      // a swipe is under test. Scaling the text keeps the labels on one line
-      // and the rows exactly as tall as they ship.
+      // one's; shrinking them keeps the rows exactly as tall as they ship, so
+      // the drawer's 52pt slots and 40pt circles are measured against the
+      // real row height.
       home: Builder(
         builder: (context) => MediaQuery(
           data: MediaQuery.of(
@@ -73,15 +72,22 @@ void main() {
     ),
   );
 
-  /// How far the drawer over a row's actions has opened — 0 while the row is
-  /// at rest.
-  double drawerOpacity(WidgetTester tester) => tester
-      .widget<Opacity>(
-        find
-            .ancestor(of: find.byIcon(Icons.delete_outline), matching: find.byType(Opacity))
-            .first,
-      )
-      .opacity;
+  /// How far the delete circle has arrived — 0 while the row is at rest.
+  ///
+  /// The drawer carries no opacity (2026-10-23): every action paints at full
+  /// strength and each circle scales in as its slot is uncovered, so the
+  /// scale IS the reveal.
+  double drawerReveal(WidgetTester tester) {
+    final transform = tester.widget<Transform>(
+      find
+          .ancestor(
+            of: find.byIcon(Icons.delete_outline).first,
+            matching: find.byType(Transform),
+          )
+          .first,
+    );
+    return transform.transform.storage[0];
+  }
 
   /// Holds [from] past the long-press delay, then walks it [dy] pixels down in
   /// small steps and lets go.
@@ -128,13 +134,15 @@ void main() {
     expect(
       moves,
       [(0, 1)],
-      reason: 'the number is the handle; one row down is one move, reported '
+      reason:
+          'the number is the handle; one row down is one move, reported '
           'with the index the lifted row has left behind',
     );
     expect(
-      drawerOpacity(tester),
+      drawerReveal(tester),
       0,
-      reason: 'a hold is not a swipe — the row may be lifted without the '
+      reason:
+          'a hold is not a swipe — the row may be lifted without the '
           'actions drawer waking up behind it',
     );
   });
@@ -150,9 +158,7 @@ void main() {
     );
 
     // Left, and over before the hold would have had anything to say about it.
-    final gesture = await tester.startGesture(
-      tester.getCenter(find.text('1')),
-    );
+    final gesture = await tester.startGesture(tester.getCenter(find.text('1')));
     for (var i = 0; i < 6; i++) {
       await gesture.moveBy(const Offset(-30, 0));
       await tester.pump(const Duration(milliseconds: 16));
@@ -163,14 +169,16 @@ void main() {
     expect(
       moves,
       isEmpty,
-      reason: 'the number is a handle only for a hold — a swipe is the row\'s '
+      reason:
+          'the number is a handle only for a hold — a swipe is the row\'s '
           'own gesture and must not move anything',
     );
     expect(
-      drawerOpacity(tester),
+      drawerReveal(tester),
       greaterThan(0),
-      reason: 'Duplicate/Delete are still reached by swiping the row, number '
-          'cell included',
+      reason:
+          'Duplicate/Note/Delete are still reached by swiping the row, '
+          'number cell included',
     );
   });
 
@@ -181,11 +189,7 @@ void main() {
     await pumpCard(
       tester,
       // The drafts: real rows to the grid, but with nothing to key a move to.
-      rows: [
-        row('s0', 0),
-        row('s1', 1),
-        row('s2', 2),
-      ],
+      rows: [row('s0', 0), row('s1', 1), row('s2', 2)],
       onReorderSets: (oldIndex, newIndex) => moves.add((oldIndex, newIndex)),
     );
 
@@ -208,7 +212,8 @@ void main() {
     expect(
       find.byType(ReorderableListView),
       findsNothing,
-      reason: 'the read-only surfaces — the viewer at rest, the history '
+      reason:
+          'the read-only surfaces — the viewer at rest, the history '
           'picker — draw these same rows and must not gain a drag layer',
     );
     expect(find.text('1'), findsOneWidget);
@@ -232,10 +237,7 @@ void main() {
       findsOneWidget,
     );
     expect(
-      find.ancestor(
-        of: find.text('1'),
-        matching: find.byType(SlideTransition),
-      ),
+      find.ancestor(of: find.text('1'), matching: find.byType(SlideTransition)),
       findsWidgets,
     );
   });

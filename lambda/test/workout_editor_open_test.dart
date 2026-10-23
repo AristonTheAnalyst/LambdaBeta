@@ -106,7 +106,8 @@ class _FakeExerciseRepo extends Fake implements ExerciseRepository {
   ) async => const {};
 
   @override
-  Future<List<CustomVariation>> fetchVariations(String userId) async => const [];
+  Future<List<CustomVariation>> fetchVariations(String userId) async =>
+      const [];
 }
 
 class _FakeSessionRepo extends Fake implements SessionRepository {}
@@ -124,22 +125,35 @@ void main() {
     userId: 'u1',
   );
 
-  test('opening a standalone workout reads one row, normalized read-only', () async {
-    final vm = buildVm();
-    await vm.openStandaloneWorkout('ps1');
+  test(
+    'opening a standalone workout reads one row, normalized read-only',
+    () async {
+      final vm = buildVm();
+      await vm.openStandaloneWorkout('ps1');
 
-    expect(planRepo.listReads, 0,
-        reason: 'the whole standalone list is never read to find one id');
-    expect(planRepo.byIdReads, 1);
-    expect(planRepo.normalizedReads, 1,
-        reason: 'the open path normalizes in memory');
-    expect(planRepo.writingNormalizedReads, 0,
-        reason: 'zero repair writes on open — the writing variant stays on '
-            'the save path only');
-    expect(vm.state.value.workoutPlannedSessionExerciseSets, hasLength(1));
-    expect(vm.state.value.workoutExerciseSlots, hasLength(1));
-    vm.dispose();
-  });
+      expect(
+        planRepo.listReads,
+        0,
+        reason: 'the whole standalone list is never read to find one id',
+      );
+      expect(planRepo.byIdReads, 1);
+      expect(
+        planRepo.normalizedReads,
+        1,
+        reason: 'the open path normalizes in memory',
+      );
+      expect(
+        planRepo.writingNormalizedReads,
+        0,
+        reason:
+            'zero repair writes on open — the writing variant stays on '
+            'the save path only',
+      );
+      expect(vm.state.value.workoutPlannedSessionExerciseSets, hasLength(1));
+      expect(vm.state.value.workoutExerciseSlots, hasLength(1));
+      vm.dispose();
+    },
+  );
 
   test('opening batches the lessons read across the slots', () async {
     final lessons = _FakeLessonRepo();
@@ -152,8 +166,11 @@ void main() {
     );
     await vm.openStandaloneWorkout('ps1');
 
-    expect(lessons.batchReads, 1,
-        reason: 'one IN(...) read for all the slots, not one per exercise');
+    expect(
+      lessons.batchReads,
+      1,
+      reason: 'one IN(...) read for all the slots, not one per exercise',
+    );
     vm.dispose();
   });
 }

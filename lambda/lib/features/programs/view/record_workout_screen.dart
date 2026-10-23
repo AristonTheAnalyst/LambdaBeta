@@ -10,6 +10,7 @@ import '../../../data/models/program_content.dart';
 import '../../../shared/widgets/dropdown_select.dart';
 import '../../../shared/widgets/exercise_selector.dart';
 import '../../../shared/widgets/lambda_readout.dart';
+import '../../../shared/widgets/header_icon_button.dart';
 import '../../../shared/widgets/page_header.dart';
 import '../../../shared/widgets/session_exercise_card.dart';
 import '../../../shared/widgets/session_set_row.dart';
@@ -163,8 +164,11 @@ class _RecordWorkoutScreenState extends State<RecordWorkoutScreen> {
           children: [
             PageHeader(
               title: widget.name,
-              left: IconButton(
-                icon: Icon(Icons.arrow_back, color: AppColors.primary),
+              left: HeaderIconButton(
+                icon: Icons.arrow_back_ios_new,
+                semanticsLabel: 'Back',
+                glyphSize: 18,
+                color: AppColors.primary,
                 onPressed: () =>
                     Navigator.of(context, rootNavigator: true).pop(),
               ),
@@ -220,9 +224,9 @@ class _RecordWorkoutScreenState extends State<RecordWorkoutScreen> {
           _caption(),
           style: AppFonts.mono(
             fontSize: AppTextStyles.xs,
-            fontWeight: FontWeight.w700,
+            fontWeight: FontWeight.w600,
             letterSpacing: 0.8,
-            color: AppColors.muted,
+            color: AppColors.primary,
           ),
         ),
         const SizedBox(height: AppSpacing.md),
@@ -255,7 +259,10 @@ class _RecordWorkoutScreenState extends State<RecordWorkoutScreen> {
       child: Text(
         text,
         textAlign: TextAlign.center,
-        style: AppFonts.ui(fontSize: AppTextStyles.sm, color: AppColors.muted),
+        style: AppFonts.ui(
+          fontSize: AppTextStyles.sm,
+          color: AppColors.inkSecondary,
+        ),
       ),
     ),
   );

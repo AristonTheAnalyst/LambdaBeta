@@ -22,7 +22,7 @@ const _uuid = Uuid();
 /// PRs are derived from the sets on read — nothing extra is inserted.
 class SampleDataService {
   SampleDataService({ExerciseRepository? exerciseRepo})
-      : _exerciseRepo = exerciseRepo ?? ExerciseRepository();
+    : _exerciseRepo = exerciseRepo ?? ExerciseRepository();
 
   final ExerciseRepository _exerciseRepo;
 
@@ -70,12 +70,15 @@ class SampleDataService {
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
           ''',
           [
-            sessionId, sessionId, userId,
+            sessionId,
+            sessionId,
+            userId,
             hasNotes ? 'Sample pre-note for session ${i + 1}' : null,
             hasNotes ? 'Sample post-note for session ${i + 1}' : null,
             created.toIso8601String(),
             created.add(const Duration(hours: 1)).toIso8601String(),
-            preFeeling, postFeeling,
+            preFeeling,
+            postFeeling,
           ],
         );
 
@@ -134,8 +137,15 @@ class SampleDataService {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       ''',
       [
-        setId, setId, sessionExerciseId, userId, variationId,
-        setNumber, weight, jsonEncode([5]), null,
+        setId,
+        setId,
+        sessionExerciseId,
+        userId,
+        variationId,
+        setNumber,
+        weight,
+        jsonEncode([5]),
+        null,
       ],
     );
   }
@@ -144,10 +154,8 @@ class SampleDataService {
   /// exercise rows reference test1/test2, and those rows' sets. Safe because
   /// these exercise names are exclusively used by the sample data.
   Future<int> deleteSampleData(String userId) async {
-    final ex1 =
-        await _exerciseRepo.findExerciseByName(userId, exercise1Name);
-    final ex2 =
-        await _exerciseRepo.findExerciseByName(userId, exercise2Name);
+    final ex1 = await _exerciseRepo.findExerciseByName(userId, exercise1Name);
+    final ex2 = await _exerciseRepo.findExerciseByName(userId, exercise2Name);
     final ids = [ex1?.exerciseId, ex2?.exerciseId].whereType<String>().toList();
     if (ids.isEmpty) return 0;
 
@@ -158,8 +166,9 @@ class SampleDataService {
         'SELECT DISTINCT session_id FROM fact_session_exercise WHERE user_id = ? AND custom_exercise_id IN ($placeholders)',
         [userId, ...ids],
       );
-      final sessionIds =
-          sessionRows.map((r) => r['session_id'] as String).toList();
+      final sessionIds = sessionRows
+          .map((r) => r['session_id'] as String)
+          .toList();
 
       await tx.execute(
         '''

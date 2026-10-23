@@ -71,23 +71,27 @@ class StatsRow extends StatelessWidget {
   Widget _tileWidget(StatsTile tile) {
     final tone = this.tone;
     final label = Text(
-        tile.label,
-        textAlign: TextAlign.center,
-        style: AppFonts.mono(
-            // Inline, a label and its number are one reading, so they hold one
-            // size — the label steps up to the number's, never the number down
-            // to the label's. Stacked, the two lines keep their own.
-            fontSize: inline ? 17 : 14,
-            letterSpacing: 0.8,
-            color: tile.accent
-                ? AppColors.accent
-                : (tone == null ? AppColors.primary : AppColors.muted)));
+      tile.label,
+      textAlign: TextAlign.center,
+      style: AppFonts.mono(
+        // Inline, a label and its number are one reading, so they hold one
+        // size — the label steps up to the number's, never the number down
+        // to the label's. Stacked, the two lines keep their own.
+        fontSize: inline ? 17 : 14,
+        letterSpacing: 0.8,
+        color: tile.accent
+            ? AppColors.accent
+            : (tone == null ? AppColors.primary : AppColors.inkSecondary),
+      ),
+    );
     final value = Text(
-        tile.value,
-        style: AppFonts.mono(
-            fontSize: 17,
-            fontWeight: FontWeight.w500,
-            color: tile.accent ? AppColors.accent : AppColors.primary));
+      tile.value,
+      style: AppFonts.mono(
+        fontSize: 17,
+        fontWeight: FontWeight.w500,
+        color: tile.accent ? AppColors.accent : AppColors.primary,
+      ),
+    );
     final content = Container(
       // A tile's fill belongs to the row's container: with no container of
       // its own, the tile paints nothing and whatever the row is standing on
@@ -104,19 +108,9 @@ class StatsRow extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.baseline,
               textBaseline: TextBaseline.alphabetic,
-              children: [
-                label,
-                const SizedBox(width: 6),
-                value,
-              ],
+              children: [label, const SizedBox(width: 6), value],
             )
-          : Column(
-              children: [
-                label,
-                const SizedBox(height: 3),
-                value,
-              ],
-            ),
+          : Column(children: [label, const SizedBox(height: 3), value]),
     );
     if (tile.onTap == null) return content;
     return GestureDetector(onTap: tile.onTap, child: content);

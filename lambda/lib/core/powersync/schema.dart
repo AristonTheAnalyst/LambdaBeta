@@ -25,40 +25,58 @@ const schema = Schema([
     Column.integer('onboarded'),
     Column.text('user_weight_kg'),
   ]),
-  Table('fact_session', [
-    Column.text('session_id'),
-    Column.text('user_id'),
-    Column.text('pre_notes'),
-    Column.text('post_notes'),
-    Column.text('created_datetime'),
-    Column.text('end_datetime'),
-    Column.text('planned_session_id'),
-    Column.text('planned_session_name'),
-    Column.text('program_run_id'),
-    Column.integer('post_feeling'),
-    Column.integer('pre_feeling'),
-  ], indexes: [
-    Index('user_end_idx', [
-      IndexedColumn.ascending('user_id'),
-      IndexedColumn.ascending('end_datetime'),
-    ]),
-  ]),
-  Table('dim_exercise', [
-    Column.text('custom_exercise_id'),
-    Column.text('user_id'),
-    Column.text('exercise_name'),
-    Column.text('date_archived'),
-  ], indexes: [
-    Index('user_idx', [IndexedColumn.ascending('user_id')]),
-  ]),
-  Table('dim_variation', [
-    Column.text('custom_variation_id'),
-    Column.text('user_id'),
-    Column.text('variation_name'),
-    Column.text('date_archived'),
-  ], indexes: [
-    Index('user_idx', [IndexedColumn.ascending('user_id')]),
-  ]),
+  Table(
+    'fact_session',
+    [
+      Column.text('session_id'),
+      Column.text('user_id'),
+      Column.text('pre_notes'),
+      Column.text('post_notes'),
+      Column.text('created_datetime'),
+      Column.text('end_datetime'),
+      Column.text('planned_session_id'),
+      Column.text('planned_session_name'),
+      Column.text('program_run_id'),
+      Column.integer('post_feeling'),
+      Column.integer('pre_feeling'),
+      // Which device created the session (2026-10-15) — the app's own live
+      // session is the one carrying ITS device id; anything else active is
+      // another device's, which the app only ever offers to switch to.
+      // NULL (rows from before the column, or old clients) reads as "another
+      // device" — the safe reading.
+      Column.text('device_id'),
+    ],
+    indexes: [
+      Index('user_end_idx', [
+        IndexedColumn.ascending('user_id'),
+        IndexedColumn.ascending('end_datetime'),
+      ]),
+    ],
+  ),
+  Table(
+    'dim_exercise',
+    [
+      Column.text('custom_exercise_id'),
+      Column.text('user_id'),
+      Column.text('exercise_name'),
+      Column.text('date_archived'),
+    ],
+    indexes: [
+      Index('user_idx', [IndexedColumn.ascending('user_id')]),
+    ],
+  ),
+  Table(
+    'dim_variation',
+    [
+      Column.text('custom_variation_id'),
+      Column.text('user_id'),
+      Column.text('variation_name'),
+      Column.text('date_archived'),
+    ],
+    indexes: [
+      Index('user_idx', [IndexedColumn.ascending('user_id')]),
+    ],
+  ),
   Table('fact_bodyweight', [
     Column.text('user_weight_id'),
     Column.text('user_id'),
@@ -66,29 +84,44 @@ const schema = Schema([
     Column.text('user_weight_date'),
     Column.text('created_date'),
   ]),
-  Table('fact_session_exercise', [
-    Column.text('session_exercise_id'),
-    Column.text('session_id'),
-    Column.text('user_id'),
-    Column.text('custom_exercise_id'),
-    Column.integer('exercise_order'),
-    Column.text('planned_exercise_id'),
-  ], indexes: [
-    Index('session_idx', [IndexedColumn.ascending('session_id')]),
-  ]),
-  Table('fact_session_exercise_set', [
-    Column.text('session_exercise_set_id'),
-    Column.text('session_exercise_id'),
-    Column.text('user_id'),
-    Column.text('custom_variation_id'),
-    Column.integer('set_number'),
-    Column.text('weight'),
-    Column.text('reps'),
-    Column.text('notes'),
-    Column.text('planned_set_id'),
-  ], indexes: [
-    Index('se_idx', [IndexedColumn.ascending('session_exercise_id')]),
-  ]),
+  Table(
+    'fact_session_exercise',
+    [
+      Column.text('session_exercise_id'),
+      Column.text('session_id'),
+      Column.text('user_id'),
+      Column.text('custom_exercise_id'),
+      Column.integer('exercise_order'),
+      Column.text('planned_exercise_id'),
+    ],
+    indexes: [
+      Index('session_idx', [IndexedColumn.ascending('session_id')]),
+    ],
+  ),
+  Table(
+    'fact_session_exercise_set',
+    [
+      Column.text('session_exercise_set_id'),
+      Column.text('session_exercise_id'),
+      Column.text('user_id'),
+      Column.text('custom_variation_id'),
+      Column.integer('set_number'),
+      Column.text('weight'),
+      Column.text('reps'),
+      Column.text('notes'),
+      Column.text('planned_set_id'),
+      // Soft-delete for planned rows (2026-10-13) — deleting a planned set
+      // flags it instead of removing it, so the exercise can be restored and
+      // wear the minus mark. Flagged rows SURVIVE endSession (the prune keeps
+      // them) and their exercise row with them, so a past session can show
+      // what was deleted and offer a restore; only the derived timeline and
+      // the logs list filter them out (2026-10-14).
+      Column.integer('is_deleted'),
+    ],
+    indexes: [
+      Index('se_idx', [IndexedColumn.ascending('session_exercise_id')]),
+    ],
+  ),
   Table('dim_program', [
     Column.text('program_id'),
     Column.text('user_id'),
@@ -178,40 +211,66 @@ const schema = Schema([
     Column.text('workout_notes_json'),
     Column.text('created_date'),
   ]),
-  Table('dim_lesson', [
-    Column.text('lesson_id'),
-    Column.text('user_id'),
-    Column.text('custom_exercise_id'),
-    Column.text('lesson_text'),
-    Column.integer('pinned'),
-    Column.integer('is_archived'),
-    Column.text('lesson_created_date'),
-    Column.text('session_id'),
-  ], indexes: [
-    Index('user_ex_idx', [
-      IndexedColumn.ascending('user_id'),
-      IndexedColumn.ascending('custom_exercise_id'),
-    ]),
-  ]),
+  Table(
+    'dim_lesson',
+    [
+      Column.text('lesson_id'),
+      Column.text('user_id'),
+      Column.text('custom_exercise_id'),
+      Column.text('lesson_text'),
+      Column.integer('pinned'),
+      Column.integer('is_archived'),
+      Column.text('lesson_created_date'),
+      Column.text('session_id'),
+    ],
+    indexes: [
+      Index('user_ex_idx', [
+        IndexedColumn.ascending('user_id'),
+        IndexedColumn.ascending('custom_exercise_id'),
+      ]),
+    ],
+  ),
   Table('coaching_relationship', [
     Column.text('coach_user_id'),
     Column.text('athlete_user_id'),
     Column.text('created_date'),
   ]),
-  Table('dim_planned_session', [
-    Column.text('session_id'),
+  // Friends (2026-10-23). `dim_friend_code` is a SIDE TABLE rather than a
+  // dim_user column because user_data selects `dim_user *` — a new column
+  // would reach old app builds whose local schema does not know it. It
+  // streams only to its owner.
+  Table('dim_friend_code', [
     Column.text('user_id'),
-    Column.text('name'),
-    Column.text('notes'),
-    Column.text('date_archived'),
+    Column.text('friend_code'),
     Column.text('created_date'),
-    // Copy-on-add provenance. NULL = this workout originated here; set = this
-    // is a program copy of the library workout it names. Plain ref (no FK):
-    // an offline create→import must not be able to fail an FK on upload.
-    Column.text('base_session_id'),
-  ], indexes: [
-    Index('user_idx', [IndexedColumn.ascending('user_id')]),
   ]),
+  // One ROW PER DIRECTION: this table streams only the caller's own outgoing
+  // rows; the reciprocal half lives on the friend's device. A friendship is
+  // the pair — the RPC writes both in one call, and the friends_data stream
+  // matches only mutual pairs.
+  Table('friend_relationship', [
+    Column.text('user_id'),
+    Column.text('friend_user_id'),
+    Column.text('created_date'),
+  ]),
+  Table(
+    'dim_planned_session',
+    [
+      Column.text('session_id'),
+      Column.text('user_id'),
+      Column.text('name'),
+      Column.text('notes'),
+      Column.text('date_archived'),
+      Column.text('created_date'),
+      // Copy-on-add provenance. NULL = this workout originated here; set = this
+      // is a program copy of the library workout it names. Plain ref (no FK):
+      // an offline create→import must not be able to fail an FK on upload.
+      Column.text('base_session_id'),
+    ],
+    indexes: [
+      Index('user_idx', [IndexedColumn.ascending('user_id')]),
+    ],
+  ),
   Table('dim_pr_view_setting', [
     Column.text('pr_view_setting_id'),
     Column.text('user_id'),
@@ -219,44 +278,56 @@ const schema = Schema([
     Column.text('axis_type'),
     Column.text('axis_value'),
   ]),
-  Table('dim_planned_session_program', [
-    Column.text('planned_session_program_id'),
-    Column.text('program_id'),
-    Column.text('planned_session_id'),
-    Column.text('user_id'),
-    Column.integer('sequence_order'),
-    Column.integer('day_of_week'),
-    Column.integer('week_offset'),
-    // The block this workout belongs to; NULL = a blockless program. The
-    // server enforces (program_id, block_id) as a composite FK, so a workout
-    // can only join a block of its own program.
-    Column.text('block_id'),
-  ], indexes: [
-    Index('ps_idx', [IndexedColumn.ascending('planned_session_id')]),
-  ]),
-  Table('dim_planned_session_exercise', [
-    Column.text('planned_exercise_id'),
-    Column.text('planned_session_id'),
-    Column.text('user_id'),
-    Column.text('custom_exercise_id'),
-    Column.integer('exercise_order'),
-    Column.integer('is_archived'),
-  ], indexes: [
-    Index('session_idx', [IndexedColumn.ascending('planned_session_id')]),
-  ]),
-  Table('dim_planned_session_exercise_set', [
-    Column.text('planned_set_id'),
-    Column.text('planned_exercise_id'),
-    Column.text('user_id'),
-    Column.text('custom_variation_id'),
-    Column.integer('set_number'),
-    Column.text('target_weight'),
-    Column.text('target_reps'),
-    Column.text('target_notes'),
-    Column.integer('is_archived'),
-  ], indexes: [
-    Index('pe_idx', [IndexedColumn.ascending('planned_exercise_id')]),
-  ]),
+  Table(
+    'dim_planned_session_program',
+    [
+      Column.text('planned_session_program_id'),
+      Column.text('program_id'),
+      Column.text('planned_session_id'),
+      Column.text('user_id'),
+      Column.integer('sequence_order'),
+      Column.integer('day_of_week'),
+      Column.integer('week_offset'),
+      // The block this workout belongs to; NULL = a blockless program. The
+      // server enforces (program_id, block_id) as a composite FK, so a workout
+      // can only join a block of its own program.
+      Column.text('block_id'),
+    ],
+    indexes: [
+      Index('ps_idx', [IndexedColumn.ascending('planned_session_id')]),
+    ],
+  ),
+  Table(
+    'dim_planned_session_exercise',
+    [
+      Column.text('planned_exercise_id'),
+      Column.text('planned_session_id'),
+      Column.text('user_id'),
+      Column.text('custom_exercise_id'),
+      Column.integer('exercise_order'),
+      Column.integer('is_archived'),
+    ],
+    indexes: [
+      Index('session_idx', [IndexedColumn.ascending('planned_session_id')]),
+    ],
+  ),
+  Table(
+    'dim_planned_session_exercise_set',
+    [
+      Column.text('planned_set_id'),
+      Column.text('planned_exercise_id'),
+      Column.text('user_id'),
+      Column.text('custom_variation_id'),
+      Column.integer('set_number'),
+      Column.text('target_weight'),
+      Column.text('target_reps'),
+      Column.text('target_notes'),
+      Column.integer('is_archived'),
+    ],
+    indexes: [
+      Index('pe_idx', [IndexedColumn.ascending('planned_exercise_id')]),
+    ],
+  ),
   Table('fact_goal', [
     Column.text('goal_id'),
     Column.text('program_run_id'),
@@ -276,6 +347,13 @@ const schema = Schema([
     Column.text('custom_variation_id'),
     Column.text('target_weight'),
     Column.integer('target_reps'),
+    // The day the goal should be hit by (2026-10-19). NULL = no deadline.
+    // See 20261019120000_goal_target_date.sql.
+    Column.text('target_date'),
+    // Every adjustment to target_date, oldest first, as JSON
+    // [{from, to, changed_at}] — moving a deadline is a fact, not an
+    // overwrite. NULL = never adjusted.
+    Column.text('target_date_history_json'),
     Column.text('goal_created_date'),
     // `achieved_date` is deliberately absent — a goal's outcome is a per-run
     // fact now, frozen into fact_program_review.achievements_json at close.

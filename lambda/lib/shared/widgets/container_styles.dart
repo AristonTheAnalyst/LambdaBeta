@@ -65,22 +65,19 @@ List<BoxShadow> get floatingShadow => [
 
 /// The box recipe for [tone]. Radius defaults to [AppRadius.lg]; pill
 /// containers pass a larger radius (e.g. 999).
-BoxDecoration lambdaBox(
-  ContainerTone tone, {
-  double radius = AppRadius.lg,
-}) {
+BoxDecoration lambdaBox(ContainerTone tone, {double radius = AppRadius.lg}) {
   final (Color fill, Color? border) = switch (tone) {
     ContainerTone.surface => (AppColors.surface, AppColors.border),
     ContainerTone.ghost => (AppColors.surfaceHigh, AppColors.border),
     ContainerTone.accent => (
-        AppColors.accentBg,
-        AppColors.accent.withValues(alpha: 0.35),
-      ),
+      AppColors.accentBg,
+      AppColors.accent.withValues(alpha: 0.35),
+    ),
     ContainerTone.danger => (AppColors.dangerBg, AppColors.dangerBorder),
     ContainerTone.planned => (
-        AppColors.plannedBg,
-        AppColors.planned.withValues(alpha: 0.35),
-      ),
+      AppColors.plannedBg,
+      AppColors.planned.withValues(alpha: 0.35),
+    ),
     ContainerTone.field => (AppColors.surface, null),
     ContainerTone.bg => (AppColors.bg, AppColors.border),
     ContainerTone.outline => (Colors.transparent, AppColors.border),
@@ -92,6 +89,26 @@ BoxDecoration lambdaBox(
     border: border == null ? null : Border.all(color: border),
   );
 }
+
+/// The deleted-exercise chrome (2026-10-14) — the danger fill with the
+/// full-strength edge at the heavier width. ONE recipe for both readings: a
+/// soft-deleted set row and the exercise selector's deleted name (field and
+/// popover row alike), so the two can never drift.
+BoxDecoration deletedBox({double radius = AppRadius.md}) => BoxDecoration(
+  color: AppColors.dangerBg,
+  borderRadius: BorderRadius.circular(radius),
+  border: Border.all(color: AppColors.danger, width: 1.2),
+);
+
+/// The achieved chrome (2026-10-19) — [deletedBox]'s recipe in success: the
+/// green fill with a full-strength green edge. Worn by the New Goal form's
+/// set row the moment the typed target is already met by the user's history,
+/// so "the work is done" reads before the words under it are read.
+BoxDecoration successBox({double radius = AppRadius.md}) => BoxDecoration(
+  color: AppColors.successBg,
+  borderRadius: BorderRadius.circular(radius),
+  border: Border.all(color: AppColors.success, width: 1.2),
+);
 
 /// The glass recipe — translucent tint + soft hairline in [color]
 /// (GlassButton's chrome, for pressables that aren't buttons: chips,

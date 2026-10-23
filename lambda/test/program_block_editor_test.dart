@@ -47,9 +47,9 @@ void main() {
   /// The `TextField` inside the labelled input — `find.byType(TextField)` would
   /// find the name and notes fields too.
   Finder field(String label) => find.descendant(
-        of: find.widgetWithText(LambdaInput, label),
-        matching: find.byType(TextField),
-      );
+    of: find.widgetWithText(LambdaInput, label),
+    matching: find.byType(TextField),
+  );
 
   Future<void> pumpEditor(
     WidgetTester tester, {
@@ -85,12 +85,7 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  ProgramBlock block({
-    int? weeks,
-    int? days,
-    int? sessions,
-    DateTime? start,
-  }) =>
+  ProgramBlock block({int? weeks, int? days, int? sessions, DateTime? start}) =>
       ProgramBlock(
         blockId: 'b1',
         userId: 'u1',
@@ -103,8 +98,9 @@ void main() {
         startDate: start,
       );
 
-  testWidgets('a weeks block opens with its days beside its weeks',
-      (tester) async {
+  testWidgets('a weeks block opens with its days beside its weeks', (
+    tester,
+  ) async {
     await pumpEditor(
       tester,
       block: block(weeks: 8, days: 3, start: DateTime(2026, 10, 1)),
@@ -119,8 +115,9 @@ void main() {
     expect(find.text(day(DateTime(2026, 11, 29))), findsOneWidget);
   });
 
-  testWidgets('a zero remainder is an empty Days field, not a zero',
-      (tester) async {
+  testWidgets('a zero remainder is an empty Days field, not a zero', (
+    tester,
+  ) async {
     await pumpEditor(
       tester,
       block: block(weeks: 8, start: DateTime(2026, 10, 1)),
@@ -128,9 +125,13 @@ void main() {
     );
 
     expect(tester.widget<TextField>(field('Weeks')).controller!.text, '8');
-    expect(tester.widget<TextField>(field('Days')).controller!.text, '',
-        reason: 'null means "no remainder" and prints as absence — a 0 would '
-            'read as a value the user never entered');
+    expect(
+      tester.widget<TextField>(field('Days')).controller!.text,
+      '',
+      reason:
+          'null means "no remainder" and prints as absence — a 0 would '
+          'read as a value the user never entered',
+    );
     expect(find.text(day(DateTime(2026, 11, 26))), findsOneWidget);
   });
 
@@ -146,8 +147,11 @@ void main() {
     await tester.enterText(field('Days'), '3');
     await tester.pump();
 
-    expect(find.text(day(DateTime(2026, 11, 29))), findsOneWidget,
-        reason: 'the fill is live, not a surprise on save');
+    expect(
+      find.text(day(DateTime(2026, 11, 29))),
+      findsOneWidget,
+      reason: 'the fill is live, not a surprise on save',
+    );
     expect(find.text(day(DateTime(2026, 11, 26))), findsNothing);
   });
 
@@ -172,10 +176,14 @@ void main() {
 
     expect(tester.widget<TextField>(field('Weeks')).controller!.text, '8');
     expect(tester.widget<TextField>(field('Days')).controller!.text, '3');
-    expect(find.text(day(DateTime(2026, 11, 29))), findsOneWidget,
-        reason: 'and the field shows the day that was picked — the two fields '
-            'are one value, so a pick that came back rounded would be visible '
-            'here as a different date than the one tapped');
+    expect(
+      find.text(day(DateTime(2026, 11, 29))),
+      findsOneWidget,
+      reason:
+          'and the field shows the day that was picked — the two fields '
+          'are one value, so a pick that came back rounded would be visible '
+          'here as a different date than the one tapped',
+    );
   });
 
   testWidgets('a sub-week length is a length', (tester) async {
@@ -190,17 +198,25 @@ void main() {
     await tester.enterText(field('Days'), '3');
     await tester.pump();
 
-    expect(find.text(day(DateTime(2026, 10, 4))), findsOneWidget,
-        reason: 'three days from the start — weeks may be 0 now, so the '
-            'projection cannot assume a whole week');
+    expect(
+      find.text(day(DateTime(2026, 10, 4))),
+      findsOneWidget,
+      reason:
+          'three days from the start — weeks may be 0 now, so the '
+          'projection cannot assume a whole week',
+    );
 
     await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
 
     expect(repo.written['targetWeeks'], 0);
-    expect(repo.written['targetDays'], 3,
-        reason: 'the remainder is stored beside weeks: 0, not null — the pair '
-            'is the length, and `null weeks` would mean the block has none');
+    expect(
+      repo.written['targetDays'],
+      3,
+      reason:
+          'the remainder is stored beside weeks: 0, not null — the pair '
+          'is the length, and `null weeks` would mean the block has none',
+    );
   });
 
   testWidgets('a remainder over a week is normalized on save', (tester) async {
@@ -219,21 +235,30 @@ void main() {
     await tester.enterText(field('Days'), '9');
     await tester.pump();
 
-    expect(find.text(day(DateTime(2026, 11, 21))), findsOneWidget,
-        reason: '51 days from the start, which is what 6 weeks 9 days *is* — '
-            'the projection reads the total, not the weeks field');
+    expect(
+      find.text(day(DateTime(2026, 11, 21))),
+      findsOneWidget,
+      reason:
+          '51 days from the start, which is what 6 weeks 9 days *is* — '
+          'the projection reads the total, not the weeks field',
+    );
 
     await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
 
     expect(repo.written['targetWeeks'], 7);
-    expect(repo.written['targetDays'], 2,
-        reason: 'stored as whole weeks plus a remainder in 0..6, which is the '
-            'only shape the column documents and the server accepts');
+    expect(
+      repo.written['targetDays'],
+      2,
+      reason:
+          'stored as whole weeks plus a remainder in 0..6, which is the '
+          'only shape the column documents and the server accepts',
+    );
   });
 
-  testWidgets('sessions mode hides the pair and says how long it is',
-      (tester) async {
+  testWidgets('sessions mode hides the pair and says how long it is', (
+    tester,
+  ) async {
     final repo = _FakePrograms();
     await pumpEditor(
       tester,
@@ -246,13 +271,18 @@ void main() {
     expect(find.widgetWithText(LambdaInput, 'Sessions'), findsOneWidget);
     expect(find.widgetWithText(LambdaInput, 'Weeks'), findsNothing);
     expect(find.widgetWithText(LambdaInput, 'Days'), findsNothing);
-    expect(find.text('Ends'), findsNothing,
-        reason: 'a sessions block has no calendar end at all, so the field is '
-            'absent rather than empty');
+    expect(
+      find.text('Ends'),
+      findsNothing,
+      reason:
+          'a sessions block has no calendar end at all, so the field is '
+          'absent rather than empty',
+    );
   });
 
-  testWidgets('switching to sessions clears both halves of the weeks length',
-      (tester) async {
+  testWidgets('switching to sessions clears both halves of the weeks length', (
+    tester,
+  ) async {
     final repo = _FakePrograms();
     await pumpEditor(
       tester,
@@ -270,10 +300,14 @@ void main() {
 
     expect(repo.written['targetSessions'], 24);
     expect(repo.written['clearWeeks'], isTrue);
-    expect(repo.written['clearTargetDays'], isTrue,
-        reason: 'days are part of the weeks length — a unit switch that cleared '
-            'the weeks and left the remainder would leave a row the server '
-            'rejects and nothing downstream could read');
+    expect(
+      repo.written['clearTargetDays'],
+      isTrue,
+      reason:
+          'days are part of the weeks length — a unit switch that cleared '
+          'the weeks and left the remainder would leave a row the server '
+          'rejects and nothing downstream could read',
+    );
   });
 }
 
@@ -325,14 +359,12 @@ class _FakePrograms implements ProgramRepository {
   Future<List<ProgramBlock>> fetchBlocks(String programId) async => const [];
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 /// Only here because `LessonRepository`'s constructor evaluates the global
 /// `ps.db` — the one repository that cannot be default-constructed off-device.
 class _FakeLessons implements LessonRepository {
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

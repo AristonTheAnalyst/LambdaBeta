@@ -37,8 +37,9 @@ ProgramLibraryState _state({
   sortDesc: descending,
 );
 
-List<String> _names(ProgramLibraryState s) =>
-    [for (final p in s.sortedPrograms) p.name];
+List<String> _names(ProgramLibraryState s) => [
+  for (final p in s.sortedPrograms) p.name,
+];
 
 void main() {
   test('last modified, descending — the default', () {
@@ -50,17 +51,24 @@ void main() {
   });
 
   test('A–Z in both directions', () {
-    expect(_names(_state(sort: ProgramSortCriterion.name, descending: false)),
-        ['Alpha', 'Bravo', 'Charlie']);
-    expect(_names(_state(sort: ProgramSortCriterion.name)),
-        ['Charlie', 'Bravo', 'Alpha']);
+    expect(_names(_state(sort: ProgramSortCriterion.name, descending: false)), [
+      'Alpha',
+      'Bravo',
+      'Charlie',
+    ]);
+    expect(_names(_state(sort: ProgramSortCriterion.name)), [
+      'Charlie',
+      'Bravo',
+      'Alpha',
+    ]);
   });
 
   test('last used — never-used sinks in either direction', () {
-    expect(
-      _names(_state(sort: ProgramSortCriterion.lastUsed)),
-      ['Bravo', 'Alpha', 'Charlie'],
-    );
+    expect(_names(_state(sort: ProgramSortCriterion.lastUsed)), [
+      'Bravo',
+      'Alpha',
+      'Charlie',
+    ]);
     expect(
       _names(_state(sort: ProgramSortCriterion.lastUsed, descending: false)),
       ['Alpha', 'Bravo', 'Charlie'],
@@ -69,24 +77,31 @@ void main() {
   });
 
   test('most used, descending', () {
-    expect(_names(_state(sort: ProgramSortCriterion.mostUsed)),
-        ['Alpha', 'Bravo', 'Charlie'],
-        reason: '4 sessions, 1, then the never-trained 0');
+    expect(_names(_state(sort: ProgramSortCriterion.mostUsed)), [
+      'Alpha',
+      'Bravo',
+      'Charlie',
+    ], reason: '4 sessions, 1, then the never-trained 0');
   });
 
   test('the current program stays pinned under every sort', () {
     expect(
-      _names(_state(sort: ProgramSortCriterion.name, currentProgramId: 'p-bravo')),
+      _names(
+        _state(sort: ProgramSortCriterion.name, currentProgramId: 'p-bravo'),
+      ),
       ['Bravo', 'Charlie', 'Alpha'],
-      reason: 'z-to-a would put Bravo last; "the program you are running" '
+      reason:
+          'z-to-a would put Bravo last; "the program you are running" '
           'outranks the ordering',
     );
     expect(
-      _names(_state(
-        sort: ProgramSortCriterion.lastModified,
-        descending: false,
-        currentProgramId: 'p-alpha',
-      )),
+      _names(
+        _state(
+          sort: ProgramSortCriterion.lastModified,
+          descending: false,
+          currentProgramId: 'p-alpha',
+        ),
+      ),
       ['Alpha', 'Bravo', 'Charlie'],
       reason: 'oldest-modified-first would put Alpha last — still first',
     );

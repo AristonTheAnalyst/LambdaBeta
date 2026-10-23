@@ -69,7 +69,9 @@ class ProgramContent {
       sessions.fold(0, (sum, s) => sum + s.exercises.length);
 
   int get setCount => sessions.fold(
-      0, (sum, s) => sum + s.exercises.fold(0, (n, e) => n + e.sets.length));
+    0,
+    (sum, s) => sum + s.exercises.fold(0, (n, e) => n + e.sets.length),
+  );
 
   /// Deterministic serialization: keys are sorted recursively, so two
   /// logically identical documents produce byte-identical JSON (and therefore
@@ -84,11 +86,11 @@ class ProgramContent {
   String get shortHash => contentHash.substring(0, 8);
 
   Map<String, dynamic> toJson() => {
-        'schema': schema,
-        'blocks': blocks.map((b) => b.toMap()).toList(),
-        'sessions': sessions.map((s) => s.toJson()).toList(),
-        'goals': goals.map((g) => g.toMap()).toList(),
-      };
+    'schema': schema,
+    'blocks': blocks.map((b) => b.toMap()).toList(),
+    'sessions': sessions.map((s) => s.toJson()).toList(),
+    'goals': goals.map((g) => g.toMap()).toList(),
+  };
 
   /// Throws [FormatException] on an unknown schema or malformed JSON — callers
   /// that must not crash read through the nullable snapshot getters on the
@@ -104,16 +106,16 @@ class ProgramContent {
     }
     return ProgramContent(
       schema: schema,
-      blocks: _mapList(raw['blocks'])
-          .map(ContentBlock.fromMap)
-          .toList(growable: false),
-      sessions: _mapList(raw['sessions'])
-          .map(ContentSession.fromJson)
-          .toList(growable: false),
+      blocks: _mapList(
+        raw['blocks'],
+      ).map(ContentBlock.fromMap).toList(growable: false),
+      sessions: _mapList(
+        raw['sessions'],
+      ).map(ContentSession.fromJson).toList(growable: false),
       // Absent in a schema-1 document, which held no goals at all.
-      goals: _mapList(raw['goals'])
-          .map(ContentGoal.fromMap)
-          .toList(growable: false),
+      goals: _mapList(
+        raw['goals'],
+      ).map(ContentGoal.fromMap).toList(growable: false),
     );
   }
 
@@ -122,8 +124,7 @@ class ProgramContent {
     List<ContentBlock> blocks = const [],
     required List<ContentSession> sessions,
     List<ContentGoal> goals = const [],
-  }) =>
-      ProgramContent(blocks: blocks, sessions: sessions, goals: goals);
+  }) => ProgramContent(blocks: blocks, sessions: sessions, goals: goals);
 }
 
 /// One block definition inside a snapshot. Empty until blocks ship — but the
@@ -149,24 +150,24 @@ class ContentBlock {
   final int? targetSessions;
 
   factory ContentBlock.fromMap(Map<String, dynamic> map) => ContentBlock(
-        blockId: map['block_id'] as String,
-        name: (map['name'] as String?) ?? '',
-        notes: map['notes'] as String?,
-        blockOrder: _toInt(map['block_order']) ?? 0,
-        targetWeeks: _toInt(map['target_weeks']),
-        targetDays: _toInt(map['target_days']),
-        targetSessions: _toInt(map['target_sessions']),
-      );
+    blockId: map['block_id'] as String,
+    name: (map['name'] as String?) ?? '',
+    notes: map['notes'] as String?,
+    blockOrder: _toInt(map['block_order']) ?? 0,
+    targetWeeks: _toInt(map['target_weeks']),
+    targetDays: _toInt(map['target_days']),
+    targetSessions: _toInt(map['target_sessions']),
+  );
 
   Map<String, dynamic> toMap() => {
-        'block_id': blockId,
-        'name': name,
-        'notes': notes,
-        'block_order': blockOrder,
-        'target_weeks': targetWeeks,
-        'target_days': targetDays,
-        'target_sessions': targetSessions,
-      };
+    'block_id': blockId,
+    'name': name,
+    'notes': notes,
+    'block_order': blockOrder,
+    'target_weeks': targetWeeks,
+    'target_days': targetDays,
+    'target_sessions': targetSessions,
+  };
 }
 
 /// One goal inside a snapshot.
@@ -205,42 +206,42 @@ class ContentGoal {
   final String? text;
 
   Map<String, dynamic> toMap() => {
-        'goal_id': goalId,
-        'user_id': userId,
-        'block_id': blockId,
-        'custom_exercise_id': exerciseId,
-        'custom_variation_id': variationId,
-        'target_weight': targetWeight,
-        'target_reps': targetReps,
-        'goal_text': text,
-      };
+    'goal_id': goalId,
+    'user_id': userId,
+    'block_id': blockId,
+    'custom_exercise_id': exerciseId,
+    'custom_variation_id': variationId,
+    'target_weight': targetWeight,
+    'target_reps': targetReps,
+    'goal_text': text,
+  };
 
   factory ContentGoal.fromMap(Map<String, dynamic> map) => ContentGoal(
-        goalId: map['goal_id'] as String,
-        userId: (map['user_id'] as String?) ?? '',
-        blockId: map['block_id'] as String?,
-        exerciseId: map['custom_exercise_id'] as String?,
-        variationId: map['custom_variation_id'] as String?,
-        targetWeight: _toNum(map['target_weight']),
-        targetReps: _toInt(map['target_reps']),
-        text: map['goal_text'] as String?,
-      );
+    goalId: map['goal_id'] as String,
+    userId: (map['user_id'] as String?) ?? '',
+    blockId: map['block_id'] as String?,
+    exerciseId: map['custom_exercise_id'] as String?,
+    variationId: map['custom_variation_id'] as String?,
+    targetWeight: _toNum(map['target_weight']),
+    targetReps: _toInt(map['target_reps']),
+    text: map['goal_text'] as String?,
+  );
 
   /// The real model, for rendering through the shared goal widgets.
   ///
   /// [programId] is passed in: the document is one program's, so repeating its
   /// id on every goal would be bytes for a fact the reader already holds.
   Goal toGoal({String? programId}) => Goal(
-        goalId: goalId,
-        userId: userId,
-        programId: programId,
-        blockId: blockId,
-        text: text,
-        exerciseId: exerciseId,
-        variationId: variationId,
-        targetWeight: targetWeight,
-        targetReps: targetReps,
-      );
+    goalId: goalId,
+    userId: userId,
+    programId: programId,
+    blockId: blockId,
+    text: text,
+    exerciseId: exerciseId,
+    variationId: variationId,
+    targetWeight: targetWeight,
+    targetReps: targetReps,
+  );
 }
 
 /// One workout inside a snapshot: the template row, its program link, and its
@@ -275,30 +276,29 @@ class ContentSession {
 
   final List<ContentExercise> exercises;
 
-  int get setCount =>
-      exercises.fold(0, (sum, e) => sum + e.sets.length);
+  int get setCount => exercises.fold(0, (sum, e) => sum + e.sets.length);
 
   /// The stored map is directly [PlannedSession.fromMap]-compatible
   /// (`user_id` is repeated per session rather than hoisted to the document —
   /// ~36 bytes each, in exchange for the viewer being a plain `fromMap` call).
   Map<String, dynamic> toSessionMap() => {
-        'session_id': sessionId,
-        'user_id': userId,
-        'name': name,
-        'notes': notes,
-        'created_date': createdDate?.toUtc().toIso8601String(),
-      };
+    'session_id': sessionId,
+    'user_id': userId,
+    'name': name,
+    'notes': notes,
+    'created_date': createdDate?.toUtc().toIso8601String(),
+  };
 
   Map<String, dynamic> toJson() => {
-        ...toSessionMap(),
-        'link': {
-          'sequence_order': sequenceOrder,
-          'day_of_week': dayOfWeek,
-          'week_offset': weekOffset,
-          'block_id': blockId,
-        },
-        'exercises': exercises.map((e) => e.toJson()).toList(),
-      };
+    ...toSessionMap(),
+    'link': {
+      'sequence_order': sequenceOrder,
+      'day_of_week': dayOfWeek,
+      'week_offset': weekOffset,
+      'block_id': blockId,
+    },
+    'exercises': exercises.map((e) => e.toJson()).toList(),
+  };
 
   factory ContentSession.fromJson(Map<String, dynamic> map) {
     final link = map['link'];
@@ -315,9 +315,9 @@ class ContentSession {
       dayOfWeek: _toInt(linkMap['day_of_week']),
       weekOffset: _toInt(linkMap['week_offset']),
       blockId: linkMap['block_id'] as String?,
-      exercises: _mapList(map['exercises'])
-          .map(ContentExercise.fromJson)
-          .toList(growable: false),
+      exercises: _mapList(
+        map['exercises'],
+      ).map(ContentExercise.fromJson).toList(growable: false),
     );
   }
 
@@ -344,26 +344,26 @@ class ContentExercise {
   final List<ContentSet> sets;
 
   Map<String, dynamic> toExerciseMap() => {
-        'planned_exercise_id': plannedExerciseId,
-        'planned_session_id': plannedSessionId,
-        'user_id': userId,
-        'custom_exercise_id': exerciseId,
-        'exercise_order': exerciseOrder,
-      };
+    'planned_exercise_id': plannedExerciseId,
+    'planned_session_id': plannedSessionId,
+    'user_id': userId,
+    'custom_exercise_id': exerciseId,
+    'exercise_order': exerciseOrder,
+  };
 
   Map<String, dynamic> toJson() => {
-        ...toExerciseMap(),
-        'sets': sets.map((s) => s.toMap()).toList(),
-      };
+    ...toExerciseMap(),
+    'sets': sets.map((s) => s.toMap()).toList(),
+  };
 
   factory ContentExercise.fromJson(Map<String, dynamic> map) => ContentExercise(
-        plannedExerciseId: map['planned_exercise_id'] as String,
-        plannedSessionId: map['planned_session_id'] as String,
-        userId: map['user_id'] as String,
-        exerciseId: map['custom_exercise_id'] as String?,
-        exerciseOrder: _toInt(map['exercise_order']) ?? 0,
-        sets: _mapList(map['sets']).map(ContentSet.fromMap).toList(growable: false),
-      );
+    plannedExerciseId: map['planned_exercise_id'] as String,
+    plannedSessionId: map['planned_session_id'] as String,
+    userId: map['user_id'] as String,
+    exerciseId: map['custom_exercise_id'] as String?,
+    exerciseOrder: _toInt(map['exercise_order']) ?? 0,
+    sets: _mapList(map['sets']).map(ContentSet.fromMap).toList(growable: false),
+  );
 
   PlannedSessionExercise toExercise() =>
       PlannedSessionExercise.fromMap(toExerciseMap());
@@ -399,28 +399,28 @@ class ContentSet {
   /// Compared field-by-field by the diff; order here is irrelevant since
   /// comparison is by id.
   Map<String, dynamic> toMap() => {
-        'planned_set_id': plannedSetId,
-        'planned_exercise_id': plannedExerciseId,
-        'planned_session_id': plannedSessionId,
-        'user_id': userId,
-        'custom_variation_id': variationId,
-        'set_number': setNumber,
-        'target_weight': targetWeight,
-        'target_reps': targetReps,
-        'target_notes': targetNotes,
-      };
+    'planned_set_id': plannedSetId,
+    'planned_exercise_id': plannedExerciseId,
+    'planned_session_id': plannedSessionId,
+    'user_id': userId,
+    'custom_variation_id': variationId,
+    'set_number': setNumber,
+    'target_weight': targetWeight,
+    'target_reps': targetReps,
+    'target_notes': targetNotes,
+  };
 
   factory ContentSet.fromMap(Map<String, dynamic> map) => ContentSet(
-        plannedSetId: map['planned_set_id'] as String,
-        plannedExerciseId: map['planned_exercise_id'] as String,
-        plannedSessionId: map['planned_session_id'] as String,
-        userId: map['user_id'] as String,
-        variationId: map['custom_variation_id'] as String?,
-        setNumber: _toInt(map['set_number']) ?? 1,
-        targetWeight: _asTargetText(map['target_weight']),
-        targetReps: _asTargetText(map['target_reps']),
-        targetNotes: map['target_notes'] as String?,
-      );
+    plannedSetId: map['planned_set_id'] as String,
+    plannedExerciseId: map['planned_exercise_id'] as String,
+    plannedSessionId: map['planned_session_id'] as String,
+    userId: map['user_id'] as String,
+    variationId: map['custom_variation_id'] as String?,
+    setNumber: _toInt(map['set_number']) ?? 1,
+    targetWeight: _asTargetText(map['target_weight']),
+    targetReps: _asTargetText(map['target_reps']),
+    targetNotes: map['target_notes'] as String?,
+  );
 
   PlannedSessionExerciseSet toSet() =>
       PlannedSessionExerciseSet.fromMap(toMap());

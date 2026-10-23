@@ -29,7 +29,7 @@ class StatusChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final fg = muted ? AppColors.muted : AppColors.accent;
+    final fg = muted ? AppColors.inkSecondary : AppColors.accent;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       decoration: BoxDecoration(
@@ -50,7 +50,6 @@ class StatusChip extends StatelessWidget {
             label,
             style: AppFonts.ui(
               fontSize: 14,
-              letterSpacing: 0.5,
               fontWeight: FontWeight.w800,
               color: fg,
             ),

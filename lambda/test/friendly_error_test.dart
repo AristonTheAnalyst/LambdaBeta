@@ -35,7 +35,8 @@ void main() {
   test('an exception Lambda wrote keeps its own words', () {
     expect(
       friendlyError(
-          const LambdaException('A program named "Push" already exists.')),
+        const LambdaException('A program named "Push" already exists.'),
+      ),
       'A program named "Push" already exists.',
     );
   });

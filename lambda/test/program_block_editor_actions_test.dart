@@ -104,8 +104,8 @@ void main() {
   /// The `+` beside the Workouts heading. Its label is empty by design, so the
   /// icon is the identifier — and the goals section has a `+` of its own.
   Finder addButton() => find.byWidgetPredicate(
-        (w) => w is GlassButton && w.icon == Icons.add && w.label.isEmpty,
-      );
+    (w) => w is GlassButton && w.icon == Icons.add && w.label.isEmpty,
+  );
 
   testWidgets('a workout row opens that workout in the editor', (tester) async {
     await pump(tester);
@@ -117,17 +117,23 @@ void main() {
     expect(
       find.byType(PlanSessionScreen),
       findsOneWidget,
-      reason: 'the block editor is the only way into a blocked program\'s '
+      reason:
+          'the block editor is the only way into a blocked program\'s '
           'workout contents — a row that renders but does not open leaves the '
           'whole program uneditable',
     );
-    expect(vm.editor.state.value.editingWorkout?.sessionId, 'w1',
-        reason: 'the row that was tapped is the workout that opened, not just '
-            'any workout');
+    expect(
+      vm.editor.state.value.editingWorkout?.sessionId,
+      'w1',
+      reason:
+          'the row that was tapped is the workout that opened, not just '
+          'any workout',
+    );
   });
 
-  testWidgets('"New workout" files the new workout into this block',
-      (tester) async {
+  testWidgets('"New workout" files the new workout into this block', (
+    tester,
+  ) async {
     await pump(tester);
 
     await tester.tap(addButton());
@@ -140,7 +146,8 @@ void main() {
     expect(
       link.blockId,
       'b1',
-      reason: 'the link is created with the block already on it. A blocked '
+      reason:
+          'the link is created with the block already on it. A blocked '
           'program has no Workouts tab, so a link left at block_id = NULL is a '
           'workout with nowhere to appear — and assigning it afterwards would '
           'be a second write racing the first',
@@ -216,17 +223,14 @@ class _RecordingWorkouts implements PlannedSessionRepository {
     String userId, {
     String? programId,
     String? blockId,
-  }) async =>
-      const [];
+  }) async => const [];
 
   @override
   Future<List<PlannedSessionProgram>> fetchProgramLinks(
     String programId, {
     String? blockId,
-  }) async =>
-      const [];
+  }) async => const [];
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

@@ -69,38 +69,38 @@ class ProgramBlock {
   bool get isArchived => archivedDate != null;
 
   factory ProgramBlock.fromMap(Map<String, dynamic> map) => ProgramBlock(
-        blockId: map['block_id'] as String,
-        userId: map['user_id'] as String,
-        programId: map['program_id'] as String,
-        name: map['name'] as String,
-        notes: map['notes'] as String?,
-        blockOrder: _toInt(map['block_order']) ?? 1,
-        targetWeeks: _toInt(map['target_weeks']),
-        targetDays: _toInt(map['target_days']),
-        targetSessions: _toInt(map['target_sessions']),
-        startDate: _toDate(map['start_date']),
-        endDate: _toDate(map['end_date']),
-        archivedDate: _toDate(map['date_archived']),
-        createdDate: _toDate(map['created_date']),
-        updatedDate: _toDate(map['updated_date']),
-      );
+    blockId: map['block_id'] as String,
+    userId: map['user_id'] as String,
+    programId: map['program_id'] as String,
+    name: map['name'] as String,
+    notes: map['notes'] as String?,
+    blockOrder: _toInt(map['block_order']) ?? 1,
+    targetWeeks: _toInt(map['target_weeks']),
+    targetDays: _toInt(map['target_days']),
+    targetSessions: _toInt(map['target_sessions']),
+    startDate: _toDate(map['start_date']),
+    endDate: _toDate(map['end_date']),
+    archivedDate: _toDate(map['date_archived']),
+    createdDate: _toDate(map['created_date']),
+    updatedDate: _toDate(map['updated_date']),
+  );
 
   Map<String, dynamic> toMap() => {
-        'block_id': blockId,
-        'user_id': userId,
-        'program_id': programId,
-        'name': name,
-        'notes': notes,
-        'block_order': blockOrder,
-        'target_weeks': targetWeeks,
-        'target_days': targetDays,
-        'target_sessions': targetSessions,
-        'start_date': startDate?.toIso8601String(),
-        'end_date': endDate?.toIso8601String(),
-        'date_archived': archivedDate?.toIso8601String(),
-        'created_date': createdDate?.toIso8601String(),
-        'updated_date': updatedDate?.toIso8601String(),
-      };
+    'block_id': blockId,
+    'user_id': userId,
+    'program_id': programId,
+    'name': name,
+    'notes': notes,
+    'block_order': blockOrder,
+    'target_weeks': targetWeeks,
+    'target_days': targetDays,
+    'target_sessions': targetSessions,
+    'start_date': startDate?.toIso8601String(),
+    'end_date': endDate?.toIso8601String(),
+    'date_archived': archivedDate?.toIso8601String(),
+    'created_date': createdDate?.toIso8601String(),
+    'updated_date': updatedDate?.toIso8601String(),
+  };
 
   static int? _toInt(dynamic v) {
     if (v == null) return null;

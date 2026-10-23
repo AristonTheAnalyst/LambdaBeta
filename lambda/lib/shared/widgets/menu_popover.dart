@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../../core/styles/app_colors.dart';
@@ -15,11 +17,17 @@ const double _gap = 4;
 /// (the exercise selector's trick, which would clip these).
 const double _panelWidth = 220;
 
-/// The panel never grows past this — four criteria and their padding.
-const double _panelMaxHeight = 280;
+/// The panel never grows past this — a long filter list (nine weight rows)
+/// still fits whole; beyond it the panel scrolls rather than becoming a
+/// sheet. The room on the opening side can lower it further.
+const double _panelMaxHeight = 460;
 
-/// Under this much room the panel flips to the trigger's other side.
-const double _minRoom = 140;
+/// How the panel lines up with its trigger horizontally. [end] — the default
+/// — aligns the two right edges: every toolbar this serves stands its
+/// buttons at the row's end. [start] aligns the left edges, for a trigger
+/// standing near the screen's left edge, where a right-aligned panel would
+/// hang off the screen (2026-10-13).
+enum MenuPopoverAlign { start, end }
 
 /// The app's anchored menu: a small panel hung off its trigger in the
 /// Overlay — the toolbar's answer to the now-retired sort/filter sheets
@@ -33,17 +41,23 @@ const double _minRoom = 140;
 /// (OverlayPortal's own ordering), so a menu opened inside a bottom sheet
 /// closes alone and the sheet underneath keeps its state.
 ///
-/// The panel hangs under the trigger, right edges aligned — every toolbar it
-/// serves stands its buttons at the row's end — and flips above the trigger
-/// when there is no room below, its height clamped to the room that is
-/// actually visible (the keyboard's claim subtracted: the review scope sheet
-/// lifts for its search fields, and the panel must not hide behind one).
+/// The panel hangs under the trigger, its edge aligned with the trigger's
+/// ([align]: right edges by default — every toolbar it serves stands its
+/// buttons at the row's end; left edges for a trigger at the screen's own
+/// left). It opens on the side that can hold it: below when its full height
+/// fits there, otherwise above when there is more room up there — a panel
+/// sliced by the screen's bottom edge reads as falling out of the screen
+/// (2026-10-21). Either way it keeps clear of the home indicator's strip, and
+/// its height is clamped to the room that is actually visible (the keyboard's
+/// claim subtracted: the review scope sheet lifts for its search fields, and
+/// the panel must not hide behind one).
 class MenuPopover extends StatefulWidget {
   const MenuPopover({
     super.key,
     required this.trigger,
     required this.contentBuilder,
     this.tone = ContainerTone.surface,
+    this.align = MenuPopoverAlign.end,
     this.semanticsLabel,
   });
 
@@ -56,12 +70,15 @@ class MenuPopover extends StatefulWidget {
   /// answer their one question close first, so no answer lands under a
   /// scrim.
   final Widget Function(BuildContext context, VoidCallback dismiss)
-      contentBuilder;
+  contentBuilder;
 
   /// The panel's fill: `surface` on the page, `ghost` (surfaceHigh) when the
   /// trigger stands on a `surface` ground — a default sheet — the one-tier-up
   /// rule every container follows.
   final ContainerTone tone;
+
+  /// Which of the trigger's horizontal edges the panel lines up with.
+  final MenuPopoverAlign align;
 
   /// What the trigger is called, for the screen reader: every current trigger
   /// is an icon with no label of its own.
@@ -104,17 +121,38 @@ class _MenuPopoverState extends State<MenuPopover> {
     // What is actually visible: subtracting the keyboard's claim is the same
     // answer the sheet gives when it lifts.
     final visibleBottom = media.size.height - media.viewInsets.bottom;
-    final below = visibleBottom - triggerBottom - _gap;
+    // The home indicator's strip is never the panel's to cover. viewPadding
+    // survives a sheet's SafeArea (which clears padding, not viewPadding), so
+    // this reads the same inside a sheet as on a page; the keyboard's claim is
+    // already out of visibleBottom, so it must not be counted twice.
+    final bottomGuard =
+        math.max(media.viewPadding.bottom - media.viewInsets.bottom, 0.0) +
+        AppSpacing.sm;
+    final below = visibleBottom - triggerBottom - _gap - bottomGuard;
     final above = origin.dy - _gap;
-    final opensUp = below < _minRoom && above > below;
+    // Open downwards only when the panel can use its full height there;
+    // otherwise take the roomier side. A panel clamped to a sliver of room
+    // hugs the screen's edge and reads as falling out of it.
+    final opensUp = below < _panelMaxHeight && above > below;
     setState(() {
       _opensUp = opensUp;
       _maxHeight = (opensUp ? above : below)
-          .clamp(_minRoom, _panelMaxHeight)
+          .clamp(0.0, _panelMaxHeight)
           .toDouble();
       _open = true;
     });
     _portal.show();
+  }
+
+  /// The trigger's corner the panel hangs off — its [MenuPopover.align] edge
+  /// (start = left, the same edge for both widgets), and the edge facing the
+  /// panel: the trigger's bottom when the panel opens below, its top when it
+  /// flips above. The follower takes the vertical edge opposite-ways so the
+  /// two meet at [_gap].
+  Alignment _anchor({required bool flipVertical, bool opposite = false}) {
+    final left = widget.align == MenuPopoverAlign.start;
+    final top = opposite ? !flipVertical : flipVertical;
+    return Alignment(left ? -1 : 1, top ? -1 : 1);
   }
 
   @override
@@ -139,10 +177,11 @@ class _MenuPopoverState extends State<MenuPopover> {
                 ),
                 CompositedTransformFollower(
                   link: _link,
-                  targetAnchor:
-                      _opensUp ? Alignment.topRight : Alignment.bottomRight,
-                  followerAnchor:
-                      _opensUp ? Alignment.bottomRight : Alignment.topRight,
+                  targetAnchor: _anchor(flipVertical: _opensUp),
+                  followerAnchor: _anchor(
+                    flipVertical: _opensUp,
+                    opposite: true,
+                  ),
                   offset: Offset(0, _opensUp ? -_gap : _gap),
                   child: _panel(context),
                 ),

@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/powersync/database.dart' as ps;
 import '../../../core/utils/friendly_error.dart';
+import '../../../core/utils/undo_history.dart';
 import '../../../core/utils/name_limit.dart';
 import '../../../data/models/custom_variation.dart';
 import '../../../data/models/exercise_detail.dart';
@@ -583,6 +586,7 @@ class WorkoutEditorViewModel {
     // Clear editing state SYNCHRONOUSLY — dispose() commits pending
     // name/notes drafts, and a delayed clear would let a discarded draft
     // get written after the guard pops.
+    undoHistory.clear();
     state.value = state.value.copyWith(clearEditingWorkout: true);
     // When closing without saving (discard), still refresh the workout list
     // so that a newly-created-then-discarded workout shows its name correctly
@@ -705,39 +709,86 @@ class WorkoutEditorViewModel {
     }
     final nextOrder = s.workoutExerciseSlots.isEmpty
         ? 1
-        : s.workoutExerciseSlots.map((sl) => sl.exerciseOrder).reduce(
-              (a, b) => a > b ? a : b,
-            ) +
+        : s.workoutExerciseSlots
+                  .map((sl) => sl.exerciseOrder)
+                  .reduce((a, b) => a > b ? a : b) +
               1;
-    try {
-      final group = await _plannedSessionRepo.createPlannedExercise(
-        _userId,
-        workout.sessionId,
-        exerciseId: exerciseId,
-        exerciseOrder: nextOrder,
-      );
-      final slots = [
-        ...s.workoutExerciseSlots,
-        PlanExerciseSlot(
-          exerciseOrder: nextOrder,
+    final box = UndoBox<String>();
+    final activeBefore = s.activeSlotIndex;
+
+    Future<void> forward() async {
+      final cur = state.value;
+      final workout = cur.editingWorkout;
+      if (workout == null) return;
+      try {
+        final group = await _plannedSessionRepo.createPlannedExercise(
+          _userId,
+          workout.sessionId,
           exerciseId: exerciseId,
-          plannedExerciseId: group.plannedExerciseId,
-        ),
-      ];
-      final exercises = [...s.workoutPlannedExercises, group];
-      final drafts = Map<String, List<int>>.from(s.workoutSetDrafts);
-      drafts.putIfAbsent(group.plannedExerciseId, () => []).add(_nextDraftId++);
-      state.value = s.copyWith(
-        workoutPlannedExercises: exercises,
-        workoutExerciseSlots: slots,
-        workoutSetDrafts: drafts,
-        activeSlotIndex: slots.length - 1,
-        workoutUnsavedChanges: true,
-      );
-      loadLessonsFor(exerciseId);
-    } catch (e) {
-      state.value = state.value.copyWith(error: friendlyError(e));
+          exerciseOrder: nextOrder,
+        );
+        box.value = group.plannedExerciseId;
+        final slots = [
+          ...cur.workoutExerciseSlots,
+          PlanExerciseSlot(
+            exerciseOrder: nextOrder,
+            exerciseId: exerciseId,
+            plannedExerciseId: group.plannedExerciseId,
+          ),
+        ];
+        final exercises = [...cur.workoutPlannedExercises, group];
+        final drafts = Map<String, List<int>>.from(cur.workoutSetDrafts);
+        drafts
+            .putIfAbsent(group.plannedExerciseId, () => [])
+            .add(_nextDraftId++);
+        state.value = cur.copyWith(
+          workoutPlannedExercises: exercises,
+          workoutExerciseSlots: slots,
+          workoutSetDrafts: drafts,
+          activeSlotIndex: slots.length - 1,
+          workoutUnsavedChanges: true,
+        );
+        loadLessonsFor(exerciseId);
+      } catch (e) {
+        state.value = state.value.copyWith(error: friendlyError(e));
+      }
     }
+
+    _recordUndo(
+      UndoAction(
+        inverse: () async {
+          final id = box.value;
+          if (id != null) {
+            await _plannedSessionRepo.deletePlannedExercise(id);
+          }
+          final cur = state.value;
+          final drafts = Map<String, List<int>>.from(cur.workoutSetDrafts)
+            ..remove(id);
+          state.value = cur.copyWith(
+            workoutExerciseSlots: [
+              for (final sl in cur.workoutExerciseSlots)
+                if (sl.exerciseId != exerciseId) sl,
+            ],
+            workoutPlannedExercises: [
+              for (final e in cur.workoutPlannedExercises)
+                if (e.plannedExerciseId != id) e,
+            ],
+            workoutSetDrafts: drafts,
+            activeSlotIndex: activeBefore,
+            workoutUnsavedChanges: true,
+          );
+        },
+        replay: () async {
+          _suppressHistory = true;
+          try {
+            await forward();
+          } finally {
+            _suppressHistory = false;
+          }
+        },
+      ),
+    );
+    await forward();
   }
 
   /// Removes the exercise slot at [index] from the editing workout and
@@ -753,41 +804,120 @@ class WorkoutEditorViewModel {
     }
     final slot = s.workoutExerciseSlots[index];
     final plannedExerciseId = slot.plannedExerciseId;
+    final activeBefore = s.activeSlotIndex;
+    final draftIdsBefore = s.workoutSetDrafts[plannedExerciseId] ?? const [];
 
-    if (plannedExerciseId != null) {
-      await _plannedSessionRepo.deletePlannedExercise(plannedExerciseId);
+    // Captures for the un-archive inverse (soft-deleted rows keep their ids
+    // and values — only the flags and order columns change).
+    final capturedExercise = plannedExerciseId == null
+        ? null
+        : s.workoutPlannedExercises
+              .where((e) => e.plannedExerciseId == plannedExerciseId)
+              .firstOrNull;
+    final capturedSets = plannedExerciseId == null
+        ? const <PlannedSessionExerciseSet>[]
+        : [
+            for (final ps in s.workoutPlannedSessionExerciseSets)
+              if (ps.plannedExerciseId == plannedExerciseId) ps,
+          ];
+
+    Future<void> forward() async {
+      final cur = state.value;
+      final workout = cur.editingWorkout;
+      if (workout == null) return;
+      final idx = cur.workoutExerciseSlots.indexWhere(
+        (sl) => sl.plannedExerciseId == plannedExerciseId,
+      );
+      if (idx == -1) return;
+      final curSlot = cur.workoutExerciseSlots[idx];
+
+      final peId = curSlot.plannedExerciseId;
+      if (peId != null) {
+        await _plannedSessionRepo.deletePlannedExercise(peId);
+      }
+
+      final slots = [...cur.workoutExerciseSlots]..removeAt(idx);
+      int newActive = cur.activeSlotIndex;
+      if (newActive >= slots.length) {
+        newActive = (slots.length - 1).clamp(0, slots.length);
+      }
+
+      final exercises = await _plannedSessionRepo.fetchPlannedExercises(
+        workout.sessionId,
+      );
+      final plannedSets = await _plannedSessionRepo.fetchPlannedSets(
+        workout.sessionId,
+      );
+
+      final drafts = Map<String, List<int>>.from(cur.workoutSetDrafts)
+        ..remove(curSlot.plannedExerciseId ?? '');
+
+      state.value = cur.copyWith(
+        workoutPlannedExercises: exercises,
+        workoutExerciseSlots: _slotsFromExercises(exercises),
+        activeSlotIndex: newActive,
+        workoutPlannedSessionExerciseSets: plannedSets,
+        workoutSetDrafts: drafts,
+        workoutUnsavedChanges: true,
+      );
     }
 
-    // Remove the slot and clamp active index
-    final slots = [...s.workoutExerciseSlots]..removeAt(index);
-    int newActive = s.activeSlotIndex;
-    if (newActive >= slots.length) {
-      newActive = (slots.length - 1).clamp(0, slots.length);
-    }
-
-    // Re-fetch groups + sets so the UI reflects the deletion
-    final exercises = await _plannedSessionRepo.fetchPlannedExercises(
-      workout.sessionId,
+    _recordUndo(
+      UndoAction(
+        inverse: () async {
+          final wid = workout.sessionId;
+          // Un-archive the group and its sets, restoring captured order —
+          // the `discardWorkoutChanges` precedent's raw-SQL pass.
+          if (capturedExercise != null) {
+            await _plannedSessionRepo.restorePlannedExercise(
+              capturedExercise.plannedExerciseId,
+              exerciseOrder: capturedExercise.exerciseOrder,
+            );
+          }
+          for (final pset in capturedSets) {
+            await _plannedSessionRepo.restorePlannedSet(
+              pset.plannedSetId,
+              setNumber: pset.setNumber,
+            );
+          }
+          final exercises = await _plannedSessionRepo.fetchPlannedExercises(
+            wid,
+          );
+          final plannedSets = await _plannedSessionRepo.fetchPlannedSets(wid);
+          final cur = state.value;
+          final slots = _slotsFromExercises(exercises);
+          slots.insert(
+            index.clamp(0, slots.length),
+            PlanExerciseSlot(
+              exerciseOrder: index + 1,
+              exerciseId: slot.exerciseId,
+              plannedExerciseId: plannedExerciseId,
+            ),
+          );
+          final drafts = Map<String, List<int>>.from(cur.workoutSetDrafts);
+          if (plannedExerciseId != null) {
+            drafts[plannedExerciseId] = List.of(draftIdsBefore);
+          }
+          state.value = cur.copyWith(
+            workoutPlannedExercises: exercises,
+            workoutExerciseSlots: slots,
+            activeSlotIndex: activeBefore,
+            workoutPlannedSessionExerciseSets: plannedSets,
+            workoutSetDrafts: drafts,
+            workoutUnsavedChanges: true,
+          );
+        },
+        replay: () async {
+          _suppressHistory = true;
+          try {
+            await forward();
+          } finally {
+            _suppressHistory = false;
+          }
+        },
+      ),
     );
-    final plannedSets = await _plannedSessionRepo.fetchPlannedSets(
-      workout.sessionId,
-    );
-
-    // The removed exercise's drafts leave with it: a draft is keyed to the
-    // group it was added under, and once that group is gone the row is gone
-    // from the card — it has to be gone from the count too, or the pill's
-    // SETS would add up rows nobody can see.
-    final drafts = Map<String, List<int>>.from(s.workoutSetDrafts)
-      ..remove(slot.plannedExerciseId ?? '');
-
-    state.value = s.copyWith(
-      workoutPlannedExercises: exercises,
-      workoutExerciseSlots: _slotsFromExercises(exercises),
-      activeSlotIndex: newActive,
-      workoutPlannedSessionExerciseSets: plannedSets,
-      workoutSetDrafts: drafts,
-      workoutUnsavedChanges: true,
-    );
+    await forward();
   }
 
   Future<void> tapTab(int index) async {
@@ -802,43 +932,92 @@ class WorkoutEditorViewModel {
   Future<void> reorderExercises(int oldIndex, int newIndex) async {
     if (oldIndex == newIndex || state.value.editingWorkout == null) return;
     final s = state.value;
-    final slots = [...s.workoutExerciseSlots];
-    final slot = slots.removeAt(oldIndex);
-    slots.insert(newIndex, slot);
-    int newActive = s.activeSlotIndex;
-    if (s.activeSlotIndex == oldIndex) {
-      newActive = newIndex;
-    } else if (oldIndex < s.activeSlotIndex && newIndex >= s.activeSlotIndex) {
-      newActive = s.activeSlotIndex - 1;
-    } else if (oldIndex > s.activeSlotIndex && newIndex <= s.activeSlotIndex) {
-      newActive = s.activeSlotIndex + 1;
-    }
-    // Renumber every slot's order 1..N in the new list order —
-    // pair-swapping only survives adjacent moves, and a non-adjacent drag
-    // would otherwise persist a different order than the one shown.
-    final renumbered = [
-      for (var i = 0; i < slots.length; i++)
-        PlanExerciseSlot(
-          exerciseOrder: i + 1,
-          exerciseId: slots[i].exerciseId,
-          plannedExerciseId: slots[i].plannedExerciseId,
-        ),
+    // Captures for the inverse (the old slot order by planned id).
+    final orderBefore = [
+      for (final sl in s.workoutExerciseSlots) sl.plannedExerciseId,
     ];
-    state.value = s.copyWith(
-      workoutExerciseSlots: renumbered,
-      activeSlotIndex: newActive,
+
+    Future<void> forward() async {
+      final cur = state.value;
+      final wid = cur.editingWorkout?.sessionId;
+      if (wid == null) return;
+      final slots = [...cur.workoutExerciseSlots];
+      final slot = slots.removeAt(oldIndex);
+      slots.insert(newIndex, slot);
+      int newActive = cur.activeSlotIndex;
+      if (cur.activeSlotIndex == oldIndex) {
+        newActive = newIndex;
+      } else if (oldIndex < cur.activeSlotIndex &&
+          newIndex >= cur.activeSlotIndex) {
+        newActive = cur.activeSlotIndex - 1;
+      } else if (oldIndex > cur.activeSlotIndex &&
+          newIndex <= cur.activeSlotIndex) {
+        newActive = cur.activeSlotIndex + 1;
+      }
+      // Renumber every slot's order 1..N in the new list order —
+      // pair-swapping only survives adjacent moves, and a non-adjacent drag
+      // would otherwise persist a different order than the one shown.
+      final renumbered = [
+        for (var i = 0; i < slots.length; i++)
+          PlanExerciseSlot(
+            exerciseOrder: i + 1,
+            exerciseId: slots[i].exerciseId,
+            plannedExerciseId: slots[i].plannedExerciseId,
+          ),
+      ];
+      state.value = cur.copyWith(
+        workoutExerciseSlots: renumbered,
+        activeSlotIndex: newActive,
+      );
+      await _plannedSessionRepo.renumberExerciseOrders(wid, [
+        for (var i = 0; i < slots.length; i++) (slots[i].exerciseOrder, i),
+      ]);
+      final exercises = await _plannedSessionRepo.fetchPlannedExercises(wid);
+      final sets = await _plannedSessionRepo.fetchPlannedSets(wid);
+      state.value = state.value.copyWith(
+        workoutPlannedExercises: exercises,
+        workoutExerciseSlots: _slotsFromExercises(exercises),
+        workoutPlannedSessionExerciseSets: sets,
+      );
+    }
+
+    _recordUndo(
+      UndoAction(
+        inverse: () async {
+          final wid = state.value.editingWorkout?.sessionId;
+          if (wid == null) return;
+          final byId = {
+            for (final sl in state.value.workoutExerciseSlots)
+              sl.plannedExerciseId: sl,
+          };
+          final restored = [
+            for (final id in orderBefore)
+              if (byId[id] != null) byId[id]!,
+          ];
+          state.value = state.value.copyWith(workoutExerciseSlots: restored);
+          await _plannedSessionRepo.renumberExerciseOrders(wid, [
+            for (var i = 0; i < restored.length; i++)
+              (restored[i].exerciseOrder, i),
+          ]);
+          final exercises = await _plannedSessionRepo.fetchPlannedExercises(
+            wid,
+          );
+          state.value = state.value.copyWith(
+            workoutPlannedExercises: exercises,
+            workoutExerciseSlots: _slotsFromExercises(exercises),
+          );
+        },
+        replay: () async {
+          _suppressHistory = true;
+          try {
+            await forward();
+          } finally {
+            _suppressHistory = false;
+          }
+        },
+      ),
     );
-    final wid = s.editingWorkout!.sessionId;
-    await _plannedSessionRepo.renumberExerciseOrders(wid, [
-      for (var i = 0; i < slots.length; i++) (slots[i].exerciseOrder, i),
-    ]);
-    final exercises = await _plannedSessionRepo.fetchPlannedExercises(wid);
-    final sets = await _plannedSessionRepo.fetchPlannedSets(wid);
-    state.value = state.value.copyWith(
-      workoutPlannedExercises: exercises,
-      workoutExerciseSlots: _slotsFromExercises(exercises),
-      workoutPlannedSessionExerciseSets: sets,
-    );
+    await forward();
   }
 
   /// Hold-and-drag reorder of one exercise group's target rows.
@@ -861,44 +1040,77 @@ class WorkoutEditorViewModel {
   ) async {
     final workout = state.value.editingWorkout;
     if (workout == null) return;
-    final rows =
-        <PlannedSessionExerciseSet>[
-          for (final s in state.value.workoutPlannedSessionExerciseSets)
-            if (s.plannedExerciseId == plannedExerciseId) s,
-        ]..sort((a, b) => a.setNumber.compareTo(b.setNumber));
+    final rows = <PlannedSessionExerciseSet>[
+      for (final s in state.value.workoutPlannedSessionExerciseSets)
+        if (s.plannedExerciseId == plannedExerciseId) s,
+    ]..sort((a, b) => a.setNumber.compareTo(b.setNumber));
     if (rows.length < 2) return;
     if (newIndex >= rows.length) newIndex = rows.length - 1;
     if (oldIndex == newIndex || oldIndex < 0 || oldIndex >= rows.length) {
       return;
     }
 
-    rows.insert(newIndex, rows.removeAt(oldIndex));
-    final renumbered = <String, PlannedSessionExerciseSet>{
-      for (var i = 0; i < rows.length; i++)
-        rows[i].plannedSetId: rows[i].copyWith(setNumber: i + 1),
-    };
-    state.value = state.value.copyWith(
-      workoutPlannedSessionExerciseSets: [
-        for (final s in state.value.workoutPlannedSessionExerciseSets)
-          renumbered[s.plannedSetId] ?? s,
-      ],
-      workoutUnsavedChanges: true,
-    );
+    final idsBefore = [for (final r in rows) r.plannedSetId];
 
-    try {
-      await _plannedSessionRepo.renumberPlannedSets([
-        for (final s in rows) s.plannedSetId,
-      ]);
-      final sets = await _plannedSessionRepo.fetchPlannedSets(
-        workout.sessionId,
-      );
+    Future<void> forward() async {
+      final wid = state.value.editingWorkout?.sessionId;
+      if (wid == null) return;
+      final current = <PlannedSessionExerciseSet>[
+        for (final s in state.value.workoutPlannedSessionExerciseSets)
+          if (s.plannedExerciseId == plannedExerciseId) s,
+      ]..sort((a, b) => a.setNumber.compareTo(b.setNumber));
+      if (current.length < 2 || newIndex >= current.length) return;
+      current.insert(newIndex, current.removeAt(oldIndex));
+      final renumbered = <String, PlannedSessionExerciseSet>{
+        for (var i = 0; i < current.length; i++)
+          current[i].plannedSetId: current[i].copyWith(setNumber: i + 1),
+      };
       state.value = state.value.copyWith(
-        workoutPlannedSessionExerciseSets: sets,
+        workoutPlannedSessionExerciseSets: [
+          for (final s in state.value.workoutPlannedSessionExerciseSets)
+            renumbered[s.plannedSetId] ?? s,
+        ],
         workoutUnsavedChanges: true,
       );
-    } catch (e) {
-      state.value = state.value.copyWith(error: friendlyError(e));
+
+      try {
+        await _plannedSessionRepo.renumberPlannedSets([
+          for (final s in current) s.plannedSetId,
+        ]);
+        final sets = await _plannedSessionRepo.fetchPlannedSets(wid);
+        state.value = state.value.copyWith(
+          workoutPlannedSessionExerciseSets: sets,
+          workoutUnsavedChanges: true,
+        );
+      } catch (e) {
+        state.value = state.value.copyWith(error: friendlyError(e));
+      }
     }
+
+    _recordUndo(
+      UndoAction(
+        inverse: () async {
+          await _plannedSessionRepo.renumberPlannedSets(idsBefore);
+          final wid = state.value.editingWorkout?.sessionId;
+          if (wid != null) {
+            final sets = await _plannedSessionRepo.fetchPlannedSets(wid);
+            state.value = state.value.copyWith(
+              workoutPlannedSessionExerciseSets: sets,
+              workoutUnsavedChanges: true,
+            );
+          }
+        },
+        replay: () async {
+          _suppressHistory = true;
+          try {
+            await forward();
+          } finally {
+            _suppressHistory = false;
+          }
+        },
+      ),
+    );
+    await forward();
   }
 
   // ── Draft (unsaved) planned-set rows ──────────────────────────────────────
@@ -940,24 +1152,82 @@ class WorkoutEditorViewModel {
     // change (marks the editor dirty, so the guard prompts on back and the
     // Save button appears). The draft materializes as a row on input, or as
     // an empty row on explicit Save (empty sets are valid).
-    final drafts = Map<String, List<int>>.from(state.value.workoutSetDrafts);
-    drafts.putIfAbsent(plannedExerciseId, () => []).add(_nextDraftId++);
-    state.value = state.value.copyWith(
-      workoutSetDrafts: drafts,
-      workoutUnsavedChanges: true,
+    final box = UndoBox<int>();
+
+    Future<void> forward() async {
+      final drafts = Map<String, List<int>>.from(state.value.workoutSetDrafts);
+      final id = _nextDraftId++;
+      box.value = id;
+      drafts.putIfAbsent(plannedExerciseId, () => []).add(id);
+      state.value = state.value.copyWith(
+        workoutSetDrafts: drafts,
+        workoutUnsavedChanges: true,
+      );
+    }
+
+    _recordUndo(
+      UndoAction(
+        inverse: () async {
+          final id = box.value;
+          if (id == null) return;
+          final drafts = Map<String, List<int>>.from(
+            state.value.workoutSetDrafts,
+          );
+          drafts[plannedExerciseId]?.remove(id);
+          state.value = state.value.copyWith(
+            workoutSetDrafts: drafts,
+            workoutUnsavedChanges: true,
+          );
+        },
+        replay: () async {
+          _suppressHistory = true;
+          try {
+            await forward();
+          } finally {
+            _suppressHistory = false;
+          }
+        },
+      ),
     );
+    unawaited(forward());
   }
 
   void removeDraftPlannedSessionExerciseSet(
     String plannedExerciseId,
     int draftId,
   ) {
-    final drafts = Map<String, List<int>>.from(state.value.workoutSetDrafts);
-    drafts[plannedExerciseId]?.remove(draftId);
-    state.value = state.value.copyWith(
-      workoutSetDrafts: drafts,
-      workoutUnsavedChanges: true,
+    Future<void> forward() async {
+      final drafts = Map<String, List<int>>.from(state.value.workoutSetDrafts);
+      drafts[plannedExerciseId]?.remove(draftId);
+      state.value = state.value.copyWith(
+        workoutSetDrafts: drafts,
+        workoutUnsavedChanges: true,
+      );
+    }
+
+    _recordUndo(
+      UndoAction(
+        inverse: () async {
+          final drafts = Map<String, List<int>>.from(
+            state.value.workoutSetDrafts,
+          );
+          drafts.putIfAbsent(plannedExerciseId, () => []).add(draftId);
+          state.value = state.value.copyWith(
+            workoutSetDrafts: drafts,
+            workoutUnsavedChanges: true,
+          );
+        },
+        replay: () async {
+          _suppressHistory = true;
+          try {
+            await forward();
+          } finally {
+            _suppressHistory = false;
+          }
+        },
+      ),
     );
+    unawaited(forward());
   }
 
   // ── Pending-edit flush ─────────────────────────────────────────────────────
@@ -985,6 +1255,45 @@ class WorkoutEditorViewModel {
         await handle();
       } catch (_) {}
     }
+  }
+
+  // ── Undo/redo (structural actions only — 2026-10-13) ──────────────────────
+  final ActionUndoHistory undoHistory = ActionUndoHistory();
+  bool _suppressHistory = false;
+  bool _undoInFlight = false;
+
+  bool get canUndo => undoHistory.canUndo;
+  bool get canRedo => undoHistory.canRedo;
+
+  void _recordUndo(UndoAction action) {
+    if (_suppressHistory) return;
+    undoHistory.push(action);
+  }
+
+  Future<void> undo() async {
+    if (_undoInFlight || !undoHistory.canUndo) return;
+    _undoInFlight = true;
+    try {
+      await flushPendingCommits();
+      await undoHistory.undo();
+    } catch (e) {
+      state.value = state.value.copyWith(error: friendlyError(e));
+    }
+    _undoInFlight = false;
+    state.value = state.value.copyWith();
+  }
+
+  Future<void> redo() async {
+    if (_undoInFlight || !undoHistory.canRedo) return;
+    _undoInFlight = true;
+    try {
+      await flushPendingCommits();
+      await undoHistory.redo();
+    } catch (e) {
+      state.value = state.value.copyWith(error: friendlyError(e));
+    }
+    _undoInFlight = false;
+    state.value = state.value.copyWith();
   }
 
   Future<bool> quickCreatePlannedSessionExerciseSet({
@@ -1084,39 +1393,109 @@ class WorkoutEditorViewModel {
     final existing = state.value.plannedSetsFor(ps.plannedExerciseId);
     final setNumber =
         existing.map((s) => s.setNumber).reduce((a, b) => a > b ? a : b) + 1;
-    try {
-      await _plannedSessionRepo.createPlannedSet(
-        _userId,
-        ps.plannedExerciseId,
-        plannedSessionId: workout.sessionId,
-        exerciseId: exerciseId,
-        variationId: ps.variationId,
-        setNumber: setNumber,
-        targetWeight: targetWeight ?? ps.targetWeight,
-        targetReps: targetReps ?? ps.targetReps,
-        targetNotes: ps.targetNotes,
-      );
-      final sets = await _plannedSessionRepo.fetchPlannedSets(
-        workout.sessionId,
-      );
-      state.value = state.value.copyWith(
-        workoutPlannedSessionExerciseSets: sets,
-        workoutUnsavedChanges: true,
-      );
-    } catch (e) {
-      state.value = state.value.copyWith(error: friendlyError(e));
+    final box = UndoBox<String>();
+
+    Future<void> forward() async {
+      final wid = state.value.editingWorkout?.sessionId;
+      if (wid == null) return;
+      try {
+        final created = await _plannedSessionRepo.createPlannedSet(
+          _userId,
+          ps.plannedExerciseId,
+          plannedSessionId: wid,
+          exerciseId: exerciseId,
+          variationId: ps.variationId,
+          setNumber: setNumber,
+          targetWeight: targetWeight ?? ps.targetWeight,
+          targetReps: targetReps ?? ps.targetReps,
+          targetNotes: ps.targetNotes,
+        );
+        box.value = created.plannedSetId;
+        final sets = await _plannedSessionRepo.fetchPlannedSets(wid);
+        state.value = state.value.copyWith(
+          workoutPlannedSessionExerciseSets: sets,
+          workoutUnsavedChanges: true,
+        );
+      } catch (e) {
+        state.value = state.value.copyWith(error: friendlyError(e));
+      }
     }
+
+    _recordUndo(
+      UndoAction(
+        inverse: () async {
+          final id = box.value;
+          if (id == null) return;
+          await _plannedSessionRepo.deletePlannedSet(id);
+          final wid = state.value.editingWorkout?.sessionId;
+          if (wid != null) {
+            final sets = await _plannedSessionRepo.fetchPlannedSets(wid);
+            state.value = state.value.copyWith(
+              workoutPlannedSessionExerciseSets: sets,
+              workoutUnsavedChanges: true,
+            );
+          }
+        },
+        replay: () async {
+          _suppressHistory = true;
+          try {
+            await forward();
+          } finally {
+            _suppressHistory = false;
+          }
+        },
+      ),
+    );
+    await forward();
   }
 
   Future<void> deletePlannedSessionExerciseSet(String setId) async {
     final workout = state.value.editingWorkout;
     if (workout == null) return;
-    await _plannedSessionRepo.deletePlannedSet(setId);
-    final sets = await _plannedSessionRepo.fetchPlannedSets(workout.sessionId);
-    state.value = state.value.copyWith(
-      workoutPlannedSessionExerciseSets: sets,
-      workoutUnsavedChanges: true,
+    final captured = state.value.workoutPlannedSessionExerciseSets
+        .where((s) => s.plannedSetId == setId)
+        .firstOrNull;
+
+    Future<void> forward() async {
+      final wid = state.value.editingWorkout?.sessionId;
+      if (wid == null) return;
+      await _plannedSessionRepo.deletePlannedSet(setId);
+      final sets = await _plannedSessionRepo.fetchPlannedSets(wid);
+      state.value = state.value.copyWith(
+        workoutPlannedSessionExerciseSets: sets,
+        workoutUnsavedChanges: true,
+      );
+    }
+
+    _recordUndo(
+      UndoAction(
+        inverse: () async {
+          if (captured == null) return;
+          // Soft-deleted row keeps its id — un-archive and restore the number.
+          await _plannedSessionRepo.restorePlannedSet(
+            captured.plannedSetId,
+            setNumber: captured.setNumber,
+          );
+          final wid = state.value.editingWorkout?.sessionId;
+          if (wid != null) {
+            final sets = await _plannedSessionRepo.fetchPlannedSets(wid);
+            state.value = state.value.copyWith(
+              workoutPlannedSessionExerciseSets: sets,
+              workoutUnsavedChanges: true,
+            );
+          }
+        },
+        replay: () async {
+          _suppressHistory = true;
+          try {
+            await forward();
+          } finally {
+            _suppressHistory = false;
+          }
+        },
+      ),
     );
+    await forward();
   }
 
   // ── New exercise / variation (mirrors SessionViewModel) ───────────────────

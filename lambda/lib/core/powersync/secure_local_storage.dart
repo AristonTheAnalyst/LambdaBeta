@@ -7,7 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 /// so a device compromise doesn't hand out a reusable refresh token.
 class SecureLocalStorage extends LocalStorage {
   SecureLocalStorage({FlutterSecureStorage? storage})
-      : _storage = storage ?? const FlutterSecureStorage();
+    : _storage = storage ?? const FlutterSecureStorage();
 
   final FlutterSecureStorage _storage;
 
@@ -26,8 +26,7 @@ class SecureLocalStorage extends LocalStorage {
   Future<String?> accessToken() => _storage.read(key: _sessionKey);
 
   @override
-  Future<void> removePersistedSession() =>
-      _storage.delete(key: _sessionKey);
+  Future<void> removePersistedSession() => _storage.delete(key: _sessionKey);
 
   @override
   Future<void> persistSession(String persistSessionString) =>

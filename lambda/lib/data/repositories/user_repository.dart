@@ -27,8 +27,10 @@ class UserRepository {
       'user_id': profile.userId,
       'user_name': profile.userName,
       'user_lastname': profile.userLastname,
-      'user_date_of_birth':
-          profile.userDateOfBirth?.toIso8601String().split('T').first,
+      'user_date_of_birth': profile.userDateOfBirth
+          ?.toIso8601String()
+          .split('T')
+          .first,
       'user_gender': profile.userGender,
       'user_height_cm': profile.userHeightCm,
       'user_weight_kg': profile.userWeightKg,

@@ -111,8 +111,9 @@ void main() {
     expect(deleted, 0);
   });
 
-  testWidgets('the confirmation warns with the set count and defaults to no',
-      (tester) async {
+  testWidgets('the confirmation warns with the set count and defaults to no', (
+    tester,
+  ) async {
     bool? result;
 
     await tester.pumpWidget(
@@ -134,7 +135,8 @@ void main() {
     expect(find.text('Delete Session'), findsOneWidget);
     expect(
       find.text(
-          "Delete this session and its 3 logged sets? This can't be undone."),
+        "Delete this session and its 3 logged sets? This can't be undone.",
+      ),
       findsOneWidget,
     );
 
@@ -165,7 +167,8 @@ void main() {
 
     expect(
       find.text(
-          "Delete this session and its 1 logged set? This can't be undone."),
+        "Delete this session and its 1 logged set? This can't be undone.",
+      ),
       findsOneWidget,
     );
 
@@ -174,8 +177,7 @@ void main() {
     expect(result, isTrue);
   });
 
-  testWidgets('an empty session drops the set clause entirely',
-      (tester) async {
+  testWidgets('an empty session drops the set clause entirely', (tester) async {
     await tester.pumpWidget(
       _host(
         Builder(

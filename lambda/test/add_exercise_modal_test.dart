@@ -17,6 +17,7 @@ Future<void> pumpPicker(
   Future<void> Function(String exerciseId)? onRemoveRequest,
   Future<String?> Function(String name)? onCreate,
   bool Function()? isCreating,
+  bool autofocusSearch = true,
 }) async {
   await tester.pumpWidget(
     MaterialApp(
@@ -33,6 +34,7 @@ Future<void> pumpPicker(
                 onRemoveRequest: onRemoveRequest,
                 onCreate: onCreate,
                 isCreating: isCreating,
+                autofocusSearch: autofocusSearch,
               ),
               child: const Text('open'),
             ),
@@ -73,14 +75,21 @@ void main() {
 
     double y(String label) => tester.getTopLeft(find.text(label)).dy;
 
-    expect(y('Deadlift'), lessThan(y('Bench Press')),
-        reason: 'a trained exercise outranks a never-trained one');
-    expect(y('Bench Press'), lessThan(y('Squat')),
-        reason: 'among the never-trained, the name decides');
+    expect(
+      y('Deadlift'),
+      lessThan(y('Bench Press')),
+      reason: 'a trained exercise outranks a never-trained one',
+    );
+    expect(
+      y('Bench Press'),
+      lessThan(y('Squat')),
+      reason: 'among the never-trained, the name decides',
+    );
   });
 
-  testWidgets('a ticked exercise rises to the top — live, mid-tap',
-      (tester) async {
+  testWidgets('a ticked exercise rises to the top — live, mid-tap', (
+    tester,
+  ) async {
     final added = <String>{};
     final notifier = ValueNotifier(0);
 
@@ -98,15 +107,22 @@ void main() {
 
     double y(String label) => tester.getTopLeft(find.text(label)).dy;
 
-    expect(y('Squat'), greaterThan(y('Bench Press')),
-        reason: 'unticked, the never-trained Squat sits at the tail');
+    expect(
+      y('Squat'),
+      greaterThan(y('Bench Press')),
+      reason: 'unticked, the never-trained Squat sits at the tail',
+    );
 
     await tester.tap(find.text('Squat'));
     await tester.pumpAndSettle();
 
-    expect(y('Squat'), lessThan(y('Deadlift')),
-        reason: 'the tick re-sorts on the spot — "what is active" answers '
-            'before "what else could be", even against a trained exercise');
+    expect(
+      y('Squat'),
+      lessThan(y('Deadlift')),
+      reason:
+          'the tick re-sorts on the spot — "what is active" answers '
+          'before "what else could be", even against a trained exercise',
+    );
   });
 
   testWidgets('the sheet names both directions of the tap', (tester) async {
@@ -117,9 +133,13 @@ void main() {
       isAdded: (_) => false,
     );
 
-    expect(find.text('Add/Remove Exercises'), findsOneWidget,
-        reason: 'the sheet adds and removes — a bare "Add" was only ever '
-            'describing half of it');
+    expect(
+      find.text('Add/Remove Exercises'),
+      findsOneWidget,
+      reason:
+          'the sheet adds and removes — a bare "Add" was only ever '
+          'describing half of it',
+    );
   });
 
   testWidgets('typing filters to matching names', (tester) async {
@@ -138,8 +158,48 @@ void main() {
     expect(find.text('Bench Press'), findsNothing);
   });
 
-  testWidgets('tapping an unadded row adds it and leaves the sheet open',
-      (tester) async {
+  testWidgets('the search field takes focus as the sheet opens', (
+    tester,
+  ) async {
+    await pumpPicker(
+      tester,
+      listenable: ValueNotifier(0),
+      entries: () => _library,
+      isAdded: (_) => false,
+    );
+
+    // The session screens open the picker to search, so the keyboard rising
+    // with the sheet is the point (the default).
+    expect(
+      tester.widget<EditableText>(find.byType(EditableText)).focusNode.hasFocus,
+      isTrue,
+    );
+  });
+
+  testWidgets('the caller can keep the keyboard down until the field is '
+      'tapped', (tester) async {
+    await pumpPicker(
+      tester,
+      listenable: ValueNotifier(0),
+      entries: () => _library,
+      isAdded: (_) => false,
+      autofocusSearch: false,
+    );
+
+    // The goals filter (2026-10-20) opens the sheet on its list — a keyboard
+    // would cover the exercises it came to show. Typing waits for a tap.
+    EditableText search() =>
+        tester.widget<EditableText>(find.byType(EditableText));
+    expect(search().focusNode.hasFocus, isFalse);
+
+    await tester.tap(find.byType(EditableText));
+    await tester.pumpAndSettle();
+    expect(search().focusNode.hasFocus, isTrue);
+  });
+
+  testWidgets('tapping an unadded row adds it and leaves the sheet open', (
+    tester,
+  ) async {
     final added = <String>{};
     final notifier = ValueNotifier(0);
     final calls = <String>[];
@@ -161,16 +221,24 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(calls, ['add:ex-squat']);
-    expect(find.text('Added'), findsOneWidget,
-        reason: 'the row reports the new state without being reopened');
-    expect(_searchField, findsOneWidget,
-        reason: 'the sheet is still up — that is the whole point of the '
-            'widget, and the reason building a session used to be one visit '
-            'per exercise');
+    expect(
+      find.text('Added'),
+      findsOneWidget,
+      reason: 'the row reports the new state without being reopened',
+    );
+    expect(
+      _searchField,
+      findsOneWidget,
+      reason:
+          'the sheet is still up — that is the whole point of the '
+          'widget, and the reason building a session used to be one visit '
+          'per exercise',
+    );
   });
 
-  testWidgets('tapping a ticked row asks to remove it, and never to add it',
-      (tester) async {
+  testWidgets('tapping a ticked row asks to remove it, and never to add it', (
+    tester,
+  ) async {
     final added = {'ex-squat'};
     final calls = <String>[];
 
@@ -188,15 +256,21 @@ void main() {
     await tester.tap(find.text('Squat'));
     await tester.pumpAndSettle();
 
-    expect(calls, ['remove:ex-squat'],
-        reason: 'a tick is a control, not a label — but it asks, because the '
-            'screen owns the confirmation dialog and the data');
-    expect(added, {'ex-squat'},
-        reason: 'the picker never removes anything itself');
+    expect(
+      calls,
+      ['remove:ex-squat'],
+      reason:
+          'a tick is a control, not a label — but it asks, because the '
+          'screen owns the confirmation dialog and the data',
+    );
+    expect(added, {
+      'ex-squat',
+    }, reason: 'the picker never removes anything itself');
   });
 
-  testWidgets('a null onRemoveRequest makes the tick informational',
-      (tester) async {
+  testWidgets('a null onRemoveRequest makes the tick informational', (
+    tester,
+  ) async {
     await pumpPicker(
       tester,
       listenable: ValueNotifier(0),
@@ -242,16 +316,20 @@ void main() {
 
       await tester.enterText(_searchField, 'z');
       await tester.pumpAndSettle();
-      expect(find.text('+ Create "z"'), findsNothing,
-          reason: 'a single letter is a search, not a name');
+      expect(
+        find.text('+ Create "z"'),
+        findsNothing,
+        reason: 'a single letter is a search, not a name',
+      );
 
       await tester.enterText(_searchField, 'ze');
       await tester.pumpAndSettle();
       expect(find.text('+ Create "ze"'), findsOneWidget);
     });
 
-    testWidgets('not offered for a name the library already has',
-        (tester) async {
+    testWidgets('not offered for a name the library already has', (
+      tester,
+    ) async {
       await pumpPicker(
         tester,
         listenable: ValueNotifier(0),
@@ -269,8 +347,9 @@ void main() {
       expect(find.text('Squat'), findsOneWidget);
     });
 
-    testWidgets('hidden when the caller has no create capability',
-        (tester) async {
+    testWidgets('hidden when the caller has no create capability', (
+      tester,
+    ) async {
       await pumpPicker(
         tester,
         listenable: ValueNotifier(0),
@@ -284,8 +363,9 @@ void main() {
       expect(find.text('+ Create "Zercher"'), findsNothing);
     });
 
-    testWidgets('creates, adds, clears the query, and ticks the new row',
-        (tester) async {
+    testWidgets('creates, adds, clears the query, and ticks the new row', (
+      tester,
+    ) async {
       final added = <String>{};
       final notifier = ValueNotifier(0);
       final entries = [..._library];
@@ -314,17 +394,26 @@ void main() {
       await tester.tap(find.text('+ Create "Zercher"'));
       await tester.pumpAndSettle();
 
-      expect(calls, ['create:Zercher', 'add:ex-zercher'],
-          reason: 'creating and adding are one tap for the user — they never '
-              'asked for an exercise that is not in the session');
-      expect(tester.widget<TextField>(_searchField).controller!.text, isEmpty,
-          reason: 'a cleared query is what makes the new row reachable — it '
-              'no longer matches the filter that created it');
+      expect(
+        calls,
+        ['create:Zercher', 'add:ex-zercher'],
+        reason:
+            'creating and adding are one tap for the user — they never '
+            'asked for an exercise that is not in the session',
+      );
+      expect(
+        tester.widget<TextField>(_searchField).controller!.text,
+        isEmpty,
+        reason:
+            'a cleared query is what makes the new row reachable — it '
+            'no longer matches the filter that created it',
+      );
       expect(find.text('Added'), findsOneWidget);
     });
 
-    testWidgets('stays visible but inert while a create is in flight',
-        (tester) async {
+    testWidgets('stays visible but inert while a create is in flight', (
+      tester,
+    ) async {
       final calls = <String>[];
 
       await pumpPicker(
@@ -345,14 +434,19 @@ void main() {
       await tester.tap(find.text('+ Create "Zercher"'));
       await tester.pumpAndSettle();
 
-      expect(calls, isEmpty,
-          reason: 'a row that vanished under the finger would read as a '
-              'mis-tap, so it greys instead of disappearing');
+      expect(
+        calls,
+        isEmpty,
+        reason:
+            'a row that vanished under the finger would read as a '
+            'mis-tap, so it greys instead of disappearing',
+      );
     });
   });
 
-  testWidgets('the search field stops at twenty characters and counts them',
-      (tester) async {
+  testWidgets('the search field stops at twenty characters and counts them', (
+    tester,
+  ) async {
     await pumpPicker(
       tester,
       listenable: ValueNotifier(0),
@@ -367,11 +461,16 @@ void main() {
     expect(
       tester.widget<TextField>(_searchField).controller!.text.length,
       20,
-      reason: 'the text *is* the new name when the create row is used, so the '
+      reason:
+          'the text *is* the new name when the create row is used, so the '
           'field carries the same cap the database does',
     );
-    expect(find.text('20/20'), findsOneWidget,
-        reason: 'the field silently refusing the twenty-first character reads '
-            'as a broken keyboard without this');
+    expect(
+      find.text('20/20'),
+      findsOneWidget,
+      reason:
+          'the field silently refusing the twenty-first character reads '
+          'as a broken keyboard without this',
+    );
   });
 }

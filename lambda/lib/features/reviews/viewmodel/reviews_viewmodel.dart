@@ -91,9 +91,9 @@ class ReviewableGoal {
   /// back to the text captured when the goal was written.
   final String exerciseName;
 
-  /// The target alone ("100 kg × 5"), or empty when the goal recorded neither
-  /// number. The row draws it as its own element rather than gluing it to the
-  /// name with a dash (2026-10-10).
+  /// The target alone ("5 × 100 kg"), or empty when the goal recorded
+  /// neither number. The row draws it as its own element rather than gluing
+  /// it to the name with a dash (2026-10-10).
   final String target;
 
   /// The numbers behind [target], kept as numbers so a caller can order by
@@ -219,7 +219,10 @@ class ReviewsState {
   /// half, the order the repository sorted them in.
   final List<ReviewListEntry> entries;
 
-  List<ReviewListEntry> get open => [for (final e in entries) if (e.isOpen) e];
+  List<ReviewListEntry> get open => [
+    for (final e in entries)
+      if (e.isOpen) e,
+  ];
 
   List<ReviewListEntry> get completed => [
     for (final e in entries)
@@ -302,7 +305,9 @@ class ReviewsViewModel {
           var links = linksByProgram[programId];
           if (links == null) {
             links = [
-              for (final link in await _plannedRepo.fetchProgramLinks(programId))
+              for (final link in await _plannedRepo.fetchProgramLinks(
+                programId,
+              ))
                 (sessionId: link.plannedSessionId, blockId: link.blockId),
             ];
             linksByProgram[programId] = links;
@@ -342,10 +347,7 @@ class ReviewsViewModel {
 
   /// Everything the picker can offer, in its recency order.
   Future<List<ReviewableWorkout>> reviewableWorkouts() =>
-      fetchReviewableWorkouts(
-        userId: _userId,
-        plannedRepository: _plannedRepo,
-      );
+      fetchReviewableWorkouts(userId: _userId, plannedRepository: _plannedRepo);
 
   /// The goals half of the picker, in library order.
   Future<List<ReviewableGoal>> reviewableGoals() => fetchReviewableGoals(
@@ -430,6 +432,28 @@ class ReviewsViewModel {
     }
   }
 
+  /// Deletes a completed record — the record half of [cancelReview].
+  ///
+  /// Same contract: the row is deleted outright, the list is re-read, and a
+  /// false return means the write failed and the state carries the sentence.
+  /// The repository's guard is the opposite one, so a stale completed card can
+  /// never delete an open pass: the DELETE no-ops, and the reload puts the row
+  /// back under IN PROGRESS where it now belongs.
+  Future<bool> deleteCompletedReview(String reviewId) async {
+    try {
+      await _historyRepo.deleteCompletedReview(reviewId);
+      await load();
+      return true;
+    } catch (_) {
+      if (!_disposed) {
+        state.value = state.value.copyWith(
+          error: 'Could not delete the review.',
+        );
+      }
+      return false;
+    }
+  }
+
   /// Reopens [review], which is already open: the same facts [startReview]
   /// gathers, without writing a review row.
   ///
@@ -449,11 +473,7 @@ class ReviewsViewModel {
         _userId,
         sessionIds: ids,
       );
-      return StartedReview(
-        review: current,
-        sessionIds: ids,
-        sinceDate: since,
-      );
+      return StartedReview(review: current, sessionIds: ids, sinceDate: since);
     } catch (_) {
       return null;
     }

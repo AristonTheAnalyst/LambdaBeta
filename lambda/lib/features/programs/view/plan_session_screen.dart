@@ -5,8 +5,10 @@ import '../../../core/styles/app_fonts.dart';
 import '../../../core/styles/app_radius.dart';
 import '../../../shared/widgets/container_styles.dart';
 import '../../../core/styles/app_spacing.dart';
+import '../../../shared/widgets/undo_redo_buttons.dart';
 import '../../../core/styles/app_text_styles.dart';
 import '../../../core/utils/session_format.dart';
+import '../../../core/utils/name_limit.dart';
 import '../../../data/models/planned_session.dart';
 import '../../../data/models/program_content.dart';
 import '../../../shared/mixins/unsaved_changes_guard.dart';
@@ -15,6 +17,8 @@ import '../../../shared/widgets/add_exercise_modal.dart';
 import '../../../shared/widgets/dropdown_select.dart';
 import '../../../shared/widgets/exercise_selector.dart';
 import '../../../shared/widgets/floating_bar.dart';
+import '../../../shared/widgets/glass_button.dart';
+import '../../../shared/widgets/header_icon_button.dart';
 import '../../../shared/widgets/scroll_shrink_nav_bar.dart';
 import '../../../shared/widgets/session_exercise_card.dart';
 import '../../../shared/widgets/session_set_row.dart';
@@ -47,12 +51,15 @@ Future<bool> confirmEditWhileRunning(BuildContext context) async {
       content: Text(
         'This program is active. Changes to the workout apply to future '
         'sessions; past logged sets and PRs won\'t change.',
-        style: AppFonts.ui(color: AppColors.muted),
+        style: AppFonts.ui(color: AppColors.inkSecondary, height: 1.4),
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.of(ctx).pop(false),
-          child: Text('Cancel', style: AppFonts.ui(color: AppColors.muted)),
+          child: Text(
+            'Cancel',
+            style: AppFonts.ui(color: AppColors.inkSecondary),
+          ),
         ),
         TextButton(
           onPressed: () => Navigator.of(ctx).pop(true),
@@ -390,140 +397,145 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
                 ),
               )
             : null;
-        return _navBar(buildGuardedScaffold(
-          scaffold: Scaffold(
-            backgroundColor: AppColors.bg,
-            // The editor is pushed full-screen (root navigator), which covers
-            // the tab shell — so it draws the app's floating bar itself. Tab
-            // taps run the unsaved-changes guard before leaving; while a
-            // review runs, the pass's own bar takes that bar's place.
-            body: Column(
-              children: [
-                _editableHeader(
-                  state.workoutUnsavedChanges,
-                  state.workoutExerciseSlots.isEmpty,
-                ),
-                if (state.error != null)
-                  Container(
-                    width: double.infinity,
-                    color: AppColors.dangerBg,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.lg,
-                      vertical: AppSpacing.sm,
-                    ),
-                    child: Text(
-                      state.error!,
-                      style: AppFonts.ui(
-                        color: AppColors.danger,
-                        fontSize: AppTextStyles.sm,
-                      ),
-                    ),
+        return _navBar(
+          buildGuardedScaffold(
+            scaffold: Scaffold(
+              backgroundColor: AppColors.bg,
+              // The editor is pushed full-screen (root navigator), which covers
+              // the tab shell — so it draws the app's floating bar itself. Tab
+              // taps run the unsaved-changes guard before leaving; while a
+              // review runs, the pass's own bar takes that bar's place.
+              body: Column(
+                children: [
+                  _editableHeader(
+                    state.workoutUnsavedChanges,
+                    state.workoutExerciseSlots.isEmpty,
                   ),
-                Expanded(
-                  // The page runs UNDER the floor: the nav or review bar and
-                  // the counts above it all paint over the page instead of
-                  // taking a band of it, so the scroll's own end has to clear
-                  // the whole stack.
-                  //
-                  // The Builder is load-bearing: this page draws those bars
-                  // around itself (`_navBar` below), so the inset only answers
-                  // from a context INSIDE that wrapper — measured from the
-                  // page's own build context it reads zero and the last set
-                  // ends up under the glass instead of clear of it.
-                  child: Builder(
-                    builder: (context) => SingleChildScrollView(
-                      padding: EdgeInsets.fromLTRB(
-                        AppSpacing.lg,
-                        AppSpacing.md,
-                        AppSpacing.lg,
-                        ScrollShrinkNavBar.contentInset(context),
+                  if (state.error != null)
+                    Container(
+                      width: double.infinity,
+                      color: AppColors.dangerBg,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.lg,
+                        vertical: AppSpacing.sm,
                       ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          // Session Notes is hidden from the frontend for now
-                          // (the VM plumbing stays — see initState). Day-of-week
-                          // scheduling is retired for now: a workout is a list
-                          // of exercises, and nothing assigns it to a weekday.
-                          //
-                          // Compare does not change the page: the same card
-                          // draws the same workout, with the record's rows in
-                          // place of the plan's (`original` below). The card's
-                          // tabs and buttons hold their places — the flip is
-                          // values only — and the note box flips its words
-                          // with them: the record's own note, labelled as the
-                          // record's, while the record is up. Which is what
-                          // the bar's label is there to tell apart.
-                          if (state.workoutSetsLoading)
-                            Center(
-                              child: Padding(
-                                padding: const EdgeInsets.all(AppSpacing.lg),
-                                child: CircularProgressIndicator(
-                                  color: AppColors.accent,
-                                ),
-                              ),
-                            )
-                          else if (state.workoutExerciseSlots.isEmpty) ...[
-                            const SizedBox(height: AppSpacing.xl),
-                            GestureDetector(
-                              onTap: _showAddExercise,
-                              child: Container(
-                                width: double.infinity,
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: AppSpacing.xxl,
-                                ),
-                                decoration: lambdaBox(ContainerTone.surface, radius:
-                                    AppRadius.lg,
+                      child: Text(
+                        state.error!,
+                        style: AppFonts.ui(
+                          color: AppColors.danger,
+                          fontSize: AppTextStyles.sm,
+                        ),
+                      ),
+                    ),
+                  Expanded(
+                    // The page runs UNDER the floor: the nav or review bar and
+                    // the counts above it all paint over the page instead of
+                    // taking a band of it, so the scroll's own end has to clear
+                    // the whole stack.
+                    //
+                    // The Builder is load-bearing: this page draws those bars
+                    // around itself (`_navBar` below), so the inset only answers
+                    // from a context INSIDE that wrapper — measured from the
+                    // page's own build context it reads zero and the last set
+                    // ends up under the glass instead of clear of it.
+                    child: Builder(
+                      builder: (context) => SingleChildScrollView(
+                        padding: EdgeInsets.fromLTRB(
+                          AppSpacing.lg,
+                          AppSpacing.md,
+                          AppSpacing.lg,
+                          ScrollShrinkNavBar.contentInset(context),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            // Session Notes is hidden from the frontend for now
+                            // (the VM plumbing stays — see initState). Day-of-week
+                            // scheduling is retired for now: a workout is a list
+                            // of exercises, and nothing assigns it to a weekday.
+                            //
+                            // Compare does not change the page: the same card
+                            // draws the same workout, with the record's rows in
+                            // place of the plan's (`original` below). The card's
+                            // tabs and buttons hold their places — the flip is
+                            // values only — and the note box flips its words
+                            // with them: the record's own note, labelled as the
+                            // record's, while the record is up. Which is what
+                            // the bar's label is there to tell apart.
+                            if (state.workoutSetsLoading)
+                              Center(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(AppSpacing.lg),
+                                  child: CircularProgressIndicator(
+                                    color: AppColors.accent,
                                   ),
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.fitness_center_outlined,
-                                      size: 32,
-                                      color: AppColors.muted,
-                                    ),
-                                    const SizedBox(height: AppSpacing.sm),
-                                    Text(
-                                      'Tap to add an exercise',
-                                      style: AppFonts.ui(
-                                        fontSize: AppTextStyles.md,
+                                ),
+                              )
+                            else if (state.workoutExerciseSlots.isEmpty) ...[
+                              const SizedBox(height: AppSpacing.xl),
+                              GestureDetector(
+                                onTap: _showAddExercise,
+                                child: Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: AppSpacing.xxl,
+                                  ),
+                                  decoration: lambdaBox(
+                                    ContainerTone.surface,
+                                    radius: AppRadius.lg,
+                                  ),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.fitness_center_outlined,
+                                        size: 32,
                                         color: AppColors.muted,
                                       ),
-                                    ),
-                                    const SizedBox(height: AppSpacing.xs),
-                                    Text(
-                                      'A workout needs at least one exercise',
-                                      style: AppFonts.ui(
-                                        fontSize: AppTextStyles.xs,
-                                        color: AppColors.muted,
+                                      const SizedBox(height: AppSpacing.sm),
+                                      Text(
+                                        'Tap to add an exercise',
+                                        style: AppFonts.ui(
+                                          fontSize: AppTextStyles.md,
+                                          color: AppColors.inkSecondary,
+                                        ),
                                       ),
-                                    ),
-                                  ],
+                                      const SizedBox(height: AppSpacing.xs),
+                                      Text(
+                                        'A workout needs at least one exercise',
+                                        style: AppFonts.ui(
+                                          fontSize: AppTextStyles.xs,
+                                          color: AppColors.inkSecondary,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
-                            ),
-                          ] else if (state.activeSlot != null)
-                            _PlanExerciseCard(
-                              viewModel: widget.viewModel,
-                              slot: state.activeSlot!,
-                              onAddExercise: _showAddExercise,
-                              original: original,
-                              originalNotes: _original?.beforeNotes ?? const {},
-                            ),
-                        ],
+                            ] else if (state.activeSlot != null)
+                              _PlanExerciseCard(
+                                viewModel: widget.viewModel,
+                                slot: state.activeSlot!,
+                                onAddExercise: _showAddExercise,
+                                original: original,
+                                originalNotes:
+                                    _original?.beforeNotes ?? const {},
+                              ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                ),
-                // The counts used to be a strip of their own here, pinned over
-                // a painted band. They are a floating bar now (`statsBar`,
-                // above) — the whole floor of this screen is glass, and the
-                // page scrolls under all of it.
-              ],
+                  // The counts used to be a strip of their own here, pinned over
+                  // a painted band. They are a floating bar now (`statsBar`,
+                  // above) — the whole floor of this screen is glass, and the
+                  // page scrolls under all of it.
+                ],
+              ),
             ),
           ),
-        ), aboveBar: statsBar);
+          aboveBar: statsBar,
+        );
       },
     );
   }
@@ -548,8 +560,12 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
           children: [
             Positioned(
               left: 16,
-              child: GestureDetector(
-                onTap: () async {
+              child: HeaderIconButton(
+                icon: Icons.arrow_back_ios_new,
+                semanticsLabel: 'Back',
+                glyphSize: 18,
+                color: AppColors.primary,
+                onPressed: () async {
                   // Blur first — set cells commit on focus loss, and the
                   // back guard must see the typed values.
                   FocusManager.instance.primaryFocus?.unfocus();
@@ -557,11 +573,6 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
                     Navigator.of(context, rootNavigator: true).pop();
                   }
                 },
-                child: Icon(
-                  Icons.arrow_back_ios_new,
-                  size: 18,
-                  color: AppColors.primary,
-                ),
               ),
             ),
             Positioned(
@@ -578,6 +589,10 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
                   focusNode: _nameFocus,
                   textAlign: TextAlign.center,
                   textCapitalization: TextCapitalization.words,
+                  // A header title has no room for a counter under it — the
+                  // field stops at the cap, which is the same hard stop the
+                  // workout cards enforce.
+                  maxLength: kMaxWorkoutNameLength,
                   style: AppFonts.ui(
                     fontSize: 17,
                     fontWeight: FontWeight.w600,
@@ -586,6 +601,7 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
                   decoration: const InputDecoration(
                     border: InputBorder.none,
                     hintText: 'Session name',
+                    counterText: '',
                     contentPadding: EdgeInsets.zero,
                     isDense: true,
                   ),
@@ -594,44 +610,41 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
               ),
             ),
             Positioned(
-              // The bare trash keeps the tighter 6 that its glyph's own side
-              // bearing already answers for; the boxed Save reads to the edge
-              // of its border, so it takes the inset the header's other
-              // controls use.
-              right: unsaved && !noExercises ? 16 : 6,
+              // Every control in this row is a box now — the bare glyphs wear
+              // [HeaderIconButton]'s 44px target — so the row takes the header
+              // inset its neighbours use, not the tighter one a bare glyph's
+              // own bearing answered for.
+              right: 16,
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (unsaved && !noExercises) ...[
-                    GestureDetector(
-                      onTap: () => widget.viewModel.saveWorkout(),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        // The glass recipe in success — the pressable chrome.
-                        decoration: glassBox(AppColors.success),
-                        child: Text(
-                          'Save',
-                          style: AppFonts.ui(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.success,
-                          ),
-                        ),
-                      ),
+                  if (widget.viewModel.canUndo || widget.viewModel.canRedo) ...[
+                    UndoRedoButtons(
+                      canUndo: widget.viewModel.canUndo,
+                      canRedo: widget.viewModel.canRedo,
+                      onUndo: widget.viewModel.undo,
+                      onRedo: widget.viewModel.redo,
+                      compact: true,
                     ),
-                    if (review == null) const SizedBox(width: 10),
+                    const SizedBox(width: AppSpacing.xs),
+                  ],
+                  if (unsaved && !noExercises) ...[
+                    GlassButton(
+                      label: '',
+                      icon: Icons.check,
+                      semanticsLabel: 'Save workout',
+                      color: AppColors.success,
+                      compact: true,
+                      onPressed: () => widget.viewModel.saveWorkout(),
+                    ),
+                    if (review == null) const SizedBox(width: AppSpacing.xs),
                   ],
                   if (review == null)
-                    GestureDetector(
-                      onTap: _confirmDelete,
-                      child: Icon(
-                        Icons.delete_outline,
-                        size: 20,
-                        color: AppColors.danger,
-                      ),
+                    HeaderIconButton(
+                      icon: Icons.delete_outline,
+                      semanticsLabel: 'Delete workout',
+                      color: AppColors.danger,
+                      onPressed: _confirmDelete,
                     ),
                 ],
               ),
@@ -649,9 +662,7 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
     final name = toProperCase(
       state.exerciseDetailMap[slot.exerciseId]?.name ?? 'exercise',
     );
-    final setCount = state
-        .plannedSetsFor(slot.plannedExerciseId ?? '')
-        .length;
+    final setCount = state.plannedSetsFor(slot.plannedExerciseId ?? '').length;
 
     showDialog<void>(
       context: context,
@@ -666,12 +677,15 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
         ),
         content: Text(
           'Remove $name from this workout?\n$setCount set${setCount == 1 ? '' : 's'} will be removed.',
-          style: AppFonts.ui(color: AppColors.muted),
+          style: AppFonts.ui(color: AppColors.inkSecondary, height: 1.4),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: Text('Keep', style: AppFonts.ui(color: AppColors.muted)),
+            child: Text(
+              'Keep',
+              style: AppFonts.ui(color: AppColors.inkSecondary),
+            ),
           ),
           TextButton(
             onPressed: () {
@@ -705,12 +719,15 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
         ),
         content: Text(
           'Remove this planned workout and its sets?',
-          style: AppFonts.ui(color: AppColors.muted),
+          style: AppFonts.ui(color: AppColors.inkSecondary, height: 1.4),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: Text('Cancel', style: AppFonts.ui(color: AppColors.muted)),
+            child: Text(
+              'Cancel',
+              style: AppFonts.ui(color: AppColors.inkSecondary),
+            ),
           ),
           TextButton(
             onPressed: () async {
@@ -748,10 +765,7 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
             AddExerciseEntry(
               exerciseId: e.exerciseId,
               name: toProperCase(e.name),
-              lastUsed: lastUsedFromHistory(
-                s.historyByExercise,
-                e.exerciseId,
-              ),
+              lastUsed: lastUsedFromHistory(s.historyByExercise, e.exerciseId),
             ),
         ];
       },
@@ -945,7 +959,8 @@ class _PlanExerciseCard extends StatelessWidget {
               notes: v.trim().isEmpty ? null : v.trim(),
               clearNotes: v.trim().isEmpty,
             ),
-            onDelete: () => vm.deletePlannedSessionExerciseSet(set.plannedSetId),
+            onDelete: () =>
+                vm.deletePlannedSessionExerciseSet(set.plannedSetId),
             onDuplicate: (v) => vm.duplicatePlannedSessionExerciseSet(
               set,
               targetWeight: v.weight,
@@ -1092,7 +1107,10 @@ class _PlanExerciseCard extends StatelessWidget {
   /// The record's own entry for one exercise. Null when the record holds no
   /// such exercise — the workout had no sets for it then, which the empty grid
   /// then says plainly.
-  ContentExercise? _recordExercise(ContentSession session, String plannedExerciseId) {
+  ContentExercise? _recordExercise(
+    ContentSession session,
+    String plannedExerciseId,
+  ) {
     for (final exercise in session.exercises) {
       if (exercise.plannedExerciseId == plannedExerciseId) return exercise;
     }
@@ -1120,9 +1138,9 @@ class _PlanExerciseCard extends StatelessWidget {
       );
     } catch (e) {
       if (!context.mounted) return;
-      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-        SnackBar(content: Text('Could not save the note: $e')),
-      );
+      ScaffoldMessenger.maybeOf(
+        context,
+      )?.showSnackBar(SnackBar(content: Text('Could not save the note: $e')));
     }
   }
 }

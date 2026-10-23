@@ -12,6 +12,7 @@ import '../../../data/models/program_review.dart';
 import '../../../shared/widgets/app_card.dart';
 import '../../../shared/widgets/container_styles.dart';
 import '../../../shared/widgets/scroll_shrink_nav_bar.dart';
+import '../../../shared/widgets/user_name_text.dart';
 import '../model/program_content_diff.dart';
 import '../viewmodel/program_history_viewmodel.dart';
 import 'content_diff_sheet.dart';
@@ -249,9 +250,9 @@ class _ProgramHistoryPanelState extends State<ProgramHistoryPanel>
                       'HISTORY',
                       style: AppFonts.mono(
                         fontSize: AppTextStyles.xs,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 1.0,
-                        color: AppColors.muted,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.8,
+                        color: AppColors.primary,
                       ),
                     ),
                   ),
@@ -295,10 +296,8 @@ class _ProgramHistoryPanelState extends State<ProgramHistoryPanel>
                       state: state,
                       reviewing: reviewing,
                       onOpen: (r) => _open(state, r),
-                      onDismiss: (r) => _vm.dismissReview(
-                        widget.programId,
-                        r.reviewId,
-                      ),
+                      onDismiss: (r) =>
+                          _vm.dismissReview(widget.programId, r.reviewId),
                     ),
             ),
           ],
@@ -406,15 +405,18 @@ class _ReviewCard extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: Text(
+                // The pass's own title, when it has one — one line beside
+                // the status chip, never a wrap that reshapes the card.
+                child: UserNameText(
                   (review.title?.trim().isNotEmpty == true
                           ? review.title!.trim()
                           : reviewKindLabel(review.kind))
                       .toUpperCase(),
+                  tooltip: true,
                   style: AppFonts.mono(
                     fontSize: AppTextStyles.xs,
                     fontWeight: FontWeight.w700,
-                    letterSpacing: 1.0,
+                    letterSpacing: 0.8,
                     color: accent ? AppColors.accent : AppColors.primary,
                   ),
                 ),
@@ -430,7 +432,7 @@ class _ReviewCard extends StatelessWidget {
                   _when(review),
                   style: AppFonts.mono(
                     fontSize: AppTextStyles.xs,
-                    color: accent ? AppColors.accent : AppColors.muted,
+                    color: accent ? AppColors.accent : AppColors.inkSecondary,
                   ),
                 ),
               ),
@@ -441,7 +443,7 @@ class _ReviewCard extends StatelessWidget {
                   changeSummary!,
                   style: AppFonts.mono(
                     fontSize: AppTextStyles.xs,
-                    color: AppColors.muted,
+                    color: AppColors.inkSecondary,
                   ),
                 ),
               if (onDismiss != null)
@@ -454,7 +456,7 @@ class _ReviewCard extends StatelessWidget {
                       style: AppFonts.ui(
                         fontSize: AppTextStyles.xs,
                         fontWeight: FontWeight.w600,
-                        color: AppColors.muted,
+                        color: AppColors.inkSecondary,
                       ),
                     ),
                   ),
@@ -522,7 +524,7 @@ class _StatusChip extends StatelessWidget {
           fontSize: AppTextStyles.xs,
           fontWeight: FontWeight.w700,
           letterSpacing: 0.6,
-          color: accent ? AppColors.accent : AppColors.muted,
+          color: accent ? AppColors.accent : AppColors.inkSecondary,
         ),
       ),
     );
@@ -585,12 +587,19 @@ class _BlockFilterRow extends StatelessWidget {
       decoration: selected
           ? lambdaBox(ContainerTone.accent, radius: AppRadius.md)
           : lambdaBox(ContainerTone.ghost, radius: AppRadius.md),
-      child: Text(
-        toProperCase(label),
-        style: AppFonts.ui(
-          fontSize: AppTextStyles.sm,
-          fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-          color: AppColors.primary,
+      // The row scrolls sideways, so nothing else bounds a chip: a long block
+      // name would otherwise draw a chip wider than the screen. Capped, one
+      // line, full name on long-press.
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 160),
+        child: UserNameText(
+          toProperCase(label),
+          tooltip: true,
+          style: AppFonts.ui(
+            fontSize: AppTextStyles.sm,
+            fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+            color: AppColors.primary,
+          ),
         ),
       ),
     ),
@@ -627,7 +636,8 @@ class _EmptyTab extends StatelessWidget {
               textAlign: TextAlign.center,
               style: AppFonts.ui(
                 fontSize: AppTextStyles.sm,
-                color: AppColors.muted,
+                color: AppColors.inkSecondary,
+                height: 1.4,
               ),
             ),
           ],
