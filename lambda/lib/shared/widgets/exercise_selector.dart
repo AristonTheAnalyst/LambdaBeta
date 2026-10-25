@@ -41,6 +41,28 @@ enum ExerciseMark {
 /// the name this widget's geometry reads it by.
 const double kExerciseSelectorArrowSize = SessionChevronButton.kSessionChevronSize;
 
+/// The height both exercise pickers cap their scrolling list at — this
+/// selector's popover and the Add/Remove Exercises sheet
+/// (`add_exercise_modal.dart`) read this one value, so the one picker's two
+/// shapes cannot drift (2026-10-26).
+///
+/// Half the screen: the old fixed 260 showed about five rows, which asks the
+/// user to scroll before they can look at their own library. A short screen
+/// (landscape) keeps the old cap rather than shrinking below it.
+double exercisePickerListCap(BuildContext context) {
+  final half = MediaQuery.sizeOf(context).height * 0.5;
+  return half < _kExercisePickerListFloor ? _kExercisePickerListFloor : half;
+}
+
+/// The old fixed cap — now the floor a short screen may not go under.
+const double _kExercisePickerListFloor = 260;
+
+/// The gap the popover hangs under its field, and the margin it keeps from
+/// the screen's bottom edge — the same two numbers the popover's placement
+/// and its height budget are computed from.
+const double _kPopoverGap = 4;
+const double _kPopoverMargin = 8;
+
 /// The workout exercise selector — a field that opens an anchored popover
 /// over the screen: the selected exercise shows highlighted, up/down arrows
 /// reorder, and Add/Remove Exercises is pinned at the bottom, where the
@@ -99,6 +121,10 @@ class _ExerciseSelectorState extends State<ExerciseSelector> {
   final _link = LayerLink();
   final _portal = OverlayPortalController();
   double _fieldWidth = 0;
+
+  /// The popover's height when it opens: the picker's cap, narrowed to the
+  /// room the screen has left below the field.
+  double _popoverHeight = 0;
   bool _open = false;
 
   void _close() {
@@ -114,6 +140,25 @@ class _ExerciseSelectorState extends State<ExerciseSelector> {
     final box = _fieldKey.currentContext?.findRenderObject() as RenderBox?;
     setState(() {
       _fieldWidth = box?.size.width ?? 0;
+      // The popover opens downward from the field. Half the screen is the
+      // picker's cap, but the field is not always near the top — the old 260
+      // could not reach the bottom edge, and this can — so it never grows
+      // past the screen below the field (2026-10-26). The 260 floor keeps a
+      // cramped layout as usable as it was before the cap moved.
+      var height = exercisePickerListCap(context);
+      if (box != null) {
+        final fieldBottom = box.localToGlobal(Offset.zero).dy + box.size.height;
+        final room =
+            MediaQuery.sizeOf(context).height -
+            MediaQuery.paddingOf(context).bottom -
+            fieldBottom -
+            _kPopoverGap -
+            _kPopoverMargin;
+        if (room < height) height = room;
+      }
+      _popoverHeight = height < _kExercisePickerListFloor
+          ? _kExercisePickerListFloor
+          : height;
       _open = true;
     });
     _portal.show();
@@ -276,10 +321,11 @@ class _ExerciseSelectorState extends State<ExerciseSelector> {
                       link: _link,
                       targetAnchor: Alignment.bottomLeft,
                       followerAnchor: Alignment.topLeft,
-                      offset: const Offset(0, 4),
+                      offset: const Offset(0, _kPopoverGap),
                       child: Container(
+                        key: const ValueKey('exercise-selector-popover'),
                         width: _fieldWidth,
-                        constraints: const BoxConstraints(maxHeight: 260),
+                        constraints: BoxConstraints(maxHeight: _popoverHeight),
                         decoration: lambdaBox(
                           ContainerTone.surface,
                           radius: AppRadius.md,

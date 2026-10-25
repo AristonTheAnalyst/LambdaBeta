@@ -6,6 +6,7 @@ import '../../core/styles/app_text_styles.dart';
 import '../../core/utils/name_limit.dart';
 import '../../features/session/model/session_local_state.dart';
 import './container_styles.dart';
+import './exercise_selector.dart';
 import './lambda_search_field.dart';
 import './name_limit_counter.dart';
 import './slide_up_modal.dart';
@@ -254,52 +255,60 @@ class _AddExerciseModalContentState extends State<_AddExerciseModalContent> {
               NameLimitCounter(length: _query.trim().length),
             ],
             const SizedBox(height: AppSpacing.sm),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 260),
-              child: ListenableBuilder(
-                listenable: widget.listenable,
-                builder: (context, _) => ListView(
-                  controller: _scrollController,
-                  shrinkWrap: true,
-                  children: [
-                    ..._filtered.map((e) {
-                      final added = widget.isAdded(e.exerciseId);
-                      return _resultRow(
-                        key: _rowKey(e.exerciseId),
-                        label: e.name,
-                        onTap: _tapFor(e, added: added),
-                        added: added,
-                      );
-                    }),
-                    if (_canCreate)
-                      _resultRow(
-                        label: '+ Create "${_query.trim()}"',
-                        // Visible but inert while a create is in flight — a row
-                        // that vanished under the finger would read as a
-                        // mis-tap.
-                        onTap: (widget.isCreating?.call() ?? false)
-                            ? null
-                            : _create,
-                        accent: true,
-                      ),
-                    if (_filtered.isEmpty &&
-                        !_canCreate &&
-                        _query.trim().isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(
-                          vertical: AppSpacing.lg,
+            // The list takes the pickers' shared cap, and gives way when the
+            // sheet has less room than that — the search field's keyboard
+            // eats most of the screen, and Flexible lets the list shrink into
+            // what is left instead of overflowing the sheet (2026-10-26).
+            Flexible(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: exercisePickerListCap(context),
+                ),
+                child: ListenableBuilder(
+                  listenable: widget.listenable,
+                  builder: (context, _) => ListView(
+                    controller: _scrollController,
+                    shrinkWrap: true,
+                    children: [
+                      ..._filtered.map((e) {
+                        final added = widget.isAdded(e.exerciseId);
+                        return _resultRow(
+                          key: _rowKey(e.exerciseId),
+                          label: e.name,
+                          onTap: _tapFor(e, added: added),
+                          added: added,
+                        );
+                      }),
+                      if (_canCreate)
+                        _resultRow(
+                          label: '+ Create "${_query.trim()}"',
+                          // Visible but inert while a create is in flight — a row
+                          // that vanished under the finger would read as a
+                          // mis-tap.
+                          onTap: (widget.isCreating?.call() ?? false)
+                              ? null
+                              : _create,
+                          accent: true,
                         ),
-                        child: Center(
-                          child: Text(
-                            'No exercises found',
-                            style: AppFonts.ui(
-                              fontSize: AppTextStyles.caption,
-                              color: AppColors.inkSecondary,
+                      if (_filtered.isEmpty &&
+                          !_canCreate &&
+                          _query.trim().isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                            vertical: AppSpacing.lg,
+                          ),
+                          child: Center(
+                            child: Text(
+                              'No exercises found',
+                              style: AppFonts.ui(
+                                fontSize: AppTextStyles.caption,
+                                color: AppColors.inkSecondary,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
