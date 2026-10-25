@@ -294,15 +294,18 @@ bool showBottomNavFor(String location) =>
 
 /// Whether a location's page lets the keyboard push the shell's floor up.
 ///
-/// True everywhere but the PR Lab, whose stage keeps the date changer, the
-/// action bar and the nav bar exactly where they are and lets the keyboard
-/// paint over them (2026-10-21). The page opts out on its own Scaffold; this
-/// is the shell opting out with it — a body that still resized would carry
-/// the nav bar up anyway, and the floor with it.
+/// True everywhere but the pages that pin their floor and let the keyboard
+/// paint over it: the PR Lab's stage, which keeps the date changer, the action
+/// bar and the nav bar exactly where they are (2026-10-21), and the session
+/// surfaces — the live wizard's floor bar carries the date selector and the
+/// PR/notes doors, and a keyboard that lifted it would move the page under
+/// the user's hands mid-set (2026-10-25). Each page opts out on its own
+/// Scaffold; this is the shell opting out with it — a body that still resized
+/// would carry the nav bar up anyway, and the floor with it.
 @visibleForTesting
 bool shellResizesForKeyboard(String location) {
-  const prLab = '/dev/pr-lab';
-  return !(location == prLab || location.startsWith('$prLab/'));
+  const pinned = ['/dev/pr-lab', '/session'];
+  return !pinned.any((r) => location == r || location.startsWith('$r/'));
 }
 
 /// The location actually on screen, pushed pages included.

@@ -401,6 +401,11 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
           buildGuardedScaffold(
             scaffold: Scaffold(
               backgroundColor: AppColors.bg,
+              // The keyboard paints over the floor instead of lifting it
+              // (2026-10-25), the same rule the session surfaces follow: the
+              // nav or review bar keeps its place and the page's scroll
+              // shrinks its viewport to the keyboard's top.
+              resizeToAvoidBottomInset: false,
               // The editor is pushed full-screen (root navigator), which covers
               // the tab shell — so it draws the app's floating bar itself. Tab
               // taps run the unsaved-changes guard before leaving; while a
@@ -439,89 +444,100 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
                     // page's own build context it reads zero and the last set
                     // ends up under the glass instead of clear of it.
                     child: Builder(
-                      builder: (context) => SingleChildScrollView(
-                        padding: EdgeInsets.fromLTRB(
-                          AppSpacing.lg,
-                          AppSpacing.md,
-                          AppSpacing.lg,
-                          ScrollShrinkNavBar.contentInset(context),
+                      builder: (context) => Padding(
+                        // The target cells are text fields: the keyboard
+                        // shrinks the scrolling viewport to its top, so the
+                        // focused cell is revealed above the keyboard while
+                        // the bar below keeps its place under it (2026-10-25).
+                        padding: EdgeInsets.only(
+                          bottom: MediaQuery.viewInsetsOf(context).bottom,
                         ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            // Session Notes is hidden from the frontend for now
-                            // (the VM plumbing stays — see initState). Day-of-week
-                            // scheduling is retired for now: a workout is a list
-                            // of exercises, and nothing assigns it to a weekday.
-                            //
-                            // Compare does not change the page: the same card
-                            // draws the same workout, with the record's rows in
-                            // place of the plan's (`original` below). The card's
-                            // tabs and buttons hold their places — the flip is
-                            // values only — and the note box flips its words
-                            // with them: the record's own note, labelled as the
-                            // record's, while the record is up. Which is what
-                            // the bar's label is there to tell apart.
-                            if (state.workoutSetsLoading)
-                              Center(
-                                child: Padding(
-                                  padding: const EdgeInsets.all(AppSpacing.lg),
-                                  child: CircularProgressIndicator(
-                                    color: AppColors.accent,
+                        child: SingleChildScrollView(
+                          padding: EdgeInsets.fromLTRB(
+                            AppSpacing.lg,
+                            AppSpacing.md,
+                            AppSpacing.lg,
+                            ScrollShrinkNavBar.contentInset(context),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              // Session Notes is hidden from the frontend for now
+                              // (the VM plumbing stays — see initState). Day-of-week
+                              // scheduling is retired for now: a workout is a list
+                              // of exercises, and nothing assigns it to a weekday.
+                              //
+                              // Compare does not change the page: the same card
+                              // draws the same workout, with the record's rows in
+                              // place of the plan's (`original` below). The card's
+                              // tabs and buttons hold their places — the flip is
+                              // values only — and the note box flips its words
+                              // with them: the record's own note, labelled as the
+                              // record's, while the record is up. Which is what
+                              // the bar's label is there to tell apart.
+                              if (state.workoutSetsLoading)
+                                Center(
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(
+                                      AppSpacing.lg,
+                                    ),
+                                    child: CircularProgressIndicator(
+                                      color: AppColors.accent,
+                                    ),
+                                  ),
+                                )
+                              else if (state.workoutExerciseSlots.isEmpty) ...[
+                                const SizedBox(height: AppSpacing.xl),
+                                GestureDetector(
+                                  onTap: _showAddExercise,
+                                  child: Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: AppSpacing.xxl,
+                                    ),
+                                    decoration: lambdaBox(
+                                      ContainerTone.surface,
+                                      radius: AppRadius.lg,
+                                    ),
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          Icons.fitness_center_outlined,
+                                          size: 32,
+                                          color: AppColors.muted,
+                                        ),
+                                        const SizedBox(height: AppSpacing.sm),
+                                        Text(
+                                          'Tap to add an exercise',
+                                          style: AppFonts.ui(
+                                            fontSize: AppTextStyles.md,
+                                            color: AppColors.inkSecondary,
+                                          ),
+                                        ),
+                                        const SizedBox(height: AppSpacing.xs),
+                                        Text(
+                                          'A workout needs at least one exercise',
+                                          style: AppFonts.ui(
+                                            fontSize: AppTextStyles.xs,
+                                            color: AppColors.inkSecondary,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 ),
-                              )
-                            else if (state.workoutExerciseSlots.isEmpty) ...[
-                              const SizedBox(height: AppSpacing.xl),
-                              GestureDetector(
-                                onTap: _showAddExercise,
-                                child: Container(
-                                  width: double.infinity,
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: AppSpacing.xxl,
-                                  ),
-                                  decoration: lambdaBox(
-                                    ContainerTone.surface,
-                                    radius: AppRadius.lg,
-                                  ),
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        Icons.fitness_center_outlined,
-                                        size: 32,
-                                        color: AppColors.muted,
-                                      ),
-                                      const SizedBox(height: AppSpacing.sm),
-                                      Text(
-                                        'Tap to add an exercise',
-                                        style: AppFonts.ui(
-                                          fontSize: AppTextStyles.md,
-                                          color: AppColors.inkSecondary,
-                                        ),
-                                      ),
-                                      const SizedBox(height: AppSpacing.xs),
-                                      Text(
-                                        'A workout needs at least one exercise',
-                                        style: AppFonts.ui(
-                                          fontSize: AppTextStyles.xs,
-                                          color: AppColors.inkSecondary,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
+                              ] else if (state.activeSlot != null)
+                                _PlanExerciseCard(
+                                  viewModel: widget.viewModel,
+                                  slot: state.activeSlot!,
+                                  onAddExercise: _showAddExercise,
+                                  original: original,
+                                  originalNotes:
+                                      _original?.beforeNotes ?? const {},
                                 ),
-                              ),
-                            ] else if (state.activeSlot != null)
-                              _PlanExerciseCard(
-                                viewModel: widget.viewModel,
-                                slot: state.activeSlot!,
-                                onAddExercise: _showAddExercise,
-                                original: original,
-                                originalNotes:
-                                    _original?.beforeNotes ?? const {},
-                              ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
                     ),

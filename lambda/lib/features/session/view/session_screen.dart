@@ -20,6 +20,7 @@ import '../../../shared/widgets/dropdown_select.dart';
 import '../../../shared/widgets/feeling_rating.dart';
 import '../../../shared/widgets/glass_button.dart';
 import '../../../shared/widgets/header_icon_button.dart';
+import '../../../shared/widgets/keyboard_floor_layout.dart';
 import '../../../shared/widgets/lambda_input.dart';
 import '../../../shared/widgets/page_header.dart';
 import '../../../shared/widgets/planned_banner.dart';
@@ -408,6 +409,12 @@ class _SessionScreenState extends State<SessionScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.bg,
+      // The keyboard paints over the page instead of shoving it up
+      // (2026-10-25): the floor bar keeps the date bar and the PR/notes tiles
+      // exactly where they are, and a scrolling page shrinks its viewport to
+      // the keyboard's top instead. The shell opts out with this Scaffold
+      // ([shellResizesForKeyboard]), or its nav bar would ride up anyway.
+      resizeToAvoidBottomInset: false,
       // The whole-screen listener is gone: this builder scopes rebuilds to
       // the body subtree that actually reads the VM. The win is the notify
       // count — keystrokes debounce into one settle, so this fires per
@@ -836,72 +843,81 @@ class _PreEvaluationPageState extends State<_PreEvaluationPage> {
     return Column(
       children: [
         Expanded(
-          child: Center(
-            child: SingleChildScrollView(
-              padding: EdgeInsets.fromLTRB(
-                AppSpacing.lg,
-                AppSpacing.lg,
-                AppSpacing.lg,
-                ScrollShrinkNavBar.contentInset(context),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // One of the two fills the SAME slot — previewing the
-                  // last session hides the fillable form entirely.
-                  if (!_showLastSession)
-                    _FeelingForm(
-                      rating: vm.sessionFeeling,
-                      onRatingChanged: vm.setSessionFeeling,
-                      notesCtrl: widget.startNotesCtrl,
-                      onNotesChanged: (v) => vm.startNotes = v,
-                      placeholder:
-                          'Sleep and eat well?\nHydrated?\nGoals today?',
-                      question: 'How well do you think you\'re going to do',
-                      notesLabel: 'Why do you feel that way',
-                    )
-                  else if (lastSession != null)
-                    _lastSessionPreview(lastSession),
-                  if (lastSession != null) ...[
-                    const SizedBox(height: AppSpacing.md),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: GestureDetector(
-                        onTap: () => setState(
-                          () => _showLastSession = !_showLastSession,
-                        ),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 6,
+          child: Padding(
+            // The keyboard shrinks the scrolling viewport to its own top
+            // instead of lifting the page (2026-10-25): the notes field is
+            // revealed inside the viewport, so a viewport ending above the
+            // keyboard is what keeps the field clear of it.
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.viewInsetsOf(context).bottom,
+            ),
+            child: Center(
+              child: SingleChildScrollView(
+                padding: EdgeInsets.fromLTRB(
+                  AppSpacing.lg,
+                  AppSpacing.lg,
+                  AppSpacing.lg,
+                  ScrollShrinkNavBar.contentInset(context),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // One of the two fills the SAME slot — previewing the
+                    // last session hides the fillable form entirely.
+                    if (!_showLastSession)
+                      _FeelingForm(
+                        rating: vm.sessionFeeling,
+                        onRatingChanged: vm.setSessionFeeling,
+                        notesCtrl: widget.startNotesCtrl,
+                        onNotesChanged: (v) => vm.startNotes = v,
+                        placeholder:
+                            'Sleep and eat well?\nHydrated?\nGoals today?',
+                        question: 'How well do you think you\'re going to do',
+                        notesLabel: 'Why do you feel that way',
+                      )
+                    else if (lastSession != null)
+                      _lastSessionPreview(lastSession),
+                    if (lastSession != null) ...[
+                      const SizedBox(height: AppSpacing.md),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: GestureDetector(
+                          onTap: () => setState(
+                            () => _showLastSession = !_showLastSession,
                           ),
-                          decoration: glassBox(AppColors.primary),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                _showLastSession
-                                    ? Icons.arrow_back
-                                    : Icons.history,
-                                size: 13,
-                                color: AppColors.primary,
-                              ),
-                              const SizedBox(width: 6),
-                              Text(
-                                _showLastSession ? 'Back' : 'Last Session',
-                                style: AppFonts.ui(
-                                  fontSize: AppTextStyles.xs,
-                                  fontWeight: FontWeight.w600,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 6,
+                            ),
+                            decoration: glassBox(AppColors.primary),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  _showLastSession
+                                      ? Icons.arrow_back
+                                      : Icons.history,
+                                  size: 13,
                                   color: AppColors.primary,
                                 ),
-                              ),
-                            ],
+                                const SizedBox(width: 6),
+                                Text(
+                                  _showLastSession ? 'Back' : 'Last Session',
+                                  style: AppFonts.ui(
+                                    fontSize: AppTextStyles.xs,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.primary,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ),
-                    ),
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
           ),
@@ -1608,158 +1624,155 @@ class _TrainingPageState extends State<_TrainingPage> {
   Widget _buildActive(BuildContext context) {
     final exerciseMode = vm.dateBarMode == SessionDateMode.exercise;
     final viewed = vm.viewedExerciseHistory;
-    return Column(
-      children: [
-        Expanded(
-          child: SingleChildScrollView(
-            // 16 top, not 12: the selector needs one more step of air under
-            // the header's hairline — the lab's own correction, carried over
-            // (2026-10-22).
-            padding: const EdgeInsets.fromLTRB(
-              AppSpacing.lg,
-              AppSpacing.lg,
-              AppSpacing.lg,
-              AppSpacing.lg,
-            ),
-            child: vm.deletedViewSeId != null
-                // The deleted view (2026-10-14): the trash menu's row opened
-                // the exercise — red rows, the selector listing every deleted
-                // exercise by name (another is one tap away), and the Restore
-                // button below, which restores the one on screen. Looking is
-                // not writing.
-                ? Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      DeletedExerciseCard(vm: vm),
-                      const SizedBox(height: AppSpacing.md),
-                      GlassButton(
-                        label: 'Restore',
-                        onPressed: vm.restoreViewedDeletedExercise,
-                      ),
-                    ],
-                  )
-                : Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      vm.activeSlot == null
-                          ? _PlaceholderExerciseCard(vm: vm)
-                          // Key per exercise slot: switching tabs recreates
-                          // the card state so an open history view doesn't
-                          // carry over.
-                          : LiveExerciseCard(
-                              key: ValueKey(vm.activeSlot!.id),
-                              vm: vm,
-                              slot: vm.activeSlot!,
-                              onRemoveExercise: widget.onRemoveExercise,
-                            ),
-                      // The way back for deleted sets: the card shows them
-                      // red in place, and this brings everything under the
-                      // exercise back (2026-10-14).
-                      if (vm.activeSlotHasDeletedSets) ...[
-                        const SizedBox(height: AppSpacing.md),
-                        GlassButton(
-                          label: 'Restore',
-                          onPressed: vm.restoreDeletedSetsForActiveExercise,
-                        ),
-                      ],
-                    ],
-                  ),
-          ),
+    return KeyboardFloorLayout(
+      // The page above the floor: the keyboard shrinks this viewport to its
+      // top, so the focused set cell is revealed above it while the floor
+      // below keeps its place under it (2026-10-25).
+      page: SingleChildScrollView(
+        // 16 top, not 12: the selector needs one more step of air under
+        // the header's hairline — the lab's own correction, carried over
+        // (2026-10-22).
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.lg,
+          AppSpacing.lg,
+          AppSpacing.lg,
+          AppSpacing.lg,
         ),
-        // Sticky bottom: the session stats bar. It sits above the shell's
-        // floating bar rather than behind it.
-        Container(
-          padding: EdgeInsets.fromLTRB(
-            AppSpacing.lg,
-            AppSpacing.sm,
-            AppSpacing.lg,
-            ScrollShrinkNavBar.contentInset(context),
-          ),
-          decoration: BoxDecoration(
-            color: AppColors.bg,
-            border: Border(
-              top: BorderSide(color: AppColors.border, width: 0.5),
-            ),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // The floor leads with the session's place in time — the same
-              // bar the past-session viewer draws, so the two surfaces are
-              // one page in two modes (2026-10-22). A session resumed the
-              // next day still says TODAY: it is the session being logged,
-              // which is the fact the phrase reports.
-              //
-              // The bar walks the session stack on both surfaces, and a
-              // step is **in place** on both (2026-10-22): today is the
-              // newest, so the right arrow is spent here; the left steps
-              // onto the newest completed record without leaving the page —
-              // the sets under this card swap to the record's, the viewer's
-              // own reading draws them, and the record's right arrow comes
-              // back to these sets. No route changes anywhere.
-              //
-              // EXERCISE is the live default (2026-10-23): the arrows walk
-              // the active exercise's own past performances and only the
-              // card's sets swap — the page, header and live session stay.
-              // SESSION is the record walk above, through the peek. The
-              // radios under the date are the switch between the two stacks.
-              SessionDateBar(
-                isToday: viewed == null,
-                date: viewed?.date ?? vm.workoutStartedAt ?? DateTime.now(),
-                mode: vm.dateBarMode,
-                onToggleMode: vm.toggleDateBarMode,
-                onOlder: exerciseMode
-                    ? (vm.canStepExerciseOlder
-                          ? () => unawaited(vm.stepExerciseHistory(1))
-                          : null)
-                    : (vm.previousSessionId == null ? null : _enterPeek),
-                onNewer: exerciseMode && vm.canStepExerciseNewer
-                    ? () => unawaited(vm.stepExerciseHistory(-1))
-                    : null,
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              Row(
+        child: vm.deletedViewSeId != null
+            // The deleted view (2026-10-14): the trash menu's row opened
+            // the exercise — red rows, the selector listing every deleted
+            // exercise by name (another is one tap away), and the Restore
+            // button below, which restores the one on screen. Looking is
+            // not writing.
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  UndoRedoButtons(
-                    // Greyed while the deleted view is up: the mode is a
-                    // reading, and an undo here would rewrite the very thing
-                    // being read (2026-10-14).
-                    canUndo: vm.canUndo && vm.deletedViewSeId == null,
-                    canRedo: vm.canRedo && vm.deletedViewSeId == null,
-                    onUndo: vm.undo,
-                    onRedo: vm.redo,
-                    // The trash menu: every deleted planned exercise, most
-                    // recently deleted first — a row opens it for reading, and
-                    // the Restore button under the card brings it back (the
-                    // view-then-restore flow, 2026-10-14).
-                    deletedExercises: [
-                      for (final e in vm.deletedPlannedExerciseEntries) e.name,
-                    ],
-                    onPickDeletedExercise: vm.viewDeletedPlannedExerciseAt,
+                  DeletedExerciseCard(vm: vm),
+                  const SizedBox(height: AppSpacing.md),
+                  GlassButton(
+                    label: 'Restore',
+                    onPressed: vm.restoreViewedDeletedExercise,
                   ),
-                  const SizedBox(width: AppSpacing.sm),
-                  // The ratings star (2026-10-23, was the pencil): the sheet
-                  // it opens is five feeling stars — the door wears the same
-                  // glyph it leads to, and a star shares no silhouette with
-                  // the trophy or the pin beside it. It keeps the tiles'
-                  // accent glass: a door to session content, not neutral
-                  // chrome like the undo/redo pair (the PR Lab's reading,
-                  // carried over).
-                  BarIconButton(
-                    key: const ValueKey('ratings-button'),
-                    icon: Icons.star_rounded,
-                    semanticsLabel: 'Session ratings',
-                    onPressed: widget.onOpenRatings,
-                    color: AppColors.accent,
-                  ),
-                  const SizedBox(width: AppSpacing.sm),
-                  Expanded(child: SessionStatsBar(vm: vm)),
+                ],
+              )
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  vm.activeSlot == null
+                      ? _PlaceholderExerciseCard(vm: vm)
+                      // Key per exercise slot: switching tabs recreates
+                      // the card state so an open history view doesn't
+                      // carry over.
+                      : LiveExerciseCard(
+                          key: ValueKey(vm.activeSlot!.id),
+                          vm: vm,
+                          slot: vm.activeSlot!,
+                          onRemoveExercise: widget.onRemoveExercise,
+                        ),
+                  // The way back for deleted sets: the card shows them
+                  // red in place, and this brings everything under the
+                  // exercise back (2026-10-14).
+                  if (vm.activeSlotHasDeletedSets) ...[
+                    const SizedBox(height: AppSpacing.md),
+                    GlassButton(
+                      label: 'Restore',
+                      onPressed: vm.restoreDeletedSetsForActiveExercise,
+                    ),
+                  ],
                 ],
               ),
-            ],
-          ),
+      ),
+      // Sticky bottom: the session stats bar. It sits above the shell's
+      // floating bar rather than behind it.
+      floor: Container(
+        padding: EdgeInsets.fromLTRB(
+          AppSpacing.lg,
+          AppSpacing.sm,
+          AppSpacing.lg,
+          ScrollShrinkNavBar.contentInset(context),
         ),
-      ],
+        decoration: BoxDecoration(
+          color: AppColors.bg,
+          border: Border(top: BorderSide(color: AppColors.border, width: 0.5)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // The floor leads with the session's place in time — the same
+            // bar the past-session viewer draws, so the two surfaces are
+            // one page in two modes (2026-10-22). A session resumed the
+            // next day still says TODAY: it is the session being logged,
+            // which is the fact the phrase reports.
+            //
+            // The bar walks the session stack on both surfaces, and a
+            // step is **in place** on both (2026-10-22): today is the
+            // newest, so the right arrow is spent here; the left steps
+            // onto the newest completed record without leaving the page —
+            // the sets under this card swap to the record's, the viewer's
+            // own reading draws them, and the record's right arrow comes
+            // back to these sets. No route changes anywhere.
+            //
+            // EXERCISE is the live default (2026-10-23): the arrows walk
+            // the active exercise's own past performances and only the
+            // card's sets swap — the page, header and live session stay.
+            // SESSION is the record walk above, through the peek. The
+            // radios under the date are the switch between the two stacks.
+            SessionDateBar(
+              isToday: viewed == null,
+              date: viewed?.date ?? vm.workoutStartedAt ?? DateTime.now(),
+              mode: vm.dateBarMode,
+              onToggleMode: vm.toggleDateBarMode,
+              onOlder: exerciseMode
+                  ? (vm.canStepExerciseOlder
+                        ? () => unawaited(vm.stepExerciseHistory(1))
+                        : null)
+                  : (vm.previousSessionId == null ? null : _enterPeek),
+              onNewer: exerciseMode && vm.canStepExerciseNewer
+                  ? () => unawaited(vm.stepExerciseHistory(-1))
+                  : null,
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Row(
+              children: [
+                UndoRedoButtons(
+                  // Greyed while the deleted view is up: the mode is a
+                  // reading, and an undo here would rewrite the very thing
+                  // being read (2026-10-14).
+                  canUndo: vm.canUndo && vm.deletedViewSeId == null,
+                  canRedo: vm.canRedo && vm.deletedViewSeId == null,
+                  onUndo: vm.undo,
+                  onRedo: vm.redo,
+                  // The trash menu: every deleted planned exercise, most
+                  // recently deleted first — a row opens it for reading, and
+                  // the Restore button under the card brings it back (the
+                  // view-then-restore flow, 2026-10-14).
+                  deletedExercises: [
+                    for (final e in vm.deletedPlannedExerciseEntries) e.name,
+                  ],
+                  onPickDeletedExercise: vm.viewDeletedPlannedExerciseAt,
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                // The ratings star (2026-10-23, was the pencil): the sheet
+                // it opens is five feeling stars — the door wears the same
+                // glyph it leads to, and a star shares no silhouette with
+                // the trophy or the pin beside it. It keeps the tiles'
+                // accent glass: a door to session content, not neutral
+                // chrome like the undo/redo pair (the PR Lab's reading,
+                // carried over).
+                BarIconButton(
+                  key: const ValueKey('ratings-button'),
+                  icon: Icons.star_rounded,
+                  semanticsLabel: 'Session ratings',
+                  onPressed: widget.onOpenRatings,
+                  color: AppColors.accent,
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(child: SessionStatsBar(vm: vm)),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -2339,76 +2352,84 @@ class _PostQuestionnairePageState extends State<_PostQuestionnairePage> {
         return Column(
           children: [
             Expanded(
-              child: Center(
-                child: SingleChildScrollView(
-                  padding: EdgeInsets.fromLTRB(
-                    AppSpacing.lg,
-                    AppSpacing.lg,
-                    AppSpacing.lg,
-                    ScrollShrinkNavBar.contentInset(context),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      // One of the two fills the SAME slot — previewing the
-                      // previous session hides the fillable form entirely.
-                      if (!_showPreviousSession)
-                        _FeelingForm(
-                          rating: vm.endFeeling,
-                          onRatingChanged: vm.setEndFeeling,
-                          notesCtrl: widget.notesCtrl,
-                          onNotesChanged: (v) => vm.endNotes = v,
-                          placeholder:
-                              'How did it go?\nStrong sets?\nAnything to fix?',
-                          question: 'How well did you do this session',
-                          notesLabel:
-                              'What could have made this session better',
-                        )
-                      else if (previous != null)
-                        _previousSessionPreview(previous),
-                      if (previous != null) ...[
-                        const SizedBox(height: AppSpacing.md),
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: GestureDetector(
-                            onTap: () => setState(
-                              () =>
-                                  _showPreviousSession = !_showPreviousSession,
-                            ),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 6,
+              child: Padding(
+                // The keyboard shrinks this viewport to its top, so the
+                // notes field rises clear of it while the shell's bar keeps
+                // its place underneath (2026-10-25).
+                padding: EdgeInsets.only(
+                  bottom: MediaQuery.viewInsetsOf(context).bottom,
+                ),
+                child: Center(
+                  child: SingleChildScrollView(
+                    padding: EdgeInsets.fromLTRB(
+                      AppSpacing.lg,
+                      AppSpacing.lg,
+                      AppSpacing.lg,
+                      ScrollShrinkNavBar.contentInset(context),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        // One of the two fills the SAME slot — previewing the
+                        // previous session hides the fillable form entirely.
+                        if (!_showPreviousSession)
+                          _FeelingForm(
+                            rating: vm.endFeeling,
+                            onRatingChanged: vm.setEndFeeling,
+                            notesCtrl: widget.notesCtrl,
+                            onNotesChanged: (v) => vm.endNotes = v,
+                            placeholder:
+                                'How did it go?\nStrong sets?\nAnything to fix?',
+                            question: 'How well did you do this session',
+                            notesLabel:
+                                'What could have made this session better',
+                          )
+                        else if (previous != null)
+                          _previousSessionPreview(previous),
+                        if (previous != null) ...[
+                          const SizedBox(height: AppSpacing.md),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: GestureDetector(
+                              onTap: () => setState(
+                                () => _showPreviousSession =
+                                    !_showPreviousSession,
                               ),
-                              decoration: glassBox(AppColors.primary),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    _showPreviousSession
-                                        ? Icons.arrow_back
-                                        : Icons.history,
-                                    size: 13,
-                                    color: AppColors.primary,
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    _showPreviousSession
-                                        ? 'Back'
-                                        : 'Last Session',
-                                    style: AppFonts.ui(
-                                      fontSize: AppTextStyles.xs,
-                                      fontWeight: FontWeight.w600,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 6,
+                                ),
+                                decoration: glassBox(AppColors.primary),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      _showPreviousSession
+                                          ? Icons.arrow_back
+                                          : Icons.history,
+                                      size: 13,
                                       color: AppColors.primary,
                                     ),
-                                  ),
-                                ],
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      _showPreviousSession
+                                          ? 'Back'
+                                          : 'Last Session',
+                                      style: AppFonts.ui(
+                                        fontSize: AppTextStyles.xs,
+                                        fontWeight: FontWeight.w600,
+                                        color: AppColors.primary,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
                           ),
-                        ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
                 ),
               ),

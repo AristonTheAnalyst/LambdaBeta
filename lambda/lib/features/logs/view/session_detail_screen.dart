@@ -18,6 +18,7 @@ import '../../../shared/widgets/dropdown_select.dart';
 import '../../../shared/widgets/exercise_selector.dart';
 import '../../../shared/widgets/glass_button.dart';
 import '../../../shared/widgets/header_icon_button.dart';
+import '../../../shared/widgets/keyboard_floor_layout.dart';
 import '../../../shared/widgets/page_header.dart';
 import '../../../shared/widgets/scroll_shrink_nav_bar.dart';
 import '../../../shared/widgets/session_date_bar.dart';
@@ -194,6 +195,11 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.bg,
+      // The keyboard paints over the page instead of shoving it up
+      // (2026-10-25), exactly as on the live Training page: the floor bar
+      // keeps the date bar where it is, and the card's scroll shrinks its
+      // viewport to the keyboard's top.
+      resizeToAvoidBottomInset: false,
       body: ValueListenableBuilder<SessionDetailState>(
         valueListenable: _vm.state,
         builder: (context, state, _) {
@@ -208,6 +214,11 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
           return buildGuardedScaffold(
             scaffold: Scaffold(
               backgroundColor: AppColors.bg,
+              // The outer Scaffold's opt-out is repeated here: with only one
+              // of the two opted out, the other would resize the body and
+              // strip the bottom viewInsets from the inner MediaQuery, and
+              // the scroll below would have nothing to shrink by (2026-10-25).
+              resizeToAvoidBottomInset: false,
               // The shell's floating bar, drawn here because this page is a
               // push over the shell — the Training page's bar, element for
               // element (Session tab lit; logs live in its branch).
@@ -338,47 +349,45 @@ class SessionDetailView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Expanded(
-          child: state.exerciseSlots.isEmpty
-              ? Center(
-                  child: Text(
-                    'No sets recorded.',
-                    style: AppFonts.ui(
-                      fontSize: AppTextStyles.body,
-                      color: AppColors.inkSecondary,
-                    ),
-                  ),
-                )
-              : SingleChildScrollView(
-                  // The live Training page's own insets — the card opens on
-                  // the same 22pt gutter, from the same place, with the same
-                  // 16 of air under the header (2026-10-22).
-                  padding: const EdgeInsets.fromLTRB(
-                    AppSpacing.lg,
-                    AppSpacing.lg,
-                    AppSpacing.lg,
-                    AppSpacing.lg,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      if (state.activeSlot != null)
-                        _DetailCardBuilder(
-                          viewModel: viewModel,
-                          state: state,
-                          slot: state.activeSlot!,
-                          readOnly: readOnly,
-                          onAddExercise: () => _showAddExercise(context),
-                        ),
-                    ],
-                  ),
+    return KeyboardFloorLayout(
+      // The card above the floor: the keyboard shrinks this viewport to its
+      // top, so an edited set cell is revealed above it while the date bar
+      // below keeps its place under it (2026-10-25).
+      page: state.exerciseSlots.isEmpty
+          ? Center(
+              child: Text(
+                'No sets recorded.',
+                style: AppFonts.ui(
+                  fontSize: AppTextStyles.body,
+                  color: AppColors.inkSecondary,
                 ),
-        ),
-        _floorBar(context),
-      ],
+              ),
+            )
+          : SingleChildScrollView(
+              // The live Training page's own insets — the card opens on
+              // the same 22pt gutter, from the same place, with the same
+              // 16 of air under the header (2026-10-22).
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.lg,
+                AppSpacing.lg,
+                AppSpacing.lg,
+                AppSpacing.lg,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (state.activeSlot != null)
+                    _DetailCardBuilder(
+                      viewModel: viewModel,
+                      state: state,
+                      slot: state.activeSlot!,
+                      readOnly: readOnly,
+                      onAddExercise: () => _showAddExercise(context),
+                    ),
+                ],
+              ),
+            ),
+      floor: _floorBar(context),
     );
   }
 

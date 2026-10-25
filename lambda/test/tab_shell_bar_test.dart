@@ -71,12 +71,18 @@ void main() {
     });
   });
 
-  /// The PR Lab's stage keeps its floor under the keyboard; every other page
-  /// lifts it. The whole point is that the rule reaches exactly one route.
+  /// The pages that pin their floor under the keyboard: the PR Lab's stage
+  /// (2026-10-21) and the session surfaces (2026-10-25). Every other page
+  /// lifts its floor for the keyboard.
   group('shellResizesForKeyboard', () {
-    test('every production page lifts its floor for the keyboard', () {
+    test('the session surfaces pin their floor under the keyboard', () {
+      for (final location in ['/session', '/session/anything']) {
+        expect(shellResizesForKeyboard(location), isFalse, reason: location);
+      }
+    });
+
+    test('every other production page lifts its floor for the keyboard', () {
       for (final location in [
-        '/session',
         '/exercises',
         '/exercises/programs/p1/history',
         '/logs',
@@ -92,9 +98,10 @@ void main() {
       expect(shellResizesForKeyboard('/dev/pr-lab'), isFalse);
     });
 
-    test('a path that merely starts with the lab route still lifts', () {
+    test('a path that merely starts with a pinned route still lifts', () {
       // Only the full segment counts — the same rule the bar's branches use.
       expect(shellResizesForKeyboard('/dev/pr-labs'), isTrue);
+      expect(shellResizesForKeyboard('/sessions'), isTrue);
     });
   });
 }

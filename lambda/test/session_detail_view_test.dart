@@ -226,6 +226,11 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
+          // The real screen opts out of the resize (2026-10-25): the floor
+          // keeps its place and the keyboard paints over it. The harness
+          // mirrors that, or the body's MediaQuery would have its bottom
+          // viewInsets stripped and no keyboard test could see an inset.
+          resizeToAvoidBottomInset: false,
           body: ValueListenableBuilder<SessionDetailState>(
             valueListenable: vm.state,
             builder: (context, state, _) => state.isLoading
@@ -382,6 +387,78 @@ void main() {
       vm.state.value.isEditing,
       isFalse,
       reason: 'Done leaves edit mode once the write lands',
+    );
+  });
+
+  // ── The keyboard (2026-10-25) ─────────────────────────────────────────────
+
+  testWidgets('the keyboard never lifts the floor; the card\'s viewport ends '
+      'above it', (tester) async {
+    // The iPhone 17's own frame, where the floor is 152 points tall and the
+    // numeric pad's 291–300 would otherwise leave half a page dead.
+    tester.view.physicalSize = const Size(1206, 2622);
+    tester.view.devicePixelRatio = 3;
+    await pumpViewer(tester);
+
+    final screen = tester.getRect(find.byType(Scaffold).first);
+    final floorBefore = tester.getRect(
+      find.byKey(const ValueKey('session-detail-bar')),
+    );
+
+    // 300 logical points of keyboard, the numeric pad's own order of height.
+    tester.view.viewInsets = const FakeViewPadding(bottom: 300 * 3);
+    addTearDown(tester.view.reset);
+    await tester.pumpAndSettle();
+
+    final floorAfter = tester.getRect(
+      find.byKey(const ValueKey('session-detail-bar')),
+    );
+    final scrollAfter = tester.getRect(find.byType(SingleChildScrollView));
+
+    expect(
+      floorAfter,
+      floorBefore,
+      reason: 'the floor keeps its place under the keyboard',
+    );
+    expect(
+      scrollAfter.bottom,
+      closeTo(screen.bottom - 300, 0.5),
+      reason: 'the card\'s viewport ends at the keyboard\'s top',
+    );
+  });
+
+  testWidgets('a keyboard shorter than the floor moves nothing', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1206, 2622);
+    tester.view.devicePixelRatio = 3;
+    await pumpViewer(tester);
+
+    final floorBefore = tester.getRect(
+      find.byKey(const ValueKey('session-detail-bar')),
+    );
+    final scrollBefore = tester.getRect(find.byType(SingleChildScrollView));
+    expect(
+      floorBefore.height,
+      greaterThan(100),
+      reason: 'this test is only meaningful while the floor is taller than it',
+    );
+
+    // 100 points of keyboard: entirely behind the floor, so the page keeps
+    // every point the floor leaves it.
+    tester.view.viewInsets = const FakeViewPadding(bottom: 100 * 3);
+    addTearDown(tester.view.reset);
+    await tester.pumpAndSettle();
+
+    expect(
+      tester.getRect(find.byKey(const ValueKey('session-detail-bar'))),
+      floorBefore,
+      reason: 'the floor keeps its place under the keyboard',
+    );
+    expect(
+      tester.getRect(find.byType(SingleChildScrollView)),
+      scrollBefore,
+      reason: 'a keyboard the floor already covers takes nothing from the page',
     );
   });
 
@@ -691,8 +768,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('19 OCT 2026'), findsOneWidget);
     expect(find.text('PREVIOUSLY'), findsNothing);
-    final walkedAfter =
-        tester.getTopLeft(find.text('AFTER')).dy;
+    final walkedAfter = tester.getTopLeft(find.text('AFTER')).dy;
     final walkedMiddle = tester.getTopLeft(find.text('19 OCT 2026')).dy;
     expect(walkedAfter, lessThan(walkedMiddle));
     expect(
@@ -700,7 +776,10 @@ void main() {
       greaterThan(walkedAfter),
       reason: 'written after w0, so it leads now',
     );
-    expect(tester.getTopLeft(find.text('Elbows tucked')).dy, lessThan(walkedMiddle));
+    expect(
+      tester.getTopLeft(find.text('Elbows tucked')).dy,
+      lessThan(walkedMiddle),
+    );
     expect(
       tester.getTopLeft(find.text('Old cue')).dy,
       greaterThan(walkedMiddle),
