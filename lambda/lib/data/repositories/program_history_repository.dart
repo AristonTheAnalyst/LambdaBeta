@@ -11,6 +11,7 @@ import '../models/planned_session_program.dart';
 import '../models/program_block.dart';
 import '../models/program_content.dart';
 import '../models/program_history.dart';
+import '../models/program_progress.dart';
 import '../models/program_review.dart';
 import '../models/program_run.dart';
 import 'planned_session_repository.dart';
@@ -46,6 +47,17 @@ class ComparisonBase {
   final Map<String, String> notes;
 
   bool get asFound => completedDate == null;
+}
+
+/// The current run as the caller already found it — [progress] is null
+/// exactly when there is no current run.
+///
+/// The wrapper exists so `fetchDueItems` can tell "nobody has looked" from
+/// "looked, and the answer is none": only the first should cost a read.
+class CurrentRunReading {
+  const CurrentRunReading(this.progress);
+
+  final ProgramProgress? progress;
 }
 
 /// A program's checkpoints: the reviews that record it, and the snapshot each
@@ -1176,7 +1188,17 @@ class ProgramHistoryRepository {
   /// Called from the library and the program detail loader ONLY, never from
   /// `getProgress` — a read that prompts must not be the same read that
   /// mutates.
-  Future<List<DueItem>> fetchDueItems(String userId) async {
+  ///
+  /// [currentRun] is for a caller that has just read the current run to draw
+  /// its own screen — the library does, one line up. Passing it stops this
+  /// read from asking again: the run read, then the whole progress chain
+  /// behind it (program, workouts, completed count, blocks) used to be paid a
+  /// second time here, and on a mirror holding no current run that is a
+  /// second REST round-trip (2026-10-25).
+  Future<List<DueItem>> fetchDueItems(
+    String userId, {
+    CurrentRunReading? currentRun,
+  }) async {
     final now = DateTime.now();
     final due = <DueItem>[];
 
@@ -1216,7 +1238,9 @@ class ProgramHistoryRepository {
     // with it, change it, or end the run — and the prompt comes down at Finish
     // rather than waiting for an end that may never come. The cadence feature,
     // when it lands, is what will earn the right to ask again.
-    final progress = await _runRepo.getProgress(userId);
+    final progress = currentRun != null
+        ? currentRun.progress
+        : await _runRepo.getProgress(userId);
     final currentProgramId = progress?.program.programId;
     if (progress != null && progress.isReadyToEnd) {
       final answered = await hasCompletedReviewForRun(

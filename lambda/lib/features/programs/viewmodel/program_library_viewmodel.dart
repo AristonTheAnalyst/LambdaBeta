@@ -250,20 +250,34 @@ class ProgramLibraryViewModel {
   Future<void> fetchAll() async {
     state.value = state.value.copyWith(isLoading: true, clearError: true);
     try {
-      final programs = await _repo.fetchPrograms(_userId);
-      final currentRun = await _runRepo.getCurrentRun(_userId);
-      // Runs that were stepped away from. Read rather than derived from the
-      // cards: "paused" is not a property of a program, it is a property of a
-      // run that program happens to have open.
-      final pausedRuns = await _runRepo.fetchPausedRuns(_userId);
+      // Three independent reads, started together (2026-10-25). The run
+      // reads are the slow ones: when the mirror holds no current run, each
+      // falls back to REST, so they cannot be paid one after the other.
+      final (programs, currentRun, pausedRuns) = await (
+        _repo.fetchPrograms(_userId),
+        _runRepo.getCurrentRun(_userId),
+        // Runs that were stepped away from. Read rather than derived from
+        // the cards: "paused" is not a property of a program, it is a
+        // property of a run that program happens to have open.
+        _runRepo.fetchPausedRuns(_userId),
+      ).wait;
+
+      // One progress, off the run already in hand. `progressFor` rather than
+      // `getProgress`: the latter would read the current run a second time,
+      // repeating whatever that read just cost.
       ProgramProgress? progress;
       if (currentRun != null) {
         try {
-          progress = await _runRepo.getProgress(_userId);
+          progress = await _runRepo.progressFor(currentRun);
         } catch (_) {}
       }
-      final due = await _dueItems();
-      final usage = await _usage();
+
+      final (due, usage, blocked) = await (
+        _dueItems(progress),
+        _usage(),
+        _blockedWithoutBlocks(programs),
+      ).wait;
+
       state.value = state.value.copyWith(
         isLoading: false,
         programs: programs,
@@ -273,7 +287,7 @@ class ProgramLibraryViewModel {
         currentProgress: progress,
         clearCurrentProgress: progress == null,
         dueItems: due,
-        blockedWithoutBlocks: await _blockedWithoutBlocks(programs),
+        blockedWithoutBlocks: blocked,
         usage: usage,
       );
     } catch (e) {
@@ -307,13 +321,19 @@ class ProgramLibraryViewModel {
 
   /// The due prompts, keyed by program.
   ///
+  /// [progress] is the current run's progress as [fetchAll] just read it —
+  /// handed to the history read so it does not read the run again.
+  ///
   /// Swallows its failure on purpose: a due check that throws must not blank a
   /// library that loaded perfectly well — the badge is an addition to the
   /// screen, not the screen. At most one item per program is kept, earliest
   /// first, because a card can only show one.
-  Future<Map<String, DueItem>> _dueItems() async {
+  Future<Map<String, DueItem>> _dueItems(ProgramProgress? progress) async {
     try {
-      final items = await _historyRepo.fetchDueItems(_userId);
+      final items = await _historyRepo.fetchDueItems(
+        _userId,
+        currentRun: CurrentRunReading(progress),
+      );
       final out = <String, DueItem>{};
       for (final item in items) {
         out.putIfAbsent(item.programId, () => item);
@@ -438,7 +458,7 @@ class ProgramLibraryViewModel {
         blockId: blockId,
         targetSessions: targetSessions,
       );
-      final due = await _dueItems();
+      final due = await _dueItems(progress);
       if (_disposed) return;
       // The badge follows the begin: whatever was current is now paused, and
       // the program just begun is not.
@@ -521,7 +541,7 @@ class ProgramLibraryViewModel {
       try {
         progress = await _runRepo.progressFor(run);
       } catch (_) {}
-      final due = await _dueItems();
+      final due = await _dueItems(progress);
       if (_disposed) return;
 
       // The badge follows the write: this program is no longer paused, and

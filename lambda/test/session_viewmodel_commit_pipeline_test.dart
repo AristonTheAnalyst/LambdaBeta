@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lambda/data/cache/past_sets_timeline_cache.dart';
 import 'package:lambda/data/models/custom_variation.dart';
 import 'package:lambda/data/models/exercise_detail.dart';
 import 'package:lambda/data/models/planned_session_exercise_set.dart';
@@ -170,12 +171,9 @@ class _FakeSessionRepo extends Fake implements SessionRepository {
 
   int insertSetCalls = 0;
   final insertLog =
-      <({
-        double? weight,
-        List<num> reps,
-        int setNumber,
-        String? plannedSetId,
-      })>[];
+      <
+        ({double? weight, List<num> reps, int setNumber, String? plannedSetId})
+      >[];
 
   @override
   Future<SessionExerciseSet> insertSet({
@@ -274,10 +272,16 @@ void main() {
 
   setUp(() {
     repo = _FakeSessionRepo();
+    // _init draws its timeline through the shared cache; these suites
+    // have no database, so the cache reads through the seam (2026-10-25).
+    PastSetsTimelineCache.loaderOverride = (u) async => const <PastSetRow>[];
+    PastSetsTimelineCache.instance.invalidate();
   });
 
   tearDown(() {
     repo.disposeCtl();
+    PastSetsTimelineCache.loaderOverride = null;
+    PastSetsTimelineCache.instance.invalidate();
   });
 
   test('a keystroke storm merges into one write per settle, no reloads', () {
@@ -619,9 +623,18 @@ void main() {
       repo.completedStamps.addAll([
         // A record stamped after this session began is not "before" it —
         // the walk reads the stack the session started on top of.
-        (sessionId: 'future', createdDatetime: now.add(const Duration(days: 1))),
-        (sessionId: 'h3', createdDatetime: now.subtract(const Duration(days: 1))),
-        (sessionId: 'h2', createdDatetime: now.subtract(const Duration(days: 2))),
+        (
+          sessionId: 'future',
+          createdDatetime: now.add(const Duration(days: 1)),
+        ),
+        (
+          sessionId: 'h3',
+          createdDatetime: now.subtract(const Duration(days: 1)),
+        ),
+        (
+          sessionId: 'h2',
+          createdDatetime: now.subtract(const Duration(days: 2)),
+        ),
       ]);
 
       final vm = buildVm();

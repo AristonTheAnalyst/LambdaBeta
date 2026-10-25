@@ -674,7 +674,10 @@ class FakeProgramHistoryRepository implements ProgramHistoryRepository {
   }
 
   @override
-  Future<List<DueItem>> fetchDueItems(String userId) async => due;
+  Future<List<DueItem>> fetchDueItems(
+    String userId, {
+    CurrentRunReading? currentRun,
+  }) async => due;
 
   @override
   Future<List<ProgramReview>> fetchReviews(String programId) async => reviews;

@@ -37,9 +37,15 @@ class PastSetsTimelineCache {
 
   /// The user's timeline (completed sessions, newest first), memoized until
   /// invalidated. The first read after an invalidation re-queries.
+  ///
+  /// A read that FAILS is not memoized (2026-10-25): a transient database
+  /// error used to stand in for the timeline for the rest of the process —
+  /// every later reader inherited the rejection instead of retrying. The
+  /// next caller now re-queries, and an in-flight read is still shared.
   Future<List<PastSetRow>> get(String userId) {
-    return _byUser.putIfAbsent(
-      userId,
+    final existing = _byUser[userId];
+    if (existing != null) return existing;
+    final future = Future.sync(
       () =>
           (loaderOverride ??
                   (u) => SessionRepository().loadPastSetsTimeline(u))(userId)
@@ -54,6 +60,18 @@ class PastSetsTimelineCache {
                 return rows;
               }),
     );
+    _byUser[userId] = future;
+    // Only the failure path needs listening to here; the caller awaits the
+    // same `future`, and the handler keeps the rejection from surfacing as
+    // unhandled before anyone does.
+    future.then<void>(
+      (_) {},
+      onError: (Object _) {
+        if (identical(_byUser[userId], future)) _byUser.remove(userId);
+        _ascByUser.remove(userId);
+      },
+    );
+    return future;
   }
 
   /// The same timeline oldest-first — the PR engine's walk order, sorted

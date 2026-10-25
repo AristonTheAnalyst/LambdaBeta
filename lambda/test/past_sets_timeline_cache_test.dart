@@ -50,6 +50,22 @@ void main() {
     expect(reads, 2);
   });
 
+  test('a failed read is not memoized — the next caller retries', () async {
+    PastSetsTimelineCache.loaderOverride = (userId) async {
+      reads++;
+      if (reads == 1) throw StateError('transient');
+      return const <PastSetRow>[];
+    };
+    await expectLater(
+      PastSetsTimelineCache.instance.get('u1'),
+      throwsStateError,
+    );
+    expect(PastSetsTimelineCache.instance.asc('u1'), isNull);
+
+    await PastSetsTimelineCache.instance.get('u1');
+    expect(reads, 2, reason: 'the rejection must not stand in for the data');
+  });
+
   test('each user has their own memoized read', () async {
     await PastSetsTimelineCache.instance.get('u1');
     await PastSetsTimelineCache.instance.get('u2');

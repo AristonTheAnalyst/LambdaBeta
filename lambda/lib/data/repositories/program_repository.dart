@@ -193,20 +193,22 @@ class ProgramRepository {
   }
 
   Future<List<Program>> fetchPrograms(String userId) async {
-    // 1. Try the local PowerSync mirror.
+    // 1. The local PowerSync mirror. No timeout: a read that is slow is
+    //    allowed to be slow — the old 3 s cap turned a hovering read into a
+    //    timeout followed by a REST round-trip, adding the latency it was
+    //    meant to guard against (2026-10-25).
     try {
-      final rows = await ps.db
-          .getAll(
-            'SELECT * FROM dim_program WHERE user_id = ? AND date_archived IS NULL ORDER BY program_created_date DESC',
-            [userId],
-          )
-          .timeout(const Duration(seconds: 3));
+      final rows = await ps.db.getAll(
+        'SELECT * FROM dim_program WHERE user_id = ? AND date_archived IS NULL ORDER BY program_created_date DESC',
+        [userId],
+      );
       if (rows.isNotEmpty) return rows.map((r) => Program.fromMap(r)).toList();
     } catch (_) {
-      // Timed out — fall through to REST.
+      // A failed local read falls through to REST like an empty one.
     }
 
-    // 2. Fall back to Supabase REST.
+    // 2. Fall back to Supabase REST — the mirror holds nothing at all, which
+    //    is either a new account or a stuck checkpoint.
     try {
       final remote = await _remote.fetchPrograms(userId);
       return remote.map((r) => Program.fromMap(r)).toList();
@@ -234,14 +236,16 @@ class ProgramRepository {
   }
 
   Future<Program?> fetchProgram(String programId) async {
-    // 1. Try the local PowerSync mirror.
+    // 1. The local PowerSync mirror, with the same no-timeout rule as
+    //    [fetchPrograms].
     try {
-      final rows = await ps.db
-          .getAll('SELECT * FROM dim_program WHERE program_id = ?', [programId])
-          .timeout(const Duration(seconds: 3));
+      final rows = await ps.db.getAll(
+        'SELECT * FROM dim_program WHERE program_id = ?',
+        [programId],
+      );
       if (rows.isNotEmpty) return Program.fromMap(rows.first);
     } catch (_) {
-      // Timed out — fall through to REST.
+      // A failed local read falls through to REST like an empty one.
     }
 
     // 2. Fall back to Supabase REST.

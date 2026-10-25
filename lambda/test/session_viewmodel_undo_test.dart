@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lambda/data/models/custom_exercise.dart';
+import 'package:lambda/data/cache/past_sets_timeline_cache.dart';
 import 'package:lambda/data/models/custom_variation.dart';
 import 'package:lambda/data/models/exercise_detail.dart';
 import 'package:lambda/data/models/session_exercise.dart';
@@ -299,10 +300,16 @@ void main() {
 
   setUp(() {
     repo = _FakeSessionRepo();
+    // _init draws its timeline through the shared cache; these suites
+    // have no database, so the cache reads through the seam (2026-10-25).
+    PastSetsTimelineCache.loaderOverride = (u) async => const <PastSetRow>[];
+    PastSetsTimelineCache.instance.invalidate();
   });
 
   tearDown(() {
     repo.disposeCtl();
+    PastSetsTimelineCache.loaderOverride = null;
+    PastSetsTimelineCache.instance.invalidate();
   });
 
   /// Seeds one planned exercise with two planned rows + restores it, so the

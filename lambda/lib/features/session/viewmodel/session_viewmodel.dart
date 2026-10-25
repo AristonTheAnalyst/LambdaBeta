@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:logging/logging.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide Session;
+import '../../../data/cache/past_sets_timeline_cache.dart';
 import '../../../data/models/custom_variation.dart';
 import '../../../data/models/exercise_detail.dart';
 import '../../../data/models/goal.dart';
@@ -605,24 +606,53 @@ class SessionViewModel extends ChangeNotifier {
   int get totalPRsThisSession => sessionPrEvents.length;
 
   /// On a cold start after login, PowerSync may not have finished its first
-  /// sync yet — the local DB would read as empty. Wait briefly so the session
-  /// reflects the user's real data instead of a stale/blank state. Falls back
-  /// to the existing guarded stages if the wait times out or sync is offline.
+  /// sync yet — the local DB would read as empty. [_init] runs it alongside
+  /// the first frame and re-reads afterwards if it lands late; it no longer
+  /// sits in front of the draw.
   final Future<void> Function() _waitForFirstSync;
 
+  /// [_init]'s three first-sync states, for the re-read gate.
+  static const _kSyncPending = 0;
+  static const _kSynced = 1;
+  static const _kSyncFailed = 2;
+
   Future<void> _init() async {
-    try {
-      await _waitForFirstSync().timeout(const Duration(seconds: 10));
-    } catch (_) {}
-    // Each stage is individually guarded so one transient failure (e.g.
-    // PowerSync not synced on cold start) doesn't block the others.
-    // In particular, _restoreActiveWorkout must run even if catalog fetch
-    // fails, otherwise the active workout is invisible after a hot restart.
+    // The first sync runs alongside the first frame rather than in front of
+    // it (2026-10-25). On every launch after the first, PowerSync answers it
+    // from `ps_buckets` in milliseconds; on a first install it can take
+    // seconds, and the mirror it fills is not needed to draw the landing
+    // page — which reads whatever the device already holds.
+    var syncState = _kSyncPending;
+    final firstSync = _waitForFirstSync()
+        .timeout(const Duration(seconds: 10))
+        .then<void>(
+          (_) => syncState = _kSynced,
+          onError: (_) => syncState = _kSyncFailed,
+        );
+
+    // ── The frame ──────────────────────────────────────────────────────────
+    // What the landing page draws: the catalog (names, variations) and the
+    // timeline (the list, the PR walk, the Home screen's own read).
     try {
       await refreshCatalog();
     } catch (_) {}
     try {
-      await Future.wait([_loadPlannedSession(), _loadPastSets()]);
+      await _loadPastSets();
+    } catch (_) {}
+    // Whether the frame was built while the first sync was still out — the
+    // one case where what it read may be older than what the device has.
+    final drewWhileSyncing = syncState == _kSyncPending;
+
+    initLoading = false;
+    notifyListeners();
+
+    // ── The plan context, then the live session ────────────────────────────
+    // This is the slow stretch on a device whose mirror holds no current
+    // run: that read falls back to REST. It cannot move in front of the
+    // frame, and the restore cannot move in front of it — a resumed
+    // session's template is classified against the program's workouts.
+    try {
+      await _loadPlannedSession();
     } catch (_) {}
     try {
       await _resolveDeviceId();
@@ -633,8 +663,25 @@ class SessionViewModel extends ChangeNotifier {
     try {
       await _restoreActiveWorkout();
     } catch (_) {}
-    initLoading = false;
-    notifyListeners();
+
+    // ── Freshness ──────────────────────────────────────────────────────────
+    // A first install's sync may have landed after the frame was drawn. The
+    // reads above are mirror-only (the catalog, the timeline and the
+    // restore); the plan context already asked the server when the mirror
+    // was empty, so it needs no second pass here.
+    await firstSync;
+    if (!drewWhileSyncing || syncState != _kSynced) return;
+    try {
+      await refreshCatalog();
+    } catch (_) {}
+    try {
+      await _loadPastSets();
+    } catch (_) {}
+    try {
+      // The first pass read a mirror with no active session; the sync may
+      // have brought one down.
+      if (currentWorkoutId == null) await _restoreActiveWorkout();
+    } catch (_) {}
   }
 
   Future<void> refreshCatalog() async {
@@ -887,12 +934,20 @@ class SessionViewModel extends ChangeNotifier {
 
   Future<void> _loadPastSets({bool keepReflectionPosition = false}) async {
     try {
-      _pastSets = await _sessionRepo.loadPastSetsTimeline(_userId);
-      _pastSetsAsc = [..._pastSets]
-        ..sort((a, b) {
-          final d = a.sessionCreatedDate.compareTo(b.sessionCreatedDate);
-          return d != 0 ? d : a.setNumber.compareTo(b.setNumber);
-        });
+      // The timeline is the app's most-read query; the shared cache is its
+      // memo (2026-10-13). Every fact write, sync round and sign-out
+      // invalidates it, so this costs a query only when something changed
+      // since the last read — and the list, the exercise detail and the
+      // library all ride the same copy. `asc` is the cache's oldest-first
+      // copy, the order the PR engine walks (2026-10-25).
+      final cache = PastSetsTimelineCache.instance;
+      _pastSets = await cache.get(_userId);
+      _pastSetsAsc =
+          cache.asc(_userId) ??
+          ([..._pastSets]..sort((a, b) {
+            final d = a.sessionCreatedDate.compareTo(b.sessionCreatedDate);
+            return d != 0 ? d : a.setNumber.compareTo(b.setNumber);
+          }));
       _timelineLastUsed = lastUsedByEntity(_pastSets);
       historyByExercise = groupHistoryByExercise(_pastSets);
       lastUsedByExercise = lastUsedByEntity(_pastSets);

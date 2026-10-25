@@ -122,56 +122,83 @@ const schema = Schema([
       Index('se_idx', [IndexedColumn.ascending('session_exercise_id')]),
     ],
   ),
-  Table('dim_program', [
-    Column.text('program_id'),
-    Column.text('user_id'),
-    Column.text('program_name'),
-    Column.text('program_description'),
-    Column.text('date_archived'),
-    Column.text('program_created_date'),
-    Column.text('program_updated_date'),
-    // The program's shape, fixed at creation: 1 = made of blocks, 0 = a list
-    // of workouts. Stored, not inferred — a blocked program with no blocks yet
-    // is a real state and must not read as a simple one.
-    Column.integer('uses_blocks'),
-    // A simple program's remembered length; NULL = none set yet.
-    Column.integer('default_target_sessions'),
-  ]),
-  Table('fact_program_run', [
-    Column.text('program_run_id'),
-    Column.text('program_id'),
-    Column.text('user_id'),
-    Column.integer('target_sessions'),
-    Column.integer('target_weeks'),
-    Column.text('end_date'),
-    Column.text('started_date'),
-    Column.text('ended_date'),
-    Column.integer('is_current'),
-    Column.text('progression_mode'),
-    // The block being followed; NULL = a blockless run. Every run before this
-    // column existed is NULL, so blockless rendering is byte-identical.
-    Column.text('block_id'),
-  ]),
+  Table(
+    'dim_program',
+    [
+      Column.text('program_id'),
+      Column.text('user_id'),
+      Column.text('program_name'),
+      Column.text('program_description'),
+      Column.text('date_archived'),
+      Column.text('program_created_date'),
+      Column.text('program_updated_date'),
+      // The program's shape, fixed at creation: 1 = made of blocks, 0 = a list
+      // of workouts. Stored, not inferred — a blocked program with no blocks yet
+      // is a real state and must not read as a simple one.
+      Column.integer('uses_blocks'),
+      // A simple program's remembered length; NULL = none set yet.
+      Column.integer('default_target_sessions'),
+    ],
+    indexes: [
+      Index('user_archived_idx', [
+        IndexedColumn.ascending('user_id'),
+        IndexedColumn.ascending('date_archived'),
+      ]),
+    ],
+  ),
+  Table(
+    'fact_program_run',
+    [
+      Column.text('program_run_id'),
+      Column.text('program_id'),
+      Column.text('user_id'),
+      Column.integer('target_sessions'),
+      Column.integer('target_weeks'),
+      Column.text('end_date'),
+      Column.text('started_date'),
+      Column.text('ended_date'),
+      Column.integer('is_current'),
+      Column.text('progression_mode'),
+      // The block being followed; NULL = a blockless run. Every run before this
+      // column existed is NULL, so blockless rendering is byte-identical.
+      Column.text('block_id'),
+    ],
+    indexes: [
+      Index('user_current_idx', [
+        IndexedColumn.ascending('user_id'),
+        IndexedColumn.ascending('is_current'),
+      ]),
+    ],
+  ),
   // An ordered, duration-bounded phase of a program, holding workouts and (from
   // the goals phase) goals. A program either uses blocks or doesn't — never
   // mixed. `date_archived` rather than `is_archived` because a block is named,
   // dated and user-visible with its own run/review trail to keep browsable.
-  Table('dim_program_block', [
-    Column.text('block_id'),
-    Column.text('user_id'),
-    Column.text('program_id'),
-    Column.text('name'),
-    Column.text('notes'),
-    Column.integer('block_order'),
-    Column.integer('target_weeks'),
-    Column.integer('target_days'),
-    Column.integer('target_sessions'),
-    Column.text('start_date'),
-    Column.text('end_date'),
-    Column.text('date_archived'),
-    Column.text('created_date'),
-    Column.text('updated_date'),
-  ]),
+  Table(
+    'dim_program_block',
+    [
+      Column.text('block_id'),
+      Column.text('user_id'),
+      Column.text('program_id'),
+      Column.text('name'),
+      Column.text('notes'),
+      Column.integer('block_order'),
+      Column.integer('target_weeks'),
+      Column.integer('target_days'),
+      Column.integer('target_sessions'),
+      Column.text('start_date'),
+      Column.text('end_date'),
+      Column.text('date_archived'),
+      Column.text('created_date'),
+      Column.text('updated_date'),
+    ],
+    indexes: [
+      Index('program_order_idx', [
+        IndexedColumn.ascending('program_id'),
+        IndexedColumn.ascending('block_order'),
+      ]),
+    ],
+  ),
   // The checkpoints a program's run passes through — one row per review, per
   // proposed change, and per run close — AND the snapshot each one cut.
   // `completed_date` NULL is what makes a review open; there is no status column
@@ -184,33 +211,42 @@ const schema = Schema([
   // written before reviews were re-scoped — those resolved from their legacy
   // `block_id`/`session_id` (never both set; the server checks it) — and new
   // rows leave the legacy ids null.
-  Table('fact_program_review', [
-    Column.text('review_id'),
-    Column.text('user_id'),
-    Column.text('program_id'),
-    Column.text('block_id'),
-    Column.text('session_id'),
-    Column.text('program_run_id'),
-    Column.text('kind'),
-    Column.text('title'),
-    Column.text('notes'),
-    Column.text('scheduled_for'),
-    Column.text('completed_date'),
-    Column.text('outcome'),
-    Column.text('proposed_content'),
-    Column.text('proposed_hash'),
-    Column.text('snapshot_content'),
-    Column.text('snapshot_hash'),
-    Column.text('baseline_content'),
-    Column.text('baseline_hash'),
-    Column.text('exercise_notes_json'),
-    Column.text('achievements_json'),
-    Column.text('session_ids_json'),
-    Column.text('reviewed_sessions_json'),
-    Column.text('goal_ids_json'),
-    Column.text('workout_notes_json'),
-    Column.text('created_date'),
-  ]),
+  Table(
+    'fact_program_review',
+    [
+      Column.text('review_id'),
+      Column.text('user_id'),
+      Column.text('program_id'),
+      Column.text('block_id'),
+      Column.text('session_id'),
+      Column.text('program_run_id'),
+      Column.text('kind'),
+      Column.text('title'),
+      Column.text('notes'),
+      Column.text('scheduled_for'),
+      Column.text('completed_date'),
+      Column.text('outcome'),
+      Column.text('proposed_content'),
+      Column.text('proposed_hash'),
+      Column.text('snapshot_content'),
+      Column.text('snapshot_hash'),
+      Column.text('baseline_content'),
+      Column.text('baseline_hash'),
+      Column.text('exercise_notes_json'),
+      Column.text('achievements_json'),
+      Column.text('session_ids_json'),
+      Column.text('reviewed_sessions_json'),
+      Column.text('goal_ids_json'),
+      Column.text('workout_notes_json'),
+      Column.text('created_date'),
+    ],
+    indexes: [
+      Index('user_completed_idx', [
+        IndexedColumn.ascending('user_id'),
+        IndexedColumn.ascending('completed_date'),
+      ]),
+    ],
+  ),
   Table(
     'dim_lesson',
     [
@@ -248,16 +284,22 @@ const schema = Schema([
   // rows; the reciprocal half lives on the friend's device. A friendship is
   // the pair — the RPC writes both in one call, and the friends_data stream
   // matches only mutual pairs.
-  Table('friend_relationship', [
-    Column.text('user_id'),
-    Column.text('friend_user_id'),
-    Column.text('created_date'),
-    // The caller's private label for the friend (2026-10-25,
-    // 20261025120000_friend_nicknames.sql). Null = no nickname. Nullable and
-    // additive, so it needs no upload-map change: a local UPDATE queues a
-    // composite-key PATCH, which database.dart already handles.
-    Column.text('nickname'),
-  ]),
+  Table(
+    'friend_relationship',
+    [
+      Column.text('user_id'),
+      Column.text('friend_user_id'),
+      Column.text('created_date'),
+      // The caller's private label for the friend (2026-10-25,
+      // 20261025120000_friend_nicknames.sql). Null = no nickname. Nullable and
+      // additive, so it needs no upload-map change: a local UPDATE queues a
+      // composite-key PATCH, which database.dart already handles.
+      Column.text('nickname'),
+    ],
+    indexes: [
+      Index('user_idx', [IndexedColumn.ascending('user_id')]),
+    ],
+  ),
   Table(
     'dim_planned_session',
     [
@@ -300,6 +342,8 @@ const schema = Schema([
     ],
     indexes: [
       Index('ps_idx', [IndexedColumn.ascending('planned_session_id')]),
+      // A program's own membership rows — the workout list reads by program.
+      Index('program_idx', [IndexedColumn.ascending('program_id')]),
     ],
   ),
   Table(
@@ -333,35 +377,43 @@ const schema = Schema([
       Index('pe_idx', [IndexedColumn.ascending('planned_exercise_id')]),
     ],
   ),
-  Table('fact_goal', [
-    Column.text('goal_id'),
-    Column.text('program_run_id'),
-    Column.text('user_id'),
-    Column.text('goal_text'),
-    // Free-form notes about the goal itself (2026-10-08) — the target and its
-    // label are target_* / goal_text, not this. See
-    // 20261008120000_goal_description.sql.
-    Column.text('goal_description'),
-    Column.text('custom_exercise_id'),
-    // The scope: a program, or a block of one. NULL program = standalone.
-    // Dormant since goals went unattached (2026-10-08) — kept, not dropped.
-    Column.text('program_id'),
-    Column.text('block_id'),
-    // The one variation the goal is scoped to; NULL = the plain exercise,
-    // which is a scope of its own rather than a wildcard.
-    Column.text('custom_variation_id'),
-    Column.text('target_weight'),
-    Column.integer('target_reps'),
-    // The day the goal should be hit by (2026-10-19). NULL = no deadline.
-    // See 20261019120000_goal_target_date.sql.
-    Column.text('target_date'),
-    // Every adjustment to target_date, oldest first, as JSON
-    // [{from, to, changed_at}] — moving a deadline is a fact, not an
-    // overwrite. NULL = never adjusted.
-    Column.text('target_date_history_json'),
-    Column.text('goal_created_date'),
-    // `achieved_date` is deliberately absent — a goal's outcome is a per-run
-    // fact now, frozen into fact_program_review.achievements_json at close.
-    // See 20260928074745_program_goal_scoping.sql.
-  ]),
+  Table(
+    'fact_goal',
+    [
+      Column.text('goal_id'),
+      Column.text('program_run_id'),
+      Column.text('user_id'),
+      Column.text('goal_text'),
+      // Free-form notes about the goal itself (2026-10-08) — the target and its
+      // label are target_* / goal_text, not this. See
+      // 20261008120000_goal_description.sql.
+      Column.text('goal_description'),
+      Column.text('custom_exercise_id'),
+      // The scope: a program, or a block of one. NULL program = standalone.
+      // Dormant since goals went unattached (2026-10-08) — kept, not dropped.
+      Column.text('program_id'),
+      Column.text('block_id'),
+      // The one variation the goal is scoped to; NULL = the plain exercise,
+      // which is a scope of its own rather than a wildcard.
+      Column.text('custom_variation_id'),
+      Column.text('target_weight'),
+      Column.integer('target_reps'),
+      // The day the goal should be hit by (2026-10-19). NULL = no deadline.
+      // See 20261019120000_goal_target_date.sql.
+      Column.text('target_date'),
+      // Every adjustment to target_date, oldest first, as JSON
+      // [{from, to, changed_at}] — moving a deadline is a fact, not an
+      // overwrite. NULL = never adjusted.
+      Column.text('target_date_history_json'),
+      Column.text('goal_created_date'),
+      // `achieved_date` is deliberately absent — a goal's outcome is a per-run
+      // fact now, frozen into fact_program_review.achievements_json at close.
+      // See 20260928074745_program_goal_scoping.sql.
+    ],
+    indexes: [
+      // Every goal read is "this user's goals" — the goals tab, the G badge's
+      // derivation and the pickers all filter on it.
+      Index('user_idx', [IndexedColumn.ascending('user_id')]),
+    ],
+  ),
 ]);

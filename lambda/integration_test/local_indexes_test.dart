@@ -96,6 +96,30 @@ void main() {
     expectIndexed(indexes, 'dim_planned_session_program', [
       'planned_session_id',
     ]);
+    // The programs spine (2026-10-25): each of these is a read every
+    // programs/sessions launch makes, and each filtered a full table scan.
+    expectIndexed(indexes, 'dim_program', ['user_id', 'date_archived']);
+    expectIndexed(indexes, 'fact_program_run', ['user_id', 'is_current']);
+    expectIndexed(indexes, 'dim_program_block', ['program_id', 'block_order']);
+    expectIndexed(indexes, 'fact_program_review', [
+      'user_id',
+      'completed_date',
+    ]);
+    expectIndexed(indexes, 'dim_planned_session_program', ['program_id']);
+    expectIndexed(indexes, 'fact_goal', ['user_id']);
+    expectIndexed(indexes, 'friend_relationship', ['user_id']);
+  });
+
+  test('the current-run read uses the run index', () async {
+    final planText = await plan(
+      'SELECT * FROM fact_program_run WHERE user_id = ? AND is_current = 1 LIMIT 1',
+      [userId],
+    );
+    expect(
+      planText.toLowerCase(),
+      isNot(contains('scan fact_program_run')),
+      reason: 'the launch read must not walk every run — plan:\n$planText',
+    );
   });
 
   test('the hot set reads use the session_exercise_id index', () async {
