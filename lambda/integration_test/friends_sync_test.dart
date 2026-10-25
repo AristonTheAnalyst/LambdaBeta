@@ -318,6 +318,134 @@ void main() {
           'and the next sync round',
     );
   });
+
+  test('a nickname is the caller\'s own label: set, repaint, clear, capped',
+      () async {
+    await seedUsers();
+    await seedOwnFriendshipRow();
+
+    final vm = FriendsViewModel(repo: friends, userId: me);
+    vm.start();
+    addTearDown(vm.dispose);
+    await waitFor(
+      () => vm.state.value.friends.length == 1,
+      reason: 'the seeded row',
+    );
+    expect(vm.state.value.friends.single.displayName, 'Jamie Rivera');
+
+    expect(
+      await vm.setNickname(vm.state.value.friends.single, 'Natasha'),
+      isTrue,
+    );
+    await waitFor(
+      () => vm.state.value.friends.single.displayName == 'Natasha',
+      reason: 'the watch to repaint with the nickname',
+    );
+    final stored = await db.getAll(
+      'SELECT nickname FROM friend_relationship '
+      'WHERE user_id = ? AND friend_user_id = ?',
+      [me, friend],
+    );
+    expect(stored.single['nickname'], 'Natasha');
+
+    // Clearing falls back to the friend's own name.
+    expect(await vm.setNickname(vm.state.value.friends.single, null), isTrue);
+    await waitFor(
+      () => vm.state.value.friends.single.displayName == 'Jamie Rivera',
+      reason: 'the cleared nickname to fall back',
+    );
+
+    // The repository is the rail: twenty characters land, twenty-one are
+    // refused before any write (the database's own rail is 120).
+    await friends.setNickname(me, friend, 'a' * 20);
+    await expectLater(
+      friends.setNickname(me, friend, 'a' * 21),
+      throwsArgumentError,
+    );
+  });
+
+  test('a friend with no name reads as their code, then Friend', () async {
+    // A friend whose dim_user row carries no name, and whose code has not
+    // arrived yet.
+    await db.execute(
+      'INSERT INTO dim_user (id, user_id, user_name, user_lastname) '
+      'VALUES (?, ?, NULL, NULL)',
+      ['u3', 'u3'],
+    );
+    await db.execute(
+      'INSERT INTO friend_relationship '
+      '(id, user_id, friend_user_id, created_date) VALUES (?, ?, ?, ?)',
+      ['$me-u3', me, 'u3', DateTime.now().toUtc().toIso8601String()],
+    );
+
+    final vm = FriendsViewModel(repo: friends, userId: me);
+    vm.start();
+    addTearDown(vm.dispose);
+    await waitFor(
+      () => vm.state.value.friends.length == 1,
+      reason: 'the seeded row',
+    );
+    expect(
+      vm.state.value.friends.single.displayName,
+      'Friend',
+      reason: 'no name and no code yet',
+    );
+
+    // The widened friends_data stream delivers a mutual friend's code; this
+    // insert stands in for that download.
+    await db.execute(
+      'INSERT INTO dim_friend_code (id, user_id, friend_code, created_date) '
+      'VALUES (?, ?, ?, ?)',
+      ['u3', 'u3', 'WXYZ2345', DateTime.now().toUtc().toIso8601String()],
+    );
+    await waitFor(
+      () => vm.state.value.friends.single.displayName == 'WXYZ-2345',
+      reason: 'the code fallback',
+    );
+  });
+
+  test('the list orders by the name it draws, so a nickname reorders it',
+      () async {
+    await seedUsers();
+    await db.execute(
+      'INSERT INTO dim_user (id, user_id, user_name, user_lastname) '
+      'VALUES (?, ?, ?, ?)',
+      ['u3', 'u3', 'Aaron', 'Stone'],
+    );
+    for (final other in [friend, 'u3']) {
+      await db.execute(
+        'INSERT INTO friend_relationship '
+        '(id, user_id, friend_user_id, created_date) VALUES (?, ?, ?, ?)',
+        ['$me-$other', me, other, DateTime.now().toUtc().toIso8601String()],
+      );
+    }
+
+    final vm = FriendsViewModel(repo: friends, userId: me);
+    vm.start();
+    addTearDown(vm.dispose);
+    await waitFor(
+      () => vm.state.value.friends.length == 2,
+      reason: 'both friends',
+    );
+    expect(
+      vm.state.value.friends.map((f) => f.displayName),
+      ['Aaron Stone', 'Jamie Rivera'],
+    );
+
+    // Renaming the first row to a name that sorts after the second flips the
+    // order — proof the query orders by the label it draws.
+    expect(
+      await vm.setNickname(vm.state.value.friends.first, 'Zulu'),
+      isTrue,
+    );
+    await waitFor(
+      () => vm.state.value.friends
+              .map((f) => f.displayName)
+              .join('|') ==
+          'Jamie Rivera|Zulu',
+      reason: 'the nickname to reorder the list',
+    );
+  });
 }
 
 /// The RPC seam: the SQL side is server-side, so the test drives the client's

@@ -53,6 +53,11 @@ const kMaxGoalTextLength = 20;
 /// twenty the other header titles get.
 const kMaxReviewTitleLength = 20;
 
+/// A friend's nickname — the caller's private label for one friend, drawn in
+/// the friends list where a name sits. The same twenty the other names get:
+/// the row it is drawn in is exactly a name row (2026-10-25).
+const kMaxFriendNicknameLength = 20;
+
 /// Whether [value] breaks the rule the database checks enforce.
 ///
 /// [max] defaults to [kMaxExerciseNameLength] because the exercise/variation

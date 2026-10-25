@@ -76,10 +76,16 @@ policies — decide what a device may hold.
   history). A mid-session friend's child rows can therefore download
   parentless; no surface can name or open them because the parent row is
   withheld.
-- **Names only.** The friend's `dim_user` slice selects `user_id,
-  user_name, user_lastname` — never height, weight, gender, DOB or code.
-- **The code streams to its owner only.** `dim_friend_code WHERE user_id =
-  auth.user_id()`.
+- **Names and the code fallback.** The friend's `dim_user` slice selects
+  `user_id, user_name, user_lastname` — never height, weight, gender, DOB or
+  profile. A SECOND `dim_friend_code` query (`WHERE user_id IN my_friends`)
+  streams each mutual friend's code (2026-10-25): the Friends list falls back
+  to it when a friend has no name and no nickname. The owner's own code keeps
+  its own query, `WHERE user_id = auth.user_id()`.
+- **Nicknames are the owner's own.** `friend_relationship.nickname` rides
+  `SELECT *` on the caller's own directed rows only (the query above), so a
+  label never reaches the friend it names. It is the repository's one
+  local-first write — the composite-key patch below carries it, no RPC.
 
 **The own-row-only mirror rule.** `FriendRepository.addByCode` calls the
 SECURITY DEFINER RPC and then mirrors ONLY the caller's own directed row,

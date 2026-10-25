@@ -77,12 +77,26 @@
 # the new tables — and bump the app version first so old builds keep
 # user_data only (they don't know the new tables' local schema).
 #
+# 2026-10-25 (friend nicknames): + friend_relationship.nickname — the caller's
+# private label for one friend. No query change for the column itself (the
+# row is already `SELECT *`), but friends_data gains a SECOND dim_friend_code
+# query carrying each mutual friend's code, which the Friends list falls back
+# to when a friend has no name and no nickname. That is a deliberate widening
+# of the old "the code streams to its owner only" rule — the code is the
+# shareable handle and the friendship is mutual. Push
+# 20261025120000_friend_nicknames.sql BEFORE shipping a build that writes
+# nickname: against an unmigrated server the upload earns PGRST204, retried
+# forever — a stalled upload checkpoint on that device, never a user-visible
+# error.
+#
 # Deploy steps (PowerSync Dashboard → Sync Streams):
 #   1. Replace the current YAML with this file.
-#   2. Bump the app version BEFORE deploying — sync streams attach to app
-#      versions, and the old app must keep the old streams until the new
-#      build ships.
-#   3. Validate, then Deploy.
+#   2. Validate, then Deploy.
+#
+# A deploy applies to every connected client immediately — sync streams do NOT
+# attach to app versions (the dashboard's app_version metadata is for logging
+# only). The version bump exists so builds that read a NEW table's rows ship
+# around the deploy; a client ignores rows for tables its local schema lacks.
 #
 # NOTE: if the app ever adds a synced table, update lib/core/powersync/schema.dart
 # AND lib/core/powersync/database.dart AND this file — see the sync-contract skill.
@@ -115,8 +129,8 @@ streams:
       - SELECT *, (coach_user_id || '-' || athlete_user_id) as id FROM coaching_relationship WHERE coach_user_id = auth.user_id() OR athlete_user_id = auth.user_id()
 
   # Friends (2026-10-23). One bucket per friend: every query keys on the same
-  # `my_friends` list, so the ten queries share buckets instead of adding one
-  # per table. The list is MUTUAL by construction — a one-way row (say,
+  # `my_friends` list, so the eleven queries share buckets instead of adding
+  # one per table. The list is MUTUAL by construction — a one-way row (say,
   # someone inserting themselves as my friend over REST) matches nothing.
   # Streams bypass RLS; this query IS the privacy boundary.
   friends_data:
@@ -130,8 +144,14 @@ streams:
                       WHERE rev.friend_user_id = auth.user_id())
     queries:
       - SELECT *, user_id as id FROM dim_friend_code WHERE user_id = auth.user_id()
+      # A friend's code, so the list can fall back to it when the friend has no
+      # name and no nickname (2026-10-25). Deliberate widening of the old
+      # "code streams to its owner only" rule: the code is the shareable
+      # handle and the friendship is mutual.
+      - SELECT *, user_id as id FROM dim_friend_code WHERE user_id IN my_friends
       - SELECT *, (user_id || '-' || friend_user_id) as id FROM friend_relationship WHERE user_id = auth.user_id()
-      # Names only — a friend's height, weight, gender, DOB and code stay private.
+      # Names and the code fallback — a friend's height, weight, gender, DOB
+      # and profile stay private.
       - SELECT user_id, user_name, user_lastname, user_id as id FROM dim_user WHERE user_id IN my_friends
       # Completed records only — the live session is never sent.
       - SELECT *, session_id as id FROM fact_session WHERE user_id IN my_friends AND end_datetime IS NOT NULL

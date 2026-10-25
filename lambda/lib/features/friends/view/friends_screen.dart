@@ -7,12 +7,14 @@ import '../../../core/styles/app_fonts.dart';
 import '../../../core/styles/app_spacing.dart';
 import '../../../core/styles/app_text_styles.dart';
 import '../../../core/utils/friend_code.dart';
+import '../../../core/utils/name_limit.dart';
 import '../../../data/models/friend.dart';
 import '../../../data/repositories/friend_repository.dart';
 import '../../../shared/widgets/app_card.dart';
 import '../../../shared/widgets/glass_button.dart';
 import '../../../shared/widgets/header_icon_button.dart';
 import '../../../shared/widgets/lambda_input.dart';
+import '../../../shared/widgets/name_limit_counter.dart';
 import '../../../shared/widgets/page_header.dart';
 import '../../../shared/widgets/scroll_shrink_nav_bar.dart';
 import '../../../shared/widgets/slide_up_modal.dart';
@@ -94,6 +96,28 @@ class _FriendsScreenState extends State<FriendsScreen> {
     );
   }
 
+  /// Opens the nickname sheet for [friend]. A dismissed sheet writes nothing;
+  /// an emptied field clears the nickname, so the row falls back to the
+  /// friend's own name, then their code.
+  Future<void> _rename(Friend friend) async {
+    final result = await showNicknameSheet(context, friend: friend);
+    if (result == null || !mounted) return;
+    final trimmed = result.trim();
+    final saved = await _vm.setNickname(
+      friend,
+      trimmed.isEmpty ? null : trimmed,
+    );
+    if (!mounted || saved) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          _vm.state.value.error ?? 'Could not save that nickname.',
+        ),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -151,6 +175,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
                             '/friends/${state.friends[i].userId}',
                             extra: state.friends[i].displayName,
                           ),
+                          onRename: () => _rename(state.friends[i]),
                           onRemove: () => _remove(state.friends[i]),
                         ),
                       ],
@@ -264,11 +289,13 @@ class _FriendRow extends StatelessWidget {
   const _FriendRow({
     required this.friend,
     required this.onTap,
+    required this.onRename,
     required this.onRemove,
   });
 
   final Friend friend;
   final VoidCallback onTap;
+  final VoidCallback onRename;
   final VoidCallback onRemove;
 
   @override
@@ -278,6 +305,16 @@ class _FriendRow extends StatelessWidget {
       // the row that slides up into its place.
       key: ValueKey(friend.userId),
       actions: [
+        // Rename is the drawer's one non-destructive circle: the cream
+        // `primary` fill with the page's own `bg` as its ink, the same recipe
+        // the set row's notes action uses (`session_set_row.dart`). Red stays
+        // reserved for remove.
+        SwipeAction(
+          icon: Icons.edit_outlined,
+          color: AppColors.primary,
+          foreground: AppColors.bg,
+          onTap: onRename,
+        ),
         SwipeAction(
           icon: Icons.person_remove_outlined,
           color: AppColors.danger,
@@ -477,6 +514,139 @@ class _AddFriendSheetState extends State<_AddFriendSheet> {
                   ],
                 );
               },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The nickname editor: what the caller calls one friend (2026-10-25).
+/// Returns the trimmed draft — `''` when the field was emptied, which clears
+/// the nickname — or null when the sheet was dismissed.
+Future<String?> showNicknameSheet(
+  BuildContext context, {
+  required Friend friend,
+}) => showLambdaModal<String>(
+  context,
+  fitContent: true,
+  keyboardAware: true,
+  child: _NicknameSheet(friend: friend),
+);
+
+class _NicknameSheet extends StatefulWidget {
+  const _NicknameSheet({required this.friend});
+
+  final Friend friend;
+
+  @override
+  State<_NicknameSheet> createState() => _NicknameSheetState();
+}
+
+class _NicknameSheetState extends State<_NicknameSheet> {
+  late final _ctrl = TextEditingController(text: widget.friend.nickname ?? '');
+
+  @override
+  void initState() {
+    super.initState();
+    // Save's enabled state is derived from the text, so the sheet repaints as
+    // the user types.
+    _ctrl.addListener(_rebuildForValidity);
+  }
+
+  @override
+  void dispose() {
+    _ctrl.removeListener(_rebuildForValidity);
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _rebuildForValidity() {
+    if (mounted) setState(() {});
+  }
+
+  String get _trimmed => _ctrl.text.trim();
+
+  /// Save is enabled only when the draft would write something: a different
+  /// value (an emptied field is a valid draft — it clears the nickname) and
+  /// inside the cap. A Save that would write nothing stays disabled.
+  bool get _canSave =>
+      _trimmed != (widget.friend.nickname ?? '').trim() &&
+      !nameTooLong(_ctrl.text, kMaxFriendNicknameLength);
+
+  void _save() {
+    if (!_canSave) return;
+    Navigator.of(context, rootNavigator: true).pop(_trimmed);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final friend = widget.friend;
+    final code = friend.friendCode?.trim();
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.xl),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Nickname',
+              style: AppFonts.ui(
+                fontSize: AppTextStyles.lg,
+                fontWeight: FontWeight.w800,
+                color: AppColors.primary,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              'Otherwise shown as ${friend.fallbackName}.',
+              style: AppFonts.ui(
+                fontSize: AppTextStyles.sm,
+                height: 1.4,
+                color: AppColors.inkSecondary,
+              ),
+            ),
+            // The friend's code is the other way to tell two same-named
+            // friends apart, and this sheet is the only place it is drawn.
+            if (code != null && code.isNotEmpty) ...[
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                'Friend code ${formatFriendCode(code)}',
+                style: AppFonts.mono(
+                  fontSize: AppTextStyles.xs,
+                  color: AppColors.inkSecondary,
+                ),
+              ),
+            ],
+            const SizedBox(height: AppSpacing.lg),
+            LambdaInput(
+              controller: _ctrl,
+              // The fallback doubles as the hint: an empty field shows
+              // exactly what the row will read.
+              placeholder: friend.fallbackName,
+              // The sheet sits on the modal's surface ground.
+              elevated: true,
+              autofocus: true,
+              maxLength: kMaxFriendNicknameLength,
+              textCapitalization: TextCapitalization.words,
+              textInputAction: TextInputAction.done,
+              onSubmitted: (_) => _save(),
+            ),
+            Align(
+              alignment: Alignment.centerRight,
+              child: NameLimitCounter(
+                length: _trimmed.length,
+                max: kMaxFriendNicknameLength,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            GlassButton(
+              label: 'Save',
+              solid: true,
+              disabled: !_canSave,
+              onPressed: _save,
             ),
           ],
         ),

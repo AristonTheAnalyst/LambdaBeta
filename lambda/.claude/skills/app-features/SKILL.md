@@ -42,7 +42,7 @@ progression mode lives on the RUN. Full plan of record:
 | **Reviews** (a recorded pass over a set of workouts **and goals** — standalone since 2026-10-07) | `fact_program_review` | Literal |
 | **Lessons** | `dim_lesson` | Literal |
 | **Goals** | `fact_goal` | Literal |
-| **Friends** (2026-10-23) | `dim_friend_code` + `friend_relationship` | Literal |
+| **Friends** (nicknames 2026-10-25) | `dim_friend_code` + `friend_relationship` (carries `nickname`) | Literal |
 | **Bodyweight** | `fact_bodyweight` | Literal |
 | **PRs** | *(none)* | **Fully derived** — see below |
 | **History / training logs** | *(none)* | **Derived read view** |
@@ -366,12 +366,15 @@ the friendship immediately and mutually. Two tables carry it:
 - `dim_friend_code` — one shareable code per user (8 characters,
   `ABCD-EFGH` grouping in the UI). A **side table, not a `dim_user` column**,
   because the user_data stream selects `dim_user *`; a new column would reach
-  old app builds that don't know it. It streams only to its owner.
+  old app builds that don't know it. It streams to its owner, plus (since
+  2026-10-25) to each mutual friend — the Friends list's last-resort name.
 - `friend_relationship` — **one row per direction**. `add_friend_by_code`
   writes both rows in one call; every read requires the pair (the
   `friends_data` stream's `my_friends` CTE and `are_friends()` in RLS both
-  test both directions), so a half-pair grants nothing. Either side can end
-  the friendship with `remove_friend`, which deletes both rows.
+  test both directions), so a half-pair grants nothing. Each row also carries
+  the caller's private `nickname` for that friend (2026-10-25) — only the
+  owner's own rows ever stream, so a label never reaches the friend. Either
+  side can end the friendship with `remove_friend`, which deletes both rows.
 
 The Friends tab (`lib/features/friends/`) shows the user's code, adds by code,
 lists friends, and opens a friend's history in the existing **read-only**
@@ -450,7 +453,7 @@ slow a client-computed daily-summary table is the fix.
 | **Supersets** | retired | Column `superset_group_number` DROPPED 2026-08-24 (schema v2). No UI creates supersets; dormant slot support renders a restored multi-exercise slot as its first exercise |
 | **Feelings** | `fact_session.pre_feeling` / `post_feeling` | Pre-workout feeling is shown in logs; `post_feeling` is written but **never displayed yet** — logs screen is the candidate place |
 | **Coaching** | `coaching_relationship` + coach RLS policies | Table + policies exist; no coach UI. Coach SELECT access exists on every athlete-owned table |
-| **Friends** | `dim_friend_code` + `friend_relationship` | Instant, mutual, by code (2026-10-23). No pending state; completed sessions only in the stream; the existing viewer reads a friend's history read-only |
+| **Friends** | `dim_friend_code` + `friend_relationship.nickname` | Instant, mutual, by code (2026-10-23). No pending state; completed sessions only in the stream; the existing viewer reads a friend's history read-only. A friend reads **nickname → their name → their code → `Friend`** (2026-10-25); the nickname is the caller's own label on their directed row |
 | **Onboarding** | `dim_user.onboarded` | Gate flag for first-run flow |
 
 ## Entity relationship quick map
@@ -478,8 +481,10 @@ dim_user ──< dim_exercise
   │         │                              block_id = the phase followed)
   │         ├──< fact_program_review (the review that answered its length)
   │         └──< fact_goal (optional link)
-  ├──< dim_friend_code (one shareable code per user, owner-only)
-  ├──< friend_relationship >── dim_user (one row per direction; the pair is
+  ├──< dim_friend_code (one shareable code per user; also synced to mutual
+  │                      friends as the name fallback, 2026-10-25)
+  ├──< friend_relationship >── dim_user (one row per direction, each with the
+  │                                           caller's own nickname; the pair is
   │                                           the friendship, 2026-10-23)
   ├──< fact_session ──< fact_session_exercise ──< fact_session_exercise_set
   │         ├── planned_session_id → dim_planned_session (template link)
@@ -623,16 +628,21 @@ fact_program_run), `achieved_date` (nullable, revocable),
 `^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{8}$` — no I/O/0/1), `created_date`. One
 row per user, written by the SECURITY DEFINER `after insert on dim_user`
 trigger and backfilled by the migration. The app never writes it: no grant,
-no UI (codes are stable in v1). Streams only to its owner.
+no UI (codes are stable in v1). RLS stays owner-only; the friends_data stream
+additionally sends each mutual friend's code (2026-10-25), which the Friends
+list falls back to when a friend has no name and no nickname.
 
 ### friend_relationship — friendships (own row ALL, either side SELECT)
 `user_id` + `friend_user_id` (composite PK, both FK → dim_user, ON DELETE
-CASCADE), `created_date`; CHECK `user_id <> friend_user_id`. **One row per
+CASCADE), `created_date`, `nickname` (TEXT, nullable — the caller's private
+label for that friend, 120-char rail, 20-character client cap, 2026-10-25);
+CHECK `user_id <> friend_user_id`. **One row per
 direction** — `add_friend_by_code` writes both in one call, `remove_friend`
 deletes both, and every read requires the pair (stream CTE and `are_friends()`
 RLS). No server-side `id` column: the stream synthesizes
 `user_id || '-' || friend_user_id`. The client mirrors only its **own**
-directed row (`_compositeKeyTables` in `database.dart`).
+directed row (`_compositeKeyTables` in `database.dart`); a nickname is a
+local-first UPDATE on that row.
 
 ### coaching_relationship (coach ALL + both-sides SELECT)
 `coach_user_id` + `athlete_user_id` (composite PK), `created_date`. No app
@@ -730,8 +740,9 @@ Every synced table must be registered in four places (see the
 `lib/core/powersync/schema.dart`, and `lib/core/powersync/database.dart`
 (`_pkColumns` / `_compositeKeyTables` upload mapping). Two auto-subscribed
 streams since 2026-10-23: `user_data` (the user's own rows) and `friends_data`
-(`dim_friend_code` owner-only, `friend_relationship` own directed rows, and
-each mutual friend's completed records + names slice — see `sync-contract`).
+(`dim_friend_code` own + each mutual friend's, `friend_relationship` own
+directed rows with their nicknames, and each mutual friend's completed
+records + names slice — see `sync-contract`).
 Local-only: `upload_failures`. REST-only (not synced): `app_config`.
 
 ## Cross-references

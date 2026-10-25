@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/powersync/database.dart' as ps;
 import '../../core/utils/friend_code.dart';
 import '../../core/utils/lambda_exception.dart';
+import '../../core/utils/name_limit.dart';
 import '../cache/past_sets_timeline_cache.dart';
 import '../models/friend.dart';
 
@@ -95,9 +96,11 @@ class SupabaseFriendRemote implements FriendRemote {
 /// (2026-10-23).
 ///
 /// Reads are local-only: the friends_data sync stream delivers the caller's
-/// own relationship rows, each friend's NAME (a partial dim_user slice) and
-/// their completed training history. Writes are RPC-first, then mirrored
-/// locally so the list updates in the same beat:
+/// own relationship rows, each friend's NAME (a partial dim_user slice),
+/// their code and their completed training history. Writes are RPC-first,
+/// then mirrored locally so the list updates in the same beat — except a
+/// nickname, which is local-first: it touches only the caller's own directed
+/// row, so the uploader's composite-key patch is the whole remote half.
 ///
 /// * The mirror inserts ONLY the caller's own directed row, under the
 ///   synthetic id `'<userId>-<friendId>'` the stream uses. The reciprocal row
@@ -114,17 +117,22 @@ class FriendRepository {
 
   final FriendRemote _remote;
 
-  /// The caller's friends, named where the friend's name row has synced.
-  /// Outgoing rows only — the stream sends no other kind — ordered by name,
+  /// The caller's friends, named where the friend's rows have synced.
+  /// Outgoing rows only — the stream sends no other kind — ordered by the
+  /// name the row DRAWS (nickname, else the friend's name, else their code),
   /// then by when they were added.
   Stream<List<Friend>> watchFriends(String userId) => ps.db
       .watch(
-        'SELECT fr.friend_user_id, fr.created_date, '
-        'u.user_name, u.user_lastname '
+        'SELECT fr.friend_user_id, fr.created_date, fr.nickname, '
+        'u.user_name, u.user_lastname, c.friend_code '
         'FROM friend_relationship fr '
         'LEFT JOIN dim_user u ON u.user_id = fr.friend_user_id '
+        'LEFT JOIN dim_friend_code c ON c.user_id = fr.friend_user_id '
         'WHERE fr.user_id = ? '
-        'ORDER BY u.user_name COLLATE NOCASE, fr.created_date',
+        'ORDER BY COALESCE('
+        "NULLIF(TRIM(fr.nickname), ''), "
+        "NULLIF(TRIM(u.user_name), ''), "
+        "c.friend_code, '') COLLATE NOCASE, fr.created_date",
         parameters: [userId],
       )
       .map((rows) => rows.map(Friend.fromMap).toList());
@@ -172,6 +180,39 @@ class FriendRepository {
       debugPrint('FriendRepository.removeFriend: local delete failed: $e');
     }
     PastSetsTimelineCache.instance.invalidate(friendId);
+  }
+
+  /// Sets — or clears, with null or a blank value — the caller's private
+  /// label for one friend.
+  ///
+  /// The repository's one LOCAL-FIRST write: it touches only the caller's own
+  /// `friend_relationship` row, which the uploader already knows how to patch
+  /// on the composite key, so the watch repaints in the same beat and the
+  /// label survives offline. Add and remove stay RPC-first because they write
+  /// the friend's half too.
+  ///
+  /// Throws [ArgumentError] above [kMaxFriendNicknameLength] chars — the
+  /// repository is the rail, since the mirror has no CHECK (the database's
+  /// own rail is 120).
+  Future<void> setNickname(
+    String userId,
+    String friendId,
+    String? nickname,
+  ) async {
+    final trimmed = nickname?.trim();
+    final value = (trimmed == null || trimmed.isEmpty) ? null : trimmed;
+    if (value != null && nameTooLong(value, kMaxFriendNicknameLength)) {
+      throw ArgumentError.value(
+        value,
+        'nickname',
+        'exceeds $kMaxFriendNicknameLength characters',
+      );
+    }
+    await ps.safeExec(
+      'UPDATE friend_relationship SET nickname = ? '
+      'WHERE user_id = ? AND friend_user_id = ?',
+      [value, userId, friendId],
+    );
   }
 
   /// Best-effort: the RPC succeeded and the friendship exists server-side, so

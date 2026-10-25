@@ -148,6 +148,21 @@ class FriendsViewModel {
     }
   }
 
+  /// Sets — or clears, with null or a blank value — the caller's private label
+  /// for [friend]. True when the local write landed (the watch repaints in
+  /// the same beat); false records [state.error].
+  Future<bool> setNickname(Friend friend, String? nickname) async {
+    if (_disposed) return false;
+    try {
+      await _repo.setNickname(_userId, friend.userId, nickname);
+      return true;
+    } catch (e) {
+      if (_disposed) return false;
+      state.value = state.value.copyWith(error: friendlyError(e));
+      return false;
+    }
+  }
+
   /// Drops a stale error (the add sheet closing, a list retry).
   void clearError() {
     if (_disposed) return;

@@ -33,6 +33,7 @@ void main() {
       expect(kMaxBlockNameLength, 20);
       expect(kMaxGoalTextLength, 20);
       expect(kMaxReviewTitleLength, 20);
+      expect(kMaxFriendNicknameLength, 20);
     });
 
     test('all sit below the database rail', () {
@@ -44,6 +45,7 @@ void main() {
         kMaxBlockNameLength,
         kMaxGoalTextLength,
         kMaxReviewTitleLength,
+        kMaxFriendNicknameLength,
       ]) {
         expect(max, lessThan(rail));
       }

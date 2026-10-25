@@ -252,6 +252,11 @@ const schema = Schema([
     Column.text('user_id'),
     Column.text('friend_user_id'),
     Column.text('created_date'),
+    // The caller's private label for the friend (2026-10-25,
+    // 20261025120000_friend_nicknames.sql). Null = no nickname. Nullable and
+    // additive, so it needs no upload-map change: a local UPDATE queues a
+    // composite-key PATCH, which database.dart already handles.
+    Column.text('nickname'),
   ]),
   Table(
     'dim_planned_session',
