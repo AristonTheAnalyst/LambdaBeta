@@ -440,16 +440,32 @@ class SessionRepository {
     }
   }
 
-  /// Completed sessions with their sets, for the logs list. Soft-deleted
-  /// (flagged) rows are filtered out — a deleted set is not performed work
-  /// and must not inflate the list's counts or filters (2026-10-14). The
-  /// session VIEWER reads [loadSetsForSession] instead, which returns them.
+  /// Completed sessions with their sets, for the logs list and the
+  /// all-sessions picker. Soft-deleted (flagged) rows are filtered out — a
+  /// deleted set is not performed work and must not inflate the list's
+  /// counts or filters (2026-10-14). The session VIEWER reads
+  /// [loadSetsForSession] instead, which returns them.
+  ///
+  /// A session with no performed work has no card either (2026-10-25): it
+  /// carries no set, so it holds nothing to show and nothing to open — the
+  /// logs list skips it by construction (its filter tests the sets), and the
+  /// all-sessions picker drew a row that could not be selected. The row
+  /// stays; [loadCompletedSessionStamps] applies the same rule to the date
+  /// bar's walk.
   Future<List<SessionWithSets>> loadSessionsWithSets(String userId) async {
     final sessionRows = await ps.db.getAll(
       '''
-      SELECT * FROM fact_session
-      WHERE user_id = ? AND end_datetime IS NOT NULL
-      ORDER BY created_datetime DESC
+      SELECT w.* FROM fact_session w
+      WHERE w.user_id = ? AND w.end_datetime IS NOT NULL
+        AND EXISTS (
+          SELECT 1
+          FROM fact_session_exercise fe
+          JOIN fact_session_exercise_set s
+            ON s.session_exercise_id = fe.session_exercise_id
+          WHERE fe.session_id = w.session_id
+            AND COALESCE(s.is_deleted, 0) = 0
+        )
+      ORDER BY w.created_datetime DESC
       ''',
       [userId],
     );
@@ -498,13 +514,30 @@ class SessionRepository {
   /// floor's arrows needs neighbours, not rows; the logs list's whole-row
   /// read is [loadSessionsWithSets]. Ordered exactly as that list orders, so
   /// the bar and the list walk the same sequence.
+  ///
+  /// A completed session with no performed work is not part of that sequence
+  /// (2026-10-25). The list only draws a card for a session carrying at least
+  /// one non-flagged set, so an empty record must not be a neighbour either:
+  /// the live floor's older step would land on a record the list refuses to
+  /// show, and the viewer's arrows would point at a page that cannot exist —
+  /// then dead-end, because nothing else is newer. The row stays in the
+  /// database — restoring a flagged set brings it back onto both reads —
+  /// and only the walk skips it.
   Future<List<({String sessionId, DateTime createdDatetime})>>
   loadCompletedSessionStamps(String userId) async {
     final rows = await ps.db.getAll(
       '''
-      SELECT session_id, created_datetime FROM fact_session
-      WHERE user_id = ? AND end_datetime IS NOT NULL
-      ORDER BY created_datetime DESC
+      SELECT w.session_id, w.created_datetime FROM fact_session w
+      WHERE w.user_id = ? AND w.end_datetime IS NOT NULL
+        AND EXISTS (
+          SELECT 1
+          FROM fact_session_exercise fe
+          JOIN fact_session_exercise_set s
+            ON s.session_exercise_id = fe.session_exercise_id
+          WHERE fe.session_id = w.session_id
+            AND COALESCE(s.is_deleted, 0) = 0
+        )
+      ORDER BY w.created_datetime DESC
       ''',
       [userId],
     );
