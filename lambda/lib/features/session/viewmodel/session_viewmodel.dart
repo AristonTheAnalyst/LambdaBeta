@@ -932,7 +932,15 @@ class SessionViewModel extends ChangeNotifier {
     } catch (_) {}
   }
 
-  Future<void> _loadPastSets({bool keepReflectionPosition = false}) async {
+  /// [bumpVersion] is the browse's remount signal: `pastSetsVersion` keys the
+  /// Home list, so a bump rebuilds it at offset 0 with its filters cleared.
+  /// A refresh that only re-reads what the list has already reloaded itself
+  /// passes false and leaves the browse where the user left it
+  /// (2026-10-25).
+  Future<void> _loadPastSets({
+    bool keepReflectionPosition = false,
+    bool bumpVersion = true,
+  }) async {
     try {
       // The timeline is the app's most-read query; the shared cache is its
       // memo (2026-10-13). Every fact write, sync round and sign-out
@@ -969,7 +977,7 @@ class SessionViewModel extends ChangeNotifier {
       _goals = const [];
     }
     pastSetsLoaded = true;
-    pastSetsVersion++;
+    if (bumpVersion) pastSetsVersion++;
     notifyListeners();
     // The live session's PR highlighting and events derive from the
     // timeline — recompute on every reload so history edits and tab
@@ -1103,8 +1111,17 @@ class SessionViewModel extends ChangeNotifier {
   /// made in the past-session viewer — reloads the timeline first (set edits
   /// change it, and the stale timeline would otherwise poison the next
   /// workout's PR baseline) while keeping the pager position.
-  Future<void> refreshShownReflection() async {
-    await _loadPastSets(keepReflectionPosition: true);
+  ///
+  /// [bumpVersion] decides whether the Home browse is re-keyed (and so
+  /// rebuilt at offset 0). A refresh that hangs off the browse's own reload —
+  /// a deleted card, a return from the viewer — passes false, because
+  /// remounting there would only throw away the user's scroll and filters
+  /// (2026-10-25).
+  Future<void> refreshShownReflection({bool bumpVersion = true}) async {
+    await _loadPastSets(
+      keepReflectionPosition: true,
+      bumpVersion: bumpVersion,
+    );
   }
 
   /// Resets the pager to the most recent completed session — called when the

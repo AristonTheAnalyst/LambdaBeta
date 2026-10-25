@@ -156,7 +156,11 @@ class _SessionScreenState extends State<SessionScreen>
 
   @override
   void didPopNext() {
-    _vm.refreshShownReflection();
+    // A refresh, not a new browse: the Home list reloads itself on the same
+    // pop (LogsScreen is a route-observer subscriber too), so the only thing
+    // a version bump could add here is a remount — and with it the loss of
+    // the scroll position and filters the user left behind (2026-10-25).
+    _vm.refreshShownReflection(bumpVersion: false);
   }
 
   @override
@@ -793,8 +797,10 @@ class _ForeignSessionNotice extends StatelessWidget {
 /// viewer) fills the page, with Start (header) kicking off the
 /// active-session flow. With a session live it is also the browse a re-tap
 /// of the Session tab opens, and the header's door reads Resume instead
-/// (2026-10-23). Keyed by the past-sets version so a finished workout
-/// remounts it with fresh data.
+/// (2026-10-23). Keyed by the past-sets version so a session that starts or
+/// ends remounts it with fresh data; a refresh that only re-reads (a delete,
+/// a return from the viewer) leaves the key alone and keeps the scroll
+/// position and filters (2026-10-25).
 class _HomePage extends StatelessWidget {
   const _HomePage({required this.vm});
 
@@ -807,9 +813,11 @@ class _HomePage extends StatelessWidget {
       showHeader: false,
       // A deleted session must leave the reflection card too — the recap
       // and the live PR baselines both read the VM's timeline, which only
-      // this list's own reload doesn't touch. Reloading bumps
-      // pastSetsVersion, so the list remounts from the same fresh read.
-      onSessionDeleted: (_) => vm.refreshShownReflection(),
+      // this list's own reload doesn't touch. The reload is asked for
+      // WITHOUT a version bump: the list already reloaded itself from the
+      // same fresh read (LogsViewModel.deleteSession), so a bump would only
+      // remount the browse at offset 0 and drop its filters.
+      onSessionDeleted: (_) => vm.refreshShownReflection(bumpVersion: false),
     );
   }
 }
@@ -1064,8 +1072,10 @@ class _LastSessionCard extends StatelessWidget {
                     extra: AppRouter.fromLiveExtra,
                   );
                   // Note/feeling edits made in the past-session viewer show
-                  // immediately when the viewer card recomputes on return.
-                  vm.refreshShownReflection();
+                  // immediately when the viewer card recomputes on return —
+                  // without re-keying the Home browse underneath (it reloads
+                  // itself on the same pop).
+                  vm.refreshShownReflection(bumpVersion: false);
                 },
           padding: const EdgeInsets.all(AppSpacing.md),
           child: Column(
