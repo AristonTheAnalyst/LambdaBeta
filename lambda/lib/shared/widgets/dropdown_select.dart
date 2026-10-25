@@ -112,6 +112,11 @@ class DropdownSelect<T> extends StatelessWidget {
   Widget build(BuildContext context) {
     final hasValue = value != null;
     return GestureDetector(
+      // The whole field is the target, not just the glyphs it draws: the
+      // compact row's padding either side of the label is empty space that
+      // still reads as part of the field, and the boxes that host a compact
+      // dropdown are full-width cells (2026-10-25).
+      behavior: HitTestBehavior.opaque,
       onTap: () {
         final host = DropdownSheetHost.maybeOf(context);
         if (host != null) {
@@ -158,6 +163,11 @@ class DropdownSelect<T> extends StatelessWidget {
       child: compact
           ? Row(
               mainAxisSize: MainAxisSize.min,
+              // A compact field stretched to its host (a full-width cell)
+              // keeps the label and chevron centred; where the row is its own
+              // min size this alignment has no free space to spend and draws
+              // exactly as before (2026-10-25).
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 // Flexible, or the ellipsis never engages: with no flex the
                 // label takes its full intrinsic width and the row overflows

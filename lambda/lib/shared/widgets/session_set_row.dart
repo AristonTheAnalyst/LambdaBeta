@@ -902,28 +902,35 @@ class _SessionSetRowState extends State<SessionSetRow> {
                     // variation while the row has none of its own.
                     message: plannedVariationName ?? variationLabel,
                     child: _variationBox(
-                      DropdownSelect<String?>(
-                        options: widget.variationOptions,
-                        value: variationId,
-                        placeholder: plannedVariationName ?? 'No Variation',
-                        // Real-value ink: a planned variation IS the row's
-                        // value, not a target to reach (2026-10-23). The
-                        // dropdown's own placeholder grey stays for the
-                        // genuine "No Variation" case.
-                        placeholderColor: plannedVariationName != null
-                            ? AppColors.primary
-                            : null,
-                        compact: true,
-                        valueColor: AppColors.primary,
-                        createNewLabel: 'New Variation',
-                        onCreateNew: _handleCreateVariation,
-                        onChange: (id) {
-                          if (_isDraft) {
-                            setState(() => _draftVariationId = id);
-                          } else {
-                            widget.onVariationChanged(id);
-                          }
-                        },
+                      // Stretched to the box: the dropdown's compact row is
+                      // only as wide as its label and chevron, so without
+                      // this the empty left and right of the cell would not
+                      // open the picker (2026-10-25).
+                      SizedBox(
+                        width: double.infinity,
+                        child: DropdownSelect<String?>(
+                          options: widget.variationOptions,
+                          value: variationId,
+                          placeholder: plannedVariationName ?? 'No Variation',
+                          // Real-value ink: a planned variation IS the row's
+                          // value, not a target to reach (2026-10-23). The
+                          // dropdown's own placeholder grey stays for the
+                          // genuine "No Variation" case.
+                          placeholderColor: plannedVariationName != null
+                              ? AppColors.primary
+                              : null,
+                          compact: true,
+                          valueColor: AppColors.primary,
+                          createNewLabel: 'New Variation',
+                          onCreateNew: _handleCreateVariation,
+                          onChange: (id) {
+                            if (_isDraft) {
+                              setState(() => _draftVariationId = id);
+                            } else {
+                              widget.onVariationChanged(id);
+                            }
+                          },
+                        ),
                       ),
                     ),
                   ),

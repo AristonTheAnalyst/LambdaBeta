@@ -954,13 +954,20 @@ class _ExerciseTargetPickerState extends State<ExerciseTargetPicker> {
       // pointer rather than by greying the value out.
       child: IgnorePointer(
         ignoring: !widget.enabled,
-        child: DropdownSelect<String?>(
-          options: _variationOptions,
-          value: widget.draft.variationId,
-          placeholder: 'No Variation',
-          compact: true,
-          valueColor: AppColors.primary,
-          onChange: (v) => setState(() => widget.draft.variationId = v),
+        // The same full-width cell as the session set row's variation field:
+        // the dropdown's compact row is only as wide as its label and
+        // chevron, so it is stretched to the box to make the whole field the
+        // target (2026-10-25).
+        child: SizedBox(
+          width: double.infinity,
+          child: DropdownSelect<String?>(
+            options: _variationOptions,
+            value: widget.draft.variationId,
+            placeholder: 'No Variation',
+            compact: true,
+            valueColor: AppColors.primary,
+            onChange: (v) => setState(() => widget.draft.variationId = v),
+          ),
         ),
       ),
     );
