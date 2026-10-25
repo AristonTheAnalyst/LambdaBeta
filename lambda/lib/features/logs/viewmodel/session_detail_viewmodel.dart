@@ -1567,22 +1567,81 @@ class SessionDetailViewModel {
       );
       // The write invalidated the shared timeline cache — re-read it so the
       // next derivation (here and everywhere else) sees the edit, and keep
-      // the asc copy for the sorted PR walk.
+      // the asc copy for the sorted PR walk. The fresh row is also the one
+      // authority on the variation's CURRENT name, which the patch needs:
+      // the row only stores the id (2026-10-25).
       final userId = _userId;
       final timeline = await PastSetsTimelineCache.instance.get(userId);
       _timelineAsc = PastSetsTimelineCache.instance.asc(userId) ?? timeline;
-      _applySetPatchToState(setId, p);
+      _applySetPatchToState(
+        setId,
+        p,
+        freshRow: _timelineRowFor(timeline, setId),
+      );
       _computePRs();
     } catch (e) {
       state.value = state.value.copyWith(error: e.toString());
     }
   }
 
+  /// The freshly re-read timeline row for [setId], if the timeline holds one.
+  /// A completed record's rows always are; an active session's are not (the
+  /// timeline only reads ended sessions), and a flagged row is filtered out
+  /// at the SQL level — both fall back to the catalogue (2026-10-25).
+  PastSetRow? _timelineRowFor(List<PastSetRow> timeline, String setId) {
+    for (final row in timeline) {
+      if (row.sessionExerciseSetId == setId) return row;
+    }
+    return null;
+  }
+
+  /// The name that belongs to the variation a just-written set now points at
+  /// (2026-10-25). Names live in `dim_variation`, not on the set: carrying the
+  /// PREVIOUS name forward left the read-only cell naming the variation the
+  /// set no longer had until the record was reopened, which is exactly what
+  /// Done showed. The fresh timeline row (it joins the dims, archived names
+  /// included) is the authority; the live catalogue covers a row the timeline
+  /// cannot hold; an unchanged id keeps its snapshot name, so an archived
+  /// variation that was readable never turns blank.
+  String? _variationNameAfterWrite({
+    required PastSetRow? fresh,
+    required String? variationId,
+    required String? previousId,
+    required String? previousName,
+  }) {
+    if (variationId == null) return null;
+    if (fresh != null &&
+        fresh.variationId == variationId &&
+        fresh.variationName != null) {
+      return fresh.variationName;
+    }
+    for (final v in state.value.allVariations) {
+      if (v.variationId == variationId) return v.name;
+    }
+    return variationId == previousId ? previousName : null;
+  }
+
   /// Replaces the edited row in [SessionDetailState.setsByOrder] and in its
   /// timeline copy ([SessionDetailState.historyByExercise]) with the values
   /// just written — the DB and the patch agree by construction.
-  void _applySetPatchToState(String setId, _PendingDetailSetWrite p) {
+  void _applySetPatchToState(
+    String setId,
+    _PendingDetailSetWrite p, {
+    PastSetRow? freshRow,
+  }) {
     final s = state.value;
+
+    // The id the row now carries — the write's when it named one, the stored
+    // id otherwise — and the name that goes with it.
+    String? patchedId(String? storedId) =>
+        p.clearVariation ? null : (p.variationId ?? storedId);
+    String? patchedName(String? storedId, String? storedName) =>
+        _variationNameAfterWrite(
+          fresh: freshRow,
+          variationId: patchedId(storedId),
+          previousId: storedId,
+          previousName: storedName,
+        );
 
     final newSetsByOrder = <int, List<SessionExerciseSet>>{};
     for (final e in s.setsByOrder.entries) {
@@ -1595,15 +1654,13 @@ class SessionDetailViewModel {
               sessionId: set.sessionId,
               userId: set.userId,
               exerciseId: set.exerciseId,
-              variationId: p.clearVariation
-                  ? null
-                  : (p.variationId ?? set.variationId),
+              variationId: patchedId(set.variationId),
               setNumber: set.setNumber,
               weight: p.clearWeight ? null : (p.weight ?? set.weight),
               reps: p.clearReps ? const [] : (p.reps ?? set.reps),
               notes: p.clearNotes ? null : (p.notes ?? set.notes),
               exerciseName: set.exerciseName,
-              variationName: set.variationName,
+              variationName: patchedName(set.variationId, set.variationName),
               plannedSetId: set.plannedSetId,
             )
           else
@@ -1626,15 +1683,16 @@ class SessionDetailViewModel {
                     sessionId: set.sessionId,
                     userId: set.userId,
                     exerciseId: set.exerciseId,
-                    variationId: p.clearVariation
-                        ? null
-                        : (p.variationId ?? set.variationId),
+                    variationId: patchedId(set.variationId),
                     setNumber: set.setNumber,
                     weight: p.clearWeight ? null : (p.weight ?? set.weight),
                     reps: p.clearReps ? const [] : (p.reps ?? set.reps),
                     notes: p.clearNotes ? null : (p.notes ?? set.notes),
                     exerciseName: set.exerciseName,
-                    variationName: set.variationName,
+                    variationName: patchedName(
+                      set.variationId,
+                      set.variationName,
+                    ),
                     plannedSetId: set.plannedSetId,
                     sessionCreatedDate: set.sessionCreatedDate,
                   )
