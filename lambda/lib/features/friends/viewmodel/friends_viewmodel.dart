@@ -163,6 +163,21 @@ class FriendsViewModel {
     }
   }
 
+  /// Records whether the caller shares notes with [friend] (2026-10-26, #23).
+  /// True when the local write landed (the watch repaints in the same beat);
+  /// false records [state.error].
+  Future<bool> setShareNotes(Friend friend, bool shareNotes) async {
+    if (_disposed) return false;
+    try {
+      await _repo.setShareNotes(_userId, friend.userId, shareNotes);
+      return true;
+    } catch (e) {
+      if (_disposed) return false;
+      state.value = state.value.copyWith(error: friendlyError(e));
+      return false;
+    }
+  }
+
   /// Drops a stale error (the add sheet closing, a list retry).
   void clearError() {
     if (_disposed) return;

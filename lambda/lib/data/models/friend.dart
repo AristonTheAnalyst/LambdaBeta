@@ -16,6 +16,7 @@ class Friend {
     this.nickname,
     this.friendCode,
     this.createdDate,
+    this.shareNotes = false,
   });
 
   final String userId;
@@ -26,6 +27,12 @@ class Friend {
   /// directed `friend_relationship` row — the only half the friends stream
   /// sends them — so it never reaches the friend.
   final String? nickname;
+
+  /// Whether the caller shares notes with this friend (2026-10-26, #23) — the
+  /// second privacy tier, also on the caller's own row. The numbers and each
+  /// set's notes are shared regardless; exercise notes and a session's
+  /// pre/post notes ride only when this is true.
+  final bool shareNotes;
 
   /// The friend's shareable code, drawn `ABCD-EFGH` by [fallbackName]. Null
   /// until the friend's code row syncs.
@@ -57,8 +64,8 @@ class Friend {
   }
 
   /// A row of the repository's watch: `friend_user_id`, the row's own
-  /// `nickname`, plus the joined name and code columns (all nullable until the
-  /// friend's rows sync).
+  /// `nickname` and `share_notes`, plus the joined name and code columns (all
+  /// nullable until the friend's rows sync).
   factory Friend.fromMap(Map<String, dynamic> map) => Friend(
     userId: map['friend_user_id'] as String,
     firstName: map['user_name'] as String?,
@@ -68,6 +75,9 @@ class Friend {
     createdDate: map['created_date'] != null
         ? DateTime.tryParse(map['created_date'] as String)
         : null,
+    // The mirror has no boolean type: 1 = sharing, 0 (or a row that predates
+    // the column) = numbers only.
+    shareNotes: (map['share_notes'] as int? ?? 0) != 0,
   );
 
   Map<String, dynamic> toMap() => {
@@ -77,5 +87,6 @@ class Friend {
     'nickname': nickname,
     'friend_code': friendCode,
     'created_date': createdDate?.toIso8601String(),
+    'share_notes': shareNotes ? 1 : 0,
   };
 }

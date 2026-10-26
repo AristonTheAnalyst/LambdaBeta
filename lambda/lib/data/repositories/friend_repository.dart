@@ -124,7 +124,7 @@ class FriendRepository {
   Stream<List<Friend>> watchFriends(String userId) => ps.db
       .watch(
         'SELECT fr.friend_user_id, fr.created_date, fr.nickname, '
-        'u.user_name, u.user_lastname, c.friend_code '
+        'fr.share_notes, u.user_name, u.user_lastname, c.friend_code '
         'FROM friend_relationship fr '
         'LEFT JOIN dim_user u ON u.user_id = fr.friend_user_id '
         'LEFT JOIN dim_friend_code c ON c.user_id = fr.friend_user_id '
@@ -215,6 +215,25 @@ class FriendRepository {
     );
   }
 
+  /// Sets whether the caller shares NOTES with [friendId] (2026-10-26, #23).
+  ///
+  /// Local-first, like [setNickname]: the flag lives on the caller's own
+  /// directed row, so the composite-key UPDATE is the whole write — the
+  /// uploader patches the pair, the friend's device stops (or starts) being
+  /// sent this caller's exercise notes and session notes on the next sync
+  /// round, and nothing about the caller's numbers changes either way.
+  Future<void> setShareNotes(
+    String userId,
+    String friendId,
+    bool shareNotes,
+  ) async {
+    await ps.safeExec(
+      'UPDATE friend_relationship SET share_notes = ? '
+      'WHERE user_id = ? AND friend_user_id = ?',
+      [shareNotes ? 1 : 0, userId, friendId],
+    );
+  }
+
   /// Best-effort: the RPC succeeded and the friendship exists server-side, so
   /// a failed local insert must not read as a failed add. The next sync round
   /// brings the row down anyway.
@@ -223,7 +242,8 @@ class FriendRepository {
       await ps.safeWriteTransaction((tx) async {
         await tx.execute(
           'INSERT OR IGNORE INTO friend_relationship '
-          '(id, user_id, friend_user_id, created_date) VALUES (?, ?, ?, ?)',
+          '(id, user_id, friend_user_id, created_date, share_notes) '
+          'VALUES (?, ?, ?, ?, ?)',
           [
             // MUST match the stream's `user_id || '-' || friend_user_id`,
             // or the download lands as a second row.
@@ -231,6 +251,11 @@ class FriendRepository {
             userId,
             friendId,
             DateTime.now().toUtc().toIso8601String(),
+            // The server column is NOT NULL DEFAULT false, and the local
+            // mirror has no defaults: a NULL here would ride the uploader's
+            // upsert into a 23502 and quarantine the row. A new friendship
+            // starts on the first tier — numbers only.
+            0,
           ],
         );
       });

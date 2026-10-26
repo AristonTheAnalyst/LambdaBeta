@@ -42,7 +42,7 @@ progression mode lives on the RUN. Full plan of record:
 | **Reviews** (a recorded pass over a set of workouts **and goals** — standalone since 2026-10-07) | `fact_program_review` | Literal |
 | **Lessons** | `dim_lesson` | Literal |
 | **Goals** (multi-set rungs 2026-10-26) | `fact_goal` + `fact_goal_target` | Literal |
-| **Friends** (nicknames 2026-10-25) | `dim_friend_code` + `friend_relationship` (carries `nickname`) | Literal |
+| **Friends** (note tiers 2026-10-26) | `dim_friend_code` + `friend_relationship` (carries `nickname`, `share_notes`) | Literal |
 | **Bodyweight** | `fact_bodyweight` | Literal |
 | **PRs** | *(none)* | **Fully derived** — see below |
 | **History / training logs** | *(none)* | **Derived read view** |
@@ -431,6 +431,20 @@ global `PrService` cache is never used on this path. Codes are stable in v1
 (no regeneration). Stream shape, upload maps and the own-row-only mirror rule:
 `sync-contract`.
 
+**Note tiers (2026-10-26, #23).** A friendship shares training by default —
+completed sessions, their sets and each set's notes. **Notes about the work**
+— the exercise notes in `dim_lesson` and a session's `pre_notes`/`post_notes`
+— are a second tier the owner opens **per friend**, on the caller's own
+directed row (`friend_relationship.share_notes`, default false). The sheet is
+reached from the friend row's third swipe (eye); the first tier is drawn as
+always-on, not as a choice. The friend never sees the flag. Because the gate
+is client-visible only in what ARRIVES, it lives in the `friends_data` stream
+(`dim_lesson` only for sharers; `fact_session` split into two disjoint
+queries, notes nulled at the source), with `friend_shares_notes()` as the REST
+half for `dim_lesson` — RLS is row-level and cannot mask a column, so a
+session's note columns stay unreadable only through the stream. Tier 3
+(a friend planning on your behalf) lands with coaching authoring (#24).
+
 ### Bodyweight — `fact_bodyweight`
 Weight measurements: `user_weight`, `user_weight_date` (measurement date),
 `created_date` (log date). Profile screen logs these.
@@ -693,14 +707,20 @@ list falls back to when a friend has no name and no nickname.
 ### friend_relationship — friendships (own row ALL, either side SELECT)
 `user_id` + `friend_user_id` (composite PK, both FK → dim_user, ON DELETE
 CASCADE), `created_date`, `nickname` (TEXT, nullable — the caller's private
-label for that friend, 120-char rail, 20-character client cap, 2026-10-25);
+label for that friend, 120-char rail, 20-character client cap, 2026-10-25),
+`share_notes` (boolean, NOT NULL DEFAULT false — the caller's per-friend
+choice to send notes, 2026-10-26);
 CHECK `user_id <> friend_user_id`. **One row per
 direction** — `add_friend_by_code` writes both in one call, `remove_friend`
 deletes both, and every read requires the pair (stream CTE and `are_friends()`
 RLS). No server-side `id` column: the stream synthesizes
 `user_id || '-' || friend_user_id`. The client mirrors only its **own**
-directed row (`_compositeKeyTables` in `database.dart`); a nickname is a
-local-first UPDATE on that row.
+directed row (`_compositeKeyTables` in `database.dart`); a nickname or a
+privacy tier is a local-first UPDATE on that row. `friend_shares_notes(owner,
+viewer)` (SECURITY DEFINER, the `are_friends()` shape plus the flag) is the
+REST gate on `dim_lesson`'s friend policy; the notes columns on
+`fact_session` cannot be policy-gated (RLS is row-level) and are masked by
+the friends stream instead.
 
 ### coaching_relationship (RPC-written + both-sides SELECT)
 `coach_user_id` + `athlete_user_id` (composite PK), `created_date`,
@@ -803,8 +823,11 @@ Every table has RLS enabled. Three policy shapes:
    friends stream sends them and the REST defence matches. `are_friends(a, b)` is SECURITY DEFINER and
    requires **both** directed rows, so a half-pair grants nothing; it avoids
    recursive policy evaluation, and its only exposure is a boolean for a pair
-   of UUIDs. The stream is the real privacy boundary — these policies are the
-   REST defence.
+   of UUIDs. `dim_lesson`'s policy is the one tier-aware exception: it
+   requires `friend_shares_notes(user_id, auth.uid())` instead (2026-10-26,
+   #23), the same gate the stream applies. The stream is the real privacy
+   boundary — these policies are the REST defence, and for `fact_session`'s
+   note COLUMNS the stream is the only gate.
 
 | Table | Owner ALL | Coach SELECT |
 |---|---|---|
@@ -843,8 +866,9 @@ Every synced table must be registered in four places (see the
 (`_pkColumns` / `_compositeKeyTables` upload mapping). Two auto-subscribed
 streams since 2026-10-23: `user_data` (the user's own rows) and `friends_data`
 (`dim_friend_code` own + each mutual friend's, `friend_relationship` own
-directed rows with their nicknames, and each mutual friend's completed
-records + names slice — see `sync-contract`).
+directed rows with their nicknames and privacy tiers, and each mutual friend's
+completed records + names slice — a friend's notes only when they share them,
+2026-10-26 — see `sync-contract`).
 Local-only: `upload_failures`. REST-only (not synced): `app_config`.
 
 ## Cross-references

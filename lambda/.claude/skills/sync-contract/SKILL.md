@@ -88,6 +88,26 @@ queries — not the policies — decide what a device may hold.
   `SELECT *` on the caller's own directed rows only (the query above), so a
   label never reaches the friend it names. It is the repository's one
   local-first write — the composite-key patch below carries it, no RPC.
+- **Note tiers are the stream's job, not RLS's (2026-10-26, #23).**
+  `friend_relationship.share_notes` (the owner's per-friend choice, also
+  riding `SELECT *` above) splits the friends list into two single-column
+  CTEs — `friends_sharing_notes` / `friends_not_sharing_notes`, each carrying
+  its own copy of the mutual check. The flag read is the **reverse** row's:
+  what arrives from a friend depends on the row the *friend* wrote toward me,
+  never on my own, or every device would show the wrong side of the choice.
+  Keeping the CTEs single-column is what lets every query stay on the
+  documented `IN cte` shorthand; a multi-column CTE would force
+  `IN (SELECT …)` everywhere. `dim_lesson` (one row per exercise
+  note) streams only to sharers. `fact_session` needs **two disjoint
+  queries** — the full row for sharers, and the same row with
+  `NULL AS pre_notes, NULL AS post_notes` for everyone else — because RLS is
+  row-level and cannot mask a column, so a note column can only be withheld
+  by a query that never selects it. Set notes (`fact_session_exercise_set
+  .notes`) are the first tier and always stream. The `dim_lesson` REST policy
+  mirrors the gate through `friend_shares_notes()` — it takes (owner, viewer)
+  and reads the owner's directed row, the same direction as the CTE;
+  `fact_session`'s friend policy stays row-level, since the numbers are
+  theirs to see.
 
 ## The coaching stream: consent is the gate (2026-10-26)
 

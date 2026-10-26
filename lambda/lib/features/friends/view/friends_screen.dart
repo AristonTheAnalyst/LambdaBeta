@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
+import '../../../core/styles/app_radius.dart';
 import '../../../core/styles/app_spacing.dart';
 import '../../../core/styles/app_text_styles.dart';
 import '../../../core/utils/friend_code.dart';
@@ -11,6 +12,7 @@ import '../../../core/utils/name_limit.dart';
 import '../../../data/models/friend.dart';
 import '../../../data/repositories/friend_repository.dart';
 import '../../../shared/widgets/app_card.dart';
+import '../../../shared/widgets/container_styles.dart';
 import '../../../shared/widgets/glass_button.dart';
 import '../../../shared/widgets/header_icon_button.dart';
 import '../../../shared/widgets/lambda_input.dart';
@@ -30,15 +32,26 @@ import '../viewmodel/friends_viewmodel.dart';
 /// code card is the top of the page because sharing it is the act that makes
 /// the feature work; the list below it opens each friend's training history
 /// in the same read-only viewer the user reads their own sessions in.
+///
+/// Each friend's row draws three swipes: rename (nickname), privacy (the
+/// per-friend note tier, 2026-10-26) and remove.
 class FriendsScreen extends StatefulWidget {
-  const FriendsScreen({super.key});
+  const FriendsScreen({super.key, this.viewModel});
+
+  /// A caller-supplied state holder (host tests); null builds its own.
+  final FriendsViewModel? viewModel;
 
   @override
   State<FriendsScreen> createState() => _FriendsScreenState();
 }
 
 class _FriendsScreenState extends State<FriendsScreen> {
-  final _vm = FriendsViewModel();
+  late final FriendsViewModel _vm = widget.viewModel ?? FriendsViewModel();
+
+  /// Whether [_vm] is this screen's to dispose. An injected view model belongs
+  /// to whoever passed it — a host test goes on asserting against it after the
+  /// widget is gone.
+  late final bool _ownsVm = widget.viewModel == null;
 
   @override
   void initState() {
@@ -48,7 +61,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
 
   @override
   void dispose() {
-    _vm.dispose();
+    if (_ownsVm) _vm.dispose();
     super.dispose();
   }
 
@@ -118,6 +131,15 @@ class _FriendsScreenState extends State<FriendsScreen> {
     );
   }
 
+  /// Opens the per-friend privacy sheet for [friend] (2026-10-26, #23). The
+  /// sheet writes each choice as it is made — the flag is on the caller's own
+  /// row — so a dismissal loses nothing.
+  Future<void> _openPrivacy(Friend friend) async {
+    // A refusal from a previous attempt belongs to the sheet that showed it.
+    _vm.clearError();
+    await showFriendPrivacySheet(context, vm: _vm, friend: friend);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -176,6 +198,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
                             extra: state.friends[i].displayName,
                           ),
                           onRename: () => _rename(state.friends[i]),
+                          onPrivacy: () => _openPrivacy(state.friends[i]),
                           onRemove: () => _remove(state.friends[i]),
                         ),
                       ],
@@ -290,12 +313,14 @@ class _FriendRow extends StatelessWidget {
     required this.friend,
     required this.onTap,
     required this.onRename,
+    required this.onPrivacy,
     required this.onRemove,
   });
 
   final Friend friend;
   final VoidCallback onTap;
   final VoidCallback onRename;
+  final VoidCallback onPrivacy;
   final VoidCallback onRemove;
 
   @override
@@ -314,6 +339,14 @@ class _FriendRow extends StatelessWidget {
           color: AppColors.primary,
           foreground: AppColors.bg,
           onTap: onRename,
+        ),
+        // What this friend is sent (2026-10-26, #23) — the tier control, not
+        // an edit of the friend.
+        SwipeAction(
+          icon: Icons.visibility_outlined,
+          color: AppColors.primary,
+          foreground: AppColors.bg,
+          onTap: onPrivacy,
         ),
         SwipeAction(
           icon: Icons.person_remove_outlined,
@@ -649,6 +682,210 @@ class _NicknameSheetState extends State<_NicknameSheet> {
               onPressed: _save,
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The per-friend privacy sheet (2026-10-26, #23): exactly what one friend is
+/// sent. Two tiers are drawn — the first always on, the second the caller's
+/// choice — and every tap is its own complete write, so there is no Save to
+/// press and a dismissal loses nothing.
+Future<void> showFriendPrivacySheet(
+  BuildContext context, {
+  required FriendsViewModel vm,
+  required Friend friend,
+}) => showLambdaModal<void>(
+  context,
+  fitContent: true,
+  child: _PrivacySheet(vm: vm, friend: friend),
+);
+
+class _PrivacySheet extends StatefulWidget {
+  const _PrivacySheet({required this.vm, required this.friend});
+
+  final FriendsViewModel vm;
+  final Friend friend;
+
+  @override
+  State<_PrivacySheet> createState() => _PrivacySheetState();
+}
+
+class _PrivacySheetState extends State<_PrivacySheet> {
+  late bool _shareNotes = widget.friend.shareNotes;
+  bool _saving = false;
+  String? _error;
+
+  Future<void> _setShareNotes(bool value) async {
+    if (_saving || value == _shareNotes) return;
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    final ok = await widget.vm.setShareNotes(widget.friend, value);
+    if (!mounted) return;
+    setState(() {
+      _saving = false;
+      if (ok) {
+        _shareNotes = value;
+      } else {
+        // The row keeps its old mark: a write that did not land must not
+        // read as a choice that did.
+        _error = widget.vm.state.value.error;
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final name = widget.friend.displayName;
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.xl),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Privacy',
+              style: AppFonts.ui(
+                fontSize: AppTextStyles.lg,
+                fontWeight: FontWeight.w800,
+                color: AppColors.primary,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              'What $name sees of your training.',
+              style: AppFonts.ui(
+                fontSize: AppTextStyles.sm,
+                height: 1.4,
+                color: AppColors.inkSecondary,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            const _TierRow(
+              icon: Icons.fitness_center,
+              title: 'Training and sets',
+              subtitle:
+                  "Weights, reps and each set's notes. Always shared while "
+                  "you're friends.",
+              selected: true,
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            _TierRow(
+              icon: Icons.sticky_note_2_outlined,
+              title: 'Exercise and session notes',
+              subtitle:
+                  'Your exercise notes and what you write before and after a '
+                  'session.',
+              selected: _shareNotes,
+              onTap: _saving ? null : () => _setShareNotes(!_shareNotes),
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: AppSpacing.md),
+              Text(
+                _error!,
+                style: AppFonts.ui(
+                  fontSize: AppTextStyles.sm,
+                  height: 1.4,
+                  color: AppColors.danger,
+                ),
+              ),
+            ],
+            const SizedBox(height: AppSpacing.lg),
+            GlassButton(
+              label: 'Done',
+              solid: true,
+              onPressed: () =>
+                  Navigator.of(context, rootNavigator: true).pop(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// One privacy level: an icon, a name, what it covers, and a mark saying
+/// whether it is on. [onTap] null means the level cannot be changed (the
+/// first tier is always shared).
+class _TierRow extends StatelessWidget {
+  const _TierRow({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.selected,
+    this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool selected;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    // The mark is decoration; a screen reader hears the state from the row.
+    return Semantics(
+      button: onTap != null,
+      selected: selected,
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          padding: const EdgeInsets.all(AppSpacing.md),
+          decoration: selected
+              ? glassBox(AppColors.primary)
+              : BoxDecoration(
+                  color: AppColors.surfaceHigh,
+                  borderRadius: BorderRadius.circular(AppRadius.md),
+                  border: Border.all(color: AppColors.border),
+                ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                icon,
+                size: 20,
+                color: selected ? AppColors.primary : AppColors.inkSecondary,
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: AppFonts.ui(
+                        fontSize: AppTextStyles.body,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: AppFonts.ui(
+                        fontSize: AppTextStyles.sm,
+                        height: 1.4,
+                        color: AppColors.inkSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Icon(
+                selected ? Icons.check_circle : Icons.circle_outlined,
+                size: 20,
+                // Muted is the unselected ring — inactive chrome, never text.
+                color: selected ? AppColors.primary : AppColors.muted,
+              ),
+            ],
+          ),
         ),
       ),
     );

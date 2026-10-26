@@ -115,6 +115,17 @@
 # device regardless, but a resync would drop a multi-set goal's requirements
 # until the stream names the table.
 #
+# 2026-10-26 (per-friend privacy tiers, #23): + friend_relationship
+# .share_notes — the owner's per-friend choice to send NOTES with their
+# history. friends_data now sends a friend's exercise notes (dim_lesson) only
+# when that friend shares them, and splits fact_session into two disjoint
+# queries: the full row for sharers, the row with NULL pre_notes/post_notes
+# for everyone else. Postgres RLS is row-level and cannot mask a column, so
+# the stream is where session-note privacy is enforced (the dim_lesson row
+# policy is the REST half, in 20261026160000_friend_privacy.sql). Push that
+# migration BEFORE deploying this file — the new CTEs name the column, and
+# validation reads the real table.
+#
 # Deploy steps (PowerSync Dashboard → Sync Streams):
 #   1. Replace the current YAML with this file.
 #   2. Validate, then Deploy.
@@ -156,10 +167,18 @@ streams:
       - SELECT *, (coach_user_id || '-' || athlete_user_id) as id FROM coaching_relationship WHERE coach_user_id = auth.user_id() OR athlete_user_id = auth.user_id()
 
   # Friends (2026-10-23). One bucket per friend: every query keys on the same
-  # `my_friends` list, so the eleven queries share buckets instead of adding
-  # one per table. The list is MUTUAL by construction — a one-way row (say,
-  # someone inserting themselves as my friend over REST) matches nothing.
+  # `my_friends` list, so the queries share buckets instead of adding one per
+  # table. The list is MUTUAL by construction — a one-way row (say, someone
+  # inserting themselves as my friend over REST) matches nothing.
   # Streams bypass RLS; this query IS the privacy boundary.
+  #
+  # Per-friend note tiers (2026-10-26, #23): `share_notes` is a promise the
+  # OWNER makes about their own data, so what ARRIVES from a friend is read
+  # off the REVERSE row — the friend's directed row toward me — and never off
+  # my own. The two CTEs split my mutual friends by that flag; the pair is a
+  # partition (the column is NOT NULL DEFAULT false), which lets every
+  # note-bearing query pick its side with the documented `IN cte` shorthand —
+  # a multi-column CTE would break that shorthand everywhere.
   friends_data:
     auto_subscribe: true
     with:
@@ -169,6 +188,20 @@ streams:
                     AND f.friend_user_id IN (
                       SELECT rev.user_id FROM friend_relationship rev
                       WHERE rev.friend_user_id = auth.user_id())
+      friends_sharing_notes: SELECT f.friend_user_id AS friend_id
+                             FROM friend_relationship f
+                             WHERE f.user_id = auth.user_id()
+                               AND f.friend_user_id IN (
+                                 SELECT rev.user_id FROM friend_relationship rev
+                                 WHERE rev.friend_user_id = auth.user_id()
+                                   AND rev.share_notes = true)
+      friends_not_sharing_notes: SELECT f.friend_user_id AS friend_id
+                                 FROM friend_relationship f
+                                 WHERE f.user_id = auth.user_id()
+                                   AND f.friend_user_id IN (
+                                     SELECT rev.user_id FROM friend_relationship rev
+                                     WHERE rev.friend_user_id = auth.user_id()
+                                       AND rev.share_notes = false)
     queries:
       - SELECT *, user_id as id FROM dim_friend_code WHERE user_id = auth.user_id()
       # A friend's code, so the list can fall back to it when the friend has no
@@ -180,8 +213,13 @@ streams:
       # Names and the code fallback — a friend's height, weight, gender, DOB
       # and profile stay private.
       - SELECT user_id, user_name, user_lastname, user_id as id FROM dim_user WHERE user_id IN my_friends
-      # Completed records only — the live session is never sent.
-      - SELECT *, session_id as id FROM fact_session WHERE user_id IN my_friends AND end_datetime IS NOT NULL
+      # Completed records only — the live session is never sent. TWO queries,
+      # split on the note tier (2026-10-26, #23): a friend who shares notes
+      # gets the whole row; everyone else gets the same session with its note
+      # columns nulled at the source. They are disjoint by user, so no row is
+      # ever served by both.
+      - SELECT *, session_id as id FROM fact_session WHERE user_id IN friends_sharing_notes AND end_datetime IS NOT NULL
+      - SELECT session_id, user_id, created_datetime, end_datetime, planned_session_id, planned_session_name, program_run_id, pre_feeling, post_feeling, device_id, NULL AS pre_notes, NULL AS post_notes, session_id as id FROM fact_session WHERE user_id IN friends_not_sharing_notes AND end_datetime IS NOT NULL
       # Children keyed on user_id (one bucket per friend); a session_id filter
       # would allocate one bucket per session, thousands for a long history. A
       # mid-session friend's child rows can download, but the parent
@@ -190,7 +228,10 @@ streams:
       - SELECT *, session_exercise_set_id as id FROM fact_session_exercise_set WHERE user_id IN my_friends
       - SELECT *, custom_exercise_id as id FROM dim_exercise WHERE user_id IN my_friends
       - SELECT *, custom_variation_id as id FROM dim_variation WHERE user_id IN my_friends
-      - SELECT *, lesson_id as id FROM dim_lesson WHERE user_id IN my_friends
+      # Exercise notes are the second tier (2026-10-26, #23): a friend's
+      # notes stream only when that friend shares them. The REST policy on
+      # dim_lesson carries the same gate.
+      - SELECT *, lesson_id as id FROM dim_lesson WHERE user_id IN friends_sharing_notes
       - SELECT *, goal_id as id FROM fact_goal WHERE user_id IN my_friends
       # A friend's multi-set requirements ride beside the goals they belong
       # to (2026-10-26) — the goal row alone would read as a goal with no

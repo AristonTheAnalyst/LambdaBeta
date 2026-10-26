@@ -299,6 +299,13 @@ const schema = Schema([
       // additive, so it needs no upload-map change: a local UPDATE queues a
       // composite-key PATCH, which database.dart already handles.
       Column.text('nickname'),
+      // Whether the caller shares NOTES with this friend (2026-10-26, #23 —
+      // 20261026160000_friend_privacy.sql): the second privacy tier, chosen
+      // per friend on the caller's own directed row. Integer — the mirror
+      // has no boolean type. It decides what the friends_data stream sends
+      // (exercise notes and a session's pre/post notes); the numbers and each
+      // set's notes are the first tier and always shared.
+      Column.integer('share_notes'),
     ],
     indexes: [
       Index('user_idx', [IndexedColumn.ascending('user_id')]),
