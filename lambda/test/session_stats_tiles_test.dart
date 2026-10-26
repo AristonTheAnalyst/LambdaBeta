@@ -9,12 +9,15 @@ import 'package:lambda/features/session/view/session_stats_bar.dart';
 /// behind the tiles hold the exercise's whole story, so a `0` still opens
 /// them. A null handler — no exercise on the card — is the quiet fallback.
 /// Drawn at the live session's 402pt width, where two tiles share the row
-/// with the undo/redo boxes and the pencil.
+/// with the undo/redo boxes and the pencil. The planner asks for the same
+/// tiles with `gain: false` (2026-10-26): no session to have gained anything
+/// in, so the counts are the whole shelves behind them.
 
 Future<void> _pumpTiles(
   WidgetTester tester, {
   required int prCount,
   required int lessonCount,
+  bool gain = true,
   VoidCallback? onPrTap,
   VoidCallback? onLessonTap,
 }) async {
@@ -30,6 +33,7 @@ Future<void> _pumpTiles(
             child: SessionStatsTiles(
               prCount: prCount,
               lessonCount: lessonCount,
+              gain: gain,
               onPrTap: onPrTap,
               onLessonTap: onLessonTap,
             ),
@@ -119,6 +123,33 @@ void main() {
     expect(_inTile('session-prs-tile', find.text('0')), findsOneWidget);
     expect(_inTile('session-lessons-tile', find.text('0')), findsOneWidget);
     expect(find.text('+0'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a plan reads its shelves plain — never a gain, still doors', (
+    tester,
+  ) async {
+    var prTaps = 0;
+    await _pumpTiles(
+      tester,
+      prCount: 12,
+      lessonCount: 3,
+      gain: false,
+      onPrTap: () => prTaps++,
+      onLessonTap: () {},
+    );
+
+    // A plan gained nothing: the number is the exercise's whole shelf, so it
+    // stands plain — "+12" would claim these are this plan's additions.
+    expect(_inTile('session-prs-tile', find.text('12')), findsOneWidget);
+    expect(_inTile('session-lessons-tile', find.text('3')), findsOneWidget);
+    expect(find.text('+12'), findsNothing);
+    expect(find.text('+3'), findsNothing);
+
+    // The doorness rule does not change with the reading: both still open.
+    await tester.tap(find.byKey(const ValueKey('session-prs-tile')));
+    await tester.pump();
+    expect(prTaps, 1);
     expect(tester.takeException(), isNull);
   });
 }

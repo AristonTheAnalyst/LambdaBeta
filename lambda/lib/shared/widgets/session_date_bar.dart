@@ -62,8 +62,28 @@ class SessionDateBar extends StatefulWidget {
     this.onNewer,
   });
 
+  /// The planner's bar (2026-10-26): a template is planned *for* sessions,
+  /// not recorded *by* one, so it has no place in a stack — the floor draws
+  /// the session bar's furniture with its meaning spent. The phrase reads a
+  /// lone `PLAN`, both chevrons are greyed ([onOlder] / [onNewer] null),
+  /// there are no radios, and the phrase is inert: there is no date to
+  /// re-read and no neighbour to walk to. The planner adopts it so that all
+  /// three surfaces stand on the same floor; what the planner cannot do is
+  /// drawn greyed rather than omitted, exactly as a null tile callback is.
+  const SessionDateBar.plan({super.key})
+    : isToday = false,
+      date = null,
+      mode = SessionDateMode.exercise,
+      onToggleMode = null,
+      onOlder = null,
+      onNewer = null;
+
   final bool isToday;
-  final DateTime date;
+
+  /// The record's date. Null on the planner's neutral bar
+  /// ([SessionDateBar.plan]) — and every date-bearing bar is one of the two
+  /// session surfaces, so null *is* the neutral state, not a second flag.
+  final DateTime? date;
 
   /// Which stack the arrows are walking — the radios' selection, nothing more.
   final SessionDateMode mode;
@@ -107,7 +127,7 @@ class _SessionDateBarState extends State<SessionDateBar>
   /// the hour it is read at.
   int _daysSince() {
     final now = DateUtils.dateOnly(DateTime.now());
-    final then = DateUtils.dateOnly(widget.date.toLocal());
+    final then = DateUtils.dateOnly(widget.date!.toLocal());
     // A clock that runs behind can stamp a session ahead of "now"; read it
     // as today rather than invent a reading from the future.
     final elapsed = now.difference(then).inDays;
@@ -133,7 +153,7 @@ class _SessionDateBarState extends State<SessionDateBar>
   /// The date part of the phrase, in the reading [_look] asks for.
   String _datePart() {
     if (_look == _DateLook.date) {
-      return DateFormat('d MMM yyyy').format(widget.date.toLocal());
+      return DateFormat('d MMM yyyy').format(widget.date!.toLocal());
     }
     final days = _daysSince();
     if (_look == _DateLook.daysAgo) return _daysAgo(days);
@@ -248,48 +268,62 @@ class _SessionDateBarState extends State<SessionDateBar>
           scale: 0.85 + 0.15 * Curves.easeOut.transform(_scale.value),
           child: child,
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // The state belongs to the written date; a relative reading is
-            // its own phrase and drops it.
-            if (_look == _DateLook.date) ...[
-              Text(
-                '$stateLabel -',
-                key: const ValueKey('session-date-bar-state'),
+        // A plan stands in no stack, so its phrase is the word alone — the
+        // date's own caption rung, no state, no date (2026-10-26).
+        child: widget.date == null
+            ? Text(
+                'PLAN',
                 style: AppFonts.mono(
-                  // The date's own size: the state and the date it names
-                  // are one line read as one phrase (2026-10-21).
                   fontSize: AppTextStyles.caption,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 0.8,
-                  // Both states are read, so both wear readable ink; the
-                  // accent marks the live session, not the only legible
-                  // reading.
-                  color: widget.isToday
-                      ? AppColors.accent
-                      : AppColors.inkSecondary,
+                  color: AppColors.inkSecondary,
                 ),
+              )
+            : Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // The state belongs to the written date; a relative reading is
+                  // its own phrase and drops it.
+                  if (_look == _DateLook.date) ...[
+                    Text(
+                      '$stateLabel -',
+                      key: const ValueKey('session-date-bar-state'),
+                      style: AppFonts.mono(
+                        // The date's own size: the state and the date it names
+                        // are one line read as one phrase (2026-10-21).
+                        fontSize: AppTextStyles.caption,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.8,
+                        // Both states are read, so both wear readable ink; the
+                        // accent marks the live session, not the only legible
+                        // reading.
+                        color: widget.isToday
+                            ? AppColors.accent
+                            : AppColors.inkSecondary,
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                  ],
+                  Text(
+                    _datePart(),
+                    key: const ValueKey('session-date-bar-date'),
+                    style: AppFonts.mono(
+                      fontSize: AppTextStyles.caption,
+                      letterSpacing: 0.6,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: AppSpacing.sm),
-            ],
-            Text(
-              _datePart(),
-              key: const ValueKey('session-date-bar-date'),
-              style: AppFonts.mono(
-                fontSize: AppTextStyles.caption,
-                letterSpacing: 0.6,
-                color: AppColors.primary,
-              ),
-            ),
-          ],
-        ),
       ),
     );
 
     // Today reads the same however it is phrased, so a live bar's phrase is
-    // a plain readout; only a record's date is a control (2026-10-23).
-    if (!widget.isToday) {
+    // a plain readout; only a record's date is a control (2026-10-23). A
+    // plan's phrase is the one thing on its bar that could never change
+    // reading, so its tap stays inert too (2026-10-26).
+    if (!widget.isToday && widget.date != null) {
       phrase = Semantics(
         button: true,
         hint: 'Changes how the date reads',

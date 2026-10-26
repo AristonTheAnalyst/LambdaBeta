@@ -116,50 +116,49 @@ void main() {
     DateTime? sessionStartedAt,
     bool readOnly = false,
     DateTime? sinceLastReviewAt,
-  }) =>
-      MaterialApp(
-        home: Scaffold(
-          body: Builder(
-            builder: (context) => Center(
-              child: ElevatedButton(
-                child: const Text('open'),
-                onPressed: () => showLessonsModal(
-                  context,
-                  listenable: listenable,
-                  lessonsFor: (_) => List.of(repo.lessons),
-                  loadLessonsFor: (_) async {},
-                  addLesson: (_, text) => addLesson(text),
-                  toggleLessonPin: (_, lessonId) async {
-                    await repo.setPinned(
-                      'u1',
-                      exerciseId,
-                      lessonId,
-                      !repo.lessons
-                          .firstWhere((l) => l.lessonId == lessonId)
-                          .pinned,
-                    );
-                    listenable.value++;
-                  },
-                  deleteLesson: (_, lessonId) async {
-                    await repo.deleteLesson(lessonId);
-                    listenable.value++;
-                  },
-                  updateLesson: (_, lessonId, text) async {
-                    await repo.updateLesson('u1', exerciseId, lessonId, text);
-                    listenable.value++;
-                  },
-                  exerciseId: exerciseId,
-                  exerciseName: 'Test Exercise',
-                  sessionId: sessionId,
-                  sessionStartedAt: sessionStartedAt,
-                  readOnly: readOnly,
-                  sinceLastReviewAt: sinceLastReviewAt,
-                ),
-              ),
+  }) => MaterialApp(
+    home: Scaffold(
+      body: Builder(
+        builder: (context) => Center(
+          child: ElevatedButton(
+            child: const Text('open'),
+            onPressed: () => showLessonsModal(
+              context,
+              listenable: listenable,
+              lessonsFor: (_) => List.of(repo.lessons),
+              loadLessonsFor: (_) async {},
+              addLesson: (_, text) => addLesson(text),
+              toggleLessonPin: (_, lessonId) async {
+                await repo.setPinned(
+                  'u1',
+                  exerciseId,
+                  lessonId,
+                  !repo.lessons
+                      .firstWhere((l) => l.lessonId == lessonId)
+                      .pinned,
+                );
+                listenable.value++;
+              },
+              deleteLesson: (_, lessonId) async {
+                await repo.deleteLesson(lessonId);
+                listenable.value++;
+              },
+              updateLesson: (_, lessonId, text) async {
+                await repo.updateLesson('u1', exerciseId, lessonId, text);
+                listenable.value++;
+              },
+              exerciseId: exerciseId,
+              exerciseName: 'Test Exercise',
+              sessionId: sessionId,
+              sessionStartedAt: sessionStartedAt,
+              readOnly: readOnly,
+              sinceLastReviewAt: sinceLastReviewAt,
             ),
           ),
         ),
-      );
+      ),
+    ),
+  );
 
   testWidgets('pin clears other pins but never deletes the lesson', (
     tester,
@@ -476,6 +475,69 @@ void main() {
     expect(find.text('AFTER'), findsOneWidget);
   });
 
+  // The planner has no session on the desk (2026-10-26): there is no
+  // after-group to split, so the checkpoint divides the whole shelf instead
+  // — the pass still leads, and what came at or before it is `PREVIOUSLY`.
+  testWidgets('with no session on the desk the checkpoint splits the whole '
+      'shelf', (tester) async {
+    repo.lessons
+      ..clear()
+      ..addAll([
+        Lesson(
+          lessonId: 'l-old',
+          userId: 'u1',
+          exerciseId: exerciseId,
+          text: 'Cue before the pass',
+          pinned: false,
+          createdDate: DateTime(2026, 10, 18),
+        ),
+        Lesson(
+          lessonId: 'l-since',
+          userId: 'u1',
+          exerciseId: exerciseId,
+          text: 'Cue since the pass',
+          pinned: false,
+          createdDate: DateTime(2026, 10, 25),
+        ),
+      ]);
+
+    tester.view.physicalSize = const Size(1206, 5622);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      buildModal(sinceLastReviewAt: DateTime(2026, 10, 22)),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(ElevatedButton));
+    await tester.pumpAndSettle();
+
+    expect(find.text('SINCE LAST REVIEW'), findsOneWidget);
+    expect(find.text('PREVIOUSLY'), findsOneWidget);
+    expect(
+      find.text('AFTER'),
+      findsNothing,
+      reason: 'a plan has no session for "after the session" to mean',
+    );
+    expect(
+      find.text('This session'),
+      findsNothing,
+      reason: 'and no session shelf either — the pass is the whole story',
+    );
+
+    final since = tester.getTopLeft(find.text('SINCE LAST REVIEW')).dy;
+    final previously = tester.getTopLeft(find.text('PREVIOUSLY')).dy;
+    expect(since, lessThan(previously));
+    expect(
+      tester.getTopLeft(find.text('Cue since the pass')).dy,
+      inExclusiveRange(since, previously),
+    );
+    expect(
+      tester.getTopLeft(find.text('Cue before the pass')).dy,
+      greaterThan(previously),
+    );
+  });
+
   testWidgets('the modal draws readable ink and type', (tester) async {
     await addLesson('lesson one');
     await tester.pumpWidget(buildModal());
@@ -559,7 +621,10 @@ void main() {
 
     // And nothing wrote.
     expect(repo.lessons.length, 2);
-    expect(repo.lessons.firstWhere((l) => l.text == 'Plain cue').pinned, isFalse);
+    expect(
+      repo.lessons.firstWhere((l) => l.text == 'Plain cue').pinned,
+      isFalse,
+    );
   });
 
   testWidgets('read-only empty state does not point at an Add that is not '

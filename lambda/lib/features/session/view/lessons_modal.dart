@@ -35,7 +35,10 @@ import 'sheet_section_label.dart';
 /// in two — what landed since that checkpoint (`SINCE LAST REVIEW`) above
 /// what landed after the session but no later than it (`AFTER`). A pass is
 /// reading for its own window, and that window belongs at the top of the
-/// sheet rather than folded into the session's aftermath. Without a
+/// sheet rather than folded into the session's aftermath. With no session on
+/// the desk — the planner's review editor, which has no record to place in
+/// time — the checkpoint divides the whole outside-the-session shelf
+/// instead: since the pass leads, the rest is `PREVIOUSLY`. Without a
 /// checkpoint nothing moves: the three shelves stand as they always did.
 void showLessonsModal(
   BuildContext context, {
@@ -219,22 +222,30 @@ class _LessonsModalContentState extends State<_LessonsModalContent> {
         // landed after the session but no later than that review keeps the
         // `AFTER` shelf. A strict split, drawn newest-first — the newer half
         // must come first, or the sheet would file a later lesson under an
-        // older heading.
+        // older heading. With no session on the desk (the planner) there is
+        // no after-group to split: the checkpoint divides the whole shelf
+        // outside the session instead, so the pass still leads and what came
+        // at or before it is `PREVIOUSLY`.
         final checkpoint = widget.sinceLastReviewAt;
+        bool afterCheckpoint(Lesson lesson) =>
+            checkpoint != null && lesson.createdDate.isAfter(checkpoint);
         final sinceReviewLessons = [
-          for (final lesson in afterLessons)
-            if (checkpoint != null && lesson.createdDate.isAfter(checkpoint))
+          for (final lesson in ordered)
+            if (!inThisSession(lesson) &&
+                (startedAt == null || lesson.createdDate.isAfter(startedAt)) &&
+                afterCheckpoint(lesson))
               lesson,
         ];
         final afterRemainderLessons = [
           for (final lesson in afterLessons)
-            if (checkpoint == null || !lesson.createdDate.isAfter(checkpoint))
-              lesson,
+            if (!afterCheckpoint(lesson)) lesson,
         ];
         final previousLessons = [
           for (final lesson in ordered)
             if (!inThisSession(lesson) &&
-                (startedAt == null || !lesson.createdDate.isAfter(startedAt)))
+                (startedAt == null
+                    ? !afterCheckpoint(lesson)
+                    : !lesson.createdDate.isAfter(startedAt)))
               lesson,
         ];
         final groups = <Widget>[];

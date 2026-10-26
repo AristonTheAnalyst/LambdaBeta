@@ -7,9 +7,11 @@ import 'package:lambda/core/styles/app_text_styles.dart';
 import 'package:lambda/data/models/custom_exercise.dart';
 import 'package:lambda/data/models/custom_variation.dart';
 import 'package:lambda/data/models/exercise_detail.dart';
+import 'package:lambda/data/models/lesson.dart';
 import 'package:lambda/data/models/planned_session.dart';
 import 'package:lambda/data/models/planned_session_exercise.dart';
 import 'package:lambda/data/models/planned_session_exercise_set.dart';
+import 'package:lambda/data/models/session_exercise_set.dart';
 import 'package:lambda/data/repositories/exercise_repository.dart';
 import 'package:lambda/data/repositories/lesson_repository.dart';
 import 'package:lambda/data/repositories/planned_session_repository.dart';
@@ -17,9 +19,11 @@ import 'package:lambda/data/repositories/session_repository.dart';
 import 'package:lambda/features/programs/view/plan_session_screen.dart';
 import 'package:lambda/features/programs/view/review_container.dart';
 import 'package:lambda/features/programs/viewmodel/workout_editor_viewmodel.dart';
+import 'package:lambda/features/session/view/session_stats_bar.dart';
+import 'package:lambda/shared/widgets/bar_icon_button.dart';
 import 'package:lambda/shared/widgets/dropdown_select.dart';
-import 'package:lambda/shared/widgets/floating_bar.dart';
 import 'package:lambda/shared/widgets/lambda_input.dart';
+import 'package:lambda/shared/widgets/session_chevron_button.dart';
 import 'package:lambda/shared/widgets/session_exercise_card.dart';
 import 'package:lambda/shared/widgets/undo_redo_buttons.dart';
 
@@ -64,16 +68,20 @@ void main() {
   const pausedVariationId = 'v-paused';
 
   late _FakePlanned planned;
+  late _FakeLessons lessons;
+  late _FakeSessions sessions;
   late WorkoutEditorViewModel vm;
 
   setUp(() {
     planned = _FakePlanned(userId: userId, sessionId: sessionId)
       ..addExercise(cableRowId, name: 'Cable Row', order: 1)
       ..addExercise(benchPressId, name: 'Bench Press', order: 2);
+    lessons = _FakeLessons();
+    sessions = _FakeSessions();
     vm = WorkoutEditorViewModel(
       exerciseRepo: _FakeExercises(),
-      lessonRepo: _FakeLessons(),
-      workoutRepo: _FakeSessions(),
+      lessonRepo: lessons,
+      workoutRepo: sessions,
       workoutPlanRepo: planned,
       // The identity `Supabase.instance` would otherwise supply. Without it a
       // host test cannot open the planner at all.
@@ -306,17 +314,17 @@ void main() {
       reviewWorkoutNotesNotifier.value = const {};
     });
 
-    testWidgets('outside a review the header keeps Delete and there is no '
-        'note door at all', (tester) async {
+    testWidgets('outside a review the header keeps Delete, and the workout\'s '
+        'note has no door', (tester) async {
       await pumpEditor(tester);
 
       expect(find.byIcon(Icons.delete_outline), findsOneWidget);
       // The workout's note door lives on the review bar, and there is no bar
-      // to hold one. The card's own Notes pill (and its rows' swipe drawers)
-      // wear the same glyph since the one-note-glyph sweep (2026-10-23) —
-      // those are the EXERCISE's notes, not the workout's, so the sweep is
-      // what the count subtracts. Every other note glyph on screen would be
-      // a door that must not exist.
+      // to hold one. Since the planner wears the session floor (2026-10-26)
+      // the floor's note tile also wears the glyph — that one opens the
+      // EXERCISE's notes shelf, the session floors' own door, not the
+      // workout's note. So the sweep counts the card's glyphs and the tile's,
+      // and nothing else.
       expect(
         barNoteGlyph(),
         findsNothing,
@@ -329,12 +337,23 @@ void main() {
         of: find.byType(SessionExerciseCard),
         matching: find.byIcon(Icons.sticky_note_2_outlined),
       );
+      final floorNoteTile = find.descendant(
+        of: find.byKey(const ValueKey('plan-session-bar')),
+        matching: find.byIcon(Icons.sticky_note_2_outlined),
+      );
+      expect(
+        floorNoteTile,
+        findsOneWidget,
+        reason:
+            'the floor\'s note tile is the planner\'s door to the exercise\'s '
+            'whole notes shelf — the live session\'s own tile',
+      );
       expect(
         find.byIcon(Icons.sticky_note_2_outlined).evaluate().length,
-        cardGlyphs.evaluate().length,
+        cardGlyphs.evaluate().length + floorNoteTile.evaluate().length,
         reason:
-            'every note glyph belongs to the card — the nav bar and the '
-            'header hold none',
+            'every other note glyph belongs to the card or the floor tile — '
+            'the nav bar and the header hold none',
       );
     });
 
@@ -387,50 +406,271 @@ void main() {
     });
   });
 
-  // ── The counts pill ──────────────────────────────────────────────────────
+  // ── The planner's floor ──────────────────────────────────────────────────
   //
-  // The SETS · EXERCISES pill rides the floor while planning. During a pass
-  // it would stack on the review bar in the same floor space — and the
-  // numbers a pass cares about are what CHANGED, which the bar's own Changes
-  // button answers. So the pill is planning furniture: it stands outside a
-  // review and steps aside inside one.
-  group('the counts pill', () {
+  // The planner wears the session floor (2026-10-26): the date bar, the row of
+  // 48pt squares, the tiles — the three session surfaces stand on one recipe.
+  // What a plan cannot do it draws spent rather than omitting, the session
+  // floors' own rule for a null callback: a template has no place in time (the
+  // bar reads a lone PLAN, both chevrons spent), no session ratings (the star
+  // spent), and no deleted sets to restore (the trash spent). The tiles are
+  // the floor's one live door — the active exercise's whole PR feed and notes
+  // shelf. The custom SETS · EXERCISES pill is gone with the custom floor it
+  // belonged to, and the card is the session's flat one.
+  group('the planner\'s floor', () {
     setUp(() => reviewSessionNotifier.value = null);
     tearDown(() => reviewSessionNotifier.value = null);
 
-    // The pill is the only 'SETS' on this screen; the review bar, the preview
-    // and the set grid say 'Set 2' and 'VARIATION', never this.
-    Finder pill() => find.text('SETS');
+    Finder floor() => find.byKey(const ValueKey('plan-session-bar'));
 
-    testWidgets('stands over the floor while planning', (tester) async {
+    testWidgets('stands on the session floor, its date bar reading PLAN', (
+      tester,
+    ) async {
       await pumpEditor(tester);
 
-      expect(pill(), findsOneWidget);
+      expect(floor(), findsOneWidget);
       expect(
-        find.text('EXERCISES'),
+        find.descendant(of: floor(), matching: find.text('PLAN')),
         findsOneWidget,
         reason:
-            'outside a pass there is no comparison to read, so these '
-            'counts are the only counts there are',
+            'a template is planned for sessions, not recorded by one — the '
+            'bar has no date to read, and says so rather than inventing one',
+      );
+      expect(
+        tester
+            .widget<SessionChevronButton>(
+              find.byKey(const ValueKey('session-date-bar-older')),
+            )
+            .enabled,
+        isFalse,
+        reason: 'a plan stands in no stack, so there is nothing older',
+      );
+      expect(
+        tester
+            .widget<SessionChevronButton>(
+              find.byKey(const ValueKey('session-date-bar-newer')),
+            )
+            .enabled,
+        isFalse,
+        reason: 'and nothing newer',
+      );
+      expect(
+        find.byKey(const ValueKey('session-date-bar-mode')),
+        findsNothing,
+        reason: 'a plan walks no stack, so there are no stacks to name',
+      );
+      expect(
+        find.text('SETS'),
+        findsNothing,
+        reason:
+            'the custom floor and its counts pill are gone — the planner '
+            'draws the session bar, not a stats strip of its own',
+      );
+      expect(find.text('EXERCISES'), findsNothing);
+    });
+
+    testWidgets('the star and the trash stand spent, the tiles stay doors', (
+      tester,
+    ) async {
+      await pumpEditor(tester);
+
+      expect(
+        tester
+            .widget<BarIconButton>(
+              find.byKey(const ValueKey('plan-ratings-button')),
+            )
+            .enabled,
+        isFalse,
+        reason:
+            'ratings are a session\'s five feelings, and a plan has no '
+            'session — the star keeps its slot and offers nothing',
+      );
+      expect(
+        tester
+            .widget<BarIconButton>(
+              find.descendant(
+                of: find.byType(DeletedExercisesButton),
+                matching: find.byType(BarIconButton),
+              ),
+            )
+            .enabled,
+        isFalse,
+        reason:
+            'a planner deletes a group outright and undo is its way back — '
+            'there are no deleted sets for the trash to restore',
+      );
+      final tiles = tester.widget<SessionStatsTiles>(
+        find.byType(SessionStatsTiles),
+      );
+      expect(
+        tiles.gain,
+        isFalse,
+        reason:
+            'a plan gained nothing: the counts are the whole shelves behind '
+            'the doors, not a session\'s additions',
+      );
+      expect(
+        tiles.onPrTap,
+        isNotNull,
+        reason:
+            'a 0 still hides the exercise\'s whole PR feed behind the trophy '
+            '— the session floors\' rule',
+      );
+      expect(
+        tiles.onLessonTap,
+        isNotNull,
+        reason: 'and the exercise\'s whole notes shelf behind the note',
       );
     });
 
-    testWidgets('steps aside for the pass\'s own bar', (tester) async {
+    testWidgets('the card is the session card — flat, with no pills', (
+      tester,
+    ) async {
+      await pumpEditor(tester);
+
+      final card = tester.widget<SessionExerciseCard>(
+        find.byType(SessionExerciseCard),
+      );
+      expect(
+        card.flat,
+        isTrue,
+        reason:
+            'the planner draws the Training page\'s card now — no fill, no '
+            'border, the same 22pt gutter',
+      );
+      expect(
+        card.onPrTap,
+        isNull,
+        reason: 'the flat card draws no PRs pill to wire — the floor owns it',
+      );
+      expect(card.onLessonsTap, isNull);
+      expect(
+        find.text('Notes'),
+        findsNothing,
+        reason: 'and a flat card draws no Notes/History/PRs pills at all',
+      );
+    });
+
+    testWidgets('a review keeps the floor, and the review bar is still the '
+        'chrome', (tester) async {
       await pumpEditorInReview(tester);
 
       expect(
-        pill(),
-        findsNothing,
-        reason:
-            'the review bar is the floor during a pass, and the numbers it '
-            'carries are what CHANGED — these counts would answer a '
-            'question the bar already answers',
-      );
-      expect(find.text('EXERCISES'), findsNothing);
-      expect(
-        find.byType(ReviewBar),
+        floor(),
         findsOneWidget,
-        reason: 'and the bar that took its place is up',
+        reason:
+            'planning inside a pass is still planning — the floor does not '
+            'stand down for the review bar, it stands under it',
+      );
+      expect(find.byType(ReviewBar), findsOneWidget);
+    });
+  });
+
+  // ── The floor's counts ───────────────────────────────────────────────────
+  //
+  // A tile's number has to name the feed behind it (2026-10-23), so the
+  // planner's counts are read off the same shelves the doors open: every PR
+  // the exercise ever landed — derived once, off the same timeline read that
+  // fills the history — and every note it carries (2026-10-26).
+  group('the floor\'s counts', () {
+    PastSetRow pastSet({
+      required String id,
+      required String exerciseId,
+      required num weight,
+      required num reps,
+      required DateTime when,
+    }) => PastSetRow(
+      sessionExerciseSetId: id,
+      sessionExerciseId: 'se-$id',
+      sessionId: 'sess-$id',
+      userId: userId,
+      setNumber: 1,
+      reps: [reps],
+      weight: weight.toDouble(),
+      exerciseId: exerciseId,
+      sessionCreatedDate: when,
+    );
+
+    test(
+      'the trophy opens the exercise\'s own PRs, not the whole feed',
+      () async {
+        sessions.pastSets.addAll([
+          pastSet(
+            id: 'row-1',
+            exerciseId: cableRowId,
+            weight: 100,
+            reps: 5,
+            when: DateTime(2026, 10, 1),
+          ),
+          pastSet(
+            id: 'row-2',
+            exerciseId: benchPressId,
+            weight: 80,
+            reps: 5,
+            when: DateTime(2026, 10, 3),
+          ),
+          // A later, heavier triple: a second PR for the cable row.
+          pastSet(
+            id: 'row-3',
+            exerciseId: cableRowId,
+            weight: 102.5,
+            reps: 3,
+            when: DateTime(2026, 10, 8),
+          ),
+        ]);
+
+        await vm.loadHistoryIfNeeded();
+
+        expect(vm.prCountFor(cableRowId), 2);
+        expect(vm.prCountFor(benchPressId), 1);
+        expect(
+          vm.prHistoryFor(cableRowId).every((e) => e.exerciseId == cableRowId),
+          isTrue,
+          reason:
+              'the trophy opens one exercise\'s shelf — a PR from another '
+              'exercise has no place in it',
+        );
+        expect(
+          vm.state.value.allPrEvents,
+          hasLength(3),
+          reason:
+              'the engine ran once at load, over the same read that fills the '
+              'history — the tiles never walk the timeline themselves',
+        );
+      },
+    );
+
+    test('the note tile counts the exercise\'s whole shelf', () async {
+      lessons.lessons.addAll([
+        Lesson(
+          lessonId: 'l-1',
+          userId: userId,
+          exerciseId: cableRowId,
+          text: 'Elbows in',
+          pinned: false,
+          createdDate: DateTime(2026, 10, 1),
+        ),
+        Lesson(
+          lessonId: 'l-2',
+          userId: userId,
+          exerciseId: benchPressId,
+          text: 'Pause at the chest',
+          pinned: false,
+          createdDate: DateTime(2026, 10, 2),
+        ),
+      ]);
+
+      await vm.loadLessonsFor(cableRowId);
+      await vm.loadLessonsFor(benchPressId);
+
+      expect(vm.lessonCountFor(cableRowId), 1);
+      expect(vm.lessonCountFor(benchPressId), 1);
+      expect(
+        vm.lessonCountFor('ex-unknown'),
+        0,
+        reason:
+            'an exercise with nothing written has an empty shelf, not an '
+            'error',
       );
     });
   });
@@ -520,11 +760,10 @@ void main() {
             'the removed exercise stays where the reason for its removal is '
             'written; disappearing is what left the pass with nothing to say',
       );
-      expect(
-        card.deletedExercises,
-        [false, true],
-        reason: 'the selector draws the removed name in the deleted chrome',
-      );
+      expect(card.deletedExercises, [
+        false,
+        true,
+      ], reason: 'the selector draws the removed name in the deleted chrome');
       expect(
         vm.state.value.activeSlotIndex,
         0,
@@ -600,8 +839,10 @@ void main() {
   // own row at 402pt: four workout glyphs leave the label slot exactly the
   // width 'Review Complete' needs (pinned by review_container_test's
   // geometry group), and two more controls would trade that line for an
-  // ellipsis. So inside a pass it takes the floor's storey above the bar —
-  // where the live session keeps its own pair — and the header keeps none.
+  // ellipsis. Since the planner wears the session floor (2026-10-26) the pair
+  // stands in that floor's own control row — undo/redo, the star, the tiles,
+  // the live session's recipe — spent until an edit lands, and the header
+  // keeps none.
   group('undo/redo inside a pass', () {
     setUp(() {
       reviewSessionNotifier.value = null;
@@ -614,44 +855,67 @@ void main() {
 
     Finder pair() => find.byType(UndoRedoButtons);
 
-    testWidgets('the header keeps none, and a fresh workout has nothing to '
-        'step through', (tester) async {
+    testWidgets('the header keeps none, and a fresh workout has the pair '
+        'spent on the floor', (tester) async {
       await pumpEditorInReview(tester);
 
       expect(
-        pair(),
-        findsNothing,
-        reason:
-            'the header pair is gone inside a pass, and with no history '
-            'there is nothing for the floor storey to offer either',
-      );
-    });
-
-    testWidgets('a structural edit brings the pair to the floor, above the '
-        'bar — never into its row', (tester) async {
-      await pumpEditorInReview(tester);
-
-      await tester.tap(find.text('+ ADD SET'));
-      await tester.pumpAndSettle();
-
-      expect(
-        pair(),
-        findsOneWidget,
-        reason: 'the edit is on the undo stack, and the pair is the way back',
-      );
-      expect(
-        find.ancestor(of: pair(), matching: find.byType(FloatingBar)),
+        find.ancestor(
+          of: pair(),
+          matching: find.byKey(const ValueKey('plan-session-bar')),
+        ),
         findsOneWidget,
         reason:
-            'the pair stands in the floor\'s own container, the way the '
-            'live session\'s does',
+            'the pair is the floor\'s now (2026-10-26), the live session\'s '
+            'recipe — the header keeps none',
       );
+      final fresh = tester.widget<UndoRedoButtons>(pair());
+      expect(
+        fresh.canUndo,
+        isFalse,
+        reason: 'a fresh workout has nothing to step through',
+      );
+      expect(fresh.canRedo, isFalse);
       expect(
         find.descendant(of: find.byType(ReviewBar), matching: pair()),
         findsNothing,
         reason:
             'the bar\'s row is full: two more glyphs would ellipsize the '
             'line that says what state the pass is in',
+      );
+    });
+
+    testWidgets('a structural edit lights the pair on the floor', (
+      tester,
+    ) async {
+      await pumpEditorInReview(tester);
+
+      await tester.tap(find.text('+ ADD SET'));
+      await tester.pumpAndSettle();
+
+      expect(
+        tester.widget<UndoRedoButtons>(pair()).canUndo,
+        isTrue,
+        reason: 'the edit is on the undo stack, and the pair is the way back',
+      );
+      expect(
+        find.ancestor(
+          of: pair(),
+          matching: find.byKey(const ValueKey('plan-session-bar')),
+        ),
+        findsOneWidget,
+        reason:
+            'the pair stands in the floor\'s own row — undo/redo, the star '
+            'and the tiles are one control row, the way the live session\'s '
+            'floor draws them',
+      );
+      expect(
+        find.descendant(of: find.byType(ReviewBar), matching: pair()),
+        findsNothing,
+        reason:
+            'never into the review bar\'s row, which is full: two more '
+            'glyphs would ellipsize the line that says what state the pass '
+            'is in',
       );
 
       await tester.tap(
@@ -665,15 +929,15 @@ void main() {
         reason: 'undo stepped the set back off the card',
       );
       expect(
-        pair(),
-        findsOneWidget,
+        tester.widget<UndoRedoButtons>(pair()).canRedo,
+        isTrue,
         reason:
-            'and the redo side keeps the pair up — an undo that is '
-            'stepped back is still a step',
+            'and the redo side lights — an undo that is stepped back is '
+            'still a step',
       );
     });
 
-    testWidgets('the bar keeps its whole line with the pair standing above '
+    testWidgets('the bar keeps its whole line, the pair standing clear of '
         'it', (tester) async {
       // The width that decides where the pair lives: the bar's label slot is
       // what the four glyphs leave of 402pt, and 'Review Complete' is the
@@ -695,7 +959,7 @@ void main() {
             .width,
         greaterThanOrEqualTo(_labelLineWidth(kReviewCompleteLabel)),
         reason:
-            'the floor storey is what buys this room — the pair costs the '
+            'the page\'s floor is what buys this room — the pair costs the '
             'label nothing',
       );
     });
@@ -926,8 +1190,7 @@ class _FakePlanned implements PlannedSessionRepository {
       for (final s in sets)
         if (!includeArchived
             ? !s.isArchived
-            : (!s.isArchived ||
-                  archivedGroups.contains(s.plannedExerciseId)))
+            : (!s.isArchived || archivedGroups.contains(s.plannedExerciseId)))
           _hydrate(s),
     ];
   }
@@ -1057,14 +1320,45 @@ class _FakeExercises implements ExerciseRepository {
 
 /// Only here because `LessonRepository`'s constructor evaluates the global
 /// `ps.db` — the one repository that cannot be default-constructed off-device.
+/// The editor's notes reads — an in-memory shelf, so the floor's note tile
+/// can be handed a count and the modal its rows (2026-10-26). Everything else
+/// is the editor never calling it.
 class _FakeLessons implements LessonRepository {
+  final List<Lesson> lessons = [];
+
+  @override
+  Future<List<Lesson>> fetchLessons(String userId, String exerciseId) async => [
+    for (final lesson in lessons)
+      if (lesson.exerciseId == exerciseId) lesson,
+  ];
+
+  @override
+  Future<Map<String, List<Lesson>>> fetchLessonsForExercises(
+    String userId,
+    List<String> exerciseIds,
+  ) async => {
+    for (final id in exerciseIds)
+      id: [
+        for (final lesson in lessons)
+          if (lesson.exerciseId == id) lesson,
+      ],
+  };
+
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
-/// The editor's history read. Empty is the honest answer for a fake: the
-/// planner shows history read-only and nothing here depends on it.
+/// The editor's history read. Empty by default — the planner shows history
+/// read-only — with a shelf a test can fill to put PRs behind the floor's
+/// trophy (2026-10-26).
 class _FakeSessions implements SessionRepository {
+  final List<PastSetRow> pastSets = [];
+
+  @override
+  Future<List<PastSetRow>> loadPastSetsTimeline(String userId) async =>
+      [...pastSets]
+        ..sort((a, b) => b.sessionCreatedDate.compareTo(a.sessionCreatedDate));
+
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

@@ -270,6 +270,63 @@ void main() {
     );
   });
 
+  // The planner opens the same sheet with no session on the desk and no set
+  // ids (2026-10-26): there is no after-group to split, so the checkpoint
+  // divides the whole feed — the pass's PRs lead, the rest is PREVIOUSLY.
+  testWidgets('with no session on the desk the checkpoint splits the whole '
+      'feed', (tester) async {
+    final beforeReview = _event(
+      setId: 's10',
+      weight: 68,
+      reps: 3,
+      date: DateTime(2026, 10, 21),
+      beforeWeight: 65,
+    );
+    final sinceReview = _event(
+      setId: 's11',
+      weight: 70,
+      reps: 3,
+      date: DateTime(2026, 10, 25),
+      beforeWeight: 68,
+    );
+
+    await _openSheet(
+      tester,
+      prs: [..._prs, beforeReview, sinceReview],
+      sessionSetIds: const <String>{},
+      sinceLastReviewAt: DateTime(2026, 10, 22),
+      physicalHeight: 6622,
+    );
+
+    expect(find.text('6 PRs'), findsOneWidget);
+    expect(find.text('SINCE LAST REVIEW'), findsOneWidget);
+    expect(find.text('PREVIOUSLY'), findsOneWidget);
+    expect(
+      find.text('AFTER'),
+      findsNothing,
+      reason: 'a plan has no session for "after the session" to mean',
+    );
+    expect(
+      find.text('THIS SESSION'),
+      findsNothing,
+      reason: 'and no set ids, so no session shelf either',
+    );
+
+    final since = tester.getTopLeft(find.text('SINCE LAST REVIEW')).dy;
+    final previously = tester.getTopLeft(find.text('PREVIOUSLY')).dy;
+    expect(since, lessThan(previously));
+
+    final sinceEntry = tester
+        .getTopLeft(find.byKey(const ValueKey('pr-history-entry-s11')))
+        .dy;
+    final beforeEntry = tester
+        .getTopLeft(find.byKey(const ValueKey('pr-history-entry-s10')))
+        .dy;
+    expect(sinceEntry, greaterThan(since));
+    expect(sinceEntry, lessThan(previously));
+    expect(beforeEntry, greaterThan(previously));
+  });
+
   testWidgets('the feed runs newest first, and a session PR names the value '
       'it beat', (tester) async {
     await _openSheet(tester);

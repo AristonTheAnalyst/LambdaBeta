@@ -15,6 +15,7 @@ import '../../../data/repositories/exercise_repository.dart';
 import '../../../data/repositories/lesson_repository.dart';
 import '../../../data/repositories/planned_session_repository.dart';
 import '../../../data/repositories/session_repository.dart';
+import '../../session/model/pr_engine.dart' show PrEvent, prEvents;
 import '../../session/model/session_local_state.dart'
     show ExerciseHistorySession, groupHistoryByExercise, isSimilarVariationName;
 
@@ -88,6 +89,7 @@ class WorkoutEditorState {
     this.lessonsByExercise = const {},
     // History (read-only past-sets, reuses the session's read path as-is)
     this.historyByExercise = const {},
+    this.allPrEvents = const [],
     this.pastSetsLoaded = false,
   });
 
@@ -117,6 +119,12 @@ class WorkoutEditorState {
 
   final Map<String, List<Lesson>> lessonsByExercise;
   final Map<String, List<ExerciseHistorySession>> historyByExercise;
+
+  /// Every PR the user has ever landed, derived once at the same read that
+  /// fills [historyByExercise] (2026-10-26) — the planner's floor shows an
+  /// exercise's whole PR shelf, so it needs the feed, not the timeline. The
+  /// engine sorts internally, so the timeline's newest-first order is fine.
+  final List<PrEvent> allPrEvents;
   final bool pastSetsLoaded;
 
   PlanExerciseSlot? get activeSlot => workoutExerciseSlots.isEmpty
@@ -152,6 +160,7 @@ class WorkoutEditorState {
     bool? newVarCreating,
     Map<String, List<Lesson>>? lessonsByExercise,
     Map<String, List<ExerciseHistorySession>>? historyByExercise,
+    List<PrEvent>? allPrEvents,
     bool? pastSetsLoaded,
   }) => WorkoutEditorState(
     error: clearError ? null : error ?? this.error,
@@ -192,6 +201,7 @@ class WorkoutEditorState {
     newVarCreating: newVarCreating ?? this.newVarCreating,
     lessonsByExercise: lessonsByExercise ?? this.lessonsByExercise,
     historyByExercise: historyByExercise ?? this.historyByExercise,
+    allPrEvents: allPrEvents ?? this.allPrEvents,
     pastSetsLoaded: pastSetsLoaded ?? this.pastSetsLoaded,
   );
 }
@@ -1795,12 +1805,33 @@ class WorkoutEditorViewModel {
   List<ExerciseHistorySession> historyFor(String exerciseId) =>
       state.value.historyByExercise[exerciseId] ?? const [];
 
+  /// The exercise's whole PR feed, oldest first — the planner floor's trophy
+  /// opens the same PR History sheet the session surfaces do (2026-10-26).
+  /// A plan has no session to narrow against, so the caller passes no set ids
+  /// and no start; the sheet's shelves read everything as history.
+  List<PrEvent> prHistoryFor(String exerciseId) => [
+    for (final event in state.value.allPrEvents)
+      if (event.exerciseId == exerciseId) event,
+  ];
+
+  /// How many PRs the exercise ever landed — the tile's count, read off the
+  /// same feed its door opens, so the number always names what is behind it.
+  int prCountFor(String exerciseId) =>
+      state.value.allPrEvents.where((e) => e.exerciseId == exerciseId).length;
+
+  /// The exercise's notes shelf, all of it — the planner's counterpart of the
+  /// session floor's session-scoped gain (2026-10-26).
+  int lessonCountFor(String exerciseId) => lessonsFor(exerciseId).length;
+
   Future<void> loadHistoryIfNeeded() async {
     if (state.value.pastSetsLoaded) return;
     try {
       final pastSets = await _sessionRepo.loadPastSetsTimeline(_userId);
       state.value = state.value.copyWith(
         historyByExercise: groupHistoryByExercise(pastSets),
+        // Derived here, once, off the same read — the planner's tiles and
+        // sheets must not each walk the whole timeline (2026-10-26).
+        allPrEvents: prEvents(pastSets),
         pastSetsLoaded: true,
       );
     } catch (e) {

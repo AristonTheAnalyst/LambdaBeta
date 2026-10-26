@@ -14,15 +14,19 @@ import '../../../data/models/program_content.dart';
 import '../../../shared/mixins/unsaved_changes_guard.dart';
 import '../../../shared/router/app_router.dart';
 import '../../../shared/widgets/add_exercise_modal.dart';
+import '../../../shared/widgets/bar_icon_button.dart';
 import '../../../shared/widgets/dropdown_select.dart';
 import '../../../shared/widgets/exercise_selector.dart';
-import '../../../shared/widgets/floating_bar.dart';
 import '../../../shared/widgets/glass_button.dart';
 import '../../../shared/widgets/header_icon_button.dart';
+import '../../../shared/widgets/keyboard_floor_layout.dart';
 import '../../../shared/widgets/scroll_shrink_nav_bar.dart';
+import '../../../shared/widgets/session_date_bar.dart';
 import '../../../shared/widgets/session_exercise_card.dart';
 import '../../../shared/widgets/session_set_row.dart';
-import '../../../shared/widgets/stats_row.dart';
+import '../../session/view/lessons_modal.dart';
+import '../../session/view/pr_history_sheet.dart';
+import '../../session/view/session_stats_bar.dart';
 import '../viewmodel/workout_editor_viewmodel.dart';
 import 'review_container.dart';
 
@@ -160,16 +164,6 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
     final live = reviewSessionNotifier.value;
     return (live != null && live.reviewId == base.reviewId) ? live : base;
   }
-
-  /// The plan's own set count: every real row, and every draft.
-  ///
-  /// A draft is an open set — added, not yet given a target, "do anything" —
-  /// and a set the user can see is a set the count has to own. Drafts
-  /// materialize as rows on input or on Save, so the number never moves when
-  /// one becomes a row.
-  int _planSetCount(WorkoutEditorState state) =>
-      state.workoutPlannedSessionExerciseSets.length +
-      state.workoutSetDrafts.values.fold(0, (count, ids) => count + ids.length);
 
   @override
   void initState() {
@@ -316,20 +310,20 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
   /// because it is pushed over the tab shell — or, while a review runs, the
   /// review's own bar in the same container.
   ///
-  /// [aboveBar] is the counts pill, stacked on the same floor — passed only
-  /// outside a review, where there is no review bar to carry the numbers. It
-  /// rides in the chrome rather than the page body because the two are one
-  /// stack: the floor of this screen is glass, however many bars are standing
-  /// on it.
+  /// The session furniture that used to ride [aboveBar] — the counts pill,
+  /// then the review's undo/redo storey — is the page's own floor now
+  /// (2026-10-26): [KeyboardFloorLayout] draws it inside the body, so the
+  /// floating bar is all that stands on the chrome. The floor still measures
+  /// its bottom inset from inside this wrapper, which is why the page is
+  /// built by a `Builder` under it.
   ///
   /// Compare is wired here because the record lives here: the bar loads a
   /// comparison and hands it back, and what this screen does with it is swap
   /// its own sets for it — and hand back null when the bar's button is tapped
   /// again.
-  Widget _navBar(Widget child, {Widget? aboveBar}) => editorNavBar(
+  Widget _navBar(Widget child) => editorNavBar(
     context,
     child: child,
-    aboveBar: aboveBar,
     session: _reviewSession,
     onTap: _onNavTap,
     settle: settleForReview,
@@ -424,39 +418,6 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
         // The record, when Compare is up. Read once here: it decides what the
         // body shows, and the exercise card draws from it.
         final original = _originalSession;
-        // The counts, in the app's own floating container — the same glass the
-        // nav bar wears, standing on the same floor one gap above it. They
-        // ride the chrome rather than the page because that is what they are:
-        // a readout about the page, at the floor, not a part of it. The page
-        // scrolls under them.
-        //
-        // Not during a pass (2026-10-10): there the review bar owns the floor
-        // and carries the numbers that matter — what CHANGED — so the pill
-        // stands down with the nav bar, and the page's inset shrinks with it
-        // ([FloatingBarOverlay] measures whatever is actually above the floor).
-        //
-        // Inside a pass the storey above the review bar is the undo/redo pair
-        // instead (2026-10-26) — the live session's own floor keeps its pair
-        // in the row above the bar, and the review's bar row has no room for
-        // it: four glyphs already leave the label exactly the width
-        // 'Review Complete' needs at 402pt. Shown while there is something to
-        // step through, like the header pair it replaces.
-        final statsBar = _reviewSession == null
-            ? FloatingBar(
-                child: _PlanStatsBar(
-                  setCount: _planSetCount(state),
-                  exerciseCount: state.workoutExerciseSlots.length,
-                ),
-              )
-            : (widget.viewModel.canUndo || widget.viewModel.canRedo
-                  ? _ReviewUndoRedoBar(
-                      viewModel: widget.viewModel,
-                      // The record on screen is not the plan underneath, and
-                      // an undo would rewrite the page the user is not on
-                      // (the bar's tick and note lock for the same reason).
-                      locked: original != null,
-                    )
-                  : null);
         return _navBar(
           buildGuardedScaffold(
             scaffold: Scaffold(
@@ -493,31 +454,27 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
                       ),
                     ),
                   Expanded(
-                    // The page runs UNDER the floor: the nav or review bar and
-                    // the counts above it all paint over the page instead of
-                    // taking a band of it, so the scroll's own end has to clear
-                    // the whole stack.
+                    // The floor keeps its place under the keyboard, the
+                    // session surfaces' rule (2026-10-25): it is laid out
+                    // first and the page above it shrinks to the keyboard's
+                    // top, so a focused target cell is revealed above the
+                    // keyboard rather than behind it.
                     //
-                    // The Builder is load-bearing: this page draws those bars
-                    // around itself (`_navBar` below), so the inset only answers
-                    // from a context INSIDE that wrapper — measured from the
-                    // page's own build context it reads zero and the last set
-                    // ends up under the glass instead of clear of it.
+                    // The Builder is load-bearing: the floor measures the
+                    // floating bar it stands under through
+                    // `ScrollShrinkNavBar.contentInset`, which only answers
+                    // from a context INSIDE `_navBar`'s wrapper.
                     child: Builder(
-                      builder: (context) => Padding(
-                        // The target cells are text fields: the keyboard
-                        // shrinks the scrolling viewport to its top, so the
-                        // focused cell is revealed above the keyboard while
-                        // the bar below keeps its place under it (2026-10-25).
-                        padding: EdgeInsets.only(
-                          bottom: MediaQuery.viewInsetsOf(context).bottom,
-                        ),
-                        child: SingleChildScrollView(
-                          padding: EdgeInsets.fromLTRB(
+                      builder: (context) => KeyboardFloorLayout(
+                        page: SingleChildScrollView(
+                          // The viewer's own insets — the card opens on the
+                          // same 22pt gutter, from the same 16 of air under
+                          // the header (2026-10-26).
+                          padding: const EdgeInsets.fromLTRB(
                             AppSpacing.lg,
-                            AppSpacing.md,
                             AppSpacing.lg,
-                            ScrollShrinkNavBar.contentInset(context),
+                            AppSpacing.lg,
+                            AppSpacing.lg,
                           ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -599,18 +556,14 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
                             ],
                           ),
                         ),
+                        floor: _planFloor(context, state, original),
                       ),
                     ),
                   ),
-                  // The counts used to be a strip of their own here, pinned over
-                  // a painted band. They are a floating bar now (`statsBar`,
-                  // above) — the whole floor of this screen is glass, and the
-                  // page scrolls under all of it.
                 ],
               ),
             ),
           ),
-          aboveBar: statsBar,
         );
       },
     );
@@ -694,23 +647,10 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Inside a pass the pair lives at the floor, above the
-                  // review bar (2026-10-26): the review's own bar owns the
-                  // bottom of the screen and cannot hold two more glyphs, so
-                  // its storey does — and the header keeps only the verbs
-                  // that belong to the workout's identity.
-                  if (review == null &&
-                      (widget.viewModel.canUndo ||
-                          widget.viewModel.canRedo)) ...[
-                    UndoRedoButtons(
-                      canUndo: widget.viewModel.canUndo,
-                      canRedo: widget.viewModel.canRedo,
-                      onUndo: widget.viewModel.undo,
-                      onRedo: widget.viewModel.redo,
-                      compact: true,
-                    ),
-                    const SizedBox(width: AppSpacing.xs),
-                  ],
+                  // Undo/redo live on the floor in both modes (2026-10-26):
+                  // the editor wears the session floor now, and the header
+                  // keeps only the verbs that belong to the workout's
+                  // identity.
                   if (unsaved && !noExercises) ...[
                     GlassButton(
                       label: '',
@@ -735,6 +675,141 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
           ],
         ),
       ),
+    );
+  }
+
+  /// The planner's floor (2026-10-26): the session floors' own furniture, so
+  /// planning reads as the same screen as logging — the same date bar, the
+  /// same row of 48pt squares, the same tiles.
+  ///
+  /// What the planner cannot do, it draws spent rather than omitting, the
+  /// session floors' own rule for a null callback:
+  ///
+  /// * the date bar is [SessionDateBar.plan] — a template is planned *for*
+  ///   sessions, so its phrase reads `PLAN` and both chevrons are greyed;
+  /// * the star is a session's ratings, and a plan has no session: greyed;
+  /// * the trash restores deleted sets, and the planner deletes groups
+  ///   outright (undo is the way back): greyed.
+  ///
+  /// The tiles are the one live door. A plan is *informed* by what the
+  /// exercise has done — every PR it ever landed, every note it carries — so
+  /// the trophy opens the PR History sheet and the note opens the exercise
+  /// notes modal, both scoped to the exercise on the card. The counts are
+  /// whole shelves, not a session gain, so the tiles draw `gain: false`
+  /// (2026-10-26).
+  ///
+  /// Undo/redo answer as they always have — and stay spent while Compare is
+  /// up, because the record on screen is not the plan underneath.
+  Widget _planFloor(
+    BuildContext context,
+    WorkoutEditorState state,
+    ContentSession? original,
+  ) {
+    final vm = widget.viewModel;
+    final exerciseId = state.activeSlot?.exerciseId;
+    final locked = original != null;
+    return Container(
+      key: const ValueKey('plan-session-bar'),
+      // The session floor's insets — the bottom one included: the page sits
+      // under the floating bar, so the row ends where the live page's does.
+      padding: EdgeInsets.fromLTRB(
+        AppSpacing.lg,
+        AppSpacing.sm,
+        AppSpacing.lg,
+        ScrollShrinkNavBar.contentInset(context),
+      ),
+      decoration: BoxDecoration(
+        color: AppColors.bg,
+        border: Border(top: BorderSide(color: AppColors.border, width: 0.5)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SessionDateBar.plan(),
+          const SizedBox(height: AppSpacing.sm),
+          Row(
+            children: [
+              UndoRedoButtons(
+                canUndo: vm.canUndo && !locked,
+                canRedo: vm.canRedo && !locked,
+                onUndo: vm.undo,
+                onRedo: vm.redo,
+                // The trash keeps its slot and stays spent: a planner's
+                // deletion is a group, and undo is its way back.
+                deletedExercises: const [],
+                onPickDeletedExercise: (_) {},
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              BarIconButton(
+                key: const ValueKey('plan-ratings-button'),
+                icon: Icons.star_rounded,
+                semanticsLabel: 'Session ratings',
+                onPressed: () {},
+                enabled: false,
+                color: AppColors.accent,
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: SessionStatsTiles(
+                  prCount: exerciseId == null ? 0 : vm.prCountFor(exerciseId),
+                  lessonCount: exerciseId == null
+                      ? 0
+                      : vm.lessonCountFor(exerciseId),
+                  // A plan gains nothing: the counts are the whole shelves
+                  // behind the doors.
+                  gain: false,
+                  onPrTap: exerciseId == null
+                      ? null
+                      : () => _openPrHistory(exerciseId),
+                  onLessonTap: exerciseId == null
+                      ? null
+                      : () => _openLessons(exerciseId),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// The floor's trophy: the active exercise's PR History, drawn by the same
+  /// sheet the session surfaces open. A plan has no session to narrow
+  /// against, so the sheet is handed no set ids and no start — every PR is
+  /// history — and, when a review stands behind the editor, the pass's own
+  /// window so PRs landed since it lead the feed (2026-10-26).
+  void _openPrHistory(String exerciseId) {
+    showPrHistorySheet(
+      context,
+      exerciseName: toProperCase(
+        widget.viewModel.exerciseDisplayName(exerciseId),
+      ),
+      prs: widget.viewModel.prHistoryFor(exerciseId),
+      sessionSetIds: const <String>{},
+      sinceLastReviewAt: _reviewSession?.sinceDate,
+    );
+  }
+
+  /// The floor's note: the active exercise's exercise notes, through the
+  /// session's own modal and the editor's own lesson callbacks — so a note
+  /// can be written, pinned and edited while planning, exactly as it can
+  /// while logging (2026-10-26). No session id and no start: the shelves are
+  /// the exercise's whole story, split by the pass's window when one stands
+  /// behind the editor.
+  void _openLessons(String exerciseId) {
+    final vm = widget.viewModel;
+    showLessonsModal(
+      context,
+      listenable: vm.state,
+      lessonsFor: vm.lessonsFor,
+      loadLessonsFor: vm.loadLessonsFor,
+      addLesson: vm.addLesson,
+      toggleLessonPin: vm.toggleLessonPin,
+      deleteLesson: vm.deleteLesson,
+      updateLesson: vm.updateLessonText,
+      exerciseId: exerciseId,
+      exerciseName: toProperCase(vm.exerciseDisplayName(exerciseId)),
+      sinceLastReviewAt: _reviewSession?.sinceDate,
     );
   }
 
@@ -877,84 +952,16 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
   }
 }
 
-// ── Stats Bar ────────────────────────────────────────────────────────────────
-
-class _PlanStatsBar extends StatelessWidget {
-  const _PlanStatsBar({required this.setCount, required this.exerciseCount});
-
-  final int setCount;
-  final int exerciseCount;
-
-  @override
-  Widget build(BuildContext context) {
-    return StatsRow(
-      // Two tiles, read across: SETS 25 · EXERCISES 4 — the way the live
-      // session's own bar reads the same kinds of count.
-      inline: true,
-      // No container of its own: this row is the CONTENT of the floating
-      // glass pill it rides in ([FloatingBar]), and a box inside a glass
-      // reads as two containers. Bare, its words sit straight on the glass at
-      // full strength.
-      tone: null,
-      tiles: [
-        StatsTile(label: 'SETS', value: '$setCount'),
-        StatsTile(label: 'EXERCISES', value: '$exerciseCount'),
-      ],
-    );
-  }
-}
-
-/// The review editor's undo/redo pair, on the floor above the review bar
-/// (2026-10-26; it was in this screen's header, where the bottom of the
-/// screen could not reach it).
-///
-/// It cannot ride the review bar's own row at 402pt: four workout glyphs
-/// leave the label slot exactly the width 'Review Complete' needs, and two
-/// more controls would trade that line for an ellipsis. So the pair takes the
-/// storey the counts pill uses outside a pass — the same floating container,
-/// stacked on the same gap, right-aligned over the bar's own glyph cluster so
-/// the floor reads as one control column rather than two bars. The live
-/// session's floor keeps its pair in the same place (above its bar), which is
-/// the shape this screen is being held to.
-class _ReviewUndoRedoBar extends StatelessWidget {
-  const _ReviewUndoRedoBar({required this.viewModel, this.locked = false});
-
-  final WorkoutEditorViewModel viewModel;
-
-  /// Whether the pair is drawn but does not act — the record is on screen,
-  /// and an undo would rewrite the plan underneath a page the user is not on.
-  final bool locked;
-
-  @override
-  Widget build(BuildContext context) {
-    return FloatingBar(
-      // The bar's own right inset (`AppSpacing.md`), so the pair's edge lands
-      // over the glyphs' edge below it.
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [
-            UndoRedoButtons(
-              canUndo: viewModel.canUndo && !locked,
-              canRedo: viewModel.canRedo && !locked,
-              onUndo: viewModel.undo,
-              onRedo: viewModel.redo,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 // ── Exercise Card ─────────────────────────────────────────────────────────────
 
 /// The planner's exercise card — an adapter over the shared
 /// [SessionExerciseCard] with planned-mode rows (targets, not logged sets).
-/// Lessons/History/PRs stay greyed by decision even though the VM holds
-/// lesson/history data: planning is about targets, and those surfaces stay
-/// disabled until they get planner wiring.
+///
+/// It wears the session's flat look (2026-10-26): no card fill, no border, the
+/// 6pt inner inset that lands every control on the page's 22pt gutter — so
+/// planning and logging read as one screen. The flat card draws no
+/// Notes/History/PRs pills at all; the exercise's PRs and notes are the floor
+/// tiles' doors now, which is why this card wires none of them.
 class _PlanExerciseCard extends StatelessWidget {
   const _PlanExerciseCard({
     required this.viewModel,
@@ -1186,6 +1193,9 @@ class _PlanExerciseCard extends StatelessWidget {
     }
 
     return SessionExerciseCard(
+      // The session's own look (2026-10-26): no fill, no border, no pills —
+      // the same card the Training page and the viewer draw.
+      flat: true,
       exerciseNames: [
         for (final slot in s.workoutExerciseSlots)
           toProperCase(vm.exerciseDisplayName(slot.exerciseId)),
@@ -1207,10 +1217,6 @@ class _PlanExerciseCard extends StatelessWidget {
           ? (i, dir) => vm.reorderExercises(i, i + dir)
           : null,
       onAdd: original == null ? onAddExercise : null,
-      lessonsCount: 0,
-      onLessonsTap: null,
-      prCount: 0,
-      onPrTap: null,
       rows: rows,
       // While the record is up there is nothing to add a set to, and nothing
       // to drag: the row is drawn dead to hold the card's height, and the
@@ -1224,7 +1230,6 @@ class _PlanExerciseCard extends StatelessWidget {
           ? (oldIndex, newIndex) =>
                 vm.reorderPlannedSets(plannedExerciseId, oldIndex, newIndex)
           : null,
-      history: null,
       // Inside a review the card also carries that review's note for this
       // exercise — the box is shown even with none yet, because an empty box
       // is the way in. Outside one the note never existed and the box is not

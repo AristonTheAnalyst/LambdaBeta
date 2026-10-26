@@ -93,6 +93,12 @@ class SessionStatsBar extends StatelessWidget {
 /// (2026-10-23). A null callback remains the no-exercise fallback: quiet
 /// surface fill, hairline, primary ink, no tap. The whole tile is one
 /// semantics node, so the number never arrives without its meaning.
+///
+/// A plan has no session to have gained anything in, so the planner asks for
+/// the same tiles with [gain] false (2026-10-26): the counts are the whole
+/// shelves behind them — every PR the exercise ever landed, every note it
+/// carries — drawn plain ("12", never "+12"), because the number over a tile
+/// still has to name the feed it opens.
 class SessionStatsTiles extends StatelessWidget {
   const SessionStatsTiles({
     super.key,
@@ -100,6 +106,7 @@ class SessionStatsTiles extends StatelessWidget {
     required this.lessonCount,
     this.onPrTap,
     this.onLessonTap,
+    this.gain = true,
   });
 
   final int prCount;
@@ -107,8 +114,17 @@ class SessionStatsTiles extends StatelessWidget {
   final VoidCallback? onPrTap;
   final VoidCallback? onLessonTap;
 
+  /// Whether the counts are one session's gain (the two session surfaces) or
+  /// the whole feed's size (the planner). See the class doc.
+  final bool gain;
+
   /// A gain reads "+2"; a session that added none reads "0".
-  static String _gain(int n) => n > 0 ? '+$n' : '0';
+  String _count(int n) => gain && n > 0 ? '+$n' : '$n';
+
+  /// What the tile says to a screen reader — the same distinction as the
+  /// drawn count: a gain belongs to this session, a plan's total does not.
+  String _semantics(int n, String noun) =>
+      gain ? '$n $noun this session' : '$n $noun';
 
   @override
   Widget build(BuildContext context) {
@@ -118,8 +134,8 @@ class SessionStatsTiles extends StatelessWidget {
           child: _tile(
             key: const ValueKey('session-prs-tile'),
             icon: Icons.emoji_events,
-            value: _gain(prCount),
-            semanticsLabel: '$prCount PRs this session',
+            value: _count(prCount),
+            semanticsLabel: _semantics(prCount, 'PRs'),
             onTap: onPrTap,
           ),
         ),
@@ -128,8 +144,8 @@ class SessionStatsTiles extends StatelessWidget {
           child: _tile(
             key: const ValueKey('session-lessons-tile'),
             icon: Icons.sticky_note_2_outlined,
-            value: _gain(lessonCount),
-            semanticsLabel: '$lessonCount exercise notes this session',
+            value: _count(lessonCount),
+            semanticsLabel: _semantics(lessonCount, 'exercise notes'),
             onTap: onLessonTap,
           ),
         ),

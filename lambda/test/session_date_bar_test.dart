@@ -45,8 +45,9 @@ void main() {
     );
   }
 
-  testWidgets('the phrase sits between two chevrons on the stage recipe',
-      (tester) async {
+  testWidgets('the phrase sits between two chevrons on the stage recipe', (
+    tester,
+  ) async {
     await pumpBar(tester);
 
     expect(find.text('PREVIOUSLY -'), findsOneWidget);
@@ -55,7 +56,10 @@ void main() {
       findsOneWidget,
     );
 
-    for (final key in const ['session-date-bar-older', 'session-date-bar-newer']) {
+    for (final key in const [
+      'session-date-bar-older',
+      'session-date-bar-newer',
+    ]) {
       final box = find.byKey(ValueKey(key));
       expect(box, findsOneWidget);
       expect(
@@ -68,9 +72,10 @@ void main() {
       final icon = tester.widget<Icon>(
         find.descendant(of: box, matching: find.byType(Icon)),
       );
-      expect(icon.icon, key.endsWith('older')
-          ? Icons.chevron_left
-          : Icons.chevron_right);
+      expect(
+        icon.icon,
+        key.endsWith('older') ? Icons.chevron_left : Icons.chevron_right,
+      );
       expect(icon.size, SessionChevronButton.kSessionChevronIconSize);
     }
   });
@@ -99,15 +104,12 @@ void main() {
     expect(find.byKey(const ValueKey('session-date-bar')), findsOneWidget);
   });
 
-  testWidgets('both arrows live while there is a session each way',
-      (tester) async {
+  testWidgets('both arrows live while there is a session each way', (
+    tester,
+  ) async {
     var older = 0;
     var newer = 0;
-    await pumpBar(
-      tester,
-      onOlder: () => older++,
-      onNewer: () => newer++,
-    );
+    await pumpBar(tester, onOlder: () => older++, onNewer: () => newer++);
 
     await tester.tap(find.byKey(const ValueKey('session-date-bar-older')));
     await tester.tap(find.byKey(const ValueKey('session-date-bar-newer')));
@@ -132,8 +134,10 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    expect(find.text(DateFormat('d MMM yyyy').format(tenDaysAgo)),
-        findsOneWidget);
+    expect(
+      find.text(DateFormat('d MMM yyyy').format(tenDaysAgo)),
+      findsOneWidget,
+    );
     expect(find.text('10 days ago'), findsNothing);
 
     await tapPhrase();
@@ -151,8 +155,10 @@ void main() {
     // The third tap wraps back to the dated phrase.
     await tapPhrase();
     expect(find.text('PREVIOUSLY -'), findsOneWidget);
-    expect(find.text(DateFormat('d MMM yyyy').format(tenDaysAgo)),
-        findsOneWidget);
+    expect(
+      find.text(DateFormat('d MMM yyyy').format(tenDaysAgo)),
+      findsOneWidget,
+    );
   });
 
   testWidgets('a session younger than a week has only the dated phrase and '
@@ -174,8 +180,10 @@ void main() {
     // weeks format that has no weeks in it.
     await tapPhrase();
     expect(find.text('PREVIOUSLY -'), findsOneWidget);
-    expect(find.text(DateFormat('d MMM yyyy').format(threeDaysAgo)),
-        findsOneWidget);
+    expect(
+      find.text(DateFormat('d MMM yyyy').format(threeDaysAgo)),
+      findsOneWidget,
+    );
 
     await tapPhrase();
     expect(find.text('3 days ago'), findsOneWidget);
@@ -200,8 +208,7 @@ void main() {
     final phrase = find.byKey(const ValueKey('session-date-bar-phrase'));
     // `Transform.scale` is the x/y diagonal only; the z axis stays 1, so the
     // reading to assert is the x scale, not `getMaxScaleOnAxis`.
-    double xScale() =>
-        tester.widget<Transform>(phrase).transform.storage[0];
+    double xScale() => tester.widget<Transform>(phrase).transform.storage[0];
     expect(xScale(), moreOrLessEquals(1));
 
     await tester.tap(find.byKey(const ValueKey('session-date-bar-date')));
@@ -218,8 +225,7 @@ void main() {
       'nothing', (tester) async {
     await pumpBar(tester, isToday: true);
     final phrase = find.byKey(const ValueKey('session-date-bar-phrase'));
-    double xScale() =>
-        tester.widget<Transform>(phrase).transform.storage[0];
+    double xScale() => tester.widget<Transform>(phrase).transform.storage[0];
 
     await tester.tap(find.byKey(const ValueKey('session-date-bar-date')));
     await tester.pump();
@@ -329,5 +335,69 @@ void main() {
     );
     expect(find.bySemanticsLabel('Previous session'), findsOneWidget);
     expect(find.bySemanticsLabel('Next session'), findsOneWidget);
+  });
+
+  testWidgets('a plan draws the bar spent: a lone PLAN, no date, no radios', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1206, 2622);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16),
+            child: SessionDateBar.plan(),
+          ),
+        ),
+      ),
+    );
+
+    // The planner stands on the session bar's furniture with every session
+    // meaning spent (2026-10-26): a template is planned FOR sessions, so it
+    // has no date to name a stack it is not in.
+    expect(find.text('PLAN'), findsOneWidget);
+    expect(find.text('TODAY -'), findsNothing);
+    expect(find.text('PREVIOUSLY -'), findsNothing);
+    expect(find.byKey(const ValueKey('session-date-bar-state')), findsNothing);
+    expect(
+      find.byKey(const ValueKey('session-date-bar-date')),
+      findsNothing,
+      reason: 'there is no date, so the bar draws no date readout at all',
+    );
+
+    for (final key in const [
+      'session-date-bar-older',
+      'session-date-bar-newer',
+    ]) {
+      expect(
+        tester.widget<SessionChevronButton>(find.byKey(ValueKey(key))).enabled,
+        isFalse,
+        reason: 'a plan walks no stack — both ends are the same absence',
+      );
+    }
+
+    expect(
+      find.byKey(const ValueKey('session-date-bar-mode')),
+      findsNothing,
+      reason: 'with nothing to walk there are no stacks to name',
+    );
+
+    // The phrase is the bar's one control elsewhere; on a plan it is a
+    // readout — tapping cycles nothing and throws nothing.
+    await tester.tap(find.text('PLAN'));
+    await tester.pumpAndSettle();
+    expect(find.text('PLAN'), findsOneWidget);
+    expect(
+      tester
+          .widget<SessionChevronButton>(
+            find.byKey(const ValueKey('session-date-bar-older')),
+          )
+          .enabled,
+      isFalse,
+    );
+    expect(tester.takeException(), isNull);
   });
 }

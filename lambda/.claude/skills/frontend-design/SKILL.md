@@ -230,7 +230,8 @@ sticky-note icon) — the note indicator, not a color.
 - Cards: `AppCard` (`surface` fill, `AppRadius.lg`, `border` hairline);
   pressable = `onTap`.
 - **Flat session card (2026-10-22).** The session exercise card — the live
-  Training page, the past-session viewer, the preview — draws **no fill and
+  Training page, the past-session viewer, the preview, and the planner
+  (2026-10-26) — draws **no fill and
   no border of its own**; the page ground shows through and every control
   inside it carries its own chrome. It keeps the page's 16pt body padding
   and adds a 6pt inset inside itself, so the selector's chevrons, the set
@@ -240,9 +241,9 @@ sticky-note icon) — the note indicator, not a color.
   selector's closed field (the planned container), the row's `plannedBg`
   tint and the value chips, so the plan reads off the values rather than
   around the furniture; a deleted exercise reads off its red selector name
-  and red rows. Freestyle is completely flat. The planner and
-  review-record editors keep the boxed
-  `AppCard`; they are not session surfaces
+  and red rows. Freestyle is completely flat. The planner is a session
+  surface too since 2026-10-26 (it plans with the same card, floor and
+  gutter); only the review-record editors keep the boxed `AppCard`
   (`session-ux-consistency` §7, rule 9).
 - Dense inner containers (rows, chips, inputs): `surfaceHigh` fill +
   `border` hairline + `AppRadius.md` (8).

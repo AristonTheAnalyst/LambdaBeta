@@ -34,7 +34,11 @@ import 'sheet_section_label.dart';
 /// A review checkpoint ([sinceLastReviewAt], 2026-10-26) splits the
 /// after-group once more: PRs landed since the last pass closed
 /// (`SINCE LAST REVIEW`) sit above those landed after the session but no
-/// later than it (`AFTER`). Without one the shelves read exactly as before.
+/// later than it (`AFTER`). With no session on the desk — the planner, which
+/// has no record to place in time — the same checkpoint divides the whole
+/// shelf outside the session instead: what landed since the pass leads, what
+/// came at or before it is `PREVIOUSLY`. Without one the shelves read exactly
+/// as before.
 Future<void> showPrHistorySheet(
   BuildContext context, {
   required String exerciseName,
@@ -53,10 +57,12 @@ Future<void> showPrHistorySheet(
   bool sessionIsLive = false,
 
   /// Where the last review of this ground ended (2026-10-26) — resolved by
-  /// the caller (the record's own review history, or the pass in hand). A
-  /// PR landed after it leads the feed as `SINCE LAST REVIEW`; one landed
-  /// after the session but no later than it stays `AFTER`. Null keeps the
-  /// three shelves.
+  /// the caller (the record's own review history, the pass in hand, or the
+  /// planner's review editor). A PR landed after it leads the feed as
+  /// `SINCE LAST REVIEW`; one landed after the session but no later than it
+  /// stays `AFTER`. Without a session start (the planner) it splits the whole
+  /// outside-the-session shelf against `PREVIOUSLY`. Null keeps the shelves
+  /// exactly as they were.
   DateTime? sinceLastReviewAt,
 }) {
   return showLambdaModal<void>(
@@ -220,25 +226,36 @@ class _PrHistorySheetState extends State<_PrHistorySheet> {
             event.achievedDate.isAfter(startedAt))
           event,
     ];
-    final previousPrs = [
-      for (final event in filtered)
-        if (!widget.sessionSetIds.contains(event.sessionExerciseSetId) &&
-            (startedAt == null || !event.achievedDate.isAfter(startedAt)))
-          event,
-    ];
     // A checkpoint behind the record splits the after-group again
     // (2026-10-26): the newest PRs — those landed since the last review —
     // lead the feed, and the ones landed after the session but no later
     // than that review keep the `AFTER` shelf. Strict split, newest-first,
-    // so a later PR can never be filed under the older heading.
+    // so a later PR can never be filed under the older heading. With no
+    // session on the desk (the planner) there is no after-group to split:
+    // the checkpoint divides the whole outside-the-session shelf instead —
+    // what landed since the pass leads, what came at or before it is
+    // `PREVIOUSLY`.
     final checkpoint = widget.sinceLastReviewAt;
+    bool afterCheckpoint(PrEvent event) =>
+        checkpoint != null && event.achievedDate.isAfter(checkpoint);
     final sinceReviewPrs = [
-      for (final event in afterPrs)
-        if (checkpoint != null && event.achievedDate.isAfter(checkpoint)) event,
+      for (final event in filtered)
+        if (!widget.sessionSetIds.contains(event.sessionExerciseSetId) &&
+            (startedAt == null || event.achievedDate.isAfter(startedAt)) &&
+            afterCheckpoint(event))
+          event,
     ];
     final afterRemainderPrs = [
       for (final event in afterPrs)
-        if (checkpoint == null || !event.achievedDate.isAfter(checkpoint)) event,
+        if (!afterCheckpoint(event)) event,
+    ];
+    final previousPrs = [
+      for (final event in filtered)
+        if (!widget.sessionSetIds.contains(event.sessionExerciseSetId) &&
+            (startedAt == null
+                ? !afterCheckpoint(event)
+                : !event.achievedDate.isAfter(startedAt)))
+          event,
     ];
     final feedGroups = <(String, List<PrEvent>)>[
       ('Since last review', sinceReviewPrs),
