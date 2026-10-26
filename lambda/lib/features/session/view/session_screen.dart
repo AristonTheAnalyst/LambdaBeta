@@ -1841,239 +1841,275 @@ Future<void> _showWorkoutPickerSheet(
   final choice = await showModalBottomSheet<String>(
     context: context,
     useRootNavigator: true,
+    isScrollControlled: true,
+    useSafeArea: true,
     backgroundColor: AppColors.surface,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.lg)),
     ),
+    // Header and the record door stay put; the lists between them scroll,
+    // so a long library can never outgrow the sheet (2026-10-26 — a
+    // fixed-height column overflowed by 169pt once the door made it a row
+    // taller).
     builder: (ctx) => SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(AppSpacing.lg),
-            child: Text(
-              'Select session',
-              style: AppFonts.ui(
-                fontSize: AppTextStyles.lg,
-                fontWeight: FontWeight.w800,
-                color: AppColors.primary,
-              ),
-            ),
-          ),
-          InkWell(
-            onTap: () {
-              vm.clearTemplateSelection();
-              Navigator.of(ctx).pop();
-            },
-            child: Container(
-              margin: const EdgeInsets.fromLTRB(
-                AppSpacing.lg,
-                0,
-                AppSpacing.lg,
-                AppSpacing.xs,
-              ),
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.lg,
-                vertical: AppSpacing.md,
-              ),
-              // Pressable picker rows — the glass recipe, accent when
-              // selected.
-              decoration: glassBox(
-                vm.selectedPlannedSession == null &&
-                        vm.selectedStandaloneWorkout == null
-                    ? AppColors.accent
-                    : AppColors.primary,
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.edit_off_outlined,
-                    size: 18,
-                    color: AppColors.muted,
-                  ),
-                  const SizedBox(width: AppSpacing.sm),
-                  Expanded(
-                    child: Text(
-                      'No planned session',
-                      style: AppFonts.ui(
-                        fontSize: AppTextStyles.md,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.primary,
-                      ),
-                    ),
-                  ),
-                  if (vm.selectedPlannedSession == null &&
-                      vm.selectedStandaloneWorkout == null)
-                    Icon(Icons.check, size: 18, color: AppColors.primary),
-                ],
-              ),
-            ),
-          ),
-          if (vm.standaloneWorkouts.isNotEmpty) ...[
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(ctx).height * 0.7,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(
-                AppSpacing.lg,
-                0,
-                AppSpacing.lg,
-                AppSpacing.xs,
-              ),
+              padding: const EdgeInsets.all(AppSpacing.lg),
               child: Text(
-                'Workouts',
-                style: AppFonts.mono(
-                  fontSize: AppTextStyles.caption,
-                  fontWeight: FontWeight.w600,
+                'Select session',
+                style: AppFonts.ui(
+                  fontSize: AppTextStyles.lg,
+                  fontWeight: FontWeight.w800,
                   color: AppColors.primary,
                 ),
               ),
             ),
-            for (final w in vm.standaloneWorkouts)
-              InkWell(
-                onTap: () {
-                  vm.selectStandaloneWorkout(w);
-                  Navigator.of(ctx).pop();
-                },
-                child: Container(
-                  margin: const EdgeInsets.fromLTRB(
-                    AppSpacing.lg,
-                    0,
-                    AppSpacing.lg,
-                    AppSpacing.xs,
-                  ),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.lg,
-                    vertical: AppSpacing.md,
-                  ),
-                  // Pressable picker rows — the glass recipe, accent when
-                  // selected.
-                  decoration: glassBox(
-                    w.sessionId == vm.selectedStandaloneWorkout?.sessionId
-                        ? AppColors.accent
-                        : AppColors.primary,
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: UserNameText(
-                          toProperCase(w.name),
-                          tooltip: true,
-                          style: AppFonts.ui(
-                            fontSize: AppTextStyles.md,
+            Flexible(
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    InkWell(
+                      onTap: () {
+                        vm.clearTemplateSelection();
+                        Navigator.of(ctx).pop();
+                      },
+                      child: Container(
+                        margin: const EdgeInsets.fromLTRB(
+                          AppSpacing.lg,
+                          0,
+                          AppSpacing.lg,
+                          AppSpacing.xs,
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.lg,
+                          vertical: AppSpacing.md,
+                        ),
+                        // Pressable picker rows — the glass recipe, accent when
+                        // selected.
+                        decoration: glassBox(
+                          vm.selectedPlannedSession == null &&
+                                  vm.selectedStandaloneWorkout == null
+                              ? AppColors.accent
+                              : AppColors.primary,
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.edit_off_outlined,
+                              size: 18,
+                              color: AppColors.muted,
+                            ),
+                            const SizedBox(width: AppSpacing.sm),
+                            Expanded(
+                              child: Text(
+                                'No planned session',
+                                style: AppFonts.ui(
+                                  fontSize: AppTextStyles.md,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.primary,
+                                ),
+                              ),
+                            ),
+                            if (vm.selectedPlannedSession == null &&
+                                vm.selectedStandaloneWorkout == null)
+                              Icon(
+                                Icons.check,
+                                size: 18,
+                                color: AppColors.primary,
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    if (vm.standaloneWorkouts.isNotEmpty) ...[
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(
+                          AppSpacing.lg,
+                          0,
+                          AppSpacing.lg,
+                          AppSpacing.xs,
+                        ),
+                        child: Text(
+                          'Workouts',
+                          style: AppFonts.mono(
+                            fontSize: AppTextStyles.caption,
                             fontWeight: FontWeight.w600,
                             color: AppColors.primary,
                           ),
                         ),
                       ),
-                      if (w.sessionId ==
-                          vm.selectedStandaloneWorkout?.sessionId)
-                        Icon(Icons.check, size: 18, color: AppColors.primary),
+                      for (final w in vm.standaloneWorkouts)
+                        InkWell(
+                          onTap: () {
+                            vm.selectStandaloneWorkout(w);
+                            Navigator.of(ctx).pop();
+                          },
+                          child: Container(
+                            margin: const EdgeInsets.fromLTRB(
+                              AppSpacing.lg,
+                              0,
+                              AppSpacing.lg,
+                              AppSpacing.xs,
+                            ),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: AppSpacing.lg,
+                              vertical: AppSpacing.md,
+                            ),
+                            // Pressable picker rows — the glass recipe, accent when
+                            // selected.
+                            decoration: glassBox(
+                              w.sessionId ==
+                                      vm.selectedStandaloneWorkout?.sessionId
+                                  ? AppColors.accent
+                                  : AppColors.primary,
+                            ),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: UserNameText(
+                                    toProperCase(w.name),
+                                    tooltip: true,
+                                    style: AppFonts.ui(
+                                      fontSize: AppTextStyles.md,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppColors.primary,
+                                    ),
+                                  ),
+                                ),
+                                if (w.sessionId ==
+                                    vm.selectedStandaloneWorkout?.sessionId)
+                                  Icon(
+                                    Icons.check,
+                                    size: 18,
+                                    color: AppColors.primary,
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      const SizedBox(height: AppSpacing.xs),
                     ],
-                  ),
-                ),
-              ),
-            const SizedBox(height: AppSpacing.xs),
-          ],
-          if (vm.availableWorkouts.isNotEmpty) ...[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(
-                AppSpacing.lg,
-                0,
-                AppSpacing.lg,
-                AppSpacing.xs,
-              ),
-              child: Text(
-                'Program',
-                style: AppFonts.mono(
-                  fontSize: AppTextStyles.caption,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.primary,
-                ),
-              ),
-            ),
-            for (final w in vm.availableWorkouts)
-              InkWell(
-                onTap: () {
-                  vm.selectPlannedSession(w);
-                  Navigator.of(ctx).pop();
-                },
-                child: Container(
-                  margin: const EdgeInsets.fromLTRB(
-                    AppSpacing.lg,
-                    0,
-                    AppSpacing.lg,
-                    AppSpacing.xs,
-                  ),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.lg,
-                    vertical: AppSpacing.md,
-                  ),
-                  // Pressable picker rows — the glass recipe, accent when
-                  // selected.
-                  decoration: glassBox(
-                    w.sessionId == vm.selectedPlannedSession?.sessionId
-                        ? AppColors.accent
-                        : AppColors.primary,
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: UserNameText(
-                          toProperCase(w.name),
-                          tooltip: true,
-                          style: AppFonts.ui(
-                            fontSize: AppTextStyles.md,
+                    if (vm.availableWorkouts.isNotEmpty) ...[
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(
+                          AppSpacing.lg,
+                          0,
+                          AppSpacing.lg,
+                          AppSpacing.xs,
+                        ),
+                        child: Text(
+                          'Program',
+                          style: AppFonts.mono(
+                            fontSize: AppTextStyles.caption,
                             fontWeight: FontWeight.w600,
                             color: AppColors.primary,
                           ),
                         ),
                       ),
-                      if (w.sessionId == vm.selectedPlannedSession?.sessionId)
-                        Icon(Icons.check, size: 18, color: AppColors.primary),
+                      for (final w in vm.availableWorkouts)
+                        InkWell(
+                          onTap: () {
+                            vm.selectPlannedSession(w);
+                            Navigator.of(ctx).pop();
+                          },
+                          child: Container(
+                            margin: const EdgeInsets.fromLTRB(
+                              AppSpacing.lg,
+                              0,
+                              AppSpacing.lg,
+                              AppSpacing.xs,
+                            ),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: AppSpacing.lg,
+                              vertical: AppSpacing.md,
+                            ),
+                            // Pressable picker rows — the glass recipe, accent when
+                            // selected.
+                            decoration: glassBox(
+                              w.sessionId ==
+                                      vm.selectedPlannedSession?.sessionId
+                                  ? AppColors.accent
+                                  : AppColors.primary,
+                            ),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: UserNameText(
+                                    toProperCase(w.name),
+                                    tooltip: true,
+                                    style: AppFonts.ui(
+                                      fontSize: AppTextStyles.md,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppColors.primary,
+                                    ),
+                                  ),
+                                ),
+                                if (w.sessionId ==
+                                    vm.selectedPlannedSession?.sessionId)
+                                  Icon(
+                                    Icons.check,
+                                    size: 18,
+                                    color: AppColors.primary,
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ),
                     ],
-                  ),
+                  ],
                 ),
               ),
-          ],
-          // A door, not a value: this row closes the picker and opens the
-          // record list that seeds today's session from a past one
-          // (2026-10-26). It sits last because it is the odd one out.
-          InkWell(
-            key: const ValueKey('picker-from-past-session'),
-            onTap: () => Navigator.of(ctx).pop(_kSeedFromPastSession),
-            child: Container(
-              margin: const EdgeInsets.fromLTRB(
-                AppSpacing.lg,
-                0,
-                AppSpacing.lg,
-                AppSpacing.xs,
-              ),
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.lg,
-                vertical: AppSpacing.md,
-              ),
-              // Pressable picker rows — the glass recipe.
-              decoration: glassBox(AppColors.primary),
-              child: Row(
-                children: [
-                  Icon(Icons.history, size: 18, color: AppColors.primary),
-                  const SizedBox(width: AppSpacing.sm),
-                  Expanded(
-                    child: Text(
-                      'From past session',
-                      style: AppFonts.ui(
-                        fontSize: AppTextStyles.md,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.primary,
+            ),
+            // A door, not a value: this row closes the picker and opens the
+            // record list that seeds today's session from a past one
+            // (2026-10-26). It sits last because it is the odd one out.
+            InkWell(
+              key: const ValueKey('picker-from-past-session'),
+              onTap: () => Navigator.of(ctx).pop(_kSeedFromPastSession),
+              child: Container(
+                margin: const EdgeInsets.fromLTRB(
+                  AppSpacing.lg,
+                  0,
+                  AppSpacing.lg,
+                  AppSpacing.xs,
+                ),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.lg,
+                  vertical: AppSpacing.md,
+                ),
+                // Pressable picker rows — the glass recipe.
+                decoration: glassBox(AppColors.primary),
+                child: Row(
+                  children: [
+                    Icon(Icons.history, size: 18, color: AppColors.primary),
+                    const SizedBox(width: AppSpacing.sm),
+                    Expanded(
+                      child: Text(
+                        'From past session',
+                        style: AppFonts.ui(
+                          fontSize: AppTextStyles.md,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.primary,
+                        ),
                       ),
                     ),
-                  ),
-                  Icon(Icons.chevron_right, size: 18, color: AppColors.muted),
-                ],
+                    Icon(Icons.chevron_right, size: 18, color: AppColors.muted),
+                  ],
+                ),
               ),
             ),
-          ),
-          const SizedBox(height: AppSpacing.md),
-        ],
+            const SizedBox(height: AppSpacing.md),
+          ],
+        ),
       ),
     ),
   );
