@@ -309,15 +309,16 @@ void main() {
     expect(find.byKey(const ValueKey('session-lessons-tile')), findsOneWidget);
 
     // Lesson counting is session-scoped: the older cue is readable in the
-    // modal but does not inflate this session's number.
+    // modal but does not inflate this session's number. The count rides the
+    // reading even though it is no longer drawn (2026-10-27).
     expect(
-      find.bySemanticsLabel('1 exercise notes this session'),
+      find.bySemanticsLabel('1 exercise note this session'),
       findsOneWidget,
     );
     // The one logged set is the first set in its (exercise × variation) pair,
     // so it opens the frontier — a first PR derived from the session's own
     // rows, with no prior history to lean on.
-    expect(find.bySemanticsLabel('1 PRs this session'), findsOneWidget);
+    expect(find.bySemanticsLabel('1 PR this session'), findsOneWidget);
   });
 
   testWidgets('view mode is a record — no ADD SET, flat cells, a plain '

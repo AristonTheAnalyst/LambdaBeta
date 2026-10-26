@@ -521,6 +521,13 @@ void main() {
         isNotNull,
         reason: 'and the exercise\'s whole notes shelf behind the note',
       );
+      expect(
+        tiles.onGoalTap,
+        isNotNull,
+        reason:
+            'and the exercise\'s goals behind the bullseye — a plan reads the '
+            'same three shelves the sessions do (2026-10-27)',
+      );
     });
 
     testWidgets('the card is the session card — flat, with no pills', (

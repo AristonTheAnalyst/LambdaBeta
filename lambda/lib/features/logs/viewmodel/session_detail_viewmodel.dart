@@ -438,6 +438,18 @@ class SessionDetailViewModel {
       if (goal.exerciseId == exerciseId) goal,
   ];
 
+  /// How many of the exercise's goals still stand — the floor bullseye's
+  /// number (2026-10-27). A goal is read met through [goalCompletionSet], the
+  /// same rule the goals sheet and the `G` badge use, over the merged
+  /// timeline this record derives its PRs from ([goalTimeline]).
+  int openGoalsFor(String exerciseId) {
+    var open = 0;
+    for (final goal in goalsForExercise(exerciseId)) {
+      if (goalCompletionSet(goal: goal, sets: _goalTimeline) == null) open++;
+    }
+    return open;
+  }
+
   /// The completed history the goal form reads — its "already beat this"
   /// verdict and its picker ordering (2026-10-26). The record on screen is in
   /// it: this is a past session, and its own sets are exactly what the form

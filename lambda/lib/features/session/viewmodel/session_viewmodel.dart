@@ -1825,6 +1825,18 @@ class SessionViewModel extends ChangeNotifier {
       if (goal.exerciseId == exerciseId) goal,
   ];
 
+  /// How many of the exercise's goals still stand — the floor bullseye's
+  /// number (2026-10-27). A goal is read met through [goalCompletionSet], the
+  /// same rule the goals sheet and the `G` badge use, over the merged
+  /// timeline this session derives its PRs from ([goalTimeline]).
+  int openGoalsFor(String exerciseId) {
+    var open = 0;
+    for (final goal in goalsForExercise(exerciseId)) {
+      if (goalCompletionSet(goal: goal, sets: goalTimeline) == null) open++;
+    }
+    return open;
+  }
+
   /// The PRs this session landed for [exerciseId] — the count its card pill
   /// and the floor's trophy tile show, and the PR History sheet's
   /// `THIS SESSION` group.

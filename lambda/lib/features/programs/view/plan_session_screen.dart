@@ -24,9 +24,12 @@ import '../../../shared/widgets/scroll_shrink_nav_bar.dart';
 import '../../../shared/widgets/session_date_bar.dart';
 import '../../../shared/widgets/session_exercise_card.dart';
 import '../../../shared/widgets/session_set_row.dart';
+import '../../goals/view/exercise_goals_sheet.dart';
+import '../../goals/view/goal_sheet.dart';
 import '../../session/view/lessons_modal.dart';
 import '../../session/view/pr_history_sheet.dart';
 import '../../session/view/session_stats_bar.dart';
+import '../../../shared/widgets/exercise_target_picker.dart';
 import '../viewmodel/workout_editor_viewmodel.dart';
 import 'review_container.dart';
 
@@ -691,12 +694,12 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
   /// * the trash restores deleted sets, and the planner deletes groups
   ///   outright (undo is the way back): greyed.
   ///
-  /// The tiles are the one live door. A plan is *informed* by what the
-  /// exercise has done — every PR it ever landed, every note it carries — so
-  /// the trophy opens the PR History sheet and the note opens the exercise
-  /// notes modal, both scoped to the exercise on the card. The counts are
-  /// whole shelves, not a session gain, so the tiles draw `gain: false`
-  /// (2026-10-26).
+  /// The tiles are the live doors. A plan is *informed* by what the exercise
+  /// has done — every PR it ever landed, every goal it still stands, every
+  /// note it carries — so the trophy opens the PR History sheet, the bullseye
+  /// the exercise's goals (2026-10-27) and the note the exercise notes modal,
+  /// all scoped to the exercise on the card. The counts are whole shelves,
+  /// not a session gain, so the tiles draw `gain: false` (2026-10-26).
   ///
   /// Undo/redo answer as they always have — and stay spent while Compare is
   /// up, because the record on screen is not the plan underneath.
@@ -746,7 +749,6 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
                 semanticsLabel: 'Session ratings',
                 onPressed: () {},
                 enabled: false,
-                color: AppColors.accent,
               ),
               const SizedBox(width: AppSpacing.sm),
               Expanded(
@@ -755,6 +757,9 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
                   lessonCount: exerciseId == null
                       ? 0
                       : vm.lessonCountFor(exerciseId),
+                  goalCount: exerciseId == null
+                      ? 0
+                      : vm.openGoalsFor(exerciseId),
                   // A plan gains nothing: the counts are the whole shelves
                   // behind the doors.
                   gain: false,
@@ -764,6 +769,12 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
                   onLessonTap: exerciseId == null
                       ? null
                       : () => _openLessons(exerciseId),
+                  // The goals door rides the planner too (2026-10-27): what
+                  // the exercise is chasing informs what the plan should ask
+                  // of it. Inside a review the same door stands.
+                  onGoalTap: exerciseId == null
+                      ? null
+                      : () => _openGoals(exerciseId),
                 ),
               ),
             ],
@@ -787,6 +798,36 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
       prs: widget.viewModel.prHistoryFor(exerciseId),
       sessionSetIds: const <String>{},
       sinceLastReviewAt: _reviewSession?.sinceDate,
+    );
+  }
+
+  /// The floor's bullseye (2026-10-27): the exercise's goals on the PR
+  /// History sheet's furniture, open ones first by default — the same sheet
+  /// the two session floors open. The New goal door seeds the goals form
+  /// with just this exercise and files a standalone goal against this
+  /// editor's library.
+  void _openGoals(String exerciseId) {
+    final vm = widget.viewModel;
+    final state = vm.state.value;
+    final name = toProperCase(vm.exerciseDisplayName(exerciseId));
+    showExerciseGoalsSheet(
+      context,
+      exerciseName: name,
+      listenable: vm.state,
+      goalsFor: () => vm.goalsForExercise(exerciseId),
+      setsFor: () => vm.state.value.goalTimeline,
+      variationNames: {
+        for (final v in state.allVariations) v.variationId: v.name,
+      },
+      onNewGoal: () => showAddGoalSheet(
+        context,
+        detailMap: state.exerciseDetailMap,
+        variations: state.allVariations,
+        lastUsed: vm.lastUsedByExercise,
+        pastSets: state.goalTimeline,
+        seed: ExerciseTarget(exerciseId: exerciseId, exerciseName: name),
+        onAdd: vm.createGoalFromTarget,
+      ),
     );
   }
 

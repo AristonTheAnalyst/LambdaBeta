@@ -380,24 +380,27 @@ drawer and fires the action. The clip radius must be the child's own
 otherwise) — a larger radius shaves a child's rounded border down to its
 straight runs.
 
-**The floor-bar stat tile (2026-10-22).** `SessionStatsTiles`
-(`features/session/view/session_stats_bar.dart`) is the session floor's
-doors — trophy (session PRs), goals bullseye (2026-10-26) and note glyph
-(exercise notes), each tile a
-48-tall glass tile (`kSessionBarControlSize`, the undo/redo boxes' own
-height) reading **icon + count**, never a word: 24px glyph, 8pt insets,
-mono 17 w800 count, `FittedBox` so a narrow stage narrows the line. The
-count is a
-gain: `+2`, or `0` when the session added none. **The count never decides
-whether the tile is a door** (2026-10-23): the PR Lab's own bar always
-taps, and the sheets hold the exercise's whole story, not only this
-session's additions — so a `0` still wears the accent glass and opens.
-The quiet tile (`surfaceHigh` + hairline, primary ink, no tap) is only the
-no-exercise fallback. The whole tile is one semantics node
-(`"2 PRs this session"`), so the number never arrives without its meaning.
-The count is the **active exercise's** gain in the session on screen —
-not the session's total — and the doors are the PR Lab's sheets
-(2026-10-22): the trophy opens `showPrHistorySheet`
+**The floor-bar stat door (2026-10-22; the three-door bar 2026-10-27).**
+`SessionStatsTiles` (`features/session/view/session_stats_bar.dart`) is the
+session floor's three doors — trophy (PRs), goals bullseye and note glyph
+(exercise notes), each a third of the row's inner slot and a
+48-tall glass control (`kSessionBarControlSize`, the undo/redo boxes' own
+height) with a 24px glyph. **Only the bullseye carries a number**
+(2026-10-27): the exercise's open goals, mono 17 w800; the trophy and the
+note are glyphs alone — their `+n` / `0` counts are gone, riding only the
+semantics. **A door is neutral until it has something to say**
+(2026-10-27): `primary` glass and ink while its feed is empty, the
+**accent** glass and ink once it is not — the trophy when the session
+gained PRs (the whole shelf on the planner), the bullseye when open goals
+stand, the note when this session carries exercise notes. **The count never
+decides whether the control is a door** (2026-10-23): the PR Lab's own bar
+always taps, and the sheets hold the exercise's whole story, not only this
+session's additions — so a `0` still opens. The quiet control (`surfaceHigh`
++ hairline, primary ink, no tap) is only the no-exercise fallback. The whole
+control is one semantics node (`"2 PRs this session"`), so the number never
+arrives without its meaning. The count is the **active exercise's** gain in
+the session on screen — not the session's total — and the doors are the PR
+Lab's sheets (2026-10-22): the trophy opens `showPrHistorySheet`
 (`features/session/view/pr_history_sheet.dart`), the exercise's whole PR
 feed filtered by WEIGHT / REPS / VARIATION and read chronologically
 newest first (2026-10-23): `AFTER` at the top, drawn only
@@ -408,21 +411,21 @@ record — then `PREVIOUSLY`, so a record read from Logs never files a
 later PR under "previously"; the note glyph opens the grouped exercise-notes modal
 (`sessionId` / `sessionStartedAt` / `sessionIsLive` = the same session),
 which stands the same three shelves with its own drawn by `sessionId`.
-Both follow the date bar, so a walk moves the doors with the sets. **Between
-the two tiles stands the goals bullseye** (2026-10-26) — not a tile but a
-green `BarIconButton` (`track_changes`), drawn only when the surface passes
-`onGoalTap`, so the live page and the viewer carry it (star · trophy ·
-bullseye · note) and the planner, a friend's record and an athlete's record
-do not. It opens `showExerciseGoalsSheet`
+Both follow the date bar, so a walk moves the doors with the sets. **The
+bullseye stands between them** (2026-10-26; a numbered door since
+2026-10-27), drawn only when the surface passes `onGoalTap` — the live
+page, the viewer and the planner / review workout editor carry it
+(star · trophy · bullseye · note); a friend's or athlete's record does not.
+It opens `showExerciseGoalsSheet`
 (`features/goals/view/exercise_goals_sheet.dart`) on the PR sheet's
 furniture — the exercise's goals, Open by default behind a status control,
 ordered by `SortButton`, a met goal in success ink — and a PR whose set
 achieved a goal draws **success** instead of accent in the trophy's own
 sheet (the same `goalSetIds`). The
 old `PRs Achieved` modal and the per-exercise breakdown sheets are gone. The live session and the past-session viewer draw
-the same tiles beside the same star (`BarIconButton`, `star_rounded`,
-"Session ratings", **accent** glass — a door to session content, not
-neutral chrome like the undo/redo pair).
+the same doors beside the same star (`BarIconButton`, `star_rounded`,
+"Session ratings", **primary** glass — neutral like the undo/redo pair;
+the star never takes the accent, 2026-10-27).
 
 **The pinned-note reader (2026-10-23).** The card's pinned-note bar opens
 `showPinnedNotePopup` (`features/session/view/pinned_note_popup.dart`)

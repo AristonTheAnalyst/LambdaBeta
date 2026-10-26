@@ -3,20 +3,25 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lambda/core/styles/app_colors.dart';
 import 'package:lambda/features/session/view/session_stats_bar.dart';
 
-/// The session bar's two doors (2026-10-22): a trophy and a book, each with
-/// the session's count — "+2" for a gain, "0" when the session added none
-/// (never "+0"). The count never decides doorness (2026-10-23): the sheets
-/// behind the tiles hold the exercise's whole story, so a `0` still opens
-/// them. A null handler — no exercise on the card — is the quiet fallback.
-/// Drawn at the live session's 402pt width, where two tiles share the row
-/// with the undo/redo boxes and the pencil. The planner asks for the same
-/// tiles with `gain: false` (2026-10-26): no session to have gained anything
-/// in, so the counts are the whole shelves behind them.
+/// The session bar's three doors (2026-10-22, reworked 2026-10-27): the
+/// trophy, the goals bullseye and the note. The trophy and the note carry no
+/// number — their colour says whether the feed behind them has anything —
+/// while the bullseye keeps the exercise's open-goal count.
+///
+/// A door is the app's neutral glass until it has something to say, then the
+/// accent: PRs gained (the whole shelf on the planner), open goals standing,
+/// notes carried. The count never decides doorness — the sheets hold the
+/// exercise's whole story, so a `0` still opens. A null handler — no exercise
+/// on the card — is the quiet surface fallback.
+///
+/// Drawn at the live session's 402pt width, where the three doors share the
+/// row with the undo/redo boxes and the star.
 
 Future<void> _pumpTiles(
   WidgetTester tester, {
-  required int prCount,
-  required int lessonCount,
+  int prCount = 0,
+  int lessonCount = 0,
+  int goalCount = 0,
   bool gain = true,
   VoidCallback? onPrTap,
   VoidCallback? onLessonTap,
@@ -34,6 +39,7 @@ Future<void> _pumpTiles(
             child: SessionStatsTiles(
               prCount: prCount,
               lessonCount: lessonCount,
+              goalCount: goalCount,
               gain: gain,
               onPrTap: onPrTap,
               onLessonTap: onLessonTap,
@@ -50,16 +56,37 @@ Future<void> _pumpTiles(
 Finder _inTile(String key, Finder matching) =>
     find.descendant(of: find.byKey(ValueKey(key)), matching: matching);
 
-void main() {
-  testWidgets('each tile draws its glyph and its session gain at 402', (
-    tester,
-  ) async {
-    await _pumpTiles(tester, prCount: 12, lessonCount: 3);
+/// The glass a control wears — the same `withAlpha(77)` border `glassBox`
+/// draws.
+Color _edge(WidgetTester tester, String key) {
+  final decoration =
+      tester.widget<Container>(find.byKey(ValueKey(key))).decoration!
+          as BoxDecoration;
+  return (decoration.border! as Border).top.color;
+}
 
-    expect(_inTile('session-prs-tile', find.text('+12')), findsOneWidget);
-    expect(_inTile('session-lessons-tile', find.text('+3')), findsOneWidget);
+Color? _ink(WidgetTester tester, String key) =>
+    tester.widget<Icon>(_inTile(key, find.byType(Icon))).color;
+
+void main() {
+  testWidgets('the doors draw their glyphs, and only the bullseye carries a '
+      'number', (tester) async {
+    await _pumpTiles(
+      tester,
+      prCount: 12,
+      lessonCount: 3,
+      goalCount: 2,
+      onPrTap: () {},
+      onLessonTap: () {},
+      onGoalTap: () {},
+    );
+
     expect(
       _inTile('session-prs-tile', find.byIcon(Icons.emoji_events)),
+      findsOneWidget,
+    );
+    expect(
+      _inTile('session-goals-button', find.byIcon(Icons.track_changes)),
       findsOneWidget,
     );
     expect(
@@ -70,8 +97,14 @@ void main() {
       findsOneWidget,
     );
 
-    // One row of 48pt controls (the floor's squares), and a two-digit count
-    // must not overflow.
+    // The open-goal count is the row's only number (2026-10-27).
+    expect(_inTile('session-goals-button', find.text('2')), findsOneWidget);
+    expect(find.text('+12'), findsNothing);
+    expect(find.text('+3'), findsNothing);
+    expect(find.text('12'), findsNothing);
+    expect(find.text('3'), findsNothing);
+
+    // One row of 48pt controls, and the line must not overflow.
     expect(
       tester.getSize(find.byKey(const ValueKey('session-prs-tile'))).height,
       48,
@@ -79,24 +112,96 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('both tiles are doors at any count', (tester) async {
-    var prTaps = 0;
-    var lessonTaps = 0;
+  testWidgets('a door is neutral until it has something behind it', (
+    tester,
+  ) async {
+    await _pumpTiles(
+      tester,
+      onPrTap: () {},
+      onLessonTap: () {},
+      onGoalTap: () {},
+    );
+
+    // Nothing gained, nothing open, nothing written: white glass.
+    expect(_edge(tester, 'session-prs-tile'), AppColors.primary.withAlpha(77));
+    expect(
+      _edge(tester, 'session-goals-button'),
+      AppColors.primary.withAlpha(77),
+    );
+    expect(
+      _edge(tester, 'session-lessons-tile'),
+      AppColors.primary.withAlpha(77),
+    );
+    expect(_ink(tester, 'session-prs-tile'), AppColors.primary);
+    expect(_ink(tester, 'session-lessons-tile'), AppColors.primary);
+
     await _pumpTiles(
       tester,
       prCount: 2,
-      lessonCount: 0,
+      lessonCount: 1,
+      goalCount: 3,
+      onPrTap: () {},
+      onLessonTap: () {},
+      onGoalTap: () {},
+    );
+
+    // Each turns accent on its own count — the trio the bar's floor reads
+    // (2026-10-27).
+    expect(_edge(tester, 'session-prs-tile'), AppColors.accent.withAlpha(77));
+    expect(
+      _edge(tester, 'session-goals-button'),
+      AppColors.accent.withAlpha(77),
+    );
+    expect(
+      _edge(tester, 'session-lessons-tile'),
+      AppColors.accent.withAlpha(77),
+    );
+    expect(_ink(tester, 'session-goals-button'), AppColors.accent);
+    expect(_ink(tester, 'session-lessons-tile'), AppColors.accent);
+  });
+
+  testWidgets('one lit door does not light its neighbours', (tester) async {
+    await _pumpTiles(
+      tester,
+      prCount: 3,
+      onPrTap: () {},
+      onLessonTap: () {},
+      onGoalTap: () {},
+    );
+
+    expect(_edge(tester, 'session-prs-tile'), AppColors.accent.withAlpha(77));
+    expect(
+      _edge(tester, 'session-goals-button'),
+      AppColors.primary.withAlpha(77),
+    );
+    expect(
+      _edge(tester, 'session-lessons-tile'),
+      AppColors.primary.withAlpha(77),
+    );
+  });
+
+  testWidgets('every door opens at any count', (tester) async {
+    var prTaps = 0;
+    var lessonTaps = 0;
+    var goalTaps = 0;
+    await _pumpTiles(
+      tester,
       onPrTap: () => prTaps++,
       onLessonTap: () => lessonTaps++,
+      onGoalTap: () => goalTaps++,
     );
 
     await tester.tap(find.byKey(const ValueKey('session-prs-tile')));
     await tester.pump();
     expect(prTaps, 1);
 
-    // "0" is the absence reading, but the book still opens the exercise's
-    // whole lesson history — the PR Lab's own rule (2026-10-23).
-    expect(_inTile('session-lessons-tile', find.text('0')), findsOneWidget);
+    // "0" is the absence reading, but the doors still open the exercise's
+    // whole story — the PR Lab's own rule (2026-10-23).
+    expect(_inTile('session-goals-button', find.text('0')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('session-goals-button')));
+    await tester.pump();
+    expect(goalTaps, 1);
+
     await tester.tap(find.byKey(const ValueKey('session-lessons-tile')));
     await tester.pump();
     expect(lessonTaps, 1);
@@ -105,30 +210,43 @@ void main() {
 
   testWidgets('a null handler — no exercise on the card — draws the quiet '
       'tile', (tester) async {
-    await _pumpTiles(tester, prCount: 0, lessonCount: 0);
+    await _pumpTiles(tester);
 
-    // The no-exercise fallback is the only quiet state left: surface fill,
+    // The no-exercise fallback is the only solid state left: surface fill,
     // no tap.
-    final quiet = tester.widget<Container>(
-      find.byKey(const ValueKey('session-prs-tile')),
-    );
-    expect((quiet.decoration! as BoxDecoration).color, AppColors.surfaceHigh);
+    final quiet =
+        tester
+                .widget<Container>(
+                  find.byKey(const ValueKey('session-prs-tile')),
+                )
+                .decoration!
+            as BoxDecoration;
+    expect(quiet.color, AppColors.surfaceHigh);
     await tester.tap(find.byKey(const ValueKey('session-prs-tile')));
     await tester.pump();
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('a session with no gains reads 0 and 0, never +0', (
+  testWidgets('the bullseye is drawn only where there is a goal door', (
     tester,
   ) async {
-    await _pumpTiles(tester, prCount: 0, lessonCount: 0);
-    expect(_inTile('session-prs-tile', find.text('0')), findsOneWidget);
-    expect(_inTile('session-lessons-tile', find.text('0')), findsOneWidget);
-    expect(find.text('+0'), findsNothing);
-    expect(tester.takeException(), isNull);
+    await _pumpTiles(tester, onPrTap: () {}, onLessonTap: () {});
+    expect(find.byKey(const ValueKey('session-goals-button')), findsNothing);
+
+    // A friend's or athlete's record passes no goal door: the write behind
+    // it would file under their id (2026-10-26).
+    await _pumpTiles(
+      tester,
+      goalCount: 4,
+      onPrTap: () {},
+      onLessonTap: () {},
+      onGoalTap: () {},
+    );
+    expect(find.byKey(const ValueKey('session-goals-button')), findsOneWidget);
+    expect(_inTile('session-goals-button', find.text('4')), findsOneWidget);
   });
 
-  testWidgets('a plan reads its shelves plain — never a gain, still doors', (
+  testWidgets('a plan reads its shelves plainly — still doors, never a gain', (
     tester,
   ) async {
     var prTaps = 0;
@@ -136,69 +254,22 @@ void main() {
       tester,
       prCount: 12,
       lessonCount: 3,
+      goalCount: 2,
       gain: false,
       onPrTap: () => prTaps++,
       onLessonTap: () {},
+      onGoalTap: () {},
     );
 
-    // A plan gained nothing: the number is the exercise's whole shelf, so it
-    // stands plain — "+12" would claim these are this plan's additions.
-    expect(_inTile('session-prs-tile', find.text('12')), findsOneWidget);
-    expect(_inTile('session-lessons-tile', find.text('3')), findsOneWidget);
+    // A plan gained nothing, so no reading may claim a session gain.
     expect(find.text('+12'), findsNothing);
     expect(find.text('+3'), findsNothing);
+    expect(_inTile('session-goals-button', find.text('2')), findsOneWidget);
 
-    // The doorness rule does not change with the reading: both still open.
+    // Doorness does not change with the reading: the doors still open.
     await tester.tap(find.byKey(const ValueKey('session-prs-tile')));
     await tester.pump();
     expect(prTaps, 1);
     expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('the goals bullseye rides the row only when there is a door', (
-    tester,
-  ) async {
-    var goalTaps = 0;
-    await _pumpTiles(
-      tester,
-      prCount: 1,
-      lessonCount: 1,
-      onPrTap: () {},
-      onLessonTap: () {},
-      onGoalTap: () => goalTaps++,
-    );
-
-    // The bullseye stands between the PRs tile and the note's, in the
-    // success glass a met goal wears (2026-10-26).
-    final bullseye = find.byKey(const ValueKey('session-goals-button'));
-    expect(bullseye, findsOneWidget);
-    expect(
-      tester.getCenter(bullseye).dx,
-      greaterThan(
-        tester.getCenter(find.byKey(const ValueKey('session-prs-tile'))).dx,
-      ),
-    );
-    expect(
-      tester.getCenter(bullseye).dx,
-      lessThan(
-        tester.getCenter(find.byKey(const ValueKey('session-lessons-tile'))).dx,
-      ),
-    );
-    await tester.tap(bullseye);
-    await tester.pump();
-    expect(goalTaps, 1);
-    expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('the planner — no goal data — draws no bullseye', (tester) async {
-    await _pumpTiles(
-      tester,
-      prCount: 12,
-      lessonCount: 3,
-      gain: false,
-      onPrTap: () {},
-      onLessonTap: () {},
-    );
-    expect(find.byKey(const ValueKey('session-goals-button')), findsNothing);
   });
 }

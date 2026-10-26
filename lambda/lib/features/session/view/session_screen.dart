@@ -1792,16 +1792,14 @@ class _TrainingPageState extends State<_TrainingPage> {
                 // The ratings star (2026-10-23, was the pencil): the sheet
                 // it opens is five feeling stars — the door wears the same
                 // glyph it leads to, and a star shares no silhouette with
-                // the trophy or the pin beside it. It keeps the tiles'
-                // accent glass: a door to session content, not neutral
-                // chrome like the undo/redo pair (the PR Lab's reading,
-                // carried over).
+                // the trophy or the pin beside it. Neutral glass: the star
+                // stays white while the three score doors take the accent
+                // (2026-10-27).
                 BarIconButton(
                   key: const ValueKey('ratings-button'),
                   icon: Icons.star_rounded,
                   semanticsLabel: 'Session ratings',
                   onPressed: widget.onOpenRatings,
-                  color: AppColors.accent,
                 ),
                 const SizedBox(width: AppSpacing.sm),
                 Expanded(child: SessionStatsBar(vm: vm)),

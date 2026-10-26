@@ -14,11 +14,11 @@ import 'lessons_modal.dart';
 import 'pr_history_sheet.dart';
 
 /// The active workout's summary doors, in the Training page's sticky bottom
-/// bar: a trophy, a bullseye and a book — the trophy and book carrying the
-/// ACTIVE exercise's session gains ([SessionStatsTiles], 2026-10-22), the
-/// bullseye opening its goals (2026-10-26). Every door opens at any count,
-/// like the PR Lab's own bar — a `0` gain still hides an exercise's history
-/// behind the trophy and its cues behind the book, so neither goes dead
+/// bar: a trophy, a bullseye and a book — the trophy, bullseye and book
+/// openings the ACTIVE exercise's PRs, goals and notes ([SessionStatsTiles],
+/// 2026-10-22), the bullseye carrying its open-goal count (2026-10-27). Every
+/// door opens at any count, like the PR Lab's own bar — an exercise with no
+/// notes still has its cues behind the book, so nothing goes dead
 /// (2026-10-23). The trophy opens that exercise's PR History sheet, the book
 /// its lessons modal — scoped to the exercise on the card and the session on
 /// the desk — and the bullseye its goals sheet.
@@ -88,17 +88,20 @@ class SessionStatsBar extends StatelessWidget {
     return ListenableBuilder(
       listenable: vm,
       builder: (context, _) {
-        // The tiles speak for the exercise on screen: its own session gains,
-        // and its own doors. The lab's rule, so the number over a tile always
-        // names the feed behind it (2026-10-22).
+        // The doors speak for the exercise on screen: its own session gains,
+        // its own ledger and its own doors. The lab's rule (2026-10-22), kept
+        // one step on (2026-10-27): a control lights only when the feed
+        // behind it has something to say.
         final exerciseId = vm.activeSlot?.activeExerciseId;
         final prs = exerciseId == null ? 0 : vm.sessionPrCountFor(exerciseId);
         final lessons = exerciseId == null
             ? 0
             : vm.lessonsThisSession(exerciseId).length;
+        final goals = exerciseId == null ? 0 : vm.openGoalsFor(exerciseId);
         return SessionStatsTiles(
           prCount: prs,
           lessonCount: lessons,
+          goalCount: goals,
           // Doors at any count: the sheets hold the exercise's whole story,
           // not only this session's additions (2026-10-23).
           onPrTap: exerciseId == null
@@ -116,34 +119,39 @@ class SessionStatsBar extends StatelessWidget {
   }
 }
 
-/// The bar's doors, drawn (2026-10-22): the trophy's session gain and the
-/// note's, each a glass tile the height of the undo/redo boxes beside them,
-/// with the bullseye between them when the surface has goals to open
-/// (2026-10-26). Presentational only — the live bar binds a VM, the
-/// past-session viewer binds its own state, and both draw the same tiles.
+/// The bar's doors, drawn (2026-10-22): a trophy, a bullseye and a note glyph,
+/// each a glass control the height of the undo/redo boxes beside them, the
+/// bullseye alone carrying a number — the exercise's open goals (2026-10-27).
+/// Presentational only — the live bar binds a VM, the past-session viewer
+/// binds its own state, and the planner binds the workout editor.
 ///
-/// The count is a gain: "+2", or "0" when the session added none (a "+0"
-/// would claim a change there wasn't). The count never decides whether the
-/// tile is a door: both session surfaces always hand it a tap — the PR Lab's
-/// bar does, and the sheets behind them hold more than this session's gains
-/// (2026-10-23). A null callback remains the no-exercise fallback: quiet
-/// surface fill, hairline, primary ink, no tap. The whole tile is one
-/// semantics node, so the number never arrives without its meaning.
+/// **A door is neutral until it has something to say** (2026-10-27): the
+/// container is the app's primary glass by default and the accent glass only
+/// when the feed behind it is non-empty — the trophy when the session gained
+/// PRs (the whole shelf on the planner), the bullseye when open goals stand,
+/// the note when exercise notes exist. The star beside the row never takes
+/// the accent: it is a door to the session's feelings, not a score.
 ///
-/// The bullseye is drawn only when there is a door behind it ([onGoalTap]):
-/// the planner has no goals to open and passes none, and a fourth control on
-/// that floor would be a square that goes nowhere.
+/// Every control remains a door at any count (2026-10-23): the sheets hold
+/// the exercise's whole story, so a `0` still opens. A null callback is the
+/// no-exercise fallback: quiet surface fill, hairline, primary ink, no tap.
+/// The whole control is one semantics node, so the reading never arrives
+/// without its meaning.
+///
+/// The bullseye is drawn only when there is a door behind it ([onGoalTap]) —
+/// a surface handing it no goal data (a friend's or athlete's record) draws
+/// the two session doors without it.
 ///
 /// A plan has no session to have gained anything in, so the planner asks for
-/// the same tiles with [gain] false (2026-10-26): the counts are the whole
-/// shelves behind them — every PR the exercise ever landed, every note it
-/// carries — drawn plain ("12", never "+12"), because the number over a tile
-/// still has to name the feed it opens.
+/// the same controls with [gain] false (2026-10-26): the numbers behind them
+/// are the whole shelves — every PR the exercise ever landed, every note it
+/// carries — which is what decides their accent.
 class SessionStatsTiles extends StatelessWidget {
   const SessionStatsTiles({
     super.key,
     required this.prCount,
     required this.lessonCount,
+    this.goalCount = 0,
     this.onPrTap,
     this.onLessonTap,
     this.onGoalTap,
@@ -152,58 +160,66 @@ class SessionStatsTiles extends StatelessWidget {
 
   final int prCount;
   final int lessonCount;
+
+  /// How many of the exercise's goals still stand — the number the bullseye
+  /// draws and what lights it (2026-10-27). Read through `goalCompletionSet`
+  /// over the same merged timeline the `G` badge uses.
+  final int goalCount;
+
   final VoidCallback? onPrTap;
   final VoidCallback? onLessonTap;
 
-  /// The exercise's goals — the bullseye drawn beside the PRs tile when this
-  /// is set (2026-10-26).
+  /// The exercise's goals — the bullseye drawn beside the PRs control when
+  /// this is set (2026-10-26).
   final VoidCallback? onGoalTap;
 
   /// Whether the counts are one session's gain (the two session surfaces) or
   /// the whole feed's size (the planner). See the class doc.
   final bool gain;
 
-  /// A gain reads "+2"; a session that added none reads "0".
-  String _count(int n) => gain && n > 0 ? '+$n' : '$n';
+  String _plural(int n, String noun) => n == 1 ? noun : '${noun}s';
 
-  /// What the tile says to a screen reader — the same distinction as the
-  /// drawn count: a gain belongs to this session, a plan's total does not.
+  /// What a control says to a screen reader — the count rides the reading
+  /// even where it is no longer drawn, and it names the feed the door opens.
   String _semantics(int n, String noun) =>
-      gain ? '$n $noun this session' : '$n $noun';
+      gain ? '$n ${_plural(n, noun)} this session' : '$n ${_plural(n, noun)}';
+
+  String _goalSemantics(int n) =>
+      n == 0 ? 'Exercise goals' : '$n open ${_plural(n, 'goal')}';
 
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
         Expanded(
-          child: _tile(
+          child: _control(
             key: const ValueKey('session-prs-tile'),
             icon: Icons.emoji_events,
-            value: _count(prCount),
-            semanticsLabel: _semantics(prCount, 'PRs'),
+            semanticsLabel: _semantics(prCount, 'PR'),
+            active: prCount > 0,
             onTap: onPrTap,
           ),
         ),
         const SizedBox(width: AppSpacing.sm),
-        // The goals door beside the PRs tile (2026-10-26): a set that met a
-        // target is said in green everywhere, so the door wears the success
-        // glass the G badge wears.
         if (onGoalTap != null) ...[
-          BarIconButton(
-            key: const ValueKey('session-goals-button'),
-            icon: Icons.track_changes,
-            semanticsLabel: 'Exercise goals',
-            color: AppColors.success,
-            onPressed: onGoalTap!,
+          Expanded(
+            child: _control(
+              key: const ValueKey('session-goals-button'),
+              icon: Icons.track_changes,
+              value: '$goalCount',
+              semanticsLabel: _goalSemantics(goalCount),
+              active: goalCount > 0,
+              onTap: onGoalTap,
+            ),
           ),
           const SizedBox(width: AppSpacing.sm),
         ],
         Expanded(
-          child: _tile(
+          child: _control(
             key: const ValueKey('session-lessons-tile'),
             icon: Icons.sticky_note_2_outlined,
-            value: _count(lessonCount),
-            semanticsLabel: _semantics(lessonCount, 'exercise notes'),
+            semanticsLabel: _semantics(lessonCount, 'exercise note'),
+            active: lessonCount > 0,
             onTap: onLessonTap,
           ),
         ),
@@ -211,24 +227,27 @@ class SessionStatsTiles extends StatelessWidget {
     );
   }
 
-  /// The PR Lab's tile recipe (2026-10-22): [kSessionBarControlSize] tall so
-  /// the tiles stand level with the undo/redo boxes and the pencil beside
-  /// them, a 24px glyph and a mono 17 count — the doors read at the bar's
-  /// scale rather than as a smaller species of control. `FittedBox` narrows
-  /// the line rather than overflowing it on a small stage.
-  Widget _tile({
+  /// The PR Lab's control recipe (2026-10-22): [kSessionBarControlSize] tall
+  /// so the doors stand level with the undo/redo boxes and the star beside
+  /// them, a 24px glyph, and — on the bullseye alone — the mono 17 count.
+  /// Three equal thirds of the row at 402pt; `FittedBox` narrows the line
+  /// rather than overflowing it on a small stage.
+  Widget _control({
     Key? key,
     required IconData icon,
-    required String value,
+    String? value,
     required String semanticsLabel,
+    required bool active,
     required VoidCallback? onTap,
   }) {
-    final highlighted = onTap != null;
-    final color = highlighted ? AppColors.accent : AppColors.primary;
+    final door = onTap != null;
+    // Neutral until the feed behind it has something (2026-10-27): the
+    // accent is the "there is something here" reading, never the chrome.
+    final color = door && active ? AppColors.accent : AppColors.primary;
     return Semantics(
       button: true,
       label: semanticsLabel,
-      // The reading is the whole tile; the glyph and bare number must not
+      // The reading is the whole control; the glyph and bare number must not
       // announce themselves separately.
       excludeSemantics: true,
       child: GestureDetector(
@@ -236,11 +255,11 @@ class SessionStatsTiles extends StatelessWidget {
         child: Container(
           key: key,
           height: kSessionBarControlSize,
-          // 8, not the old 12: the pencil shares this row, and the two tiles
-          // each lost a third of their width to it (2026-10-22).
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          decoration: highlighted
-              ? glassBox(AppColors.accent)
+          // 4: two numbers left this row (2026-10-27), and the bullseye's
+          // icon + count must fit its third at 402pt without scaling down.
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
+          decoration: door
+              ? glassBox(active ? AppColors.accent : AppColors.primary)
               : BoxDecoration(
                   color: AppColors.surfaceHigh,
                   borderRadius: BorderRadius.circular(AppRadius.md),
@@ -253,15 +272,17 @@ class SessionStatsTiles extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(icon, size: 24, color: color),
-                  const SizedBox(width: 8),
-                  Text(
-                    value,
-                    style: AppFonts.mono(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w800,
-                      color: color,
+                  if (value != null) ...[
+                    const SizedBox(width: AppSpacing.xs),
+                    Text(
+                      value,
+                      style: AppFonts.mono(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                        color: color,
+                      ),
                     ),
-                  ),
+                  ],
                 ],
               ),
             ),

@@ -124,9 +124,10 @@ unique functions or viewing experiences depending on the context."*
    - the **same flat card** on the same 22pt gutter, the same scroll
      padding.
    - the **same floor bar**, date bar first (rule 8), then undo/redo with
-     the historic trash, the star (session ratings sheet), and the two
-     tiles (session PRs → `showPrHistorySheet`, exercise notes → the
-     grouped `showLessonsModal`; both scoped to the record on the bar).
+     the historic trash, the star (session ratings sheet), and the three
+     doors (session PRs → `showPrHistorySheet`, goals → the goals sheet
+     with its open count, exercise notes → the grouped `showLessonsModal`;
+     all scoped to the record on the bar).
    View mode draws **no write controls at all** (2026-10-26): `+ ADD SET`
    is not drawn, the kg/reps cells are flat text (no fill, no outline) and
    the variation is plain text without its chevron — a record carries no
@@ -206,21 +207,25 @@ unique functions or viewing experiences depending on the context."*
    - **Row 2 — `[UndoRedoButtons | 8 | BarIconButton star | 8 |
      Expanded(SessionStatsTiles)]`**. Every control in the row is a
      `kSessionBarControlSize` **48** square (`BarIconButton`, 24px glyph,
-     radius md; the tiles stand at the same 48) — the PR Lab's bar recipe,
+     radius md; the doors stand at the same 48) — the PR Lab's bar recipe,
      so the floor reads at the floating nav bar's scale (2026-10-22). The
      trash rides in `UndoRedoButtons`'
      third slot on both surfaces (live: the session's own deletions;
      viewer: the historic ones) — never in the header. The star wears
-     the **accent** glass on both floors (a door to session content; undo,
-     redo and the trash stay neutral primary). The tiles read
-     **icon + count** (`+n` for a gain, `0` when there was none), never a
-     word, because the row must fit undo/redo, the trash, the star, the
-     goals bullseye and both tiles at 402pt (the tiles narrow under their
-     `FittedBox` rather than overflow). **Both tiles are doors at any count** (2026-10-23)
-     — the PR Lab's bar always taps, and the sheets hold the exercise's
-     whole story, so a `0` still wears the accent glass and opens; the
-     quiet tile is only the no-exercise fallback. Each tile is a door to
-     the PR Lab's sheet (2026-10-22), scoped to the record on the bar: the
+     **primary glass on both floors** (2026-10-27; accent until then,
+     and never again): it opens the session's feelings, not a score.
+     The row's three doors are **trophy · bullseye · note**, each a third
+     of the inner slot. **A door is neutral until it has something to
+     say** (2026-10-27): `primary` glass and ink while its feed is empty,
+     the **accent** glass and ink once it is not — the trophy when the
+     session gained PRs (the whole PR shelf on the planner), the bullseye
+     when the exercise has open goals, the note when this session carries
+     exercise notes. **Only the bullseye draws a number** — the exercise's
+     open-goal count (`openGoalsFor`); the trophy and the note are glyphs
+     alone, the counts they used to draw (`+n`, `0`) now riding only the
+     semantics. **Every door is a door at any count** (2026-10-23)
+     — the sheets hold the exercise's whole story, so a `0` still opens;
+     the quiet solid-surface tile is only the no-exercise fallback. The
      trophy opens `showPrHistorySheet` with the card's exercise feed, the
      session on screen's set ids, its start and whether it is live — read
      newest first (2026-10-23): `AFTER` on top, drawn only
@@ -237,12 +242,15 @@ unique functions or viewing experiences depending on the context."*
      boundary as an optional `sinceLastReviewAt`; without one the three
      shelves stand exactly as before — the live page never supplies one.
      A date-bar walk moves the sets, the counts and both sheets together.
-     **The goals bullseye (2026-10-26).** Between the two tiles stands a
-     green `BarIconButton` (`track_changes`, semantics `Exercise goals`)
-     that `SessionStatsTiles` draws only when the surface passes
-     `onGoalTap` — the live Training floor and the past-session viewer do;
-     the planner and every read-only friend or athlete record do not (the
-     write would file under their id). It opens `showExerciseGoalsSheet`
+     **The goals bullseye (2026-10-26; a numbered door since 2026-10-27).**
+     Between the trophy and the note stands a `track_changes` control that
+     `SessionStatsTiles` draws only when the surface passes `onGoalTap` —
+     the live Training floor, the past-session viewer and the planner /
+     review workout editor do (2026-10-27); a friend's or athlete's record
+     does not (the write would file under their id). It carries the
+     exercise's **open goals** (`openGoalsFor`, the same `goalCompletionSet`
+     reading the sheet uses) and wears the accent glass while that count is
+     above 0. It opens `showExerciseGoalsSheet`
      (`features/goals/view/exercise_goals_sheet.dart`) on the PR sheet's
      furniture: the card's exercise named in the eyebrow, its goals,
      **Open** by default behind a status control (Achieved / All), ordered
@@ -257,12 +265,14 @@ unique functions or viewing experiences depending on the context."*
    lone `PLAN` phrase in `inkSecondary` (no state, no date, the phrase
    inert), both chevrons greyed, no radios; the undo/redo pair stands
    with its trash slot spent (a planner deletes a group outright, and
-   undo is its way back); the accent star stands greyed (a plan has no
-   session ratings); and `SessionStatsTiles(gain: false)` draws the
-   active exercise's whole PR feed and notes shelf as plain counts
-   (`12`, never `+12`) that still open `showPrHistorySheet` /
-   `showLessonsModal`, and no bullseye rides the row (a plan has no goals
-   in hand). Inside a review pass the floor does not stand
+   undo is its way back); the star stands greyed (a plan has no session
+   ratings); and `SessionStatsTiles(gain: false)` draws the active
+   exercise's whole PR feed, goals and notes shelf — the counts behind
+   the doors are the whole shelves, and the doors are still doors
+   (2026-10-27): the trophy opens `showPrHistorySheet`, the bullseye
+   `showExerciseGoalsSheet` (the editor's own `goalTimeline` + `goals`
+   read, written through `createGoalFromTarget`) and the note
+   `showLessonsModal`. Inside a review pass the floor does not stand
    down for the review bar — it stands under it, and both sheets take
    the pass's checkpoint: with no session on the desk there is no
    after-group to split, so the checkpoint divides the whole shelf
@@ -314,7 +324,7 @@ unique functions or viewing experiences depending on the context."*
 | `ExerciseSelector` | `shared/widgets/exercise_selector.dart` | The pill bar + popover, embedded in the shared card — the only exercise-tab UI since 2026-08-23 (`ExercisePillBar` deleted). |
 | `ExerciseTabChip` | `shared/widgets/exercise_tab_chip.dart` | The pill itself. Active color is accent everywhere — do NOT pass per-screen `activeColor` again (the planner's green was removed on purpose). |
 | `SwipeActions` | `shared/widgets/swipe_actions.dart` | The session rows' drawers (Goal/Duplicate/Note/Delete — the live grid and the record viewer; the live card's edit-gated history rows keep Note alone). Since 2026-10-23 (promoted from the PR Lab) each action is a trailing **circle** that scales in as its slot is uncovered — trailing action first, no fade anywhere — one drawer is open app-wide, and any tap off the action circles puts the row back. No visual affordance at rest — the swipe gesture is the discovery mechanism. |
-| `StatsRow` / `StatsTile` | `shared/widgets/stats_row.dart` | The boxed stat row on the review snapshot. **Not** the session floor: the live session, the viewer and the planner draw `SessionStatsTiles` (`features/session/view/session_stats_bar.dart`) — icon + count in a glass tile, `+n` for a session gain and `0` for none, a door at any count (quiet only when no exercise is on the card); a green `track_changes` bullseye stands between the tiles where the surface passes `onGoalTap` (live and viewer, 2026-10-26), absent on the planner; the planner passes `gain: false`, so its counts are the whole shelves, drawn plain (2026-10-26). |
+| `StatsRow` / `StatsTile` | `shared/widgets/stats_row.dart` | The boxed stat row on the review snapshot. **Not** the session floor: the live session, the viewer and the planner draw `SessionStatsTiles` (`features/session/view/session_stats_bar.dart`) — the three glyph doors (trophy · bullseye · note), `primary` glass while the feed behind a door is empty and `accent` glass once it is not, a door at any count (quiet only when no exercise is on the card); only the bullseye carries a number (the exercise's open goals), the trophy and note draw none (2026-10-27); the bullseye stands where the surface passes `onGoalTap` (live, viewer and the planner/review editor, 2026-10-27); the planner passes `gain: false`, so its counts are the whole shelves (2026-10-26). |
 | `lessons_modal.dart`, `notes_modal.dart`, `pr_history_sheet.dart` | `features/session/view/` | Shared modals. The lessons modal is polymorphic (takes a Listenable + callbacks) and stands the PR Lab's three shelves newest first — `After` (only when non-empty), the session's own shelf (headed by its date unless the caller is the live page), `Previously` — no NEW badge; `pr_history_sheet.dart` (`showPrHistorySheet`) is the trophy's sheet — presentational, fed an exercise's `PrEvent` feed, the selected session's set ids and (optionally) its start, live flag and review checkpoint (`sinceLastReviewAt`, 2026-10-26, which splits the after-group into `SINCE LAST REVIEW` + `AFTER`); `sheet_section_label.dart` is the shared group heading. |
 | `DropdownSelect` | `shared/widgets/dropdown_select.dart` | Variation picker; `valueColor` default primary everywhere. |
 | `SessionSetRow` | `shared/widgets/session_set_row.dart` | THE one set row (unified 2026-08-22). `SetRowMode { live, planned, history }` derives per-context behavior (formatter, ghost/highlight tint, draft materialization, duplicate guard); orthogonal state is flags (`isPr`, `readOnly`, `plannedTarget`, edit-gate `editConfirmed`/`onEditConfirm`). All VM work goes through bridge callbacks (`onCommit`, `onVariationChanged`, `onNotesSave`, `onDelete`, `onDuplicate`, variation trio). Since 2026-10-13 `onCommit` carries an `immediate` flag — keystroke commits are false (debounce-eligible, merged by the VM into one write per settle), blur and the registered flush handle are true (write now, the no-data-loss safety net); the planner ignores the flag. `deleted` (2026-10-14) is the past-session viewer's soft-deleted row — danger fill/edge/text, forced read-only in either mode. A read-only row (`readOnly`, an unconfirmed gate, or `deleted`) draws **flat cells** — no fill, no outline, and its variation as plain text without the picker's chevron (2026-10-26): a record carries no affordance only edit mode can answer. The swipe drawer carries Note / duplicate / delete; a goal is opened from the floor's bullseye, never from a row (2026-10-26). The planned grammar (2026-10-23) lives here: `planValue` turns kg/reps into the white-on-blue chip (`plannedFill` / `plannedText`), the kg/reps ghost is the blue guide (a planned variation is a real value in `primary` — 2026-10-23), and `_isPlannedRow` holds the tint only while the typed values meet the target. A keystroke repaints before it commits (`_onCellChanged`), and a revert to the seed supersedes the pending write (`_hasPendingCommit`). The row container carries `session-set-row-<mode>-<set|draft>-<n>` so tests read its chrome. The file also owns `recordSetRow`, the one **read-only** row builder — a record is read by two readers (the Compare flip, the record's workout screen) and they must not drift. |

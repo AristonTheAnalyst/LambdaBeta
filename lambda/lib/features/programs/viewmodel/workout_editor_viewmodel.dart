@@ -2,22 +2,31 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:uuid/uuid.dart';
 import '../../../core/utils/friendly_error.dart';
 import '../../../core/utils/undo_history.dart';
 import '../../../core/utils/name_limit.dart';
 import '../../../data/models/custom_variation.dart';
 import '../../../data/models/exercise_detail.dart';
+import '../../../data/models/exercise_usage.dart';
+import '../../../data/models/goal.dart';
 import '../../../data/models/lesson.dart';
 import '../../../data/models/planned_session.dart';
 import '../../../data/models/planned_session_exercise.dart';
 import '../../../data/models/planned_session_exercise_set.dart';
+import '../../../data/models/session_exercise_set.dart';
 import '../../../data/repositories/exercise_repository.dart';
 import '../../../data/repositories/lesson_repository.dart';
 import '../../../data/repositories/planned_session_repository.dart';
+import '../../../data/repositories/program_repository.dart';
 import '../../../data/repositories/session_repository.dart';
+import '../../../shared/widgets/exercise_target_picker.dart';
+import '../../programs/model/program_achievements.dart' show goalCompletionSet;
 import '../../session/model/pr_engine.dart' show PrEvent, prEvents;
 import '../../session/model/session_local_state.dart'
     show ExerciseHistorySession, groupHistoryByExercise, isSimilarVariationName;
+
+const _uuid = Uuid();
 
 /// One tab in the plan-workout screen — a single exercise group within the
 /// workout being planned. Backed by a dim_planned_session_exercise row
@@ -90,7 +99,10 @@ class WorkoutEditorState {
     // History (read-only past-sets, reuses the session's read path as-is)
     this.historyByExercise = const {},
     this.allPrEvents = const [],
+    this.goalTimeline = const [],
     this.pastSetsLoaded = false,
+    // Goals (the owner's own, cross-session — the floor's bullseye)
+    this.goals = const [],
   });
 
   final String? error;
@@ -125,7 +137,18 @@ class WorkoutEditorState {
   /// exercise's whole PR shelf, so it needs the feed, not the timeline. The
   /// engine sorts internally, so the timeline's newest-first order is fine.
   final List<PrEvent> allPrEvents;
+
+  /// The same past-sets timeline, undivided — the goal sheet's "already beat
+  /// this" check and the bullseye's completion rule read sets, not grouped
+  /// history (2026-10-27).
+  final List<PastSetRow> goalTimeline;
+
   final bool pastSetsLoaded;
+
+  /// The owner's goals, any scope — the floor's bullseye (2026-10-27). Same
+  /// read the session VMs take; a failed goal read leaves the bullseye at 0
+  /// rather than taking the planner down with it.
+  final List<Goal> goals;
 
   PlanExerciseSlot? get activeSlot => workoutExerciseSlots.isEmpty
       ? null
@@ -161,6 +184,8 @@ class WorkoutEditorState {
     Map<String, List<Lesson>>? lessonsByExercise,
     Map<String, List<ExerciseHistorySession>>? historyByExercise,
     List<PrEvent>? allPrEvents,
+    List<PastSetRow>? goalTimeline,
+    List<Goal>? goals,
     bool? pastSetsLoaded,
   }) => WorkoutEditorState(
     error: clearError ? null : error ?? this.error,
@@ -202,6 +227,8 @@ class WorkoutEditorState {
     lessonsByExercise: lessonsByExercise ?? this.lessonsByExercise,
     historyByExercise: historyByExercise ?? this.historyByExercise,
     allPrEvents: allPrEvents ?? this.allPrEvents,
+    goalTimeline: goalTimeline ?? this.goalTimeline,
+    goals: goals ?? this.goals,
     pastSetsLoaded: pastSetsLoaded ?? this.pastSetsLoaded,
   );
 }
@@ -224,12 +251,14 @@ class WorkoutEditorViewModel {
     LessonRepository? lessonRepo,
     SessionRepository? workoutRepo,
     PlannedSessionRepository? workoutPlanRepo,
+    ProgramRepository? programRepo,
     String? userId,
   }) : _host = host,
        _exerciseRepo = exerciseRepo ?? ExerciseRepository(),
        _lessonRepo = lessonRepo ?? LessonRepository(),
        _sessionRepo = workoutRepo ?? SessionRepository(),
        _plannedSessionRepo = workoutPlanRepo ?? PlannedSessionRepository(),
+       _programRepo = programRepo ?? ProgramRepository(),
        _userIdOverride = userId;
 
   /// The program being edited, or null when this is a standalone workout.
@@ -245,6 +274,7 @@ class WorkoutEditorViewModel {
   final LessonRepository _lessonRepo;
   final SessionRepository _sessionRepo;
   final PlannedSessionRepository _plannedSessionRepo;
+  final ProgramRepository _programRepo;
 
   /// The owner of everything this editor writes, when the caller knows it.
   ///
@@ -1883,14 +1913,92 @@ class WorkoutEditorViewModel {
       final pastSets = await _sessionRepo.loadPastSetsTimeline(_userId);
       state.value = state.value.copyWith(
         historyByExercise: groupHistoryByExercise(pastSets),
-        // Derived here, once, off the same read — the planner's tiles and
+        // Derived here, once, off the same read — the planner's doors and
         // sheets must not each walk the whole timeline (2026-10-26).
         allPrEvents: prEvents(pastSets),
+        // The raw rows too: a goal's completion is read off sets, exactly
+        // the way the G badge reads it (2026-10-27).
+        goalTimeline: pastSets,
         pastSetsLoaded: true,
       );
     } catch (e) {
       state.value = state.value.copyWith(error: friendlyError(e));
     }
+    // Goals ride along, non-fatal (the session VMs' rule, 2026-10-20): the
+    // bullseye is an extra on the floor, never a blocker for the plan.
+    await loadGoals();
+  }
+
+  /// The owner's goals, any scope — the same read the session VMs take
+  /// (2026-10-27). A failed read leaves the bullseye at 0.
+  Future<void> loadGoals() async {
+    try {
+      final goals = [
+        for (final option in await _programRepo.fetchGoalOptions(_userId))
+          option.goal,
+      ];
+      state.value = state.value.copyWith(goals: goals);
+    } catch (_) {
+      state.value = state.value.copyWith(goals: const []);
+    }
+  }
+
+  // ── Goals (the planner floor's bullseye, 2026-10-27) ─────────────────────
+
+  List<Goal> goalsForExercise(String exerciseId) => [
+    for (final goal in state.value.goals)
+      if (goal.exerciseId == exerciseId) goal,
+  ];
+
+  /// How many of the exercise's goals still stand — the bullseye's number.
+  /// Ownership is [goalCompletionSet]'s call, the same rule the goals sheet
+  /// and the `G` badge use, over this editor's timeline.
+  int openGoalsFor(String exerciseId) {
+    var open = 0;
+    for (final goal in goalsForExercise(exerciseId)) {
+      if (goalCompletionSet(goal: goal, sets: state.value.goalTimeline) ==
+          null) {
+        open++;
+      }
+    }
+    return open;
+  }
+
+  /// The exercise ordering the New goal form reads, derived off the same
+  /// timeline the planner already loaded.
+  Map<String, DateTime> get lastUsedByExercise =>
+      lastUsedByEntity(state.value.goalTimeline);
+
+  /// Writes a standalone goal from the floor's New goal form — the live and
+  /// viewer VMs' write, filed against this editor's own library (2026-10-27).
+  /// False means the write failed and the form stays open to say so.
+  Future<bool> createGoalFromTarget(ExerciseTarget target) async {
+    final notes = target.notes?.trim();
+    final goal = Goal(
+      goalId: _uuid.v4(),
+      userId: _userId,
+      // The name is the label's fallback: a goal outlives the exercise it
+      // names.
+      text: target.exerciseName,
+      description: (notes?.isEmpty ?? true) ? null : notes,
+      exerciseId: target.exerciseId,
+      variationId: target.variationId,
+      targetWeight: target.weight,
+      targetReps: target.reps,
+      targetDate: target.targetDate == null
+          ? null
+          : dateOnly(target.targetDate!),
+    );
+    try {
+      await _programRepo.createGoal(_userId, goal);
+    } catch (e) {
+      state.value = state.value.copyWith(error: friendlyError(e));
+      return false;
+    }
+    // Patch in place — the open sheet rebuilds through its Listenable, so
+    // the row appears with no reload.
+    state.value = state.value.copyWith(goals: [...state.value.goals, goal]);
+    return true;
   }
 
   void dispose() {

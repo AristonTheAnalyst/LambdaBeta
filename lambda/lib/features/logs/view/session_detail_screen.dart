@@ -433,9 +433,10 @@ class SessionDetailView extends StatelessWidget {
 
   /// The Training view's floor (2026-10-22): the date bar the live session
   /// wears, then its action row — undo/redo with the historic trash, the
-  /// ratings pencil, the PR and lesson tiles. View mode greys what edit mode
-  /// lights: undo/redo answer nothing until there are edits to walk, and the
-  /// trash reads in both modes (a tap shows the deleted exercise).
+  /// ratings star, and the PR / goals / notes doors (2026-10-27). View mode
+  /// greys what edit mode lights: undo/redo answer nothing until there are
+  /// edits to walk, and the trash reads in both modes (a tap shows the
+  /// deleted exercise).
   ///
   /// The row is the live page's row, control for control, at the same sizes
   /// — the two floors are one recipe.
@@ -448,6 +449,9 @@ class SessionDetailView extends StatelessWidget {
     final lessonCount = exerciseId == null
         ? 0
         : viewModel.sessionLessonsCount(exerciseId);
+    final goalCount = exerciseId == null
+        ? 0
+        : viewModel.openGoalsFor(exerciseId);
     final session = state.session;
     final exerciseMode = state.dateBarMode == SessionDateMode.exercise;
     final viewed = state.viewedHistorySession;
@@ -530,19 +534,19 @@ class SessionDetailView extends StatelessWidget {
               BarIconButton(
                 key: const ValueKey('session-detail-ratings-button'),
                 // The star, matching the live floor and the sheet's five
-                // feeling stars (2026-10-23).
+                // feeling stars (2026-10-23). Neutral glass — the star stays
+                // white while the three score doors take the accent
+                // (2026-10-27).
                 icon: Icons.star_rounded,
                 semanticsLabel: 'Session ratings',
                 onPressed: () => _openRatings(context),
-                // The tiles' accent glass — a door to session content, the
-                // live floor's reading (2026-10-22).
-                color: AppColors.accent,
               ),
               const SizedBox(width: AppSpacing.sm),
               Expanded(
                 child: SessionStatsTiles(
                   prCount: prCount,
                   lessonCount: lessonCount,
+                  goalCount: goalCount,
                   // Doors at any count — the PR Lab's bar recipe. A past
                   // record with no session PRs still opens onto the
                   // exercise's whole history, split around this session
