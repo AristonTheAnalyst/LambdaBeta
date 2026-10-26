@@ -89,6 +89,7 @@ class PlanSessionScreen extends StatefulWidget {
     this.standalone = false,
     this.standaloneWorkoutId,
     this.newWorkoutBlockId,
+    this.reviewSession,
   });
 
   final WorkoutEditorViewModel viewModel;
@@ -105,6 +106,19 @@ class PlanSessionScreen extends StatefulWidget {
   /// unfiled — which matters because a blocked program has no Workouts tab for
   /// an unfiled row to appear in.
   final String? newWorkoutBlockId;
+
+  /// The review this editor was opened under, when it was — handed in by the
+  /// review route rather than left to the ambient scope (2026-10-25).
+  ///
+  /// The scope is how an in-pass editor finds its review, and it works while
+  /// the pass runs: the notifier sits above the navigator. But it is a
+  /// GLOBAL, and a bar that reads it falls back to the app's tab bar the
+  /// moment it is empty — a record's workout, a route left standing after
+  /// the pass moved on, a rebuild after a reload. A workout opened from a
+  /// review is inside a ceremony for as long as it is on screen, so the
+  /// ceremony travels with the route. Null for every editor opened outside
+  /// one.
+  final ReviewSession? reviewSession;
 
   @override
   State<PlanSessionScreen> createState() => _PlanSessionScreenState();
@@ -129,6 +143,22 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
   ContentSession? get _originalSession {
     final sessions = _original?.before?.sessions;
     return (sessions == null || sessions.isEmpty) ? null : sessions.first;
+  }
+
+  /// The pass this editor is inside, or null for a plain editor.
+  ///
+  /// The route's own review is the base — a workout opened from a review stays
+  /// in the ceremony even after the ambient scope has gone — with the live
+  /// copy read back by id when the notifier still holds this pass, so a Done
+  /// tick or an open workout keeps moving the bar. The scope lookup stays on
+  /// this path for the editors that were handed no review: it is both their
+  /// source and their rebuild dependency.
+  ReviewSession? get _reviewSession {
+    final scoped = ReviewScope.maybeOf(context);
+    final base = widget.reviewSession ?? scoped;
+    if (base == null) return null;
+    final live = reviewSessionNotifier.value;
+    return (live != null && live.reviewId == base.reviewId) ? live : base;
   }
 
   /// The plan's own set count: every real row, and every draft.
@@ -289,6 +319,7 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
     context,
     child: child,
     aboveBar: aboveBar,
+    session: _reviewSession,
     onTap: _onNavTap,
     settle: settleForReview,
     settleForCompare: settleForCompare,
@@ -323,6 +354,8 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
               body: reviewChrome(
                 context,
                 settle: null,
+                // The route's own pass, like the bar below it (2026-10-25).
+                session: _reviewSession,
                 child: Center(
                   child: Padding(
                     padding: const EdgeInsets.all(AppSpacing.xl),
@@ -370,6 +403,7 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
             body: reviewChrome(
               context,
               settle: null,
+              session: _reviewSession,
               child: Center(
                 child: CircularProgressIndicator(color: AppColors.accent),
               ),
@@ -389,7 +423,7 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
         // and carries the numbers that matter — what CHANGED — so the pill
         // stands down with the nav bar, and the page's inset shrinks with it
         // ([FloatingBarOverlay] measures whatever is actually above the floor).
-        final statsBar = ReviewScope.maybeOf(context) == null
+        final statsBar = _reviewSession == null
             ? FloatingBar(
                 child: _PlanStatsBar(
                   setCount: _planSetCount(state),
@@ -562,7 +596,7 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
     // planned workout, which is not what a pass is doing — taking a workout
     // OUT of a review is the landing's swipe. The pass's own verbs (the
     // workout's note among them) are on its bar, at the floor.
-    final review = ReviewScope.maybeOf(context);
+    final review = _reviewSession;
     return Container(
       padding: EdgeInsets.only(top: topPadding),
       decoration: BoxDecoration(
@@ -871,6 +905,10 @@ class _PlanExerciseCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The scope, not the editor's route-carried review: this is the note
+    // bar, and its notes live in [reviewNotesNotifier], which only a live
+    // pass seeds — a carried review (a record's workout) has no notes to
+    // write, so drawing the box for it would offer a field over nothing.
     final review = ReviewScope.maybeOf(context);
     if (review == null) return _card(context, null, const {});
     // The note bar is the pass's record in flight: a save from any card has

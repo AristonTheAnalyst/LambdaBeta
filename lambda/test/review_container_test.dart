@@ -287,6 +287,55 @@ void main() {
         reason: 'and the bar it owns is the same container the nav bar wears',
       );
     });
+
+    testWidgets('wears the review bar off the session the ROUTE carries, with '
+        'no scope anywhere above it', (tester) async {
+      // The bug this pins (2026-10-25): a workout opened inside a review came
+      // up wearing the app's tab bar, because the bar was found through the
+      // ambient scope and the scope was empty where that page was built (a
+      // record, a cleared notifier, a reload). A route that was opened under
+      // a review carries it, and the floor says so.
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) => editorNavBar(
+              context,
+              session: session(activeSessionId: 's1'),
+              onTap: (_) {},
+              settle: () async => true,
+              settleForCompare: () async => true,
+              onComparison: (_) {},
+              child: const Text('page'),
+            ),
+          ),
+        ),
+      );
+
+      expect(
+        find.text('In Review'),
+        findsOneWidget,
+        reason:
+            'no ReviewScope above, and the bar is still the pass\'s — the '
+            'session came from the route',
+      );
+      expect(
+        find.byIcon(kDoneGlyph),
+        findsOneWidget,
+        reason: 'with the workout verbs wired through, like any in-pass bar',
+      );
+      expect(
+        find.byType(ScrollShrinkNavBar),
+        findsNothing,
+        reason:
+            'the app\'s tab bar is what a workout inside a review must never '
+            'stand on — it reads as "you left the review"',
+      );
+      expect(
+        find.text('page'),
+        findsOneWidget,
+        reason: 'the page is still there under the bar',
+      );
+    });
   });
 
   group('bar modes', () {
@@ -2294,6 +2343,44 @@ void main() {
       expect(
         tester.widget<SessionSetRow>(find.byType(SessionSetRow)).readOnly,
         isTrue,
+      );
+    });
+
+    testWidgets('the workout a record opens is a page of the record — named '
+        'for it, and standing on its bar with no pass in the scope', (
+      tester,
+    ) async {
+      seed();
+      history.reviews = [completedRow()];
+      await pumpRecord(tester, subject: recordSession());
+
+      await tester.tap(find.text('Push Day'));
+      await tester.pumpAndSettle();
+
+      // The route names itself. It is deliberately not `kReviewRouteName`: a
+      // record is never what a live pass unwinds into — this name says which
+      // ceremony the page belongs to without claiming to be its root.
+      expect(
+        ModalRoute.of(
+          tester.element(find.byType(RecordWorkoutScreen)),
+        )!.settings.name,
+        kReviewRouteNameRecord,
+        reason:
+            'an unnamed route is a page nobody can place — every route in '
+            'this ceremony carries its name',
+      );
+      // And the bar is the record's, from the session the route carries — no
+      // notifier is running under a record at all, so an ambient lookup here
+      // would have nothing to find and would hand the page the app's tab bar
+      // (the 2026-10-25 bug: a workout opened inside a review came up on the
+      // PR home's bottom bar).
+      expect(reviewSessionNotifier.value, isNull);
+      expect(find.text(kReviewAfterLabel), findsOneWidget);
+      expect(find.byType(ReviewBar), findsOneWidget);
+      expect(
+        find.byType(ScrollShrinkNavBar),
+        findsNothing,
+        reason: 'the app tab bar under a record workout reads as "you left"',
       );
     });
 

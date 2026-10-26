@@ -742,8 +742,14 @@ class _ReviewRouteState extends State<ReviewRoute> {
       _WorkoutRoute(
         reviewId: session.reviewId,
         workoutId: card.sessionId,
-        builder: (_) =>
-            PlanSessionScreen(viewModel: _editorFor, workout: card.workout),
+        // The pass is handed to the editor as well as published to the
+        // scope: both are set while a pass runs, but only one of them is a
+        // fact of the route (2026-10-25).
+        builder: (_) => PlanSessionScreen(
+          viewModel: _editorFor,
+          workout: card.workout,
+          reviewSession: session,
+        ),
       ),
     );
     if (!mounted) return;
@@ -811,6 +817,11 @@ class _ReviewRouteState extends State<ReviewRoute> {
 
     await Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute<void>(
+        // Named like the record route above it, so the page is legible as
+        // part of the same ceremony wherever a route name is read (a record
+        // is never what a live pass unwinds into — that is `kReviewRouteName`'s
+        // job, and this name is deliberately not it).
+        settings: const RouteSettings(name: kReviewRouteNameRecord),
         builder: (_) => RecordWorkoutScreen(
           session: session,
           name: card.name,
@@ -1809,6 +1820,12 @@ Future<void> setActiveWorkoutDone(
 /// editors. Tab taps belong to the nav bar and the guard behind it; during a
 /// review there is no nav bar, and the pass leaves through the editor's own
 /// back guard instead.
+/// [session] is the pass this editor was OPENED under, when the route knows
+/// it — the same explicit session [reviewChrome] takes. A route that carries
+/// its review wears the review bar even where the ambient scope has gone
+/// (a record, a cleared notifier, a reload), because the bar is a fact of the
+/// route rather than a reading of a global. Null falls back to the scope,
+/// which is every editor opened from inside a live pass.
 Widget editorNavBar(
   BuildContext context, {
   required Widget child,
@@ -1819,9 +1836,10 @@ Widget editorNavBar(
   bool comparing = false,
   Widget? aboveBar,
   ValueChanged<String>? onExerciseTap,
+  ReviewSession? session,
 }) {
-  final session = ReviewScope.maybeOf(context);
-  if (session != null) {
+  final review = session ?? ReviewScope.maybeOf(context);
+  if (review != null) {
     return reviewChrome(
       context,
       child: child,
@@ -1831,6 +1849,10 @@ Widget editorNavBar(
       comparing: comparing,
       aboveBar: aboveBar,
       onExerciseTap: onExerciseTap,
+      // The caller's own session, never the resolved one: a bar found
+      // through the scope has to keep READING the scope, or a Done tick
+      // would not move it.
+      session: session,
     );
   }
   return ScrollShrinkNavBar(
