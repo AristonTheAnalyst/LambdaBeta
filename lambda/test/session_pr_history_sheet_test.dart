@@ -69,6 +69,7 @@ Future<void> _openSheet(
   Set<String> sessionSetIds = const {'s1', 's2'},
   DateTime? sessionStartedAt,
   bool sessionIsLive = false,
+  DateTime? sinceLastReviewAt,
   // The third group needs a taller stage than the 0.7 sheet offers at the
   // default phone height, or its entries sit past the list's viewport and
   // never lay out for the order assertions.
@@ -92,6 +93,7 @@ Future<void> _openSheet(
                 sessionSetIds: sessionSetIds,
                 sessionStartedAt: sessionStartedAt,
                 sessionIsLive: sessionIsLive,
+                sinceLastReviewAt: sinceLastReviewAt,
               ),
               child: const Text('open'),
             ),
@@ -173,6 +175,62 @@ void main() {
       tester.getTopLeft(find.byKey(const ValueKey('pr-history-entry-s9'))).dy,
       greaterThan(previously),
       reason: 's9 shares the session\'s day but landed before it',
+    );
+  });
+
+  testWidgets('a review checkpoint splits the after-group — since the last '
+      'pass above what came before it', (tester) async {
+    final beforeReview = _event(
+      setId: 's10',
+      weight: 68,
+      reps: 3,
+      date: DateTime(2026, 10, 21),
+      beforeWeight: 65,
+    );
+    final sinceReview = _event(
+      setId: 's11',
+      weight: 70,
+      reps: 3,
+      date: DateTime(2026, 10, 25),
+      beforeWeight: 68,
+    );
+
+    await _openSheet(
+      tester,
+      prs: [..._prs, beforeReview, sinceReview],
+      sessionStartedAt: DateTime(2026, 10, 20),
+      sinceLastReviewAt: DateTime(2026, 10, 22),
+      physicalHeight: 6622,
+    );
+
+    expect(find.text('6 PRs'), findsOneWidget);
+    expect(find.text('SINCE LAST REVIEW'), findsOneWidget);
+    expect(find.text('AFTER'), findsOneWidget);
+    expect(find.text('20 OCT 2026'), findsOneWidget);
+    expect(find.text('PREVIOUSLY'), findsOneWidget);
+
+    final since = tester.getTopLeft(find.text('SINCE LAST REVIEW')).dy;
+    final after = tester.getTopLeft(find.text('AFTER')).dy;
+    final middle = tester.getTopLeft(find.text('20 OCT 2026')).dy;
+    final previously = tester.getTopLeft(find.text('PREVIOUSLY')).dy;
+    expect(since, lessThan(after), reason: 'the newer half leads the feed');
+    expect(after, lessThan(middle));
+    expect(middle, lessThan(previously));
+
+    final sinceEntry = tester
+        .getTopLeft(find.byKey(const ValueKey('pr-history-entry-s11')))
+        .dy;
+    final beforeEntry = tester
+        .getTopLeft(find.byKey(const ValueKey('pr-history-entry-s10')))
+        .dy;
+    expect(sinceEntry, greaterThan(since));
+    expect(sinceEntry, lessThan(after));
+    expect(beforeEntry, greaterThan(after));
+    expect(beforeEntry, lessThan(middle));
+    expect(
+      tester.getTopLeft(find.byKey(const ValueKey('pr-history-entry-s9'))).dy,
+      greaterThan(previously),
+      reason: 'a PR from before the session is never "since the last review"',
     );
   });
 

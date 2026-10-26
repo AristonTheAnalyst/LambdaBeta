@@ -89,7 +89,10 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
   @override
   void initState() {
     super.initState();
-    _vm = SessionDetailViewModel(userId: widget.userId);
+    _vm = SessionDetailViewModel(
+      userId: widget.userId,
+      readOnly: widget.readOnly,
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _vm.load(widget.sessionId, initialExerciseId: widget.initialExerciseId);
     });
@@ -536,6 +539,9 @@ class SessionDetailView extends StatelessWidget {
       prs: viewModel.prHistoryFor(exerciseId),
       sessionSetIds: viewModel.sessionPrSetIdsFor(exerciseId),
       sessionStartedAt: state.session?.createdDatetime,
+      // The record's own review boundary, when a pass has covered it
+      // (2026-10-26): PRs landed since that pass lead the feed.
+      sinceLastReviewAt: state.reviewCheckpoint,
     );
   }
 
@@ -558,6 +564,7 @@ class SessionDetailView extends StatelessWidget {
       sessionId: state.session?.sessionId,
       sessionStartedAt: state.session?.createdDatetime,
       readOnly: readOnly,
+      sinceLastReviewAt: state.reviewCheckpoint,
     );
   }
 
@@ -854,6 +861,7 @@ class _DetailCardBuilder extends StatelessWidget {
       sessionId: state.session?.sessionId,
       sessionStartedAt: state.session?.createdDatetime,
       readOnly: readOnly,
+      sinceLastReviewAt: state.reviewCheckpoint,
     );
 
     final variationOptions = [
@@ -1014,6 +1022,7 @@ class _DetailCardBuilder extends StatelessWidget {
         prs: viewModel.prHistoryFor(exerciseId),
         sessionSetIds: viewModel.sessionPrSetIdsFor(exerciseId),
         sessionStartedAt: state.session?.createdDatetime,
+        sinceLastReviewAt: state.reviewCheckpoint,
       ),
       // The plan-linked blue is the selector field and the set rows,
       // matching live (2026-10-23) — the session's plan is a fact about the

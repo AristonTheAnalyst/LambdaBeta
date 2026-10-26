@@ -18,6 +18,7 @@ import '../../../data/models/session_exercise.dart';
 import '../../../data/models/session_exercise_set.dart';
 import '../../../data/repositories/exercise_repository.dart';
 import '../../../data/repositories/lesson_repository.dart';
+import '../../../data/repositories/program_history_repository.dart';
 import '../../../data/repositories/program_repository.dart';
 import '../../../data/repositories/session_repository.dart';
 import '../../../shared/widgets/exercise_target_picker.dart';
@@ -123,6 +124,7 @@ class SessionDetailState {
     this.dateBarMode = SessionDateMode.exercise,
     this.exerciseHistoryIndex = 0,
     this.exerciseHistoryForId,
+    this.reviewCheckpoint,
   });
 
   final bool isLoading;
@@ -182,6 +184,14 @@ class SessionDetailState {
 
   /// The exercise [exerciseHistoryIndex] belongs to.
   final String? exerciseHistoryForId;
+
+  /// Where this record's "since last review" window opens (2026-10-26): the
+  /// completion of the newest completed review whose set covers the record's
+  /// template, or null when the workout was never reviewed (or followed no
+  /// template at all — a freestyle session is never part of a review's set).
+  /// The two sheets read it to split their after-group; null leaves their
+  /// three shelves standing.
+  final DateTime? reviewCheckpoint;
 
   /// The record's name in a header: the plan it followed at the time
   /// (`fact_session.planned_session_name`), or Freestyle when it had no plan
@@ -270,6 +280,8 @@ class SessionDetailState {
     SessionDateMode? dateBarMode,
     int? exerciseHistoryIndex,
     String? exerciseHistoryForId,
+    DateTime? reviewCheckpoint,
+    bool clearReviewCheckpoint = false,
   }) => SessionDetailState(
     isLoading: isLoading ?? this.isLoading,
     isSaving: isSaving ?? this.isSaving,
@@ -309,6 +321,9 @@ class SessionDetailState {
     dateBarMode: dateBarMode ?? this.dateBarMode,
     exerciseHistoryIndex: exerciseHistoryIndex ?? this.exerciseHistoryIndex,
     exerciseHistoryForId: exerciseHistoryForId ?? this.exerciseHistoryForId,
+    reviewCheckpoint: clearReviewCheckpoint
+        ? null
+        : (reviewCheckpoint ?? this.reviewCheckpoint),
   );
 }
 
@@ -322,17 +337,26 @@ class SessionDetailViewModel {
     ExerciseRepository? exerciseRepo,
     LessonRepository? lessonRepo,
     ProgramRepository? programRepo,
+    ProgramHistoryRepository? historyRepo,
     String? userId,
+    this.readOnly = false,
   }) : _sessionRepo = sessionRepo ?? SessionRepository(),
        _exerciseRepo = exerciseRepo ?? ExerciseRepository(),
        _lessonRepo = lessonRepo ?? LessonRepository(),
        _programRepo = programRepo ?? ProgramRepository(),
+       _historyRepo = historyRepo ?? ProgramHistoryRepository(),
        _userIdOverride = userId;
+
+  /// A friend's record (2026-10-23): nothing on this page asks the review
+  /// history anything — a friend's reviews never reach this device, and the
+  /// question ("have they reviewed this?") is not the reader's to ask.
+  final bool readOnly;
 
   final SessionRepository _sessionRepo;
   final ExerciseRepository _exerciseRepo;
   final LessonRepository _lessonRepo;
   final ProgramRepository _programRepo;
+  final ProgramHistoryRepository _historyRepo;
   final state = ValueNotifier(const SessionDetailState());
 
   int _nextDraftId = 1;
@@ -550,8 +574,11 @@ class SessionDetailViewModel {
       isLoading: !inPlace,
       clearError: true,
       // A stepped-to record is a different session: the previous record's
-      // neighbours must not brief the bar while the new one loads.
+      // neighbours must not brief the bar while the new one loads, and its
+      // review checkpoint must not divide the arriving record's sheets
+      // (2026-10-26).
       clearWalk: true,
+      clearReviewCheckpoint: true,
       // A step leaves the old record's edit pass behind; the one arriving
       // is read-only until its own Edit is tapped.
       isEditing: false,
@@ -610,6 +637,9 @@ class SessionDetailViewModel {
       // The date bar's walk, alongside the page: the arrows fill in when the
       // list answers, and an unanswerable read leaves them inert.
       unawaited(_loadWalk(sessionId));
+      // The sheets' review split, the same way: the record's own boundary,
+      // read beside the page rather than blocking it (2026-10-26).
+      if (session != null) unawaited(_loadReviewCheckpoint(session));
       // Lessons for the session's exercises load with the session, so the
       // card's pill and the floor tile count from the first frame — waiting
       // for the modal to open would leave both reading zero (2026-10-22).
@@ -665,6 +695,35 @@ class SessionDetailViewModel {
       );
     } catch (_) {
       // The walk is chrome — a failed read leaves the arrows inert.
+    }
+  }
+
+  /// Where this record's "since last review" window opens (2026-10-26): the
+  /// completion of the newest completed review whose set covers the record's
+  /// template. Asked of the review history rather than handed in, because
+  /// the reader arrived from Logs and no pass is in hand — the question is
+  /// the review picker's own (`checkpointForSet`), asked about one record.
+  ///
+  /// Chrome, like the walk: a null — a freestyle record, or one no pass ever
+  /// covered — leaves the sheets' three shelves standing, and a failed read
+  /// does the same rather than keeping the page from opening. A friend's
+  /// record asks nothing at all.
+  Future<void> _loadReviewCheckpoint(Session session) async {
+    if (readOnly) return;
+    final plannedSessionId = session.plannedSessionId;
+    if (plannedSessionId == null) return;
+    try {
+      final checkpoint = await _historyRepo.checkpointForSet(
+        _userId,
+        sessionIds: [plannedSessionId],
+      );
+      if (checkpoint == null) return;
+      // A fast second step can land the old read after the new record's; the
+      // boundary is only ever written for the record now on screen.
+      if (state.value.session?.sessionId != session.sessionId) return;
+      state.value = state.value.copyWith(reviewCheckpoint: checkpoint);
+    } catch (_) {
+      // A boundary divides the sheets — it is not what opens the page.
     }
   }
 

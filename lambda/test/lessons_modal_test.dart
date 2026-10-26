@@ -115,6 +115,7 @@ void main() {
     String? sessionId,
     DateTime? sessionStartedAt,
     bool readOnly = false,
+    DateTime? sinceLastReviewAt,
   }) =>
       MaterialApp(
         home: Scaffold(
@@ -152,6 +153,7 @@ void main() {
                   sessionId: sessionId,
                   sessionStartedAt: sessionStartedAt,
                   readOnly: readOnly,
+                  sinceLastReviewAt: sinceLastReviewAt,
                 ),
               ),
             ),
@@ -352,6 +354,126 @@ void main() {
       lessThan(previously),
     );
     expect(tester.getTopLeft(find.text('Old cue')).dy, greaterThan(previously));
+  });
+
+  // ── Since last review (2026-10-26) ───────────────────────────────────────
+  // A checkpoint behind the record splits the after-group: the lessons
+  // written since the last pass lead the sheet, and the ones written after
+  // the session but no later than it keep `AFTER`.
+  testWidgets('a review checkpoint splits the after-group', (tester) async {
+    repo.lessons
+      ..clear()
+      ..addAll([
+        Lesson(
+          lessonId: 'l-old',
+          userId: 'u1',
+          exerciseId: exerciseId,
+          text: 'Old cue',
+          pinned: false,
+          createdDate: DateTime(2026, 10, 18),
+        ),
+        Lesson(
+          lessonId: 'l-here',
+          userId: 'u1',
+          exerciseId: exerciseId,
+          text: 'Elbows tucked',
+          pinned: false,
+          createdDate: DateTime(2026, 10, 20, 12),
+          sessionId: 'w1',
+        ),
+        // After the record on the desk, before the last review closed.
+        Lesson(
+          lessonId: 'l-after',
+          userId: 'u1',
+          exerciseId: exerciseId,
+          text: 'Cue before the pass',
+          pinned: false,
+          createdDate: DateTime(2026, 10, 21),
+        ),
+        // After the last review closed — the pass's own window.
+        Lesson(
+          lessonId: 'l-since',
+          userId: 'u1',
+          exerciseId: exerciseId,
+          text: 'Cue since the pass',
+          pinned: false,
+          createdDate: DateTime(2026, 10, 25),
+        ),
+      ]);
+
+    // A tall stage so all four groups lay out inside the fixed sheet.
+    tester.view.physicalSize = const Size(1206, 5622);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      buildModal(
+        sessionId: 'w1',
+        sessionStartedAt: DateTime(2026, 10, 20, 9),
+        sinceLastReviewAt: DateTime(2026, 10, 22),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(ElevatedButton));
+    await tester.pumpAndSettle();
+
+    expect(find.text('SINCE LAST REVIEW'), findsOneWidget);
+    expect(find.text('AFTER'), findsOneWidget);
+    expect(find.text('20 OCT 2026'), findsOneWidget);
+    expect(find.text('PREVIOUSLY'), findsOneWidget);
+
+    final since = tester.getTopLeft(find.text('SINCE LAST REVIEW')).dy;
+    final after = tester.getTopLeft(find.text('AFTER')).dy;
+    final middle = tester.getTopLeft(find.text('20 OCT 2026')).dy;
+    final previously = tester.getTopLeft(find.text('PREVIOUSLY')).dy;
+    expect(since, lessThan(after), reason: 'the newer half leads the sheet');
+    expect(after, lessThan(middle));
+    expect(middle, lessThan(previously));
+
+    final sinceCue = tester.getTopLeft(find.text('Cue since the pass')).dy;
+    final afterCue = tester.getTopLeft(find.text('Cue before the pass')).dy;
+    expect(sinceCue, greaterThan(since));
+    expect(sinceCue, lessThan(after));
+    expect(afterCue, greaterThan(after));
+    expect(afterCue, lessThan(middle));
+  });
+
+  testWidgets('without a checkpoint the three shelves stand', (tester) async {
+    repo.lessons
+      ..clear()
+      ..addAll([
+        Lesson(
+          lessonId: 'l-here',
+          userId: 'u1',
+          exerciseId: exerciseId,
+          text: 'Elbows tucked',
+          pinned: false,
+          createdDate: DateTime(2026, 10, 20, 12),
+          sessionId: 'w1',
+        ),
+        Lesson(
+          lessonId: 'l-since',
+          userId: 'u1',
+          exerciseId: exerciseId,
+          text: 'Cue since the pass',
+          pinned: false,
+          createdDate: DateTime(2026, 10, 25),
+        ),
+      ]);
+
+    tester.view.physicalSize = const Size(1206, 5622);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      buildModal(sessionId: 'w1', sessionStartedAt: DateTime(2026, 10, 20, 9)),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(ElevatedButton));
+    await tester.pumpAndSettle();
+
+    expect(find.text('SINCE LAST REVIEW'), findsNothing);
+    expect(find.text('AFTER'), findsOneWidget);
   });
 
   testWidgets('the modal draws readable ink and type', (tester) async {

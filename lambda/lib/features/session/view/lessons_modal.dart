@@ -29,6 +29,14 @@ import 'sheet_section_label.dart';
 /// is not "previously". The old `NEW` badge is gone: the heading already
 /// says which lessons are new, and the two would say it twice. Pin,
 /// tap-to-edit, swipe-to-delete and add all behave as before.
+///
+/// Where a review stands behind the record (2026-10-26), the caller also
+/// names the checkpoint the last pass closed on: the after-group then splits
+/// in two — what landed since that checkpoint (`SINCE LAST REVIEW`) above
+/// what landed after the session but no later than it (`AFTER`). A pass is
+/// reading for its own window, and that window belongs at the top of the
+/// sheet rather than folded into the session's aftermath. Without a
+/// checkpoint nothing moves: the three shelves stand as they always did.
 void showLessonsModal(
   BuildContext context, {
   required Listenable listenable,
@@ -65,6 +73,13 @@ void showLessonsModal(
   /// A friend's record (2026-10-23): the shelves read exactly as always, but
   /// no composer, no pin, no edit, no delete — the notes are somebody else's.
   bool readOnly = false,
+
+  /// Where the last review of this ground ended (2026-10-26) — resolved by
+  /// the caller, which is the only one that knows a pass stands behind the
+  /// record. A lesson written after it leads the sheet as `SINCE LAST
+  /// REVIEW`; one written after the session but no later than it stays
+  /// `AFTER`. Null keeps the three shelves exactly as they were.
+  DateTime? sinceLastReviewAt,
 }) {
   showLambdaModal(
     context,
@@ -84,6 +99,7 @@ void showLessonsModal(
       sessionStartedAt: sessionStartedAt,
       sessionIsLive: sessionIsLive,
       readOnly: readOnly,
+      sinceLastReviewAt: sinceLastReviewAt,
     ),
   );
 }
@@ -103,6 +119,7 @@ class _LessonsModalContent extends StatefulWidget {
     this.sessionStartedAt,
     this.sessionIsLive = false,
     this.readOnly = false,
+    this.sinceLastReviewAt,
   });
 
   final Listenable listenable;
@@ -122,6 +139,10 @@ class _LessonsModalContent extends StatefulWidget {
 
   /// A friend's record — the sheet reads, it never writes (2026-10-23).
   final bool readOnly;
+
+  /// Where the last review of this ground ended — the split inside the
+  /// after-group (2026-10-26). Null keeps the three shelves.
+  final DateTime? sinceLastReviewAt;
 
   @override
   State<_LessonsModalContent> createState() => _LessonsModalContentState();
@@ -193,6 +214,23 @@ class _LessonsModalContentState extends State<_LessonsModalContent> {
                 lesson.createdDate.isAfter(startedAt))
               lesson,
         ];
+        // A checkpoint behind the record splits the after-group in two
+        // (2026-10-26): what landed since the last review leads, and what
+        // landed after the session but no later than that review keeps the
+        // `AFTER` shelf. A strict split, drawn newest-first — the newer half
+        // must come first, or the sheet would file a later lesson under an
+        // older heading.
+        final checkpoint = widget.sinceLastReviewAt;
+        final sinceReviewLessons = [
+          for (final lesson in afterLessons)
+            if (checkpoint != null && lesson.createdDate.isAfter(checkpoint))
+              lesson,
+        ];
+        final afterRemainderLessons = [
+          for (final lesson in afterLessons)
+            if (checkpoint == null || !lesson.createdDate.isAfter(checkpoint))
+              lesson,
+        ];
         final previousLessons = [
           for (final lesson in ordered)
             if (!inThisSession(lesson) &&
@@ -228,7 +266,8 @@ class _LessonsModalContentState extends State<_LessonsModalContent> {
           }
         }
 
-        addGroup('After', afterLessons);
+        addGroup('Since last review', sinceReviewLessons);
+        addGroup('After', afterRemainderLessons);
         addGroup(sessionLabel, sessionLessons);
         addGroup('Previously', previousLessons);
         return SafeArea(

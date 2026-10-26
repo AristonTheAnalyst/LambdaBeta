@@ -30,6 +30,11 @@ import 'sheet_section_label.dart';
 /// reading a viewmodel keeps the sheet a rendering of whichever feed it is
 /// handed — today's live session, a record stepped onto by the date bar, or
 /// a past session opened from Logs.
+///
+/// A review checkpoint ([sinceLastReviewAt], 2026-10-26) splits the
+/// after-group once more: PRs landed since the last pass closed
+/// (`SINCE LAST REVIEW`) sit above those landed after the session but no
+/// later than it (`AFTER`). Without one the shelves read exactly as before.
 Future<void> showPrHistorySheet(
   BuildContext context, {
   required String exerciseName,
@@ -46,6 +51,13 @@ Future<void> showPrHistorySheet(
   /// shelf `THIS SESSION`; false dates it (`18 OCT 2026`), because a record
   /// being read is not "this session" to the person reading it.
   bool sessionIsLive = false,
+
+  /// Where the last review of this ground ended (2026-10-26) — resolved by
+  /// the caller (the record's own review history, or the pass in hand). A
+  /// PR landed after it leads the feed as `SINCE LAST REVIEW`; one landed
+  /// after the session but no later than it stays `AFTER`. Null keeps the
+  /// three shelves.
+  DateTime? sinceLastReviewAt,
 }) {
   return showLambdaModal<void>(
     context,
@@ -55,6 +67,7 @@ Future<void> showPrHistorySheet(
       sessionSetIds: sessionSetIds,
       sessionStartedAt: sessionStartedAt,
       sessionIsLive: sessionIsLive,
+      sinceLastReviewAt: sinceLastReviewAt,
     ),
   );
 }
@@ -91,6 +104,7 @@ class _PrHistorySheet extends StatefulWidget {
     required this.sessionSetIds,
     this.sessionStartedAt,
     this.sessionIsLive = false,
+    this.sinceLastReviewAt,
   });
 
   final String exerciseName;
@@ -105,6 +119,10 @@ class _PrHistorySheet extends StatefulWidget {
 
   /// Live session → `THIS SESSION`; a record → its date.
   final bool sessionIsLive;
+
+  /// Where the last review of this ground ended — the split inside the
+  /// after-group (2026-10-26). Null keeps the three shelves.
+  final DateTime? sinceLastReviewAt;
 
   @override
   State<_PrHistorySheet> createState() => _PrHistorySheetState();
@@ -208,8 +226,23 @@ class _PrHistorySheetState extends State<_PrHistorySheet> {
             (startedAt == null || !event.achievedDate.isAfter(startedAt)))
           event,
     ];
+    // A checkpoint behind the record splits the after-group again
+    // (2026-10-26): the newest PRs — those landed since the last review —
+    // lead the feed, and the ones landed after the session but no later
+    // than that review keep the `AFTER` shelf. Strict split, newest-first,
+    // so a later PR can never be filed under the older heading.
+    final checkpoint = widget.sinceLastReviewAt;
+    final sinceReviewPrs = [
+      for (final event in afterPrs)
+        if (checkpoint != null && event.achievedDate.isAfter(checkpoint)) event,
+    ];
+    final afterRemainderPrs = [
+      for (final event in afterPrs)
+        if (checkpoint == null || !event.achievedDate.isAfter(checkpoint)) event,
+    ];
     final feedGroups = <(String, List<PrEvent>)>[
-      ('After', afterPrs),
+      ('Since last review', sinceReviewPrs),
+      ('After', afterRemainderPrs),
       (sessionLabel, sessionPrs),
       ('Previously', previousPrs),
     ];

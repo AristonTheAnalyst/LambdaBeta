@@ -10,6 +10,7 @@ import 'package:lambda/data/models/session_exercise.dart';
 import 'package:lambda/data/models/session_exercise_set.dart';
 import 'package:lambda/data/repositories/exercise_repository.dart';
 import 'package:lambda/data/repositories/lesson_repository.dart';
+import 'package:lambda/data/repositories/program_history_repository.dart';
 import 'package:lambda/data/repositories/program_repository.dart';
 import 'package:lambda/data/repositories/session_repository.dart';
 import 'package:lambda/features/logs/viewmodel/session_detail_viewmodel.dart';
@@ -25,11 +26,16 @@ class _FakeSessionRepo extends Fake implements SessionRepository {
   bool failUpdate = false;
   final updateLog = <({String setId, double? weight, bool clearWeight})>[];
 
-  Session session({String id = 'w1'}) => Session(
+  /// Records this test opens by id, when it needs a session other than the
+  /// default one.
+  final sessionsById = <String, Session>{};
+
+  Session session({String id = 'w1', String? plannedSessionId}) => Session(
     sessionId: id,
     userId: 'u1',
     createdDatetime: DateTime(2026, 10, 10),
     endDatetime: DateTime(2026, 10, 10, 10),
+    plannedSessionId: plannedSessionId,
   );
 
   final rows = <String, SessionExerciseSet>{};
@@ -50,7 +56,8 @@ class _FakeSessionRepo extends Fake implements SessionRepository {
   );
 
   @override
-  Future<Session?> fetchSession(String sessionId) async => session();
+  Future<Session?> fetchSession(String sessionId) async =>
+      sessionsById[sessionId] ?? session(id: sessionId);
 
   @override
   Future<List<SessionExercise>> loadSessionExercises(String sessionId) async =>
@@ -152,13 +159,19 @@ class _FakeExerciseRepo extends Fake implements ExerciseRepository {
 void main() {
   late _FakeSessionRepo repo;
 
-  SessionDetailViewModel buildVm({_FakeProgramRepo? programs}) {
+  SessionDetailViewModel buildVm({
+    _FakeProgramRepo? programs,
+    _FakeHistoryRepo? history,
+    bool readOnly = false,
+  }) {
     final vm = SessionDetailViewModel(
       sessionRepo: repo,
       exerciseRepo: _FakeExerciseRepo(),
       lessonRepo: FakeLessonRepository(),
       programRepo: programs ?? _FakeProgramRepo(),
+      historyRepo: history ?? _FakeHistoryRepo(const {}),
       userId: 'u1',
+      readOnly: readOnly,
     );
     return vm;
   }
@@ -371,6 +384,115 @@ void main() {
       vm.dispose();
     });
   });
+
+  // ── The sheets' review boundary (2026-10-26) ─────────────────────────────
+  // A record a pass has covered carries the checkpoint its last review
+  // closed on, so the two sheets can split their after-group. It is asked
+  // of the review history, read beside the page, and it belongs to the
+  // record: a step onto another record drops it.
+
+  test('a covered record carries its review checkpoint into the state', () {
+    fakeAsync((async) {
+      final boundary = DateTime(2026, 10, 22);
+      final history = _FakeHistoryRepo({'plan-a': boundary});
+      repo.sessionsById['w1'] = repo.session(plannedSessionId: 'plan-a');
+
+      final vm = buildVm(history: history);
+      vm.load('w1');
+      async.flushMicrotasks();
+
+      expect(
+        history.asked,
+        ['plan-a'],
+        reason: 'the question is about the template the record followed, '
+            'which is what a review\'s set holds',
+      );
+      expect(vm.state.value.reviewCheckpoint, boundary);
+      vm.dispose();
+    });
+  });
+
+  test('a step onto a record no pass covered leaves no boundary', () {
+    fakeAsync((async) {
+      repo.sessionsById['w1'] = repo.session(plannedSessionId: 'plan-a');
+      repo.sessionsById['w2'] = repo.session(
+        id: 'w2',
+        plannedSessionId: 'plan-b',
+      );
+      final history = _FakeHistoryRepo({'plan-a': DateTime(2026, 10, 22)});
+
+      final vm = buildVm(history: history);
+      vm.load('w1');
+      async.flushMicrotasks();
+      expect(vm.state.value.reviewCheckpoint, isNotNull);
+
+      vm.walkTo('w2');
+      async.flushMicrotasks();
+
+      expect(
+        vm.state.value.reviewCheckpoint,
+        isNull,
+        reason: 'the boundary belongs to the record on screen, not the one '
+            'left behind',
+      );
+      vm.dispose();
+    });
+  });
+
+  test('a freestyle record asks nothing, and so does a friend\'s', () {
+    fakeAsync((async) {
+      final history = _FakeHistoryRepo({'plan-a': DateTime(2026, 10, 22)});
+
+      final freestyle = buildVm(history: history);
+      freestyle.load('w1');
+      async.flushMicrotasks();
+      expect(
+        history.asked,
+        isEmpty,
+        reason: 'a freestyle session is never part of a review\'s set',
+      );
+      expect(freestyle.state.value.reviewCheckpoint, isNull);
+      freestyle.dispose();
+
+      repo.sessionsById['w1'] = repo.session(plannedSessionId: 'plan-a');
+      final friend = buildVm(history: history, readOnly: true);
+      friend.load('w1');
+      async.flushMicrotasks();
+      expect(
+        history.asked,
+        isEmpty,
+        reason: 'a friend\'s reviews never reach this device — the reader '
+            'asks nothing of them',
+      );
+      expect(friend.state.value.reviewCheckpoint, isNull);
+      friend.dispose();
+    });
+  });
+}
+
+/// The review history behind the sheets' boundary, answered from a map of
+/// planned session id → where that workout's last completed pass closed, and
+/// recording what it was asked so the freestyle and friend paths can prove
+/// they ask nothing.
+class _FakeHistoryRepo extends Fake implements ProgramHistoryRepository {
+  _FakeHistoryRepo(this.boundaries);
+
+  final Map<String, DateTime> boundaries;
+  final asked = <String>[];
+
+  @override
+  Future<DateTime?> checkpointForSet(
+    String userId, {
+    required List<String> sessionIds,
+    DateTime? fallback,
+  }) async {
+    asked.addAll(sessionIds);
+    for (final id in sessionIds) {
+      final at = boundaries[id];
+      if (at != null) return at;
+    }
+    return fallback;
+  }
 }
 
 class FakeLessonRepository extends Fake implements LessonRepository {
