@@ -1638,7 +1638,6 @@ class _TrainingPageState extends State<_TrainingPage> {
   /// Idle: read-only planned-set preview of the selection; the template
   /// picker is the header's title (2026-10-23).
   Widget _buildIdle(BuildContext context) {
-    final finishedBlock = vm.finishedBlock;
     return ListView(
       // The shell's bar floats over the page, so the last card has to be
       // able to scroll clear of it.
@@ -1649,17 +1648,6 @@ class _TrainingPageState extends State<_TrainingPage> {
         ScrollShrinkNavBar.contentInset(context),
       ),
       children: [
-        // The block's last session is logged, and nothing has ended it. Said
-        // here — the screen the user lands on after a session — because the
-        // program screens are a tab away, and a phase that has run its length
-        // is worth knowing about at the moment it happens.
-        if (finishedBlock != null) ...[
-          _BlockCompleteBanner(
-            blockName: finishedBlock.name,
-            programId: vm.programProgress!.program.programId,
-          ),
-          const SizedBox(height: AppSpacing.md),
-        ],
         // The template selector is the header's title while idle (2026-10-23)
         // — the page opens straight onto the preview.
         _SessionPreview(vm: vm),
@@ -1831,9 +1819,9 @@ class _TrainingPageState extends State<_TrainingPage> {
 const _kSeedFromPastSession = 'from-past-session';
 
 /// Lets the user pick which session template to log — a standalone
-/// template, a program planned session, or none (free-form); the last row
-/// opens the past-session list that seeds today's session from a record
-/// (2026-10-26).
+/// template or none (free-form); the last row opens the past-session list
+/// that seeds today's session from a record (2026-10-26). Programs are out of
+/// the UI (2026-10-26), so there is no program section.
 Future<void> _showWorkoutPickerSheet(
   BuildContext context,
   SessionViewModel vm,
@@ -1998,73 +1986,6 @@ Future<void> _showWorkoutPickerSheet(
                         ),
                       const SizedBox(height: AppSpacing.xs),
                     ],
-                    if (vm.availableWorkouts.isNotEmpty) ...[
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(
-                          AppSpacing.lg,
-                          0,
-                          AppSpacing.lg,
-                          AppSpacing.xs,
-                        ),
-                        child: Text(
-                          'Program',
-                          style: AppFonts.mono(
-                            fontSize: AppTextStyles.caption,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.primary,
-                          ),
-                        ),
-                      ),
-                      for (final w in vm.availableWorkouts)
-                        InkWell(
-                          onTap: () {
-                            vm.selectPlannedSession(w);
-                            Navigator.of(ctx).pop();
-                          },
-                          child: Container(
-                            margin: const EdgeInsets.fromLTRB(
-                              AppSpacing.lg,
-                              0,
-                              AppSpacing.lg,
-                              AppSpacing.xs,
-                            ),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: AppSpacing.lg,
-                              vertical: AppSpacing.md,
-                            ),
-                            // Pressable picker rows — the glass recipe, accent when
-                            // selected.
-                            decoration: glassBox(
-                              w.sessionId ==
-                                      vm.selectedPlannedSession?.sessionId
-                                  ? AppColors.accent
-                                  : AppColors.primary,
-                            ),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: UserNameText(
-                                    toProperCase(w.name),
-                                    tooltip: true,
-                                    style: AppFonts.ui(
-                                      fontSize: AppTextStyles.md,
-                                      fontWeight: FontWeight.w600,
-                                      color: AppColors.primary,
-                                    ),
-                                  ),
-                                ),
-                                if (w.sessionId ==
-                                    vm.selectedPlannedSession?.sessionId)
-                                  Icon(
-                                    Icons.check,
-                                    size: 18,
-                                    color: AppColors.primary,
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ),
-                    ],
                   ],
                 ),
               ),
@@ -2117,72 +2038,6 @@ Future<void> _showWorkoutPickerSheet(
   // the next step, and picking one there is what seeds the page.
   if (choice == _kSeedFromPastSession && context.mounted) {
     await _openPastSessionPicker(context, vm);
-  }
-}
-
-/// "You've completed this training block" — shown on the idle training page
-/// when the block the current run follows has reached its length.
-///
-/// A statement plus one action, not a dialog: nothing is blocked, the session
-/// picker below it still works, and the phase-ending decision belongs on the
-/// program screen where the block's numbers and its history both live. The
-/// alternative — ending the block from here — would be this screen making a
-/// call it cannot show the consequences of.
-class _BlockCompleteBanner extends StatelessWidget {
-  const _BlockCompleteBanner({
-    required this.blockName,
-    required this.programId,
-  });
-
-  final String blockName;
-  final String programId;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(AppSpacing.md),
-      decoration: lambdaBox(ContainerTone.accent, radius: AppRadius.lg),
-      child: Row(
-        children: [
-          Icon(Icons.emoji_events_outlined, size: 20, color: AppColors.accent),
-          const SizedBox(width: AppSpacing.sm),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  "You've completed this training block",
-                  style: AppFonts.ui(
-                    fontSize: AppTextStyles.sm,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.primary,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  '${toProperCase(blockName)} has run its length.',
-                  style: AppFonts.ui(
-                    fontSize: AppTextStyles.xs,
-                    color: AppColors.inkSecondary,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: AppSpacing.sm),
-          // `go` rather than `push`: the program detail route lives under the
-          // Exercises branch, and pushing it from here would stack a second
-          // branch's screen over the session tab's wizard — with a Back button
-          // that lands mid-session. Switching branches is what the user means
-          // by "take me to the program".
-          GlassButton(
-            label: 'Go to program',
-            compact: true,
-            onPressed: () => context.go('/exercises/programs/$programId'),
-          ),
-        ],
-      ),
-    );
   }
 }
 

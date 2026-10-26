@@ -23,9 +23,6 @@ import '../../features/friends/view/friends_screen.dart';
 import '../../features/logs/view/logs_screen.dart';
 import '../../features/logs/view/session_detail_screen.dart';
 import '../../features/onboarding/view/onboarding_screen.dart';
-import '../../features/programs/view/program_detail_screen.dart';
-import '../../features/programs/view/program_history_screen.dart';
-import '../../features/programs/view/program_library_screen.dart';
 import '../../features/profile/view/appearance_screen.dart';
 import '../../features/profile/view/profile_detail_screen.dart';
 import '../../features/profile/view/profile_hub_screen.dart';
@@ -206,29 +203,10 @@ abstract final class AppRouter {
                   exerciseName: state.extra as String?,
                 ),
               ),
-              GoRoute(
-                path: 'programs',
-                builder: (_, _) => ProgramLibraryScreen(),
-                routes: [
-                  GoRoute(
-                    path: ':id',
-                    builder: (_, state) => ProgramDetailScreen(
-                      programId: state.pathParameters['id']!,
-                    ),
-                    routes: [
-                      GoRoute(
-                        path: 'history',
-                        // `?block=<id>` opens already scoped to that block —
-                        // how a block editor links to its own phase's history.
-                        builder: (_, state) => ProgramHistoryScreen(
-                          programId: state.pathParameters['id']!,
-                          initialBlockId: state.uri.queryParameters['block'],
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+              // Programs are out of the UI for now (2026-10-26): no route
+              // leads to a program, its blocks, its runs or its history. The
+              // tables, repositories and screens stay in place, unreachable,
+              // so the data can come back later without a migration.
             ],
           ),
           GoRoute(

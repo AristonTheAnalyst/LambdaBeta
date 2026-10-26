@@ -173,9 +173,10 @@ class PlannedSessionRepository {
     return rows.map((r) => PlannedSession.fromMap(r)).toList();
   }
 
-  /// Every active workout of [userId]'s — any membership, program-attached or
-  /// not — with when it was last LOGGED and how much of it is finished. This
-  /// is the review picker's list.
+  /// Every active STANDALONE workout of [userId]'s, with when it was last
+  /// LOGGED and how much of it is finished. This is the review picker's list
+  /// (program-attached workouts are out since 2026-10-26, when programs left
+  /// the UI: listing them beside their library originals read as duplicates).
   ///
   /// "Last logged, then newest created" is the agreed recency rule
   /// (2026-10-07): the workouts actually trained recently are the ones a
@@ -244,8 +245,12 @@ class PlannedSessionRepository {
 
     final rows = await ps.db.getAll(
       '''
-      SELECT * FROM dim_planned_session
-      WHERE user_id = ? AND date_archived IS NULL
+      SELECT * FROM dim_planned_session dps
+      WHERE dps.user_id = ? AND dps.date_archived IS NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM dim_planned_session_program psp
+          WHERE psp.planned_session_id = dps.session_id
+        )
       ''',
       [userId],
     );

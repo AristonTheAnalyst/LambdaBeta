@@ -4,15 +4,16 @@ import '../../../../shared/widgets/info_button.dart';
 import '../../../../shared/widgets/page_header.dart';
 import '../../../../shared/widgets/slide_tab_bar.dart';
 import '../../goals/view/goals_screen.dart';
-import '../../programs/view/program_library_screen.dart';
 import '../../programs/view/workout_library_screen.dart';
 import '../../reviews/view/reviews_screen.dart';
 import 'exercise_library_screen.dart';
 
-/// Exercises hub: six tabs — Exercises, Variations, Workouts (standalone
-/// planned sessions), Programs, Reviews, Goals — each with a search-and-buttons
+/// Exercises hub: five tabs — Exercises, Variations, Workouts (standalone
+/// planned sessions), Reviews, Goals — each with a search-and-buttons
 /// toolbar of its own, plus the header's ⓘ that explains **the tab in force**
 /// (2026-10-19). The library's Exercises/Variations tabs are embedded first.
+/// Programs are out of the UI for now (2026-10-26): their workouts were only
+/// ever copies of regular ones and the two read as duplicates.
 ///
 /// Reviews and Goals sit here because neither is a thing any one program owns
 /// — both are passes and targets the whole library draws from, so they belong
@@ -58,13 +59,6 @@ class _ExerciseHubScreenState extends State<ExerciseHubScreen> {
           'reference.',
     ),
     (
-      title: 'Programs',
-      icon: Icons.view_timeline_outlined,
-      body:
-          'A set of workouts, optionally split into blocks. Start a run to '
-          'follow one; the run\'s history and reviews attach to it.',
-    ),
-    (
       title: 'Reviews',
       icon: Icons.rate_review_outlined,
       body:
@@ -102,7 +96,6 @@ class _ExerciseHubScreenState extends State<ExerciseHubScreen> {
               'Exercises',
               'Variations',
               'Workouts',
-              'Programs',
               'Reviews',
               'Goals',
             ],
@@ -122,7 +115,6 @@ class _ExerciseHubScreenState extends State<ExerciseHubScreen> {
                   panel: _tab <= 1 ? _tab : 0,
                 ),
                 const WorkoutLibraryScreen(showHeader: false),
-                const ProgramLibraryScreen(showHeader: false),
                 const ReviewsScreen(showHeader: false),
                 const GoalsScreen(showHeader: false),
               ],
