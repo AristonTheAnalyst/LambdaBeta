@@ -276,30 +276,69 @@ class WorkoutEditorViewModel {
   /// planner keeps hiding every archived group, as it always has.
   bool _includeArchived = false;
 
+  /// Group ids that were ALREADY archived when the editor opened.
+  ///
+  /// A review's read brings back every archived group, which is what keeps a
+  /// removal made DURING the pass on the card. A group removed before the
+  /// pass began is not this pass's change: it stays hidden exactly as it is
+  /// outside a review, or every old removal would resurface red on every
+  /// later pass (2026-10-26 — a Back Squat removed months earlier came back
+  /// on a workout that no longer contained it).
+  Set<String> _archivedAtOpen = const {};
+
+  /// The card's groups — the raw read, less the removals that predate it.
+  List<PlannedSessionExercise> _visibleGroups(
+    List<PlannedSessionExercise> groups,
+  ) => _archivedAtOpen.isEmpty
+      ? groups
+      : [
+          for (final g in groups)
+            if (!g.isArchived || !_archivedAtOpen.contains(g.plannedExerciseId))
+              g,
+        ];
+
+  /// The card's rows — a pre-archived group's sets go with it.
+  List<PlannedSessionExerciseSet> _visibleSets(
+    List<PlannedSessionExerciseSet> sets,
+  ) => _archivedAtOpen.isEmpty
+      ? sets
+      : [
+          for (final s in sets)
+            if (!_archivedAtOpen.contains(s.plannedExerciseId)) s,
+        ];
+
   final state = ValueNotifier(const WorkoutEditorState());
 
   String get _userId =>
       _userIdOverride ?? Supabase.instance.client.auth.currentUser!.id;
 
-  /// The editor's own read of a template's exercise groups — the one place
-  /// [_includeArchived] is spent, so every re-read agrees about what the
-  /// workout holds.
-  Future<List<PlannedSessionExercise>> _readGroups(String sessionId) =>
+  /// The raw read: archived groups included when a review asked for them.
+  Future<List<PlannedSessionExercise>> _readGroupsRaw(String sessionId) =>
       _plannedSessionRepo.fetchPlannedExercises(
         sessionId,
         includeArchived: _includeArchived,
       );
 
+  /// The editor's own read of a template's exercise groups — the one place
+  /// [_archivedAtOpen] is spent, so every re-read agrees about what the
+  /// workout holds.
+  Future<List<PlannedSessionExercise>> _readGroups(String sessionId) async =>
+      _visibleGroups(await _readGroupsRaw(sessionId));
+
   /// The editor's own read of a template's sets. Inside a review it goes
   /// through the normalizing read so a removed group's rows come back
   /// numbered as they were, while a set removed on its own still drops.
-  Future<List<PlannedSessionExerciseSet>> _readSets(String sessionId) =>
-      _includeArchived
-      ? _plannedSessionRepo.readNormalizedPlannedSession(
-          sessionId,
-          includeArchived: true,
-        )
-      : _plannedSessionRepo.fetchPlannedSets(sessionId);
+  Future<List<PlannedSessionExerciseSet>> _readSets(String sessionId) async {
+    if (!_includeArchived) {
+      return _plannedSessionRepo.fetchPlannedSets(sessionId);
+    }
+    return _visibleSets(
+      await _plannedSessionRepo.readNormalizedPlannedSession(
+        sessionId,
+        includeArchived: true,
+      ),
+    );
+  }
 
   /// Builds the editor's exercise slots from the persisted group rows.
   List<PlanExerciseSlot> _slotsFromExercises(
@@ -349,6 +388,7 @@ class WorkoutEditorViewModel {
       _openedExercises = const [];
       _openedSetsSnapshot = const [];
       _includeArchived = false;
+      _archivedAtOpen = const {};
       state.value = state.value.copyWith(
         editingWorkout: wp,
         workoutNameDraft: wp.name,
@@ -372,6 +412,7 @@ class WorkoutEditorViewModel {
     bool includeArchived = false,
   }) async {
     _includeArchived = includeArchived;
+    _archivedAtOpen = const {};
     state.value = state.value.copyWith(
       editingWorkout: w,
       workoutNameDraft: w.name,
@@ -389,14 +430,25 @@ class WorkoutEditorViewModel {
         w.sessionId,
         includeArchived: _includeArchived,
       );
-      final exercises = await _readGroups(w.sessionId);
-      _openedExercises = exercises;
+      final allExercises = await _readGroupsRaw(w.sessionId);
+      // What was already archived when the pass opened is not this pass's
+      // removal: the card hides it, exactly as the planner does outside a
+      // review (2026-10-26).
+      _archivedAtOpen = {
+        if (_includeArchived)
+          for (final e in allExercises)
+            if (e.isArchived) e.plannedExerciseId,
+      };
+      final exercises = _visibleGroups(allExercises);
+      // The snapshots are the RAW reads: Discard compares against them, and
+      // a group that was already gone must stay gone through a rollback.
+      _openedExercises = allExercises;
       _openedSetsSnapshot = sets;
       _openedName = w.name;
       _openedNotes = w.notes;
       _openedExisting = true;
       state.value = state.value.copyWith(
-        workoutPlannedSessionExerciseSets: sets,
+        workoutPlannedSessionExerciseSets: _visibleSets(sets),
         workoutPlannedExercises: exercises,
         workoutExerciseSlots: _slotsFromExercises(exercises),
         activeSlotIndex: 0,
@@ -415,6 +467,7 @@ class WorkoutEditorViewModel {
   /// notes, and planned sets into the editor.
   Future<void> openStandaloneWorkout(String sessionId) async {
     _includeArchived = false;
+    _archivedAtOpen = const {};
     await _ensureCatalog();
     // One row by id — the old path read the ENTIRE standalone list to find
     // a single session (2026-10-13).
@@ -472,6 +525,7 @@ class WorkoutEditorViewModel {
       _openedExercises = const [];
       _openedSetsSnapshot = const [];
       _includeArchived = false;
+      _archivedAtOpen = const {};
       // Open the editor against the row we just created. Building state from
       // the returned object (rather than re-fetching) avoids a race where the
       // insert hasn't reflected into a follow-up SELECT yet — previously that

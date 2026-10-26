@@ -731,6 +731,29 @@ void main() {
       expect(card.deletedExercises, [false]);
     });
 
+    testWidgets('a removal that predates the pass draws no card at all', (
+      tester,
+    ) async {
+      // The user's report (2026-10-26): a Back Squat removed long ago came
+      // back red on a workout that no longer contained it, because the
+      // review's read brings back EVERY archived group. Only what the pass
+      // itself removed is this pass's story.
+      await addBenchSetThenRemove();
+      await pumpEditorInReview(tester);
+
+      final card = tester.widget<SessionExerciseCard>(
+        find.byType(SessionExerciseCard),
+      );
+      expect(
+        card.exerciseNames,
+        ['Cable Row'],
+        reason:
+            'the review card shows the removals the pass made, never an old '
+            'one the workout had already dropped',
+      );
+      expect(card.deletedExercises, [false]);
+    });
+
     testWidgets('inside a review the removal stays — red inert rows and the '
         'note box still open', (tester) async {
       planned.sets.add(
@@ -810,10 +833,27 @@ void main() {
         PlannedSession(sessionId: sessionId, userId: userId, name: 'Psycho 1'),
         includeArchived: true,
       );
-      expect(vm.state.value.workoutExerciseSlots.length, 2);
+      List<String?> slotIds() => [
+        for (final s in vm.state.value.workoutExerciseSlots)
+          s.plannedExerciseId,
+      ];
+      expect(
+        slotIds(),
+        ['pe-$cableRowId'],
+        reason:
+            'a removal that predates the pass stays hidden — the card is '
+            'the pass\'s own changes, not every old scar (2026-10-26)',
+      );
 
       await vm.removePlannedExerciseGroup(0);
       expect(planned.exercises[0].isArchived, isTrue);
+      expect(
+        slotIds(),
+        ['pe-$cableRowId'],
+        reason:
+            'the same slot list, for the opposite reason: the pass just '
+            'removed this one, so it stays on the card, red',
+      );
 
       await vm.discardWorkoutChanges();
 
