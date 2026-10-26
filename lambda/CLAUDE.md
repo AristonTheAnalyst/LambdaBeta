@@ -53,6 +53,8 @@ Shared: `SessionExerciseCard`, `SessionSetRow` (`live` / `planned` / `history`),
 
 The past-sets timeline is the app's most-read, most-expensive query, memoized per user (2026-10-13). The logs list, session detail, exercise detail and library usage all read `PastSetsTimelineCache.get(userId)`, which also keeps an oldest-first copy (`asc`) for `prEventsSorted` callers. Invalidated by every fact write in `SessionRepository` (the single funnel — its test walks every write method), the dev sample-data seeder, the Flow Lab's database swap (both directions), sign-out, and **once per remote-download sync round** (the `statusStream` `downloading` false→true flip in `openDatabase`).
 
+**Recent-use ordering** (2026-10-26) derives from that one timeline. `PastSetRow.plannedSessionId` carries `fact_session.planned_session_id`, and `exercise_usage.dart` owns the two rules: `lastUsedByEntity` (exercise/variation) and `lastUsedByPlannedSession` + `compareByLastLogged`/`sortByLastLogged` (workout templates — most recently logged first, never-logged below every logged one, then newest created, then id). The library workouts listing, the Training template selector (re-sorted in the VM from the live timeline so a just-ended session floats its template) and the review picker all speak that order; a **program** listing keeps `sequence_order` — that is the plan's shape, not a usage list. Exercise and variation pickers already order by `lastUsedByEntity`.
+
 ## Data models (`lib/data/models/`)
 
 | Model | Table | Purpose |
@@ -60,7 +62,7 @@ The past-sets timeline is the app's most-read, most-expensive query, memoized pe
 | `Session` | `fact_session` | a completed/active session; `end_datetime` NULL = active |
 | `SessionExercise` | `fact_session_exercise` | one exercise tab in a session (`exercise_order` is a real column) |
 | `SessionExerciseSet` | `fact_session_exercise_set` | one logged set (`planned_set_id`, `is_deleted`) |
-| `PastSetRow` | — | `SessionExerciseSet` + `sessionCreatedDate` for the history timeline |
+| `PastSetRow` | — | `SessionExerciseSet` + `sessionCreatedDate` + `plannedSessionId` (the template the session was started from) for the history timeline |
 | `PlannedSession` | `dim_planned_session` | a template, standalone when no join row |
 | `PlannedSessionProgram` | `dim_planned_session_program` | M2M program membership; schedule slots live here |
 | `PlannedSessionExercise` | `dim_planned_session_exercise` | one exercise group in a template |

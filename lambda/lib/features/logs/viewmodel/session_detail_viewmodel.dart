@@ -789,6 +789,7 @@ class SessionDetailViewModel {
             notes: set.notes,
             exerciseName: set.exerciseName,
             variationName: set.variationName,
+            plannedSessionId: s.session?.plannedSessionId,
           ),
         );
       }

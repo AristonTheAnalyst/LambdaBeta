@@ -558,6 +558,7 @@ class SessionRepository {
     final rows = await ps.db.getAll(
       '''
       SELECT s.*, w.created_datetime,
+             w.planned_session_id,
              fe.custom_exercise_id,
              fe.session_id,
              e.exercise_name,

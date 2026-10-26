@@ -138,9 +138,16 @@ class PastSetRow extends SessionExerciseSet {
     super.exerciseName,
     super.variationName,
     super.plannedSetId,
+    this.plannedSessionId,
   });
 
   final DateTime sessionCreatedDate;
+
+  /// The template this session was started from
+  /// (`fact_session.planned_session_id`), NULL for a freestyle session.
+  /// Carried so workout recency derives from the one timeline source rather
+  /// than a second read of `fact_session` (2026-10-26).
+  final String? plannedSessionId;
 
   factory PastSetRow.fromMap(Map<String, dynamic> map) => PastSetRow(
     sessionExerciseSetId: map['session_exercise_set_id'] as String,
@@ -157,5 +164,6 @@ class PastSetRow extends SessionExerciseSet {
     exerciseName: map['exercise_name'] as String?,
     variationName: map['variation_name'] as String?,
     plannedSetId: map['planned_set_id'] as String?,
+    plannedSessionId: map['planned_session_id'] as String?,
   );
 }

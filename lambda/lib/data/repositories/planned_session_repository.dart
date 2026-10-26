@@ -3,6 +3,7 @@ import '../../core/powersync/database.dart' as ps;
 import '../../core/utils/lambda_exception.dart';
 import '../../core/utils/name_limit.dart';
 import '../../shared/utils/unique_name.dart';
+import '../models/exercise_usage.dart';
 import '../models/planned_session.dart';
 import '../models/planned_session_exercise.dart';
 import '../models/planned_session_exercise_set.dart';
@@ -78,6 +79,41 @@ class PlannedSessionRepository {
     }
   }
 
+  /// The standalone branch of [fetchPlannedSessions] reads its recency from
+  /// here: the most recent `fact_session.created_datetime` per template, any
+  /// session (open or finished) — a template in use right now is the most
+  /// recently used one. Parsed and compared in Dart, never in SQL: a
+  /// downloaded row's timestamp formatting is not guaranteed to match what
+  /// the client writes, and MAX() over mixed text forms picks the wrong row.
+  Future<Map<String, DateTime>> _lastLoggedMap(String userId) async {
+    final rows = await ps.db.getAll(
+      '''
+      SELECT planned_session_id, created_datetime FROM fact_session
+      WHERE user_id = ? AND planned_session_id IS NOT NULL
+      ''',
+      [userId],
+    );
+    return _lastLoggedByPlanned(rows);
+  }
+
+  /// The parse-and-compare half of [_lastLoggedMap], shared with
+  /// [fetchReviewableRows] so the two reads can never disagree about what
+  /// "last logged" means.
+  Map<String, DateTime> _lastLoggedByPlanned(
+    List<Map<String, Object?>> sessionRows,
+  ) {
+    final last = <String, DateTime>{};
+    for (final row in sessionRows) {
+      final id = row['planned_session_id'] as String?;
+      if (id == null) continue;
+      final at = DateTime.tryParse('${row['created_datetime']}')?.toLocal();
+      if (at == null) continue;
+      final current = last[id];
+      if (current == null || at.isAfter(current)) last[id] = at;
+    }
+    return last;
+  }
+
   /// Fetches planned sessions — standalone (no program link) or attached to
   /// [programId] via the join table.
   /// Program workouts (when [programId] is given) or library workouts.
@@ -86,6 +122,12 @@ class PlannedSessionRepository {
   /// non-null [programId] returns the WHOLE program, blocks included — the
   /// ordered block view groups that list in Dart rather than issuing a query
   /// per block.
+  ///
+  /// A program listing keeps the program's own sequence order — that is the
+  /// plan's structure, not a usage list. The standalone listing is
+  /// most-recently-logged first (then newest created), the same rule the
+  /// review picker applies (2026-10-26): the workouts actually trained
+  /// recently are the ones a picker is most likely about.
   Future<List<PlannedSession>> fetchPlannedSessions(
     String userId, {
     String? programId,
@@ -109,11 +151,12 @@ class PlannedSessionRepository {
                 SELECT 1 FROM dim_planned_session_program psp
                 WHERE psp.planned_session_id = dps.session_id
               )
-            ORDER BY dps.created_date DESC
             ''',
       programId != null ? [userId, programId, ?blockId] : [userId],
     );
-    return rows.map((r) => PlannedSession.fromMap(r)).toList();
+    final sessions = rows.map((r) => PlannedSession.fromMap(r)).toList();
+    if (programId != null) return sessions;
+    return sortByLastLogged(sessions, await _lastLoggedMap(userId));
   }
 
   /// Every active workout of [userId]'s — any membership, program-attached or
@@ -170,20 +213,16 @@ class PlannedSessionRepository {
       if (lastReview == null || at.isAfter(lastReview)) lastReview = at;
     }
 
-    final lastLoggedAt = <String, DateTime>{};
+    final lastLoggedAt = _lastLoggedByPlanned(sessionRows);
     final finished = <String, int>{};
     for (final row in sessionRows) {
       final id = row['planned_session_id'] as String?;
       if (id == null) continue;
-      final at = DateTime.tryParse('${row['created_datetime']}')?.toLocal();
-      if (at != null) {
-        final current = lastLoggedAt[id];
-        if (current == null || at.isAfter(current)) lastLoggedAt[id] = at;
-      }
       // Only what has been finished counts, and with a review to measure
       // from, only what came after it — a session whose date cannot be read
       // is not provably after, so it counts only when there is no window.
       if (row['end_datetime'] == null) continue;
+      final at = DateTime.tryParse('${row['created_datetime']}')?.toLocal();
       final review = lastReview;
       if (review != null && (at == null || !at.isAfter(review))) continue;
       finished[id] = (finished[id] ?? 0) + 1;
@@ -207,29 +246,10 @@ class PlannedSessionRepository {
     ];
 
     // Last logged desc (nulls last), then created desc, then id desc — the
-    // id tie-break keeps the order deterministic when two rows share both
-    // dates (Dart's sort is not stable).
-    reviewable.sort((a, b) {
-      final aLogged = a.lastLogged;
-      final bLogged = b.lastLogged;
-      if ((aLogged != null) != (bLogged != null)) {
-        return aLogged != null ? -1 : 1;
-      }
-      if (aLogged != null && bLogged != null) {
-        final byLogged = bLogged.compareTo(aLogged);
-        if (byLogged != 0) return byLogged;
-      }
-      final aCreated = a.session.createdDate;
-      final bCreated = b.session.createdDate;
-      if ((aCreated != null) != (bCreated != null)) {
-        return aCreated != null ? -1 : 1;
-      }
-      if (aCreated != null && bCreated != null) {
-        final byCreated = bCreated.compareTo(aCreated);
-        if (byCreated != 0) return byCreated;
-      }
-      return b.session.sessionId.compareTo(a.session.sessionId);
-    });
+    // one recency rule, shared with the library listing (2026-10-26).
+    reviewable.sort(
+      (a, b) => compareByLastLogged(a.session, b.session, lastLoggedAt),
+    );
     return reviewable;
   }
 

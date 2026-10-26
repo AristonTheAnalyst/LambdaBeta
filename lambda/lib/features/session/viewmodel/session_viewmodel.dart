@@ -805,6 +805,17 @@ class SessionViewModel extends ChangeNotifier {
   /// Standalone workouts (no program) the user can log.
   List<PlannedSession> standaloneWorkouts = [];
 
+  /// [standaloneWorkouts] in the app's one recency order — most recently
+  /// logged first, then newest created (2026-10-26).
+  ///
+  /// The repository already reads its standalone listing in this order; this
+  /// re-applies it from the live timeline so a session that just ended floats
+  /// its template to the top of the picker immediately, without a re-read.
+  void _sortStandaloneByRecency() {
+    if (standaloneWorkouts.length < 2) return;
+    sortByLastLogged(standaloneWorkouts, lastUsedByPlannedSession(_pastSets));
+  }
+
   /// The standalone workout selected to log (mutually exclusive with
   /// [selectedPlannedSession]).
   PlannedSession? selectedStandaloneWorkout;
@@ -822,6 +833,7 @@ class SessionViewModel extends ChangeNotifier {
       standaloneWorkouts = await _plannedSessionRepo.fetchPlannedSessions(
         _userId,
       );
+      _sortStandaloneByRecency();
       await _loadSelectedSessionSets();
     } catch (_) {}
     notifyListeners();
@@ -971,6 +983,7 @@ class SessionViewModel extends ChangeNotifier {
       standaloneWorkouts = await _plannedSessionRepo.fetchPlannedSessions(
         _userId,
       );
+      _sortStandaloneByRecency();
       // Same pick-persistence rule for a standalone template: only a selection
       // that no longer exists is dropped.
       final standalone = selectedStandaloneWorkout;
@@ -1010,6 +1023,10 @@ class SessionViewModel extends ChangeNotifier {
       _timelineLastUsed = lastUsedByEntity(_pastSets);
       historyByExercise = groupHistoryByExercise(_pastSets);
       lastUsedByExercise = lastUsedByEntity(_pastSets);
+      // The template picker's recency rides the same timeline: the template
+      // that was just logged leads the list without waiting for the next
+      // picker read (2026-10-26).
+      _sortStandaloneByRecency();
       // A walk can never point past the stack it belongs to: an edit that
       // deleted the performance being read lands back on the last one
       // still there (2026-10-23).
