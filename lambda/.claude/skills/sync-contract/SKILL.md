@@ -61,10 +61,11 @@ with no server-side `id`).
 
 ## The friends stream: the query is the privacy boundary (2026-10-23)
 
-There are now **two** auto-subscribed streams. `user_data` carries the user's
-own rows; `friends_data` (in `powersync/sync-streams.yaml`) carries each
-mutual friend's history. Streams bypass RLS, so that YAML's queries — not the
-policies — decide what a device may hold.
+There are now **three** auto-subscribed streams. `user_data` carries the
+user's own rows; `friends_data` (in `powersync/sync-streams.yaml`) carries
+each mutual friend's history; `coaching_data` (2026-10-26) carries an
+accepted athlete's history to their coach. Streams bypass RLS, so that YAML's
+queries — not the policies — decide what a device may hold.
 
 - **Mutual by construction.** A `with:` CTE `my_friends` selects
   `friend_relationship` rows where `user_id = auth.user_id()` **and** the
@@ -87,6 +88,30 @@ policies — decide what a device may hold.
   `SELECT *` on the caller's own directed rows only (the query above), so a
   label never reaches the friend it names. It is the repository's one
   local-first write — the composite-key patch below carries it, no RPC.
+
+## The coaching stream: consent is the gate (2026-10-26)
+
+`coaching_data` is `friends_data`'s shape with one difference that matters:
+its `with:` CTE `my_athletes` requires `coaching_relationship.accepted_date`
+(added by `20261026140000_coaching_consent.sql`). An invitation the athlete
+has not accepted matches nothing, so **no athlete row — not even a name —
+reaches the coach's device**. Push the migration before deploying this
+stream; the `accepted_date` column must exist or the CTE fails to parse.
+
+- What it sends: the athlete's name-only `dim_user` slice, completed
+  `fact_session` rows (`end_datetime IS NOT NULL`), their exercise/set
+  children keyed on `user_id IN my_athletes` (one bucket per athlete, never
+  per session), `dim_exercise` / `dim_variation` / `dim_lesson`,
+  `fact_goal` and `fact_goal_target`. Body metrics and the profile stay
+  private, exactly as on the friends path.
+- What it does NOT send: `fact_bodyweight`, `dim_program`, planned sessions
+  — the record viewer reads names off the session's own snapshot.
+- The coach's own `coaching_relationship` rows ride `user_data` (own rows,
+  `SELECT *`), so the roster's local read sees the edge and its
+  `accepted_date`; the athlete's name still arrives only through
+  `coaching_data`. The app has no coach-side write in #21 — invite, accept
+  and revoke are #22's, and `coaching_relationship`'s `ps_crud` purge was
+  removed with the stream so a future write uploads normally.
 
 **The own-row-only mirror rule.** `FriendRepository.addByCode` calls the
 SECURITY DEFINER RPC and then mirrors ONLY the caller's own directed row,

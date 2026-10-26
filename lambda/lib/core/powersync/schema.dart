@@ -270,6 +270,10 @@ const schema = Schema([
     Column.text('coach_user_id'),
     Column.text('athlete_user_id'),
     Column.text('created_date'),
+    // When the athlete accepted the invitation (2026-10-26). NULL is an
+    // unaccepted row and grants nothing: the coaching_data stream requires
+    // it, and #22's accept flow is what sets it.
+    Column.text('accepted_date'),
   ]),
   // Friends (2026-10-23). `dim_friend_code` is a SIDE TABLE rather than a
   // dim_user column because user_data selects `dim_user *` — a new column

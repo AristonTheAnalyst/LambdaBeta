@@ -331,12 +331,10 @@ Future<void> openDatabase() async {
   // on upload and block the checkpoint from applying, stalling all sync.
   try {
     await db.writeTransaction((tx) async {
-      // `coaching_relationship` was historically local-only (missing from the
-      // sync stream) — any queued uploads for it would fail with a 404 on the
-      // PowerSync server and stall the checkpoint.
-      await tx.execute(
-        "DELETE FROM ps_crud WHERE table_name = 'coaching_relationship'",
-      );
+      // `coaching_relationship` is no longer purged (2026-10-26): it is in the
+      // coaching_data stream and the coach's own row is writable under its
+      // RLS, so a queued coaching write is a real upload rather than a 404
+      // that would stall the checkpoint.
       // Tables renamed in the session-model redesign (2026-08-13) — queued
       // entries under the old names can never upload.
       for (final old in [

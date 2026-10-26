@@ -7,6 +7,7 @@ import '../../features/auth/view/forgot_password_screen.dart';
 import '../../features/auth/view/login_screen.dart';
 import '../../features/auth/view/reset_password_screen.dart';
 import '../../features/auth/view/signup_screen.dart';
+import '../../features/coach/view/coach_screen.dart';
 import '../../features/dev/lab/lab_screen.dart';
 import '../../features/dev/view/dev_screen.dart';
 import '../../features/dev/view/experimental_screen.dart';
@@ -149,6 +150,20 @@ abstract final class AppRouter {
         ),
       ),
 
+      // ── An athlete's record (2026-10-26) ─────────────────────────────────
+      // The coach's viewer, the same read-only page as the friend's. Top
+      // level for the same reason, but its bar lights Profile — the tab the
+      // roster hangs off; the list itself is /profile/coach/:athleteId.
+      GoRoute(
+        path: '/coach/:athleteId/sessions/:sessionId',
+        builder: (_, state) => SessionDetailScreen(
+          sessionId: state.pathParameters['sessionId']!,
+          userId: state.pathParameters['athleteId'],
+          readOnly: true,
+          navRoute: '/profile',
+        ),
+      ),
+
       // ── Dev-only full-screen demos ───────────────────────────────────────
       // Outside the tab shell on purpose: these pages draw their own bottom
       // bar, and the shell's bar would sit underneath it.
@@ -227,9 +242,8 @@ abstract final class AppRouter {
                   userId: state.pathParameters['userId'],
                   readOnly: true,
                   headerTitle: state.extra as String? ?? 'Sessions',
-                  onBack: () => context.canPop()
-                      ? context.pop()
-                      : context.go('/friends'),
+                  onBack: () =>
+                      context.canPop() ? context.pop() : context.go('/friends'),
                   emptyMessage: 'No sessions yet',
                   emptyHint: 'This friend has no completed sessions.',
                   sessionRouteBuilder: (id) =>
@@ -248,6 +262,31 @@ abstract final class AppRouter {
               GoRoute(
                 path: 'appearance',
                 builder: (_, _) => const AppearanceScreen(),
+              ),
+              // Profile → Coach: the coach's roster, then an athlete's
+              // completed history in the same read-only list and viewer the
+              // Friends tab uses (2026-10-26). Nested under /profile so the
+              // pushed pages keep the Profile tab lit and the bar visible.
+              GoRoute(
+                path: 'coach',
+                builder: (_, _) => const CoachScreen(),
+                routes: [
+                  GoRoute(
+                    path: ':athleteId',
+                    builder: (context, state) => LogsScreen(
+                      userId: state.pathParameters['athleteId'],
+                      readOnly: true,
+                      headerTitle: state.extra as String? ?? 'Athlete',
+                      onBack: () => context.canPop()
+                          ? context.pop()
+                          : context.go('/profile/coach'),
+                      emptyMessage: 'No sessions yet',
+                      emptyHint: 'This athlete has no completed sessions.',
+                      sessionRouteBuilder: (id) =>
+                          '/coach/${state.pathParameters['athleteId']}/sessions/$id',
+                    ),
+                  ),
+                ],
               ),
             ],
           ),

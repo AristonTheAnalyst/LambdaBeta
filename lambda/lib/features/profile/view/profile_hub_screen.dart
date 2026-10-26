@@ -37,6 +37,13 @@ class ProfileHubScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: AppSpacing.md),
                   _HubCard(
+                    icon: Icons.sports_outlined,
+                    title: 'Coach',
+                    subtitle: "Read your athletes' training",
+                    onTap: () => context.push('/profile/coach'),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  _HubCard(
                     icon: Icons.palette_outlined,
                     title: 'Appearance',
                     subtitle: 'Choose how the app looks',

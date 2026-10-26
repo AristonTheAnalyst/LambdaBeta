@@ -497,7 +497,7 @@ slow a client-computed daily-summary table is the fix.
 | **Rest timer** | in-memory only | `fact_rest` was dropped 2026-08-14 — no rest analytics. Timer still drives the AVG REST stat from `restDurationsThisSession` |
 | **Supersets** | retired | Column `superset_group_number` DROPPED 2026-08-24 (schema v2). No UI creates supersets; dormant slot support renders a restored multi-exercise slot as its first exercise |
 | **Feelings** | `fact_session.pre_feeling` / `post_feeling` | Pre-workout feeling is shown in logs; `post_feeling` is written but **never displayed yet** — logs screen is the candidate place |
-| **Coaching** | `coaching_relationship` + coach RLS policies | Table + policies exist; no coach UI. Coach SELECT access exists on every athlete-owned table |
+| **Coaching** | `coaching_relationship` + coach RLS policies **+ `coaching_data` stream** | Read-only coach view (2026-10-26): Profile → Coach lists accepted athletes and opens an athlete's completed history in the existing read-only viewer. Consent gate = `accepted_date`; an unaccepted invitation sends no athlete rows. Invite/accept/revoke land with #22 |
 | **Friends** | `dim_friend_code` + `friend_relationship.nickname` | Instant, mutual, by code (2026-10-23). No pending state; completed sessions only in the stream; the existing viewer reads a friend's history read-only. A friend reads **nickname → their name → their code → `Friend`** (2026-10-25); the nickname is the caller's own label on their directed row |
 | **Onboarding** | `dim_user.onboarded` | Gate flag for first-run flow |
 
@@ -703,8 +703,18 @@ directed row (`_compositeKeyTables` in `database.dart`); a nickname is a
 local-first UPDATE on that row.
 
 ### coaching_relationship (coach ALL + both-sides SELECT)
-`coach_user_id` + `athlete_user_id` (composite PK), `created_date`. No app
-UI yet.
+`coach_user_id` + `athlete_user_id` (composite PK), `created_date`,
+`accepted_date` (nullable — the consent gate, 2026-10-26). A row without
+`accepted_date` is an invitation still waiting on the athlete: the
+`coaching_data` stream's `my_athletes` CTE requires it, so nothing about that
+athlete reaches the coach's device. The coach's own rows (the column
+included) ride `user_data`, so the local mirror can see a pending invitation;
+#22's roster section reads them. The athlete's name and completed training
+arrive only through `coaching_data`.
+Coach SELECT policies on the athlete's tables remain the REST defence — #22
+tightens them to the same gate alongside invite/accept/revoke. The app's only
+coach surface is read-only: Profile → Coach → `LogsScreen(userId:, readOnly:)`
+→ `SessionDetailScreen(userId:, readOnly:, navRoute: '/profile')`.
 
 ### app_config (public SELECT)
 `platform`, `min_version`, `latest_version`, `updated_at`. Read via REST
@@ -741,7 +751,7 @@ What actually happens to each table's rows.
 | fact_bodyweight | profile weight logging | — | hard delete (rarely used) |
 | dim_friend_code | `after insert on dim_user` trigger (SECURITY DEFINER) + migration backfill | never (codes are stable in v1) | never (cascade from auth.users → dim_user) |
 | friend_relationship | `add_friend_by_code` RPC writes BOTH directions; the client mirrors only the caller's own directed row | — | `remove_friend` RPC deletes both directions, callable from either side; the client also deletes its own local row and drops the friend's cached timeline |
-| coaching_relationship | (no UI yet) | — | hard delete |
+| coaching_relationship | no app writes yet — the roster only reads accepted rows (2026-10-26); invite/accept/revoke land with #22 | — (no updates in #21) | hard delete (athlete revoke #22) |
 | app_config | manual/ops | manual/ops | manual/ops |
 
 ## RLS policy matrix (verified current state)

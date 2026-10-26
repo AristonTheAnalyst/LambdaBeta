@@ -89,6 +89,12 @@
 # forever — a stalled upload checkpoint on that device, never a user-visible
 # error.
 #
+# 2026-10-26 (coaching): + coaching_data, a third auto-subscribed stream — a
+# coach's read-only view of an accepted athlete's completed training. Gated on
+# consent: the `my_athletes` CTE requires coaching_relationship.accepted_date,
+# which 20261026140000_coaching_consent.sql adds; an unaccepted invitation
+# sends nothing. Push that migration BEFORE deploying this file.
+#
 # 2026-10-26 (multi-set goals): + fact_goal_target, a goal's requirement list
 # (each row "this set or better"). Both streams gain it — the owner's own
 # rows in user_data, a mutual friend's in friends_data beside the fact_goal
@@ -180,3 +186,34 @@ streams:
       # to (2026-10-26) — the goal row alone would read as a goal with no
       # target.
       - SELECT *, goal_target_id as id FROM fact_goal_target WHERE user_id IN my_friends
+
+  # Coaching (2026-10-26). The coach's view of an athlete's completed
+  # training, gated on CONSENT: `my_athletes` requires accepted_date, so an
+  # invitation the athlete has not accepted sends nothing at all — not a
+  # name, not a session. #22's accept flow is what sets the date; the coach's
+  # invitation row itself already arrives through user_data. Streams bypass
+  # RLS; this query is the privacy boundary (the RLS policies on the
+  # athlete's tables are the REST defence, tightened with #22).
+  coaching_data:
+    auto_subscribe: true
+    with:
+      my_athletes: SELECT cr.athlete_user_id AS athlete_id
+                   FROM coaching_relationship cr
+                   WHERE cr.coach_user_id = auth.user_id()
+                     AND cr.accepted_date IS NOT NULL
+    queries:
+      # A name-only slice, the friends stream's rule: body metrics and the
+      # profile stay private.
+      - SELECT user_id, user_name, user_lastname, user_id as id FROM dim_user WHERE user_id IN my_athletes
+      # Completed records only — an athlete's live session is never sent.
+      - SELECT *, session_id as id FROM fact_session WHERE user_id IN my_athletes AND end_datetime IS NOT NULL
+      # Children keyed on user_id (one bucket per athlete), the friends
+      # stream's shape; a mid-session athlete's child rows can download
+      # parentless, and no surface can name or open them.
+      - SELECT *, session_exercise_id as id FROM fact_session_exercise WHERE user_id IN my_athletes
+      - SELECT *, session_exercise_set_id as id FROM fact_session_exercise_set WHERE user_id IN my_athletes
+      - SELECT *, custom_exercise_id as id FROM dim_exercise WHERE user_id IN my_athletes
+      - SELECT *, custom_variation_id as id FROM dim_variation WHERE user_id IN my_athletes
+      - SELECT *, lesson_id as id FROM dim_lesson WHERE user_id IN my_athletes
+      - SELECT *, goal_id as id FROM fact_goal WHERE user_id IN my_athletes
+      - SELECT *, goal_target_id as id FROM fact_goal_target WHERE user_id IN my_athletes
