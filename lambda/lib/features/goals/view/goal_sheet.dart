@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
+import '../../../core/styles/app_radius.dart';
 import '../../../core/styles/app_spacing.dart';
 import '../../../core/styles/app_text_styles.dart';
 import '../../../data/models/custom_variation.dart';
@@ -441,4 +444,230 @@ class _TargetDateHistorySheet extends StatelessWidget {
 bool _sameDay(DateTime? a, DateTime? b) {
   if (a == null || b == null) return a == null && b == null;
   return a.year == b.year && a.month == b.month && a.day == b.day;
+}
+
+/// The New goal sheet — the target composer the focused goal sheet rests in,
+/// live, and one sheet for a whole sitting with the goal list (2026-10-26).
+///
+/// It stays mounted after a write: goals are often written in a run, and
+/// closing on the first one made every further target a dismissal and a trip
+/// back to +. A success therefore clears the form for the next goal and says
+/// what it wrote in the title's caption for three seconds — the sheet itself
+/// does not move. **Done** in the header is the one way out that says it; a
+/// tap outside or the back gesture still dismisses, and a dismissal keeps
+/// whatever is typed, as it always has (2026-10-19). Only a written goal
+/// clears the draft.
+///
+/// The write belongs to the host: [onAdd] returns whether the goal was
+/// written, and a false keeps the form standing — values and all — with the
+/// failure said. A host that reuses this sheet from another surface (a live
+/// set opening its own target form, say) passes its own [draft] and its own
+/// [onAdd]; nothing here knows the goal list.
+Future<void> showAddGoalSheet(
+  BuildContext context, {
+  required Map<String, ExerciseDetail> detailMap,
+  required List<CustomVariation> variations,
+  required Map<String, DateTime> lastUsed,
+  required List<PastSetRow> pastSets,
+  required ExerciseTargetDraft draft,
+  required Future<bool> Function(ExerciseTarget target) onAdd,
+  void Function(PastSetRow set)? onOpenWorkout,
+}) => showLambdaModal<void>(
+  context,
+  fitContent: true,
+  keyboardAware: true,
+  child: _AddGoalSheet(
+    detailMap: detailMap,
+    variations: variations,
+    lastUsed: lastUsed,
+    pastSets: pastSets,
+    draft: draft,
+    onAdd: onAdd,
+    onOpenWorkout: onOpenWorkout,
+  ),
+);
+
+class _AddGoalSheet extends StatefulWidget {
+  const _AddGoalSheet({
+    required this.detailMap,
+    required this.variations,
+    required this.lastUsed,
+    required this.pastSets,
+    required this.draft,
+    required this.onAdd,
+    this.onOpenWorkout,
+  });
+
+  final Map<String, ExerciseDetail> detailMap;
+  final List<CustomVariation> variations;
+
+  /// exercise-id/variation-id → the date last trained — the picker's ordering.
+  final Map<String, DateTime> lastUsed;
+
+  /// The user's logged sets — the "already beat this" check's history.
+  final List<PastSetRow> pastSets;
+
+  /// The form's contents, owned by the host so a dismissal keeps them.
+  final ExerciseTargetDraft draft;
+
+  /// Opens the workout that beat the typed target. Null in a host with no
+  /// route to the logs — the sentence still reads, it just does not move.
+  final void Function(PastSetRow set)? onOpenWorkout;
+
+  /// True when the goal was written. A failure keeps the sheet and the typed
+  /// target standing.
+  final Future<bool> Function(ExerciseTarget target) onAdd;
+
+  @override
+  State<_AddGoalSheet> createState() => _AddGoalSheetState();
+}
+
+class _AddGoalSheetState extends State<_AddGoalSheet> {
+  /// How long a written goal keeps the caption that says so.
+  static const _confirmation = Duration(seconds: 3);
+
+  /// The last goal this sheet wrote, named the way the list's card names it —
+  /// the caption under "New goal" while it lasts. It explains the form
+  /// clearing itself: a reset with no word would read as a loss.
+  String? _addedLabel;
+  Timer? _addedTimer;
+
+  @override
+  void dispose() {
+    _addedTimer?.cancel();
+    super.dispose();
+  }
+
+  /// ADD: the host writes, and a written goal resets the form for the next
+  /// one without closing the sheet. The draft clears AFTER the write, so a
+  /// failure keeps everything typed.
+  Future<void> _add(ExerciseTarget target) async {
+    final added = await widget.onAdd(target);
+    if (!mounted) return;
+    if (!added) {
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        const SnackBar(
+          content: Text('Could not add the goal.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+    final label = goalTargetLabel(
+      target.exerciseName,
+      target.weight,
+      target.reps,
+    );
+    setState(() {
+      widget.draft.reset();
+      _addedLabel = label;
+    });
+    _addedTimer?.cancel();
+    _addedTimer = Timer(_confirmation, () {
+      if (mounted) setState(() => _addedLabel = null);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(AppSpacing.xl),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'New goal',
+                        style: AppFonts.ui(
+                          fontSize: AppTextStyles.lg,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.xs),
+                      // One caption, two readings: what a goal is while the
+                      // form is empty, what was just written for a moment
+                      // after it fills one (2026-10-26). Reusing the slot
+                      // keeps the composer from shifting under the hand that
+                      // is already reaching for the next target.
+                      if (_addedLabel != null)
+                        _addedNote(_addedLabel!)
+                      else
+                        Text(
+                          'A set to beat — a weight × reps target on any '
+                          'exercise.',
+                          style: AppFonts.ui(
+                            fontSize: AppTextStyles.xs,
+                            color: AppColors.inkSecondary,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.md),
+                // A word, because it is the sheet's exit verb and the scrim
+                // gives the same act no name at all (convention 13).
+                GlassButton(
+                  label: 'Done',
+                  compact: true,
+                  onPressed: () =>
+                      Navigator.of(context, rootNavigator: true).pop(),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            ExerciseTargetPicker(
+              detailMap: widget.detailMap,
+              variations: widget.variations,
+              lastUsed: widget.lastUsed,
+              pastSets: widget.pastSets,
+              draft: widget.draft,
+              onOpenWorkout: widget.onOpenWorkout,
+              onAdd: _add,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// The written goal as a success chip in the caption's slot — the same
+  /// icon-and-ink recipe as the "already beat this" caption, so a
+  /// confirmation never invents a second green (frontend-design §2).
+  Widget _addedNote(String label) => Semantics(
+    liveRegion: true,
+    child: Container(
+      key: const ValueKey('goal-added-confirmation'),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppColors.successBg,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.check_circle, size: 14, color: AppColors.success),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Added $label',
+              style: AppFonts.ui(
+                fontSize: AppTextStyles.xs,
+                fontWeight: FontWeight.w600,
+                color: AppColors.success,
+              ),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
 }

@@ -7,8 +7,6 @@ import '../../../core/styles/app_radius.dart';
 import '../../../core/styles/app_spacing.dart';
 import '../../../core/styles/app_text_styles.dart';
 import '../../../core/utils/date_range.dart';
-import '../../../data/models/custom_variation.dart';
-import '../../../data/models/exercise_detail.dart';
 import '../../../data/models/exercise_usage.dart';
 import '../../../data/models/goal.dart';
 import '../../../data/models/session_exercise_set.dart';
@@ -316,61 +314,48 @@ class _GoalsScreenState extends State<GoalsScreen> {
     context.push('/logs/${set.sessionId}?$query');
   }
 
-  /// + → the add sheet → the write → the list, which reloads from the write.
+  /// + → the add sheet → the writes → Done.
   ///
-  /// The draft outlives the sheet on purpose (2026-10-19): a tap outside, a
-  /// back gesture or the trip to a logged workout all dismiss or cover the
-  /// sheet, and reopening it must find the form as it was left. Only a
-  /// successful add clears it.
+  /// The sheet stays up after each write, so goals can be written in a run
+  /// (2026-10-26): it clears its own form for the next target and confirms
+  /// what it wrote, and the section each goal lands in opens behind it, so
+  /// Done (or any dismissal) lands on the goals rather than on collapsed
+  /// headers (2026-10-20). The draft outlives the sheet on purpose
+  /// (2026-10-19): a tap outside, a back gesture or the trip to a logged
+  /// workout all dismiss or cover the sheet, and reopening it must find the
+  /// form as it was left. Only a written goal clears it.
   Future<void> _openAdd() async {
     final state = _vm.state.value;
-    var added = false;
-    // The section the new goal lands in — opened after the write so the goal
-    // is on screen rather than behind a collapsed header (2026-10-20).
-    String? addedSection;
-    await showLambdaModal<void>(
+    await showAddGoalSheet(
       context,
-      fitContent: true,
-      keyboardAware: true,
-      child: _AddGoalSheet(
-        detailMap: state.exerciseDetailMap,
-        variations: state.variations,
-        // The same timeline the list's outcomes read, read for recency: the
-        // picker opens on what was trained last (2026-10-19).
-        lastUsed: lastUsedByEntity(state.pastSets),
-        // ...and read for the "already beat this" verdict, so the form can
-        // name the day the target was met and open that workout.
-        pastSets: state.pastSets,
-        draft: _goalDraft,
-        onOpenWorkout: _openWorkout,
-        onAdd: (target) async {
-          final ok = await _vm.addGoal(
-            exerciseId: target.exerciseId,
-            exerciseName: target.exerciseName,
-            variationId: target.variationId,
-            targetWeight: target.weight,
-            targetReps: target.reps,
-            description: target.notes,
-            targetDate: target.targetDate,
-          );
-          if (ok) {
-            added = true;
-            // A written goal always names its exercise, and the section key
-            // is that id.
-            addedSection = target.exerciseId;
-          }
-          return ok;
-        },
-      ),
+      detailMap: state.exerciseDetailMap,
+      variations: state.variations,
+      // The same timeline the list's outcomes read, read for recency: the
+      // picker opens on what was trained last (2026-10-19).
+      lastUsed: lastUsedByEntity(state.pastSets),
+      // ...and read for the "already beat this" verdict, so the form can
+      // name the day the target was met and open that workout.
+      pastSets: state.pastSets,
+      draft: _goalDraft,
+      onOpenWorkout: _openWorkout,
+      onAdd: (target) async {
+        final ok = await _vm.addGoal(
+          exerciseId: target.exerciseId,
+          exerciseName: target.exerciseName,
+          variationId: target.variationId,
+          targetWeight: target.weight,
+          targetReps: target.reps,
+          description: target.notes,
+          targetDate: target.targetDate,
+        );
+        if (ok && mounted) {
+          // The sheet is still up: the list behind it opens the section the
+          // goal landed in as the write's echo.
+          setState(() => _expandedSections.add(target.exerciseId));
+        }
+        return ok;
+      },
     );
-    // A sheet dismissed any other way leaves the draft standing.
-    if (added && mounted) {
-      _goalDraft.reset();
-      final section = addedSection;
-      if (section != null) {
-        setState(() => _expandedSections.add(section));
-      }
-    }
   }
 
   /// Funnel → the filter sheet. The sheet works on a copy and answers on
@@ -1286,98 +1271,6 @@ class _GoalFilterSheetState extends State<_GoalFilterSheet> {
                   ),
                 ),
               ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// The add sheet: a title that says what a goal is, and the set-style target
-/// composer under it — exercise, one set row (KG · REPS · VARIATION), notes,
-/// and ADD (2026-10-19).
-///
-/// The sheet owns the dismissal and the failure: a written goal pops it, a
-/// failed one keeps the composer standing with everything typed still in it.
-class _AddGoalSheet extends StatelessWidget {
-  const _AddGoalSheet({
-    required this.detailMap,
-    required this.variations,
-    required this.lastUsed,
-    required this.pastSets,
-    required this.draft,
-    required this.onAdd,
-    this.onOpenWorkout,
-  });
-
-  final Map<String, ExerciseDetail> detailMap;
-  final List<CustomVariation> variations;
-
-  /// exercise-id/variation-id → the date last trained — the picker's ordering.
-  final Map<String, DateTime> lastUsed;
-
-  /// The user's logged sets — the "already beat this" check's history.
-  final List<PastSetRow> pastSets;
-
-  /// The form's contents, owned by the screen so a dismissal keeps them.
-  final ExerciseTargetDraft draft;
-
-  /// Opens the workout that beat the typed target. Null in a host with no
-  /// route to the logs — the sentence still reads, it just does not move.
-  final void Function(PastSetRow set)? onOpenWorkout;
-
-  /// True when the goal was written. The sheet stays up on a failure, where
-  /// the typed target is still worth keeping.
-  final Future<bool> Function(ExerciseTarget target) onAdd;
-
-  @override
-  Widget build(BuildContext context) {
-    return SafeArea(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(AppSpacing.xl),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              'New goal',
-              style: AppFonts.ui(
-                fontSize: AppTextStyles.lg,
-                fontWeight: FontWeight.w800,
-                color: AppColors.primary,
-              ),
-            ),
-            const SizedBox(height: AppSpacing.xs),
-            Text(
-              'A set to beat — a weight × reps target on any exercise.',
-              style: AppFonts.ui(
-                fontSize: AppTextStyles.xs,
-                color: AppColors.inkSecondary,
-              ),
-            ),
-            const SizedBox(height: AppSpacing.lg),
-            ExerciseTargetPicker(
-              detailMap: detailMap,
-              variations: variations,
-              lastUsed: lastUsed,
-              pastSets: pastSets,
-              draft: draft,
-              onOpenWorkout: onOpenWorkout,
-              onAdd: (target) async {
-                final added = await onAdd(target);
-                if (!context.mounted) return;
-                if (added) {
-                  Navigator.of(context, rootNavigator: true).pop();
-                } else {
-                  ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-                    const SnackBar(
-                      content: Text('Could not add the goal.'),
-                      behavior: SnackBarBehavior.floating,
-                    ),
-                  );
-                }
-              },
             ),
           ],
         ),

@@ -343,6 +343,91 @@ void main() {
     expect(find.text('100 kg × 5'), findsOneWidget);
   });
 
+  testWidgets('the add sheet stays up for the next goal after each write, '
+      'and Done closes it', (tester) async {
+    programs.goals = [];
+    await pumpGoals(tester);
+    await tester.tap(find.byIcon(Icons.add));
+    await tester.pumpAndSettle();
+
+    // One sheet, three goals (2026-10-26): a written goal clears the form for
+    // the next one instead of closing, so the composer never leaves the
+    // screen between targets.
+    Future<void> composeAndAdd({
+      required String exercise,
+      required String kg,
+      required String reps,
+    }) async {
+      expect(find.text('New goal'), findsOneWidget);
+      expect(
+        find.text('Pick exercise'),
+        findsOneWidget,
+        reason: 'each goal starts from a blank form',
+      );
+      await tester.tap(find.byKey(const ValueKey('goal-exercise-selector')));
+      await tester.pumpAndSettle();
+      // Scoped to the popover's list: the sections behind the sheet name the
+      // same exercises once one goal is written.
+      await tester.tap(
+        find.descendant(
+          of: find.byType(ListView),
+          matching: find.text(exercise),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(const ValueKey('goal-kg')), kg);
+      await tester.enterText(find.byKey(const ValueKey('goal-reps')), reps);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('ADD'));
+      await tester.pumpAndSettle();
+    }
+
+    await composeAndAdd(exercise: 'Bench', kg: '100', reps: '5');
+
+    // Written and confirmed, with the form ready for the next target.
+    expect(programs.createdGoals, hasLength(1));
+    expect(find.text('New goal'), findsOneWidget);
+    expect(
+      find.text('Added Bench — 100 kg × 5'),
+      findsOneWidget,
+      reason: 'the write is confirmed by name where the form was',
+    );
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const ValueKey('goal-kg')))
+          .controller
+          ?.text,
+      '',
+      reason: 'a written goal clears the cells for the next one',
+    );
+
+    await composeAndAdd(exercise: 'Squat', kg: '140', reps: '3');
+    await composeAndAdd(exercise: 'Bench', kg: '110', reps: '3');
+    expect(programs.createdGoals, hasLength(3));
+    expect(find.text('Added Bench — 110 kg × 3'), findsOneWidget);
+
+    // The confirmation is a moment, not a state: it clears itself and the
+    // caption returns to saying what a goal is.
+    await tester.pump(const Duration(seconds: 3));
+    expect(
+      find.byKey(const ValueKey('goal-added-confirmation')),
+      findsNothing,
+    );
+    expect(find.textContaining('A set to beat'), findsOneWidget);
+
+    // Done is the way out the sheet itself names.
+    await tester.tap(find.text('Done'));
+    await tester.pumpAndSettle();
+    expect(find.text('New goal'), findsNothing);
+    expect(find.text('ADD'), findsNothing);
+
+    // It lands on the list with all three written, every section they
+    // landed in already open.
+    expect(find.text('100 kg × 5'), findsOneWidget);
+    expect(find.text('140 kg × 3'), findsOneWidget);
+    expect(find.text('110 kg × 3'), findsOneWidget);
+  });
+
   testWidgets('the exercise picker opens on what was trained last', (
     tester,
   ) async {
