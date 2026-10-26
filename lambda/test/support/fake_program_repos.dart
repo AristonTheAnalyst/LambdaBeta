@@ -700,6 +700,37 @@ class FakeProgramHistoryRepository implements ProgramHistoryRepository {
     return null;
   }
 
+  /// The workout as it stands today, prepended to [fetchWorkoutVersions]'s
+  /// answer the way the real read's live document is. Null models a workout
+  /// no longer in the plan — which is also the default, because most fixtures
+  /// are about the record and not about what came after it.
+  ContentSession? currentWorkout;
+
+  /// The workouts a caller asked the story of, in order — so a test can
+  /// assert the reader read the workout it was opened on.
+  final versionScopes = <({String userId, String sessionId})>[];
+
+  @override
+  Future<List<WorkoutVersion>> fetchWorkoutVersions({
+    required String userId,
+    required String sessionId,
+  }) async {
+    versionScopes.add((userId: userId, sessionId: sessionId));
+    final versions = assembleWorkoutVersions(reviews, sessionId);
+    final current = currentWorkout;
+    if (current != null) {
+      versions.insert(
+        0,
+        WorkoutVersion(
+          sessionId: sessionId,
+          side: WorkoutVersionSide.current,
+          session: current,
+        ),
+      );
+    }
+    return versions;
+  }
+
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
@@ -1102,7 +1133,8 @@ class FakePlannedSessions implements PlannedSessionRepository {
     String plannedSessionId, {
     bool includeArchived = false,
   }) async => [
-    for (final e in exercises[plannedSessionId] ?? const <PlannedSessionExercise>[])
+    for (final e
+        in exercises[plannedSessionId] ?? const <PlannedSessionExercise>[])
       if (includeArchived || !e.isArchived) e,
   ];
 

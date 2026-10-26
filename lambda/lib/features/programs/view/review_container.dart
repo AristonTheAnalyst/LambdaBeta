@@ -779,22 +779,30 @@ class _ReviewRouteState extends State<ReviewRoute> {
     final row = await _history.fetchReview(widget.session.reviewId);
     if (!mounted) return;
 
-    // One side of the review's documents, narrowed to this workout. Narrowing
-    // is the pass's own read ([contentInScope]) — the review covers a set, and
-    // this screen is about one workout of it.
-    ContentSession? side(ProgramContent? content) {
-      if (content == null) return null;
-      final scoped = contentInScope(content, sessionId: card.sessionId);
-      return scoped.sessions.isEmpty ? null : scoped.sessions.first;
-    }
+    // The workout's whole story, read once: the current plan, then every
+    // completed review's end and start, newest first (2026-10-26). The
+    // reader walks this list — which is what makes a step a repaint rather
+    // than a read.
+    final versions = await _history.fetchWorkoutVersions(
+      userId: _userId,
+      sessionId: card.sessionId,
+    );
+    if (!mounted) return;
 
-    final before = side(row?.baseline);
-    final after = side(row?.snapshot);
+    // The landing's card is this review's end — the workout as this pass
+    // left it. A miss (-1) is a review that kept no record of it, which the
+    // reader says rather than papering over with the current plan.
+    final initialIndex = versions.indexWhere(
+      (v) =>
+          v.reviewId == widget.session.reviewId &&
+          v.side == WorkoutVersionSide.end,
+    );
+
     // Names come from the library, live — the record stores ids, and a rename
     // shows through here as it does everywhere else.
     var names = const <String, String>{};
     var variationNames = const <String, String>{};
-    if (before != null || after != null) {
+    if (versions.any((v) => v.session != null)) {
       names = await _exercises.fetchExerciseNameMap(_userId);
       variationNames = await _exercises.fetchVariationNameMap(_userId);
       if (!mounted) return;
@@ -825,12 +833,8 @@ class _ReviewRouteState extends State<ReviewRoute> {
         builder: (_) => RecordWorkoutScreen(
           session: session,
           name: card.name,
-          before: before,
-          after: after,
-          beforeDate: row?.createdDate,
-          afterDate: row?.completedDate,
-          exerciseNotes: row?.exerciseNotes ?? const {},
-          workoutNote: row?.workoutNotes[card.sessionId],
+          versions: versions,
+          initialIndex: initialIndex,
           exerciseNames: names,
           variationNames: variationNames,
         ),
@@ -1682,6 +1686,7 @@ Widget reviewChrome(
   Future<ReviewComparison> Function()? loadComparison,
   Widget? aboveBar,
   ValueChanged<String>? onExerciseTap,
+  String? recordLabel,
 }) {
   final resolved = session ?? ReviewScope.maybeOf(context);
   if (resolved == null) return child;
@@ -1696,6 +1701,7 @@ Widget reviewChrome(
       readOnly: readOnly,
       loadComparison: loadComparison,
       onExerciseTap: onExerciseTap,
+      recordLabel: recordLabel,
       // Done is the review's verb for one workout, and its mark needs the
       // editor's save underneath it: a tick over unsaved edits would say
       // "finished with this one" about a change that never landed. The
@@ -2001,6 +2007,7 @@ class ReviewBar extends StatefulWidget {
     this.loadComparison,
     this.onExerciseTap,
     this.overviewProgress,
+    this.recordLabel,
   });
 
   final ReviewSession session;
@@ -2074,6 +2081,15 @@ class ReviewBar extends StatefulWidget {
   /// the cards stay inert.
   final ValueChanged<String>? onExerciseTap;
 
+  /// What a record's bar calls the reading on screen, in place of the frozen
+  /// side's name ([kReviewAfterLabel] / [kReviewBeforeLabel]). Null keeps the
+  /// side's name where a workout is open; a record whose walker can step
+  /// past the review it was opened from passes the name of what is actually
+  /// on screen (the plan itself), because a bar saying "After Review" over a
+  /// document no review wrote would be a wrong reading rather than a terse
+  /// one. Ignored wherever the bar is not a record's.
+  final String? recordLabel;
+
   @override
   State<ReviewBar> createState() => _ReviewBarState();
 }
@@ -2127,7 +2143,7 @@ class _ReviewBarState extends State<ReviewBar> {
     final label = readingBefore
         ? kReviewBeforeLabel
         : readingSide
-        ? kReviewAfterLabel
+        ? (widget.recordLabel ?? kReviewAfterLabel)
         : settled
         ? kReviewCompleteLabel
         : widget.comparing

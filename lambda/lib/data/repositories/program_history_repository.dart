@@ -49,6 +49,131 @@ class ComparisonBase {
   bool get asFound => completedDate == null;
 }
 
+/// Which moment of a workout's story a [WorkoutVersion] is.
+enum WorkoutVersionSide {
+  /// The workout as a review found it — the pass's baseline, captured when it
+  /// began.
+  start,
+
+  /// The workout as a review left it — the pass's snapshot, frozen when it
+  /// completed.
+  end,
+
+  /// The plan as it stands today; it belongs to no review.
+  current,
+}
+
+/// One frozen version of a workout, read as a record (2026-10-26).
+///
+/// A version is one document, narrowed to one workout — not a pair. The
+/// reader walks them in order and the eye flips between the two sides of the
+/// version's own review; the current plan is the one version with no pair,
+/// because nothing has been recorded after it yet.
+class WorkoutVersion {
+  const WorkoutVersion({
+    required this.sessionId,
+    required this.side,
+    this.reviewId,
+    this.date,
+    this.session,
+    this.exerciseNotes = const {},
+    this.workoutNote,
+  });
+
+  /// The workout this version is about (`dim_planned_session.session_id`).
+  final String sessionId;
+
+  final WorkoutVersionSide side;
+
+  /// The review this version came from; null on [WorkoutVersionSide.current].
+  final String? reviewId;
+
+  /// When this version was taken: the pass began ([start]), the review
+  /// completed ([end]). Null on the current plan, which stands outside time.
+  final DateTime? date;
+
+  /// The workout's content on this side, or null when the review's document
+  /// did not hold it — a workout the pass deleted before it completed, or one
+  /// it added after the baseline was taken. Null is a fact to say, not a
+  /// version to drop.
+  final ContentSession? session;
+
+  /// The review's exercise notes, keyed by `planned_exercise_id`. Empty on a
+  /// baseline (the plan as found had no notes of its own) and on the current
+  /// plan (a plan carries no review notes).
+  final Map<String, String> exerciseNotes;
+
+  /// The review's note for this workout as a whole, when it left one — same
+  /// rule as [exerciseNotes].
+  final String? workoutNote;
+
+  bool get isStart => side == WorkoutVersionSide.start;
+
+  bool get isCurrent => side == WorkoutVersionSide.current;
+}
+
+/// The frozen sides of [sessionId]'s story in [reviews], newest first — the
+/// pure half of [ProgramHistoryRepository.fetchWorkoutVersions], split out so
+/// the ordering and the side rules can be read (and tested) without a
+/// database.
+///
+/// Reviews order by `completed_date` (the moment their snapshot was taken),
+/// and within one review the end is newer than its start — so the newest
+/// first list runs `reviewN.end, reviewN.start, …, review1.start`.
+List<WorkoutVersion> assembleWorkoutVersions(
+  List<ProgramReview> reviews,
+  String sessionId,
+) {
+  final completed =
+      [
+        for (final review in reviews)
+          if (review.isCompleted && review.hasSnapshot) review,
+      ]..sort((a, b) {
+        final byDate = a.completedDate!.compareTo(b.completedDate!);
+        return byDate != 0 ? byDate : a.reviewId.compareTo(b.reviewId);
+      });
+
+  final versions = <WorkoutVersion>[];
+  for (final review in completed) {
+    final start = _sessionIn(review.baseline, sessionId);
+    final end = _sessionIn(review.snapshot, sessionId);
+    // A review that never held this workout is not part of its story.
+    if (start == null && end == null) continue;
+    if (review.hasBaseline) {
+      versions.add(
+        WorkoutVersion(
+          sessionId: sessionId,
+          reviewId: review.reviewId,
+          side: WorkoutVersionSide.start,
+          date: review.createdDate,
+          session: start,
+        ),
+      );
+    }
+    versions.add(
+      WorkoutVersion(
+        sessionId: sessionId,
+        reviewId: review.reviewId,
+        side: WorkoutVersionSide.end,
+        date: review.completedDate,
+        session: end,
+        exerciseNotes: review.exerciseNotes,
+        workoutNote: review.workoutNotes[sessionId],
+      ),
+    );
+  }
+  return versions.reversed.toList();
+}
+
+/// One session out of a document — the single-session form of
+/// [contentInScope], kept here because the version read has no view in hand.
+ContentSession? _sessionIn(ProgramContent? content, String sessionId) {
+  for (final session in content?.sessions ?? const <ContentSession>[]) {
+    if (session.sessionId == sessionId) return session;
+  }
+  return null;
+}
+
 /// The current run as the caller already found it — [progress] is null
 /// exactly when there is no current run.
 ///
@@ -650,6 +775,50 @@ class ProgramHistoryRepository {
 
     final baseline = review.baseline;
     return baseline == null ? null : ComparisonBase(baseline);
+  }
+
+  /// Every frozen version of one workout's story, newest first (2026-10-26).
+  ///
+  /// Each completed review that held the workout contributes up to two
+  /// versions: the side the pass found (`START OF REVIEW`, its baseline) and
+  /// the side it left (`END OF REVIEW`, its snapshot). A review contributes
+  /// only the sides its row actually recorded — a row with no baseline offers
+  /// no start — and a workout absent from one side is still a version of that
+  /// review: a review that deleted the workout left an empty end, and the
+  /// reader has to be able to say so rather than skip the moment.
+  ///
+  /// The current plan is prepended when the workout still exists: the story
+  /// does not stop at the newest review, and "how it stands today" is the
+  /// version a reader most often wants next. A deleted (archived) workout has
+  /// no current version to draw.
+  ///
+  /// Scoping asks the DOCUMENTS, not the scope columns: a version is a
+  /// snapshot of the plan, so whether a review held this workout is exactly
+  /// whether one of its two documents does. The stored id set can name a
+  /// workout the snapshot no longer contains — the pass deleted it — and
+  /// that absence is itself the version.
+  Future<List<WorkoutVersion>> fetchWorkoutVersions({
+    required String userId,
+    required String sessionId,
+  }) async {
+    final reviews = await fetchReviewsForUser(userId);
+    final versions = assembleWorkoutVersions(reviews, sessionId);
+    final live = await buildContentForSessions(
+      userId: userId,
+      sessionIds: [sessionId],
+    );
+    final session = live.sessions.isEmpty ? null : live.sessions.first;
+    if (session != null) {
+      versions.insert(
+        0,
+        WorkoutVersion(
+          sessionId: sessionId,
+          side: WorkoutVersionSide.current,
+          session: session,
+        ),
+      );
+    }
+    return versions;
   }
 
   /// Sets (or, with a blank [note], clears) one exercise's review note.

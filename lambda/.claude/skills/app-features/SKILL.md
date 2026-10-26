@@ -254,42 +254,61 @@ reads one as a "program" review — the acceptable old behavior.
   (built on first open) so a record never constructs one. The program history
   panel keeps `showReviewDetailSheet` (the WHAT CHANGED diff the landing
   never shows).
-- **A record reads (2026-10-12)**: both lists on a record are doors, into
-  readings. A workout card opens `RecordWorkoutScreen` — the **pass's own
-  chrome** (header, shared card, the review's bar at the floor) over the
-  record's two frozen sides: `baseline_content` as `beginReview` found it and
-  `snapshot_content` as the pass completed, both narrowed by `contentInScope`,
-  never the live plan (which keeps being edited). The eye flips between the
-  two, named on a page caption (`BEFORE · 8 Oct 2026` / `AFTER · 9 Oct 2026`)
-  and on the bar's own label, which over a record's workout names the side on
-  screen — `kReviewAfterLabel` / `kReviewBeforeLabel`, green rim and words at
-  rest turning accent as the eye turns, through the label's usual rise —
-  rather than the walk the way a pass's label does ("Review Complete"
-  outranks what is on screen, then "In Review" / "Previously"); a record with
-  only one side offers no eye.
-  **The names carry the sides' disagreement** (2026-10-12): an exercise the
-  side on screen holds and the other does not wears a green **plus** (absent
-  from the base, so the review added it) or a red **minus** (in the base and
-  not on screen, so it dropped it) — `ExerciseMark` on the shared selector
-  (each glyph a plus or minus inside a filled disc), in
-  the field and in every popover row, one membership test over
-  `plannedExerciseId` with two readings so the marks can never disagree across
-  the eye. Names both sides hold stay bare, and a record with one side marks
-  nothing — there is no second document to have read an edit off.
+- **A record reads (2026-10-12; a stack since 2026-10-26)**: both lists on a
+  record are doors, into readings. A workout card opens `RecordWorkoutScreen`
+  — the **pass's own chrome** (header, shared card, the review's bar at the
+  floor) over every frozen version of that workout: the current plan when it
+  still exists, then each completed review's end (`snapshot_content`, what
+  the pass left) and start (`baseline_content`, what it found), newest first,
+  read once by `fetchWorkoutVersions` (which walks the user's completed
+  reviews and narrows each document to this workout — never the live plan,
+  which keeps being edited). A **walker** — a `FloatingBar` storey above the
+  review's bar, `SessionChevronButton`s either side — steps the stack older
+  left, newer right, both ends spent and never absent, and names the version
+  on screen `START OF REVIEW - 1 Oct 2026` / `END OF REVIEW - 9 Oct 2026` /
+  a lone `CURRENT PLAN`; a step is a repaint, never a read, so there is no
+  spinner to wait through. `RecordWorkoutViewModel`
+  (`ValueNotifier<RecordWorkoutState>`) owns which version is on screen, the
+  sibling pair the eye flips across, and the reference the marks read.
+  The **eye** is the jump between the two sides of the review on screen —
+  offered only where both sides hold the workout (a jump onto "the workout
+  was not there" would read as data gone missing), and never on the current
+  plan, which belongs to no review. The bar's own label names the side of a
+  review version (`kReviewAfterLabel` / `kReviewBeforeLabel`, green rim and
+  words at rest turning accent as the eye turns, through the label's usual
+  rise) and reads `Current Plan` over the plan (`ReviewBar.recordLabel`).
+  **The names carry the versions' disagreement**: on a review version the
+  reference is its own review's other side — an exercise the side on screen
+  holds and the other does not wears a green **plus** (absent from the start,
+  so the review added it) or a red **minus** (in the start and not on screen,
+  so it dropped it) — and on the current plan the reference is the newest
+  end, so the marks say what has changed since the last record.
+  `ExerciseMark` rides on the shared selector (each glyph a plus or minus
+  inside a filled disc), in the field and in every popover row, one
+  membership test over `plannedExerciseId` with two readings so the marks can
+  never disagree across the eye. Names both sides hold stay bare, and a
+  version with no reference — a review that kept one document, a plan no
+  review has recorded — marks nothing.
   The bar is handed the row's `ReviewSession` (`reviewChrome(session:,
   readOnly: true, loadComparison:)`), never publishing one, so Compare and
-  Changes read those same two documents through the injected comparison; the
+  Changes read those same documents through the injected comparison — a
+  review's own delta (start→end) on either of its versions, the newest end →
+  plan on the current one; the
   tick is **drawn wearing the record's answer and disabled** — green
   (`success`) under `GlassButton`'s half opacity when the record ticks it —
   and the note glyph stays greyed. Every other callback is null or inert, with
   exercises switchable because looking is not writing. The review's own notes
-  read back: the exercise's box under its sets (`reviewNoteEmptyText` keeps it
-  drawn, reading "No note" where the review left none — the pass draws that
-  box under every exercise, so the record's furniture does not depend on what
-  was typed) and the workout's above the card when it has one. The row is read on the route (`_openRecordWorkout` → `fetchReview`)
-  and the screen takes plain data, so it loads nothing and holds no loading
-  state; a row with no snapshot (a dismissed completion, a pre-snapshot row)
-  arrives as a null record and says so rather than drawing an empty grid.
+  ride only the versions the review produced: the exercise's box under its
+  sets (`reviewNoteEmptyText` keeps it drawn, reading "No note" where that
+  version left none — the pass draws that box under every exercise, so the
+  record's furniture does not depend on what was typed) and the workout's
+  above the card when that version has one; a start version's box answers
+  empty, because the plan as found had no notes of its own. The row is read
+  on the route (`_openRecordWorkout` → `fetchReview` for the bar's ticks and
+  `fetchWorkoutVersions` for the stack) and the screen takes plain data, so it
+  loads nothing and holds no loading state; a review that kept no record of
+  the workout (a dismissed completion, a pre-snapshot row) arrives as no
+  version and the page says so rather than drawing an empty grid.
   Exercise and variation names resolve live (`fetchExerciseNameMap`/
   `fetchVariationNameMap`) — a rename shows through on a record as it does
   everywhere. A goal row opens

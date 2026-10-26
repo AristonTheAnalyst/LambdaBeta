@@ -24,6 +24,7 @@ import 'package:lambda/shared/widgets/glass_button.dart';
 import 'package:lambda/shared/widgets/lambda_input.dart';
 import 'package:lambda/shared/widgets/lambda_readout.dart';
 import 'package:lambda/shared/widgets/scroll_shrink_nav_bar.dart';
+import 'package:lambda/shared/widgets/session_chevron_button.dart';
 import 'package:lambda/shared/widgets/session_exercise_card.dart';
 import 'package:lambda/shared/widgets/session_set_row.dart';
 import 'package:lambda/shared/widgets/swipe_actions.dart';
@@ -2124,6 +2125,11 @@ void main() {
     );
 
     ProgramReview completedRow({
+      String id = 'rec1',
+      DateTime? started,
+      DateTime? completed,
+      String beforeWeight = '70',
+      String afterWeight = '80',
       String? exerciseNote,
       String? workoutNote,
       bool reviewed = false,
@@ -2194,7 +2200,7 @@ void main() {
       final snapshot = ProgramContent(
         sessions: [
           side(
-            '80',
+            afterWeight,
             withExercises,
             extra: [if (addedAfter != null) solo(addedAfter, 2)],
           ),
@@ -2203,26 +2209,28 @@ void main() {
       final baseline = ProgramContent(
         sessions: [
           side(
-            '70',
+            beforeWeight,
             withBeforeExercises,
             extra: [if (droppedAfter != null) solo(droppedAfter, 2)],
           ),
         ],
       );
       return ProgramReview(
-        reviewId: 'rec1',
+        reviewId: id,
         userId: 'u1',
         sessionIdsJson: jsonEncode(const ['s1']),
         goalIdsJson: jsonEncode(const ['g1']),
         kind: kReviewKindReview,
         title: 'End of block',
-        createdDate: DateTime(2026, 10, 1),
-        completedDate: DateTime(2026, 10, 9),
+        createdDate: started ?? DateTime(2026, 10, 1),
+        completedDate: completed ?? DateTime(2026, 10, 9),
         outcome: kOutcomeReviewed,
         // The ticks as the pass recorded them — what the reader's bar reads
         // the workout's answer off, the way the landing's does.
         reviewedSessionsJson: jsonEncode(
-          reviewed ? {'s1': DateTime(2026, 10, 9).toIso8601String()} : {},
+          reviewed
+              ? {'s1': (completed ?? DateTime(2026, 10, 9)).toIso8601String()}
+              : {},
         ),
         snapshotContent: withSnapshot ? snapshot.encode() : null,
         baselineContent: withBaseline ? baseline.encode() : null,
@@ -2327,9 +2335,12 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(RecordWorkoutScreen), findsOneWidget);
-      // The side this opens on, named on the page: the review's completion.
-      expect(find.text('AFTER · 9 Oct 2026'), findsOneWidget);
-      expect(find.text('BEFORE · 1 Oct 2026'), findsNothing);
+      // The version this opens on, named on the walker above the bar: the
+      // review's completion, the side it left.
+      expect(find.text('END OF REVIEW -'), findsOneWidget);
+      expect(find.text('9 Oct 2026'), findsOneWidget);
+      expect(find.text('START OF REVIEW -'), findsNothing);
+      expect(find.text('1 Oct 2026'), findsNothing);
       // The two altitudes of note, each where its owner is: the workout's
       // above the card, the exercise's under the exercise it is about.
       expect(find.text('Moved well today'), findsOneWidget);
@@ -2444,25 +2455,33 @@ void main() {
         tester.widget<Text>(find.text(kReviewAfterLabel)).style?.color,
         AppColors.success,
       );
-      expect(
-        tester.widget<FloatingBar>(find.byType(FloatingBar)).rimColor,
-        AppColors.success,
+      // The review's bar is the lower storey; the walker rides above it, so
+      // the rim being read is the review's own FloatingBar.
+      FloatingBar reviewBar() => tester.widget<FloatingBar>(
+        find.descendant(
+          of: find.byType(ReviewBar),
+          matching: find.byType(FloatingBar),
+        ),
       );
+      expect(reviewBar().rimColor, AppColors.success);
 
       await tester.tap(find.byIcon(kCompareGlyph));
       await tester.pumpAndSettle();
 
       expect(
-        find.text('BEFORE · 1 Oct 2026'),
+        find.text('START OF REVIEW -'),
         findsOneWidget,
-        reason:
-            'the side on screen is named on the page and on the bar, '
-            'which flip together',
+        reason: 'the eye steps to the other version of the same review',
+      );
+      expect(
+        find.text('1 Oct 2026'),
+        findsOneWidget,
+        reason: 'and the walker names the date that version was taken',
       );
       expect(
         find.text(kReviewBeforeLabel),
         findsOneWidget,
-        reason: 'the label swaps to the side the eye turned to',
+        reason: 'the bar\'s words swap to the side the eye turned to',
       );
       expect(find.text(kReviewAfterLabel), findsNothing);
       // The earlier side is not the answer, it is a reading — so the colours
@@ -2471,23 +2490,22 @@ void main() {
         tester.widget<Text>(find.text(kReviewBeforeLabel)).style?.color,
         AppColors.accent,
       );
-      expect(
-        tester.widget<FloatingBar>(find.byType(FloatingBar)).rimColor,
-        AppColors.accent,
-      );
-      expect(find.text('AFTER · 9 Oct 2026'), findsNothing);
+      expect(reviewBar().rimColor, AppColors.accent);
+      expect(find.text('END OF REVIEW -'), findsNothing);
       expect(
         find.text('70'),
         findsOneWidget,
         reason: 'the same card, the same row, the other side\'s value',
       );
       expect(find.text('80'), findsNothing);
+      // Notes are the pass's product, so they belong to the version it
+      // produced (2026-10-26): the start is what the review FOUND, and what
+      // it thought about the exercise reads on the end.
+      expect(find.text('Elbows tucked'), findsNothing);
       expect(
-        find.text('Elbows tucked'),
+        find.text(kNoNoteText),
         findsOneWidget,
-        reason:
-            'the review\'s note is about the exercise, so it reads over '
-            'either side of it',
+        reason: 'the box holds its place on either side, answering empty',
       );
       expect(
         find.byIcon(kCompareGlyphOn),
@@ -2500,13 +2518,160 @@ void main() {
       await tester.tap(find.byIcon(kCompareGlyphOn));
       await tester.pumpAndSettle();
 
-      expect(find.text('AFTER · 9 Oct 2026'), findsOneWidget);
+      expect(find.text('END OF REVIEW -'), findsOneWidget);
       expect(find.text('80'), findsOneWidget);
+      expect(find.text('Elbows tucked'), findsOneWidget);
       expect(
         find.text(kReviewAfterLabel),
         findsOneWidget,
         reason: 'the flip back names the side it returns to',
       );
+    });
+
+    testWidgets('the walker steps the workout\'s whole story — every '
+        'completed review\'s end and start, newest first — with the plan '
+        'waiting at the top', (tester) async {
+      seed();
+      // Three passes over the same workout, each starting where the last one
+      // left it — plus the plan as it stands today, which belongs to none.
+      history.reviews = [
+        completedRow(
+          id: 'rec3',
+          started: DateTime(2026, 10, 8),
+          completed: DateTime(2026, 10, 9),
+          beforeWeight: '80',
+          afterWeight: '85',
+        ),
+        completedRow(
+          id: 'rec2',
+          started: DateTime(2026, 10, 5),
+          completed: DateTime(2026, 10, 6),
+          beforeWeight: '75',
+          afterWeight: '80',
+        ),
+        completedRow(
+          id: 'rec1',
+          started: DateTime(2026, 10, 1),
+          completed: DateTime(2026, 10, 2),
+          beforeWeight: '70',
+          afterWeight: '75',
+        ),
+      ];
+      history.currentWorkout = ContentSession(
+        sessionId: 's1',
+        userId: 'u1',
+        name: 'Push Day',
+        exercises: [
+          ContentExercise(
+            plannedExerciseId: 'pe1',
+            plannedSessionId: 's1',
+            userId: 'u1',
+            exerciseId: 'e1',
+            exerciseOrder: 0,
+            sets: [
+              ContentSet(
+                plannedSetId: 'ps1',
+                plannedExerciseId: 'pe1',
+                plannedSessionId: 's1',
+                userId: 'u1',
+                setNumber: 1,
+                targetWeight: '90',
+                targetReps: '5',
+              ),
+            ],
+          ),
+        ],
+      );
+      await pumpRecord(tester, subject: recordSession());
+
+      await tester.tap(find.text('Push Day'));
+      await tester.pumpAndSettle();
+
+      // The card is rec1's, so the page opens on that review's end — the
+      // workout as it left the pass it was opened from, not the newest one.
+      expect(history.versionScopes.single.sessionId, 's1');
+      expect(find.text('END OF REVIEW -'), findsOneWidget);
+      expect(find.text('2 Oct 2026'), findsOneWidget);
+      expect(find.text('75'), findsOneWidget);
+
+      // Older is one step and the floor stops: rec1's start is the bottom of
+      // the stack. A single frame after the tap — a walk is a repaint, never
+      // a read, so there is no spinner to wait through.
+      await tester.tap(find.byKey(const ValueKey('record-version-bar-older')));
+      await tester.pump();
+      expect(find.text('START OF REVIEW -'), findsOneWidget);
+      expect(find.text('1 Oct 2026'), findsOneWidget);
+      expect(find.text('70'), findsOneWidget);
+      expect(
+        tester
+            .widget<SessionChevronButton>(
+              find.byKey(const ValueKey('record-version-bar-older')),
+            )
+            .enabled,
+        isFalse,
+        reason: 'the oldest version is the end of the stack',
+      );
+
+      // Newer walks the stack back up: rec1's end, rec2's start and end,
+      // rec3's start and end, then the plan.
+      Future<void> newer() async {
+        await tester.tap(
+          find.byKey(const ValueKey('record-version-bar-newer')),
+        );
+        await tester.pump();
+      }
+
+      await newer();
+      expect(find.text('END OF REVIEW -'), findsOneWidget);
+      expect(find.text('2 Oct 2026'), findsOneWidget);
+
+      await newer();
+      expect(find.text('START OF REVIEW -'), findsOneWidget);
+      expect(find.text('5 Oct 2026'), findsOneWidget);
+      expect(find.text('75'), findsOneWidget);
+
+      await newer();
+      expect(find.text('END OF REVIEW -'), findsOneWidget);
+      expect(find.text('6 Oct 2026'), findsOneWidget);
+      expect(find.text('80'), findsOneWidget);
+
+      await newer();
+      expect(find.text('START OF REVIEW -'), findsOneWidget);
+      expect(find.text('8 Oct 2026'), findsOneWidget);
+      expect(find.text('80'), findsOneWidget);
+
+      await newer();
+      expect(find.text('END OF REVIEW -'), findsOneWidget);
+      expect(find.text('9 Oct 2026'), findsOneWidget);
+      expect(find.text('85'), findsOneWidget);
+
+      // The plan itself: the top of the stack, outside any review. The
+      // walker names it, the bar says so too — a record's words would be a
+      // wrong reading over a document no review wrote — and there is no
+      // pair to flip across, so the eye is gone.
+      await newer();
+      expect(find.text('CURRENT PLAN'), findsOneWidget);
+      expect(find.text('9 Oct 2026'), findsNothing);
+      expect(find.text('90'), findsOneWidget);
+      expect(find.text('Current Plan'), findsOneWidget);
+      expect(find.byIcon(kCompareGlyph), findsNothing);
+      expect(
+        tester
+            .widget<SessionChevronButton>(
+              find.byKey(const ValueKey('record-version-bar-newer')),
+            )
+            .enabled,
+        isFalse,
+        reason: 'the plan is the newest thing there is',
+      );
+
+      // And a step back down lands on the newest record's end, its own pair
+      // intact.
+      await tester.tap(find.byKey(const ValueKey('record-version-bar-older')));
+      await tester.pump();
+      expect(find.text('END OF REVIEW -'), findsOneWidget);
+      expect(find.text('9 Oct 2026'), findsOneWidget);
+      expect(find.byIcon(kCompareGlyph), findsOneWidget);
     });
 
     testWidgets('the sides\' disagreement rides on the names — a green plus '
@@ -2662,7 +2827,16 @@ void main() {
 
       expect(find.byIcon(kCompareGlyph), findsNothing);
       expect(find.byIcon(kCompareGlyphOn), findsNothing);
-      expect(find.text('AFTER · 9 Oct 2026'), findsOneWidget);
+      expect(find.text('END OF REVIEW -'), findsOneWidget);
+      expect(
+        tester
+            .widget<SessionChevronButton>(
+              find.byKey(const ValueKey('record-version-bar-older')),
+            )
+            .enabled,
+        isFalse,
+        reason: 'one version is a stack of one: nowhere older to walk',
+      );
     });
 
     testWidgets('the bar is the pass\'s own, with every verb that writes '
