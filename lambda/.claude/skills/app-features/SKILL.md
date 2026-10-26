@@ -511,7 +511,7 @@ slow a client-computed daily-summary table is the fix.
 | **Rest timer** | in-memory only | `fact_rest` was dropped 2026-08-14 — no rest analytics. Timer still drives the AVG REST stat from `restDurationsThisSession` |
 | **Supersets** | retired | Column `superset_group_number` DROPPED 2026-08-24 (schema v2). No UI creates supersets; dormant slot support renders a restored multi-exercise slot as its first exercise |
 | **Feelings** | `fact_session.pre_feeling` / `post_feeling` | Pre-workout feeling is shown in logs; `post_feeling` is written but **never displayed yet** — logs screen is the candidate place |
-| **Coaching** | `coaching_relationship` + coach RLS policies **+ `coaching_data` stream** | Invite / accept / revoke (2026-10-26, #22): Profile → Coach invites by friend code, the athlete accepts or declines from the same screen, and either side can end the edge. Consent gate = `accepted_date`; an unaccepted invitation sends no athlete rows (the coach's name does reach the athlete). An accepted athlete's history opens in the existing read-only viewer |
+| **Coaching** | `coaching_relationship` + coach RLS policies **+ `coaching_data` stream**, plus `fact_coach_assignment` / `fact_coach_feedback` (2026-10-26, #24) | Invite / accept / revoke (2026-10-26, #22): Profile → Coach invites by friend code, the athlete accepts or declines from the same screen, and either side can end the edge. Consent gate = `accepted_date`; an unaccepted invitation sends no athlete rows (the coach's name does reach the athlete). An accepted athlete's history opens in the existing read-only viewer. **Authoring (#24):** a coach hands an athlete a workout (the assignment carries a frozen `ProgramContent` snapshot + an id→name map; accepting copies it into the athlete's own library, remapping exercise/variation names), and writes feedback on any completed session of theirs — the athlete reads the same card on their own record |
 | **Friends** | `dim_friend_code` + `friend_relationship.nickname` | Instant, mutual, by code (2026-10-23). No pending state; completed sessions only in the stream; the existing viewer reads a friend's history read-only. A friend reads **nickname → their name → their code → `Friend`** (2026-10-25); the nickname is the caller's own label on their directed row |
 | **Onboarding** | `dim_user.onboarded` | Gate flag for first-run flow |
 
@@ -764,6 +764,40 @@ navRoute: '/profile')`), the caller's own coaches, and nameless pending-sent
 rows — nothing about an unaccepted athlete reaches the coach's device, not
 even a name.
 
+### fact_coach_assignment — a workout a coach hands an athlete (2026-10-26, #24)
+`assignment_id` (text PK, client-generated uuid), `coach_user_id` /
+`athlete_user_id` (FK → dim_user, ON DELETE CASCADE), `planned_session_id`
+(the coach's template — provenance, never read by the athlete's copy),
+`name` (the workout's name at send time), `note` (nullable prose),
+`snapshot_content` (a `ProgramContent` document, schema 2 — the frozen
+workout), `names_json` (only the ids that workout uses:
+`{"exercises": {id: name}, "variations": {id: name}}`, because dim ids are
+per-user), `created_date`, `accepted_date` / `declined_date` (null = pending;
+both set = a race the client never intends), `athlete_planned_session_id`
+(the copy that landed, for the coach's status line).
+
+An assignment is an **offer, not a shared row**: the athlete's accept
+decodes the snapshot, resolves each exercise/variation **by name** against
+their own library (create when missing, reactivate when archived; an
+unresolvable group is skipped), and writes a fresh `dim_planned_session` +
+groups + sets in one local transaction, stamping `coach_assignment_id` on
+the new template. `coaches_athlete(coach, athlete)` (SECURITY DEFINER,
+accepted rows only) gates the coach's INSERT; the athlete's accept/decline
+is an UPDATE on their own row; withdraw is the coach's DELETE while
+`accepted_date is null`. Both sides read.
+
+### fact_coach_feedback — a coach's note on one session (2026-10-26, #24)
+`feedback_id` (text PK, client-generated uuid), `coach_user_id` /
+`athlete_user_id`, `session_id` (FK → fact_session, ON DELETE CASCADE),
+`body` (prose, uncapped), `created_date`, `edited_date`. **One row per
+(coach, session)** — a unique index enforces it and `saveFeedback` updates
+the existing row rather than inserting a second. The coach writes on the
+athlete's session viewer (`SessionDetailScreen(canCoach: true)`), the
+athlete reads it on their own record; a friend's record never draws it (the
+stream sends feedback only to its two parties). RLS: read either side,
+insert/update/delete the coach's own row, and INSERT additionally requires an
+accepted coaching edge plus that the session belongs to the athlete.
+
 ### app_config (public SELECT)
 `platform`, `min_version`, `latest_version`, `updated_at`. Read via REST
 for the force-update gate. NOT in the PowerSync publication.
@@ -800,6 +834,8 @@ What actually happens to each table's rows.
 | dim_friend_code | `after insert on dim_user` trigger (SECURITY DEFINER) + migration backfill | never (codes are stable in v1) | never (cascade from auth.users → dim_user) |
 | friend_relationship | `add_friend_by_code` RPC writes BOTH directions; the client mirrors only the caller's own directed row | — | `remove_friend` RPC deletes both directions, callable from either side; the client also deletes its own local row and drops the friend's cached timeline |
 | coaching_relationship | `coach_invite_by_code` RPC writes the pending row; the client mirrors it locally only when `created` (coach→athlete). `accept_coaching_invitation` RPC + an accepted-date mirror (athlete) | acceptance only (`accepted_date`), via RPC | `remove_coaching_relationship` RPC from either side (decline / withdraw / revoke / consent withdrawal) + a local pair delete whose queued op the uploader skips |
+| fact_coach_assignment | `createAssignment` (coach, local INSERT with a `ProgramContent` snapshot + `names_json`) | athlete's accept (`accepted_date`, `athlete_planned_session_id`) / decline (`declined_date`), local-first on the synced row | `withdrawAssignment` (coach, local DELETE while `accepted_date is null`; the accepted copy is untouched) |
+| fact_coach_feedback | `saveFeedback` (local INSERT, id = `feedback_id`) | `saveFeedback` rewrites the author's own row (`body` + `edited_date`) | `deleteFeedback` (author only, local DELETE) |
 | app_config | manual/ops | manual/ops | manual/ops |
 
 ## RLS policy matrix (verified current state)
@@ -850,6 +886,8 @@ Every table has RLS enabled. Three policy shapes:
 | fact_goal_target | ✅ | ✅ |
 | fact_bodyweight | ✅ | ✅ |
 | coaching_relationship | coach INSERT (accepted_date is null) + athlete UPDATE (own row) + read SELECT (either side); removal is the RPC's, so no DELETE policy | — |
+| fact_coach_assignment | coach INSERT (own + `coaches_athlete` + both stamps null) + athlete UPDATE (own row) + coach DELETE (own, while `accepted_date is null`) + read SELECT (either side) | — |
+| fact_coach_feedback | coach INSERT (own + `coaches_athlete` + the session belongs to the athlete) + coach UPDATE/DELETE (own rows) + read SELECT (either side) | — |
 | dim_friend_code | **owner SELECT only** (no insert/update/delete grants; the trigger writes it) | — |
 | friend_relationship | own row ALL (`user_id = auth.uid()`) + both-sides SELECT (the reciprocal row is written by the SECURITY DEFINER RPC) | — |
 | app_config | public SELECT (true) | — |
@@ -860,11 +898,14 @@ harmless (RLS is the gatekeeper).
 ## Sync wiring
 
 Every synced table must be registered in four places (see the
-`sync-contract` skill for the full contract): server publication (21 tables),
+`sync-contract` skill for the full contract): server publication (24 tables),
 `powersync/sync-streams.yaml` (queries alias the real PK as `id`),
 `lib/core/powersync/schema.dart`, and `lib/core/powersync/database.dart`
-(`_pkColumns` / `_compositeKeyTables` upload mapping). Two auto-subscribed
-streams since 2026-10-23: `user_data` (the user's own rows) and `friends_data`
+(`_pkColumns` / `_compositeKeyTables` upload mapping). Three auto-subscribed
+streams since 2026-10-26: `user_data` (the user's own rows — since #24 also
+the coach assignment and feedback rows on either side of the pair, the
+`coaching_relationship` shape), `coaching_data` (a coach's consented view of
+an athlete's completed training, #22), and `friends_data`
 (`dim_friend_code` own + each mutual friend's, `friend_relationship` own
 directed rows with their nicknames and privacy tiers, and each mutual friend's
 completed records + names slice — a friend's notes only when they share them,

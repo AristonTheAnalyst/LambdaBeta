@@ -15,6 +15,7 @@ import 'package:lambda/features/session/model/session_local_state.dart';
 import 'package:lambda/features/session/viewmodel/session_viewmodel.dart';
 
 import 'support/fake_program_repos.dart';
+import 'support/fake_coach_repository.dart';
 
 /// The date bar's two stacks (2026-10-23). EXERCISE — the default on both
 /// session surfaces — walks the active exercise's own past performances,
@@ -156,6 +157,7 @@ void main() {
     late _FakeSessionRepo repo;
 
     SessionDetailViewModel buildVm() => SessionDetailViewModel(
+      coachRepo: FakeCoachRepository(),
       sessionRepo: repo,
       exerciseRepo: _FakeExerciseRepo(),
       lessonRepo: _FakeLessonRepo(),

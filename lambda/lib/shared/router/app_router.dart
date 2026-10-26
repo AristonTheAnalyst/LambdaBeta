@@ -160,6 +160,9 @@ abstract final class AppRouter {
           sessionId: state.pathParameters['sessionId']!,
           userId: state.pathParameters['athleteId'],
           readOnly: true,
+          // The coach may not touch the athlete's sets, but they are the one
+          // reader who writes on this page: their feedback (2026-10-26, #24).
+          canCoach: true,
           navRoute: '/profile',
         ),
       ),

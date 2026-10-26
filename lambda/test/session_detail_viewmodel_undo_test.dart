@@ -11,6 +11,7 @@ import 'package:lambda/data/repositories/exercise_repository.dart';
 import 'package:lambda/data/repositories/lesson_repository.dart';
 import 'package:lambda/data/repositories/session_repository.dart';
 import 'package:lambda/features/logs/viewmodel/session_detail_viewmodel.dart';
+import 'support/fake_coach_repository.dart';
 
 /// The past-session editor's undo/redo (2026-10-13): structural actions
 /// (groups, sets, reorders, drafts) push inverse/replay pairs; typed edits
@@ -212,6 +213,7 @@ void main() {
   late _FakeSessionRepo repo;
 
   SessionDetailViewModel buildVm() => SessionDetailViewModel(
+    coachRepo: FakeCoachRepository(),
     sessionRepo: repo,
     exerciseRepo: _FakeExerciseRepo(),
     lessonRepo: _FakeLessonRepo(),

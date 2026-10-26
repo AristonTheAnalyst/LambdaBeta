@@ -55,6 +55,8 @@ columns (schema v2, from migrations):
 `fact_goal_target→goal_target_id`,
 `dim_pr_view_setting→pr_view_setting_id`,
 `dim_friend_code→user_id`,
+`fact_coach_assignment→assignment_id`,
+`fact_coach_feedback→feedback_id`,
 `coaching_relationship→(coach_user_id,athlete_user_id)` and
 `friend_relationship→(user_id,friend_user_id)` (composite — the two tables
 with no server-side `id`).
@@ -146,6 +148,25 @@ stream; the `accepted_date` column must exist or the CTE fails to parse.
   `user_data` (own rows, `SELECT *`), so the roster sees both pending and
   accepted edges; the other side's name still arrives only through
   `coaching_data`.
+
+## The coach hand-off rides `user_data` (2026-10-26, #24)
+
+`fact_coach_assignment` and `fact_coach_feedback` are in `user_data`, each
+with `WHERE coach_user_id = auth.user_id() OR athlete_user_id =
+auth.user_id()` — the `coaching_relationship` shape. Both parties read these
+rows, so gating them on `coaching_data`'s `my_athletes` would hide an
+invitation from the very athlete who must decide it. The gates live in the
+tables' RLS policies instead (coach INSERT via `coaches_athlete`, athlete
+UPDATE of their own row, coach DELETE while `accepted_date is null`).
+
+An assignment carries **frozen content**, not a reference: `snapshot_content`
+(a `ProgramContent` document) plus `names_json` for the ids it uses, because
+`dim_exercise` / `dim_variation` rows are per-user — the coach's ids mean
+nothing in the athlete's library. Accepting resolves names against the
+athlete's own dims (create / reactivate as needed) and writes a fresh
+template; no `dim_*` row ever crosses users. That is also why nothing else
+needs to stream for this feature: the athlete never reads the coach's
+library, and the coach never reads the athlete's copy.
 
 **The own-row-only mirror rule.** `FriendRepository.addByCode` calls the
 SECURITY DEFINER RPC and then mirrors ONLY the caller's own directed row,

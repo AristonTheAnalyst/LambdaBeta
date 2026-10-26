@@ -15,6 +15,7 @@ import 'package:lambda/data/repositories/program_repository.dart';
 import 'package:lambda/data/repositories/session_repository.dart';
 import 'package:lambda/features/logs/viewmodel/session_detail_viewmodel.dart';
 import 'package:lambda/shared/widgets/exercise_target_picker.dart';
+import 'support/fake_coach_repository.dart';
 
 /// The past-session editor's debounce pipeline (2026-10-13): keystrokes
 /// merge into one write per settle, the settle patches both the grid and the
@@ -165,6 +166,7 @@ void main() {
     bool readOnly = false,
   }) {
     final vm = SessionDetailViewModel(
+      coachRepo: FakeCoachRepository(),
       sessionRepo: repo,
       exerciseRepo: _FakeExerciseRepo(),
       lessonRepo: FakeLessonRepository(),

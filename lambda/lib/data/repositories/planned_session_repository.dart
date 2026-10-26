@@ -159,6 +159,20 @@ class PlannedSessionRepository {
     return sortByLastLogged(sessions, await _lastLoggedMap(userId));
   }
 
+  /// Every active workout of [userId]'s — standalone OR program-attached — in
+  /// creation order, newest first. The coach's assign picker's list
+  /// (2026-10-26, #24): a coach may hand over any workout they authored,
+  /// whether or not it sits in one of their programs.
+  Future<List<PlannedSession>> fetchAllActiveSessions(String userId) async {
+    final rows = await ps.db.getAll(
+      'SELECT * FROM dim_planned_session '
+      'WHERE user_id = ? AND date_archived IS NULL '
+      'ORDER BY created_date DESC',
+      [userId],
+    );
+    return rows.map((r) => PlannedSession.fromMap(r)).toList();
+  }
+
   /// Every active workout of [userId]'s — any membership, program-attached or
   /// not — with when it was last LOGGED and how much of it is finished. This
   /// is the review picker's list.

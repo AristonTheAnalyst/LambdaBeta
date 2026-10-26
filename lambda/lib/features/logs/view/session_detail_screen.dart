@@ -2,17 +2,20 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
 import '../../../core/styles/app_spacing.dart';
 import '../../../core/styles/app_text_styles.dart';
 import '../../../core/utils/session_format.dart';
+import '../../../data/models/coach_feedback.dart';
 import '../../../data/models/lesson.dart';
 import '../../../data/models/session_exercise_set.dart';
 import '../../../shared/mixins/unsaved_changes_guard.dart';
 import '../../../shared/router/app_router.dart';
 import '../../../shared/widgets/add_exercise_modal.dart';
+import '../../../shared/widgets/app_card.dart';
 import '../../../shared/widgets/bar_icon_button.dart';
 import '../../../shared/widgets/dropdown_select.dart';
 import '../../../shared/widgets/exercise_selector.dart';
@@ -20,12 +23,15 @@ import '../../../shared/widgets/exercise_target_picker.dart';
 import '../../../shared/widgets/glass_button.dart';
 import '../../../shared/widgets/header_icon_button.dart';
 import '../../../shared/widgets/keyboard_floor_layout.dart';
+import '../../../shared/widgets/lambda_input.dart';
 import '../../../shared/widgets/page_header.dart';
 import '../../../shared/widgets/scroll_shrink_nav_bar.dart';
 import '../../../shared/widgets/session_date_bar.dart';
 import '../../../shared/widgets/session_exercise_card.dart';
 import '../../../shared/widgets/session_set_row.dart';
+import '../../../shared/widgets/slide_up_modal.dart';
 import '../../../shared/widgets/undo_redo_buttons.dart';
+import '../../../shared/widgets/user_name_text.dart';
 import '../../goals/view/goal_sheet.dart';
 import '../../session/model/session_local_state.dart';
 import '../../session/view/lessons_modal.dart';
@@ -43,6 +49,7 @@ class SessionDetailScreen extends StatefulWidget {
     this.fromLive = false,
     this.userId,
     this.readOnly = false,
+    this.canCoach = false,
     this.navRoute = '/session',
   });
 
@@ -73,6 +80,13 @@ class SessionDetailScreen extends StatefulWidget {
   /// the two doors this closes; everything else was already read-only in
   /// view mode.
   final bool readOnly;
+
+  /// The coach's own route (`/coach/:athleteId/sessions/:sessionId`,
+  /// 2026-10-26, #24): the record stays read-only — a coach never edits an
+  /// athlete's sets — but the page gains the feedback card's write door. The
+  /// viewer is the signed-in coach; [userId] is the athlete whose session it
+  /// is, exactly as on the friend route.
+  final bool canCoach;
 
   /// Which tab the page's own bar lights — '/session' for the Training
   /// viewer, '/friends' for a friend's.
@@ -291,6 +305,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
                         state: state,
                         initialTab: widget.initialTab,
                         readOnly: widget.readOnly,
+                        canCoach: widget.canCoach,
                         onWalkOlder: _walkOlder,
                         onWalkNewer: _walkNewer,
                       ),
@@ -328,6 +343,7 @@ class SessionDetailView extends StatelessWidget {
     required this.state,
     this.initialTab,
     this.readOnly = false,
+    this.canCoach = false,
     this.onWalkOlder,
     this.onWalkNewer,
   });
@@ -339,6 +355,11 @@ class SessionDetailView extends StatelessWidget {
   /// lessons modal opens without its composer — no write affordance exists on
   /// the page.
   final bool readOnly;
+
+  /// The coach reading their athlete's record (2026-10-26, #24): the
+  /// feedback card gains its write door. A coach still never edits the sets,
+  /// so this rides beside [readOnly] — it does not replace it.
+  final bool canCoach;
 
   /// The date bar's steps (2026-10-22). The route supplies them so a step
   /// takes the same unsaved-changes guard as the back arrow; read-only
@@ -381,6 +402,19 @@ class SessionDetailView extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  // The coach's feedback on this record (2026-10-26, #24):
+                  // drawn for whoever can read it — the athlete on their own
+                  // record, the coach, the friend path never passes
+                  // `canCoach` — and above the sets, because it is a comment
+                  // ABOUT the session that follows.
+                  if (state.feedback.isNotEmpty || canCoach) ...[
+                    _CoachFeedbackCard(
+                      viewModel: viewModel,
+                      state: state,
+                      canCoach: canCoach,
+                    ),
+                    const SizedBox(height: AppSpacing.lg),
+                  ],
                   if (state.activeSlot != null)
                     _DetailCardBuilder(
                       viewModel: viewModel,
@@ -1148,6 +1182,397 @@ class _DetailCardBuilder extends StatelessWidget {
     }
     await viewModel.restoreDeletedExercise(
       state.exerciseSlots.indexWhere((sl) => sl.groupOrder == slot.groupOrder),
+    );
+  }
+}
+
+// ── Coach feedback (2026-10-26, #24) ────────────────────────────────────────
+
+/// The coach's note on the record on screen, above the sets: who wrote it,
+/// when, and the prose. The athlete reads it on their own record; the coach
+/// reads it — and writes it — on the route that opened the athlete's record
+/// ([SessionDetailScreen.canCoach]).
+///
+/// It is drawn only when there is something to draw or someone can write:
+/// a friend's record passes neither, and a record no coach has touched shows
+/// the athlete nothing.
+class _CoachFeedbackCard extends StatelessWidget {
+  const _CoachFeedbackCard({
+    required this.viewModel,
+    required this.state,
+    required this.canCoach,
+  });
+
+  final SessionDetailViewModel viewModel;
+  final SessionDetailState state;
+
+  /// The coach's route: the card gains its write/edit door.
+  final bool canCoach;
+
+  /// The caller's own row, on the coach's route — the one their pencil edits
+  /// and their trash deletes. Another coach's row is read-only here.
+  CoachFeedback? get _mine => canCoach
+      ? state.feedback
+            .where((f) => f.coachUserId == viewModel.viewerId)
+            .firstOrNull
+      : null;
+
+  Future<void> _openSheet(BuildContext context) async {
+    final mine = _mine;
+    await showCoachFeedbackSheet(
+      context,
+      eyebrow: state.sessionTitle,
+      feedback: mine,
+      onSave: viewModel.saveCoachFeedback,
+      onDelete: mine == null
+          ? null
+          : () => viewModel.deleteCoachFeedback(mine),
+      // The ViewModel records its refusal as a sentence for the user; the
+      // sheet that caused it draws it under the field.
+      errorText: () => viewModel.state.value.error,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      key: const ValueKey('session-coach-feedback'),
+      padding: const EdgeInsets.all(AppSpacing.lg),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'COACH FEEDBACK',
+                  style: AppFonts.mono(
+                    fontSize: AppTextStyles.xs,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.8,
+                    color: AppColors.primary,
+                  ),
+                ),
+              ),
+              if (canCoach)
+                // A word, not a glyph: writing the note is this card's whole
+                // point for a coach (frontend-design §5, one-off actions).
+                GlassButton(
+                  key: const ValueKey('session-coach-feedback-write'),
+                  label: _mine == null ? 'Leave feedback' : 'Edit feedback',
+                  compact: true,
+                  onPressed: () => _openSheet(context),
+                ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          if (state.feedback.isEmpty)
+            Text(
+              'No feedback yet.',
+              key: const ValueKey('session-coach-feedback-empty'),
+              style: AppFonts.ui(
+                fontSize: AppTextStyles.sm,
+                color: AppColors.inkSecondary,
+                height: 1.4,
+              ),
+            )
+          else
+            for (final (index, feedback) in state.feedback.indexed) ...[
+              if (index > 0) const SizedBox(height: AppSpacing.lg),
+              _feedbackRow(feedback),
+            ],
+        ],
+      ),
+    );
+  }
+
+  Widget _feedbackRow(CoachFeedback feedback) {
+    final name = state.coachNames[feedback.coachUserId] ?? 'Coach';
+    final date = feedback.displayDate;
+    return Column(
+      key: ValueKey('session-coach-feedback-row-${feedback.feedbackId}'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: UserNameText(
+                name,
+                style: AppFonts.ui(
+                  fontSize: AppTextStyles.sm,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.primary,
+                ),
+              ),
+            ),
+            if (date != null) ...[
+              const SizedBox(width: AppSpacing.sm),
+              Text(
+                '${DateFormat('d MMM yyyy').format(date.toLocal())}'
+                        '${feedback.isEdited ? ' · EDITED' : ''}'
+                    .toUpperCase(),
+                style: AppFonts.mono(
+                  fontSize: AppTextStyles.xs,
+                  color: AppColors.inkSecondary,
+                ),
+              ),
+            ],
+          ],
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        Text(
+          feedback.body,
+          style: AppFonts.ui(
+            fontSize: AppTextStyles.body,
+            color: AppColors.primary,
+            height: 1.4,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// The feedback composer — one coach's note on one session (2026-10-26, #24).
+///
+/// [feedback] null means nothing is written yet (the sheet starts empty);
+/// a row means the coach is rewriting it, so the field opens on the old text
+/// and Save stays spent until something differs. Delete is offered only when
+/// there is a row to remove, behind the house two-verb confirm.
+Future<void> showCoachFeedbackSheet(
+  BuildContext context, {
+  required String? eyebrow,
+  required CoachFeedback? feedback,
+  required Future<bool> Function(String body) onSave,
+  Future<bool> Function()? onDelete,
+  String? Function()? errorText,
+}) {
+  return showLambdaModal(
+    context,
+    fitContent: true,
+    keyboardAware: true,
+    child: _CoachFeedbackSheet(
+      eyebrow: eyebrow,
+      feedback: feedback,
+      onSave: onSave,
+      onDelete: onDelete,
+      errorText: errorText,
+    ),
+  );
+}
+
+class _CoachFeedbackSheet extends StatefulWidget {
+  const _CoachFeedbackSheet({
+    required this.eyebrow,
+    required this.feedback,
+    required this.onSave,
+    required this.onDelete,
+    required this.errorText,
+  });
+
+  final String? eyebrow;
+  final CoachFeedback? feedback;
+  final Future<bool> Function(String body) onSave;
+  final Future<bool> Function()? onDelete;
+
+  /// The caller's refusal sentence — read after a failed write so the sheet
+  /// shows the real reason instead of a generic one.
+  final String? Function()? errorText;
+
+  @override
+  State<_CoachFeedbackSheet> createState() => _CoachFeedbackSheetState();
+}
+
+class _CoachFeedbackSheetState extends State<_CoachFeedbackSheet> {
+  late final TextEditingController _controller = TextEditingController(
+    text: widget.feedback?.body ?? '',
+  );
+  bool _saving = false;
+  bool _deleting = false;
+  String? _error;
+
+  /// Notes are prose: no cap, only the empty-and-unchanged refusal — a Save
+  /// that would write nothing stays spent (the modal gating rule).
+  bool get _canSave {
+    final text = _controller.text.trim();
+    return text.isNotEmpty && text != (widget.feedback?.body ?? '').trim();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (_saving || !_canSave) return;
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    final didSave = await widget.onSave(_controller.text);
+    if (!mounted) return;
+    setState(() {
+      _saving = false;
+      if (!didSave) {
+        _error = widget.errorText?.call() ?? 'Could not save that feedback.';
+      }
+    });
+    if (didSave) Navigator.of(context).pop(true);
+  }
+
+  Future<void> _delete() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: Text(
+          'Delete feedback?',
+          style: AppFonts.ui(
+            fontWeight: FontWeight.w800,
+            color: AppColors.primary,
+          ),
+        ),
+        content: Text(
+          'The athlete will no longer see this note.',
+          style: AppFonts.ui(color: AppColors.inkSecondary, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(
+              'Keep it',
+              style: AppFonts.ui(color: AppColors.inkSecondary),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(
+              'Delete feedback',
+              style: AppFonts.ui(
+                color: AppColors.danger,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() {
+      _deleting = true;
+      _error = null;
+    });
+    final didDelete = await widget.onDelete!();
+    if (!mounted) return;
+    setState(() {
+      _deleting = false;
+      if (!didDelete) {
+        _error = widget.errorText?.call() ?? 'Could not delete that feedback.';
+      }
+    });
+    if (didDelete) Navigator.of(context).pop(true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      key: const ValueKey('session-coach-feedback-sheet'),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.xl,
+          AppSpacing.xl,
+          AppSpacing.xl,
+          AppSpacing.lg,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (widget.eyebrow?.isNotEmpty == true)
+                        Text(
+                          widget.eyebrow!.toUpperCase(),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppFonts.mono(
+                            fontSize: AppTextStyles.caption,
+                            fontWeight: FontWeight.w500,
+                            color: AppColors.inkSecondary,
+                            letterSpacing: 0.8,
+                          ),
+                        ),
+                      Text(
+                        'Coach Feedback',
+                        style: AppFonts.ui(
+                          fontSize: AppTextStyles.lg,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                GlassButton(
+                  key: const ValueKey('session-coach-feedback-close'),
+                  label: '',
+                  icon: Icons.close,
+                  semanticsLabel: 'Close feedback',
+                  compact: true,
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.md),
+            LambdaInput(
+              key: const ValueKey('session-coach-feedback-input'),
+              controller: _controller,
+              label: 'Note',
+              placeholder: 'How did the session go?\nWhat to keep, what to fix?',
+              // The sheet's ground is `surface`: a step up for the field
+              // (frontend-design §6, the ground rule).
+              elevated: true,
+              minLines: 4,
+              maxLines: 8,
+              autofocus: widget.feedback == null,
+              error: _error,
+              onChanged: (_) => setState(() {}),
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            Row(
+              children: [
+                if (widget.onDelete != null)
+                  TextButton(
+                    key: const ValueKey('session-coach-feedback-delete'),
+                    onPressed: _saving || _deleting ? null : _delete,
+                    child: Text(
+                      'Delete',
+                      style: AppFonts.ui(
+                        color: AppColors.danger,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                const Spacer(),
+                GlassButton(
+                  key: const ValueKey('session-coach-feedback-save'),
+                  label: 'Save feedback',
+                  color: AppColors.success,
+                  solid: true,
+                  loading: _saving,
+                  disabled: !_canSave || _deleting,
+                  onPressed: _save,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

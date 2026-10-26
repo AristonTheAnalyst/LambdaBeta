@@ -8,8 +8,11 @@ import '../../../core/styles/app_spacing.dart';
 import '../../../core/styles/app_text_styles.dart';
 import '../../../core/utils/friend_code.dart';
 import '../../../data/models/athlete.dart';
+import '../../../data/models/coach_assignment.dart';
+import '../../../data/models/planned_session.dart';
 import '../../../data/repositories/coach_repository.dart';
 import '../../../shared/widgets/app_card.dart';
+import '../../../shared/widgets/container_styles.dart';
 import '../../../shared/widgets/glass_button.dart';
 import '../../../shared/widgets/header_icon_button.dart';
 import '../../../shared/widgets/lambda_input.dart';
@@ -105,6 +108,61 @@ class _CoachScreenState extends State<CoachScreen> {
     _toast(_vm.state.value.error ?? 'Could not remove that.');
   }
 
+  // ── Workout assignments (2026-10-26, #24) ────────────────────────────────
+
+  /// The athlete's accept: the copy lands in their library at once; the
+  /// invitation leaves the list, and the toast says where it went.
+  Future<void> _acceptAssignment(CoachAssignment assignment) async {
+    final ok = await _vm.acceptAssignment(assignment);
+    if (!mounted) return;
+    if (ok) {
+      _toast('${assignment.name} added to your workouts');
+      return;
+    }
+    _toast(_vm.state.value.error ?? 'Could not accept that workout.');
+  }
+
+  Future<void> _declineAssignment(CoachAssignment assignment) async {
+    final ok = await _confirmRemove(
+      context,
+      title: 'Decline Workout',
+      message:
+          "Decline ${assignment.name}? It stays out of your library, and "
+          'your coach is not told why.',
+      confirm: 'Decline',
+    );
+    if (!ok || !mounted) return;
+    final declined = await _vm.declineAssignment(assignment);
+    if (!mounted || declined) return;
+    _toast(_vm.state.value.error ?? 'Could not decline that workout.');
+  }
+
+  Future<void> _openAssignSheet(Athlete athlete) async {
+    // A refusal from a previous attempt belongs to the sheet that showed it.
+    _vm.clearError();
+    final sent = await showAssignWorkoutSheet(
+      context,
+      vm: _vm,
+      athlete: athlete,
+    );
+    if (sent == true && mounted) _toast('Workout sent to ${athlete.displayName}');
+  }
+
+  Future<void> _withdrawAssignment(CoachAssignment assignment) async {
+    final ok = await _confirmRemove(
+      context,
+      title: 'Withdraw Workout',
+      message:
+          "Withdraw ${assignment.name}? They won't see it anymore, and "
+          'nothing is left behind.',
+      confirm: 'Withdraw',
+    );
+    if (!ok || !mounted) return;
+    final withdrawn = await _vm.withdrawAssignment(assignment);
+    if (!mounted || withdrawn) return;
+    _toast(_vm.state.value.error ?? 'Could not withdraw that workout.');
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -178,6 +236,38 @@ class _CoachScreenState extends State<CoachScreen> {
                         ],
                         const SizedBox(height: AppSpacing.xl),
                       ],
+                      if (state.assignmentInvitations.isNotEmpty) ...[
+                        _SectionCaption(
+                          label: 'ASSIGNMENTS TO YOU',
+                          count: state.assignmentInvitations.length,
+                        ),
+                        const SizedBox(height: AppSpacing.sm),
+                        for (
+                          var i = 0;
+                          i < state.assignmentInvitations.length;
+                          i++
+                        ) ...[
+                          if (i > 0) const SizedBox(height: AppSpacing.md),
+                          _AssignmentInvitationRow(
+                            key: ValueKey(
+                              'assignment-'
+                              '${state.assignmentInvitations[i].assignmentId}',
+                            ),
+                            assignment: state.assignmentInvitations[i],
+                            coachName: _coachNameOf(
+                              state,
+                              state.assignmentInvitations[i].coachUserId,
+                            ),
+                            onAccept: () => _acceptAssignment(
+                              state.assignmentInvitations[i],
+                            ),
+                            onDecline: () => _declineAssignment(
+                              state.assignmentInvitations[i],
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: AppSpacing.xl),
+                      ],
                       if (state.athletes.isNotEmpty) ...[
                         _SectionCaption(
                           label: 'ATHLETES',
@@ -194,6 +284,9 @@ class _CoachScreenState extends State<CoachScreen> {
                             onTap: () => context.push(
                               '/profile/coach/${state.athletes[i].userId}',
                               extra: state.athletes[i].displayName,
+                            ),
+                            onAssign: () => _openAssignSheet(
+                              state.athletes[i],
                             ),
                             onRemove: () => _remove(
                               state.athletes[i],
@@ -253,6 +346,47 @@ class _CoachScreenState extends State<CoachScreen> {
                             ),
                           ),
                         ],
+                        const SizedBox(height: AppSpacing.xl),
+                      ],
+                      if (state.assignmentsSent.isNotEmpty) ...[
+                        _SectionCaption(
+                          label: 'ASSIGNMENTS SENT',
+                          count: state.assignmentsSent.length,
+                        ),
+                        const SizedBox(height: AppSpacing.sm),
+                        for (
+                          var i = 0;
+                          i < state.assignmentsSent.length;
+                          i++
+                        ) ...[
+                          if (i > 0) const SizedBox(height: AppSpacing.md),
+                          _SentAssignmentRow(
+                            key: ValueKey(
+                              'sent-assignment-'
+                              '${state.assignmentsSent[i].assignmentId}',
+                            ),
+                            assignment: state.assignmentsSent[i],
+                            athleteName: _athleteNameOf(
+                              state,
+                              state.assignmentsSent[i].athleteUserId,
+                            ),
+                            // An accepted assignment is a record now, not a
+                            // pending offer — only the pending row withdraws.
+                            onWithdraw: state.assignmentsSent[i].isPending
+                                ? () => _withdrawAssignment(
+                                    state.assignmentsSent[i],
+                                  )
+                                : null,
+                            onOpen: () => context.push(
+                              '/profile/coach/'
+                              '${state.assignmentsSent[i].athleteUserId}',
+                              extra: _athleteNameOf(
+                                state,
+                                state.assignmentsSent[i].athleteUserId,
+                              ),
+                            ),
+                          ),
+                        ],
                       ],
                     ],
                   ],
@@ -270,6 +404,26 @@ class _CoachScreenState extends State<CoachScreen> {
 /// pending invitation's athlete, or a coach whose slice is still on its way.
 String _nameOf(Athlete athlete, String fallback) =>
     athlete.hasName ? athlete.displayName : fallback;
+
+/// The name behind an assignment's coach id, read off the caller's own coach
+/// list — the coaching stream has already delivered it, so an assignment row
+/// needs no read of its own (2026-10-26, #24).
+String _coachNameOf(CoachState state, String coachUserId) {
+  for (final coach in state.coaches) {
+    if (coach.userId == coachUserId && coach.hasName) return coach.displayName;
+  }
+  return 'Your coach';
+}
+
+/// The name behind an assignment's athlete id, off the caller's roster.
+String _athleteNameOf(CoachState state, String athleteUserId) {
+  for (final athlete in state.athletes) {
+    if (athlete.userId == athleteUserId && athlete.hasName) {
+      return athlete.displayName;
+    }
+  }
+  return 'Your athlete';
+}
 
 /// A mono caption with a count, the section head used on every list.
 class _SectionCaption extends StatelessWidget {
@@ -369,24 +523,32 @@ class _InvitationRow extends StatelessWidget {
   }
 }
 
-/// An accepted athlete: tapping opens their completed history; swiping
-/// removes them.
+/// An accepted athlete: tapping opens their completed history; swiping hands
+/// them a workout or removes them (2026-10-26, #24).
 class _AthleteRow extends StatelessWidget {
   const _AthleteRow({
     super.key,
     required this.athlete,
     required this.onTap,
+    required this.onAssign,
     required this.onRemove,
   });
 
   final Athlete athlete;
   final VoidCallback onTap;
+  final VoidCallback onAssign;
   final VoidCallback onRemove;
 
   @override
   Widget build(BuildContext context) {
     return SwipeActions(
       actions: [
+        SwipeAction(
+          icon: Icons.assignment_outlined,
+          color: AppColors.primary,
+          foreground: AppColors.bg,
+          onTap: onAssign,
+        ),
         SwipeAction(
           icon: Icons.person_remove_outlined,
           color: AppColors.danger,
@@ -502,6 +664,435 @@ class _PendingSentRow extends StatelessWidget {
                 ],
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A workout a coach sent the caller: what it is, who sent it, its note, and
+/// the two verbs that decide it (2026-10-26, #24). Accepting copies it into
+/// the caller's own library — the coach's template is never shared — so the
+/// row says "copy" nowhere: the athlete simply gets the workout.
+class _AssignmentInvitationRow extends StatelessWidget {
+  const _AssignmentInvitationRow({
+    super.key,
+    required this.assignment,
+    required this.coachName,
+    required this.onAccept,
+    required this.onDecline,
+  });
+
+  final CoachAssignment assignment;
+  final String coachName;
+  final VoidCallback onAccept;
+  final VoidCallback onDecline;
+
+  @override
+  Widget build(BuildContext context) {
+    final note = assignment.note?.trim();
+    final created = assignment.createdDate;
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          UserNameText(
+            assignment.name,
+            style: AppFonts.ui(
+              fontSize: AppTextStyles.body,
+              fontWeight: FontWeight.w600,
+              color: AppColors.primary,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Row(
+            children: [
+              Text(
+                'From ',
+                style: AppFonts.ui(
+                  fontSize: AppTextStyles.sm,
+                  color: AppColors.inkSecondary,
+                ),
+              ),
+              Flexible(
+                child: UserNameText(
+                  coachName,
+                  style: AppFonts.ui(
+                    fontSize: AppTextStyles.sm,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.primary,
+                  ),
+                ),
+              ),
+              const Spacer(),
+              if (created != null)
+                Text(
+                  DateFormat('d MMM yyyy').format(created.toLocal()).toUpperCase(),
+                  style: AppFonts.mono(
+                    fontSize: AppTextStyles.xs,
+                    color: AppColors.inkSecondary,
+                  ),
+                ),
+            ],
+          ),
+          if (note != null && note.isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.sm),
+            Text(
+              note,
+              style: AppFonts.ui(
+                fontSize: AppTextStyles.sm,
+                color: AppColors.inkSecondary,
+                height: 1.4,
+              ),
+            ),
+          ],
+          const SizedBox(height: AppSpacing.md),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              GlassButton(
+                label: 'Decline',
+                compact: true,
+                onPressed: onDecline,
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              GlassButton(
+                label: 'Accept',
+                compact: true,
+                solid: true,
+                color: AppColors.success,
+                onPressed: onAccept,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// An assignment the caller sent as a coach: the workout, whose desk it is
+/// on, and whether it has been taken. A pending row swipes to withdraw; an
+/// accepted one is a record and only opens the athlete (2026-10-26, #24).
+class _SentAssignmentRow extends StatelessWidget {
+  const _SentAssignmentRow({
+    super.key,
+    required this.assignment,
+    required this.athleteName,
+    required this.onOpen,
+    required this.onWithdraw,
+  });
+
+  final CoachAssignment assignment;
+  final String athleteName;
+  final VoidCallback onOpen;
+
+  /// Null once accepted: there is nothing left to withdraw.
+  final VoidCallback? onWithdraw;
+
+  @override
+  Widget build(BuildContext context) {
+    final card = AppCard(
+      onTap: onOpen,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          UserNameText(
+            assignment.name,
+            style: AppFonts.ui(
+              fontSize: AppTextStyles.body,
+              fontWeight: FontWeight.w600,
+              color: AppColors.primary,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Row(
+            children: [
+              Text(
+                'To ',
+                style: AppFonts.ui(
+                  fontSize: AppTextStyles.sm,
+                  color: AppColors.inkSecondary,
+                ),
+              ),
+              Flexible(
+                child: UserNameText(
+                  athleteName,
+                  style: AppFonts.ui(
+                    fontSize: AppTextStyles.sm,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.primary,
+                  ),
+                ),
+              ),
+              const Spacer(),
+              Text(
+                assignment.isPending ? 'AWAITING REPLY' : 'ACCEPTED',
+                style: AppFonts.mono(
+                  fontSize: AppTextStyles.xs,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.8,
+                  color: assignment.isPending
+                      ? AppColors.inkSecondary
+                      : AppColors.success,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+    final withdraw = onWithdraw;
+    if (withdraw == null) return card;
+    return SwipeActions(
+      actions: [
+        SwipeAction(
+          icon: Icons.undo,
+          color: AppColors.primary,
+          foreground: AppColors.bg,
+          onTap: withdraw,
+        ),
+      ],
+      child: card,
+    );
+  }
+}
+
+/// The assign sheet: pick one of the coach's own workouts, add a word of
+/// context, send (2026-10-26, #24). Returns true when an assignment landed.
+Future<bool?> showAssignWorkoutSheet(
+  BuildContext context, {
+  required CoachViewModel vm,
+  required Athlete athlete,
+}) => showLambdaModal<bool>(
+  context,
+  fitContent: true,
+  keyboardAware: true,
+  child: _AssignWorkoutSheet(vm: vm, athlete: athlete),
+);
+
+class _AssignWorkoutSheet extends StatefulWidget {
+  const _AssignWorkoutSheet({required this.vm, required this.athlete});
+
+  final CoachViewModel vm;
+  final Athlete athlete;
+
+  @override
+  State<_AssignWorkoutSheet> createState() => _AssignWorkoutSheetState();
+}
+
+class _AssignWorkoutSheetState extends State<_AssignWorkoutSheet> {
+  final _noteCtrl = TextEditingController();
+  List<PlannedSession>? _workouts;
+  PlannedSession? _chosen;
+  bool _sending = false;
+  String? _loadError;
+  String? _sendError;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loadError = null;
+      _workouts = null;
+    });
+    final workouts = await widget.vm.loadWorkouts();
+    if (!mounted) return;
+    setState(() {
+      _workouts = workouts;
+      _loadError = workouts == null
+          ? (widget.vm.state.value.error ?? 'Could not load your workouts.')
+          : null;
+    });
+  }
+
+  @override
+  void dispose() {
+    _noteCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _send() async {
+    final chosen = _chosen;
+    if (chosen == null || _sending) return;
+    setState(() {
+      _sending = true;
+      _sendError = null;
+    });
+    final note = _noteCtrl.text.trim();
+    final sent = await widget.vm.assign(
+      widget.athlete,
+      chosen,
+      note: note.isEmpty ? null : note,
+    );
+    if (!mounted) return;
+    setState(() {
+      _sending = false;
+      // A refusal stays in the sheet (the VM's error), so the sheet that
+      // caused it is also the one that shows it — and the words are the
+      // VM's, not a generic sentence written twice.
+      if (!sent) {
+        _sendError =
+            widget.vm.state.value.error ?? 'Could not send that workout.';
+      }
+    });
+    if (sent) Navigator.of(context).pop(true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final workouts = _workouts;
+    return SafeArea(
+      key: const ValueKey('assign-workout-sheet'),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.xl,
+          AppSpacing.xl,
+          AppSpacing.xl,
+          AppSpacing.lg,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Assign a workout',
+              style: AppFonts.ui(
+                fontSize: AppTextStyles.lg,
+                fontWeight: FontWeight.w800,
+                color: AppColors.primary,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              'Pick one of your workouts. '
+              "${widget.athlete.displayName} gets their own copy to accept.",
+              style: AppFonts.ui(
+                fontSize: AppTextStyles.sm,
+                height: 1.4,
+                color: AppColors.inkSecondary,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            if (_loadError != null) ...[
+              Text(
+                _loadError!,
+                style: AppFonts.ui(
+                  fontSize: AppTextStyles.sm,
+                  color: AppColors.inkSecondary,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              GlassButton(
+                label: 'Retry',
+                compact: true,
+                onPressed: _load,
+              ),
+            ] else if (workouts == null)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: AppSpacing.xl),
+                child: Center(
+                  child: CircularProgressIndicator(color: AppColors.accent),
+                ),
+              )
+            else if (workouts.isEmpty)
+              Text(
+                'You have no workouts yet — build one in the Library first.',
+                style: AppFonts.ui(
+                  fontSize: AppTextStyles.sm,
+                  color: AppColors.inkSecondary,
+                ),
+              )
+            else ...[
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.sizeOf(context).height * 0.35,
+                ),
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      for (final workout in workouts) ...[
+                        _workoutChoice(workout),
+                        const SizedBox(height: AppSpacing.sm),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              LambdaInput(
+                controller: _noteCtrl,
+                label: 'Note (optional)',
+                placeholder: 'Why this one?\nAnything to focus on?',
+                elevated: true,
+                minLines: 2,
+                maxLines: 4,
+                onChanged: (_) => setState(() {}),
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              if (_sendError != null) ...[
+                Text(
+                  _sendError!,
+                  key: const ValueKey('assign-workout-error'),
+                  style: AppFonts.ui(
+                    fontSize: AppTextStyles.sm,
+                    color: AppColors.inkSecondary,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+              ],
+              GlassButton(
+                key: const ValueKey('assign-workout-send'),
+                label: 'Send workout',
+                solid: true,
+                color: AppColors.success,
+                loading: _sending,
+                disabled: _chosen == null,
+                onPressed: _send,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// One selectable workout — the choice recipe (glass fill, accent when
+  /// chosen), drawn through [UserNameText] so a 20-character name ellipsizes
+  /// instead of overflowing the sheet.
+  Widget _workoutChoice(PlannedSession workout) {
+    final active = _chosen?.sessionId == workout.sessionId;
+    return GestureDetector(
+      key: ValueKey('assign-workout-${workout.sessionId}'),
+      onTap: () => setState(() => _chosen = workout),
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.md,
+          vertical: AppSpacing.md,
+        ),
+        decoration: glassBox(
+          active ? AppColors.accent : AppColors.primary,
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: UserNameText(
+                workout.name,
+                style: AppFonts.ui(
+                  fontSize: AppTextStyles.sm,
+                  fontWeight: active ? FontWeight.w700 : FontWeight.w600,
+                  color: active ? AppColors.accent : AppColors.primary,
+                ),
+              ),
+            ),
+            if (active)
+              Icon(Icons.check, size: 16, color: AppColors.accent),
           ],
         ),
       ),

@@ -22,6 +22,7 @@ import 'package:lambda/shared/widgets/session_chevron_button.dart';
 import 'package:lambda/shared/widgets/swipe_actions.dart';
 
 import 'support/readable_text.dart';
+import 'support/fake_coach_repository.dart';
 
 /// The past-session viewer IS the Training view, read-only (2026-10-22).
 ///
@@ -218,6 +219,7 @@ void main() {
     addTearDown(tester.view.reset);
 
     final vm = SessionDetailViewModel(
+      coachRepo: FakeCoachRepository(),
       sessionRepo: repo,
       exerciseRepo: _FakeExerciseRepo(),
       lessonRepo: _FakeLessonRepo(),

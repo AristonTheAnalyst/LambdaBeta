@@ -275,6 +275,52 @@ const schema = Schema([
     // it, and #22's accept flow is what sets it.
     Column.text('accepted_date'),
   ]),
+  // A coach assigning one of their workouts to an accepted athlete
+  // (2026-10-26, #24). The row carries the workout as a frozen ProgramContent
+  // DOCUMENT plus the names the athlete cannot resolve (dim_exercise /
+  // dim_variation ids are per-user), so the athlete's accept can materialize a
+  // copy into their own library without ever reading the coach's template
+  // rows. `accepted_date`/`declined_date` NULL = waiting on the athlete.
+  Table(
+    'fact_coach_assignment',
+    [
+      Column.text('assignment_id'),
+      Column.text('coach_user_id'),
+      Column.text('athlete_user_id'),
+      Column.text('planned_session_id'),
+      Column.text('name'),
+      Column.text('note'),
+      Column.text('snapshot_content'),
+      Column.text('names_json'),
+      Column.text('created_date'),
+      Column.text('accepted_date'),
+      Column.text('declined_date'),
+      Column.text('athlete_planned_session_id'),
+    ],
+    indexes: [
+      Index('coach_idx', [IndexedColumn.ascending('coach_user_id')]),
+      Index('athlete_idx', [IndexedColumn.ascending('athlete_user_id')]),
+    ],
+  ),
+  // A coach's note on one of their athlete's completed sessions
+  // (2026-10-26, #24). One row per (coach, session); both parties read it,
+  // only its author writes it.
+  Table(
+    'fact_coach_feedback',
+    [
+      Column.text('feedback_id'),
+      Column.text('coach_user_id'),
+      Column.text('athlete_user_id'),
+      Column.text('session_id'),
+      Column.text('body'),
+      Column.text('created_date'),
+      Column.text('edited_date'),
+    ],
+    indexes: [
+      Index('session_idx', [IndexedColumn.ascending('session_id')]),
+      Index('athlete_idx', [IndexedColumn.ascending('athlete_user_id')]),
+    ],
+  ),
   // Friends (2026-10-23). `dim_friend_code` is a SIDE TABLE rather than a
   // dim_user column because user_data selects `dim_user *` — a new column
   // would reach old app builds whose local schema does not know it. It
@@ -324,6 +370,10 @@ const schema = Schema([
       // is a program copy of the library workout it names. Plain ref (no FK):
       // an offline create→import must not be able to fail an FK on upload.
       Column.text('base_session_id'),
+      // Coach-authored provenance (2026-10-26, #24 — 20261026170000_coach_authoring
+      // .sql): the assignment this workout was copied from on accept. Plain ref
+      // for the same reason as `base_session_id` — the copy lands offline.
+      Column.text('coach_assignment_id'),
     ],
     indexes: [
       Index('user_idx', [IndexedColumn.ascending('user_id')]),

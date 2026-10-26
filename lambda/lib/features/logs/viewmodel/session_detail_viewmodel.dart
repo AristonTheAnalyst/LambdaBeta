@@ -8,6 +8,7 @@ import '../../../core/utils/friendly_error.dart';
 import '../../../core/utils/name_limit.dart';
 import '../../../core/utils/undo_history.dart';
 import '../../../data/cache/past_sets_timeline_cache.dart';
+import '../../../data/models/coach_feedback.dart';
 import '../../../data/models/custom_variation.dart';
 import '../../../data/models/exercise_detail.dart';
 import '../../../data/models/exercise_usage.dart';
@@ -17,6 +18,7 @@ import '../../../data/models/session.dart';
 import '../../../data/models/session_exercise.dart';
 import '../../../data/models/session_exercise_set.dart';
 import '../../../data/repositories/exercise_repository.dart';
+import '../../../data/repositories/coach_repository.dart';
 import '../../../data/repositories/lesson_repository.dart';
 import '../../../data/repositories/program_history_repository.dart';
 import '../../../data/repositories/program_repository.dart';
@@ -125,6 +127,8 @@ class SessionDetailState {
     this.exerciseHistoryIndex = 0,
     this.exerciseHistoryForId,
     this.reviewCheckpoint,
+    this.feedback = const [],
+    this.coachNames = const {},
   });
 
   final bool isLoading;
@@ -192,6 +196,16 @@ class SessionDetailState {
   /// The two sheets read it to split their after-group; null leaves their
   /// three shelves standing.
   final DateTime? reviewCheckpoint;
+
+  /// A coach's feedback on the record on screen (2026-10-26, #24). Empty for
+  /// most records; the card draws only when there is one — and, on the coach's
+  /// own route, also when there is not (the door to write the first).
+  final List<CoachFeedback> feedback;
+
+  /// `coach_user_id → their name`, as far as this device knows it — the card's
+  /// attribution. A coach whose name slice has not synced reads through the
+  /// card's fallback.
+  final Map<String, String> coachNames;
 
   /// The record's name in a header: the plan it followed at the time
   /// (`fact_session.planned_session_name`), or Freestyle when it had no plan
@@ -282,6 +296,9 @@ class SessionDetailState {
     String? exerciseHistoryForId,
     DateTime? reviewCheckpoint,
     bool clearReviewCheckpoint = false,
+    List<CoachFeedback>? feedback,
+    Map<String, String>? coachNames,
+    bool clearFeedback = false,
   }) => SessionDetailState(
     isLoading: isLoading ?? this.isLoading,
     isSaving: isSaving ?? this.isSaving,
@@ -324,6 +341,8 @@ class SessionDetailState {
     reviewCheckpoint: clearReviewCheckpoint
         ? null
         : (reviewCheckpoint ?? this.reviewCheckpoint),
+    feedback: clearFeedback ? const [] : (feedback ?? this.feedback),
+    coachNames: clearFeedback ? const {} : (coachNames ?? this.coachNames),
   );
 }
 
@@ -338,14 +357,18 @@ class SessionDetailViewModel {
     LessonRepository? lessonRepo,
     ProgramRepository? programRepo,
     ProgramHistoryRepository? historyRepo,
+    CoachRepository? coachRepo,
     String? userId,
+    String? viewerId,
     this.readOnly = false,
   }) : _sessionRepo = sessionRepo ?? SessionRepository(),
        _exerciseRepo = exerciseRepo ?? ExerciseRepository(),
        _lessonRepo = lessonRepo ?? LessonRepository(),
        _programRepo = programRepo ?? ProgramRepository(),
        _historyRepo = historyRepo ?? ProgramHistoryRepository(),
-       _userIdOverride = userId;
+       _coachRepo = coachRepo ?? CoachRepository(),
+       _userIdOverride = userId,
+       _viewerIdOverride = viewerId;
 
   /// A friend's record (2026-10-23): nothing on this page asks the review
   /// history anything — a friend's reviews never reach this device, and the
@@ -357,6 +380,7 @@ class SessionDetailViewModel {
   final LessonRepository _lessonRepo;
   final ProgramRepository _programRepo;
   final ProgramHistoryRepository _historyRepo;
+  final CoachRepository _coachRepo;
   final state = ValueNotifier(const SessionDetailState());
 
   int _nextDraftId = 1;
@@ -366,6 +390,19 @@ class SessionDetailViewModel {
 
   String get _userId =>
       _userIdOverride ?? Supabase.instance.client.auth.currentUser!.id;
+
+  /// Who is LOOKING — the caller, as distinct from [_userId] (whose record
+  /// this is). Only feedback needs the distinction: on the coach's route the
+  /// record's owner is the athlete and the author is the caller.
+  final String? _viewerIdOverride;
+
+  String get _viewerId =>
+      _viewerIdOverride ?? Supabase.instance.client.auth.currentUser!.id;
+
+  /// The caller's own id, for the feedback card's "this row is mine" test
+  /// (2026-10-26, #24). Distinct from the record's owner whenever a coach
+  /// opens an athlete's session.
+  String get viewerId => _viewerId;
 
   // ── Debounced set writes (the live VM's sibling machinery) ────────────────
   /// Same contract as `SessionViewModel.kAutoCommitDebounce` — keep the two
@@ -586,7 +623,10 @@ class SessionDetailViewModel {
       // The card opens on the record's own sets, whatever the last one's
       // exercise walk was showing.
       exerciseHistoryIndex: 0,
+      // Feedback belongs to the record being left (2026-10-26, #24).
+      clearFeedback: true,
     );
+    _listenFeedback(sessionId);
     // Fast path: the workout + its own exercise rows and sets are all the
     // screen needs to render. The heavy queries (full past-sets timeline,
     // exercise catalog) load in the background and populate
@@ -2321,7 +2361,89 @@ class SessionDetailViewModel {
   String? _exerciseName(String exerciseId) =>
       state.value.exerciseDetailMap[exerciseId]?.name;
 
-  void dispose() => state.dispose();
+  // ── Coach feedback (2026-10-26, #24) ───────────────────────────────────────
+
+  StreamSubscription<List<CoachFeedback>>? _feedbackSub;
+  bool _disposed = false;
+
+  /// Watches the record's coach feedback. A different record (a load or an
+  /// in-place walk) re-points the watch; which rows arrive is RLS's answer —
+  /// the owner's coaches' notes, or, on the coach's route, the caller's own.
+  void _listenFeedback(String sessionId) {
+    _feedbackSub?.cancel();
+    _feedbackSub = _coachRepo
+        .watchFeedback(sessionId)
+        .listen(
+          (rows) {
+            if (_disposed) return;
+            state.value = state.value.copyWith(feedback: rows);
+            _resolveCoachNames(rows);
+          },
+          onError: (Object _) {
+            // A feedback read must never take the record down with it; the
+            // card simply stays absent.
+          },
+        );
+  }
+
+  /// Fills [SessionDetailState.coachNames] for any coach the rows name whose
+  /// name this device has not resolved yet.
+  Future<void> _resolveCoachNames(List<CoachFeedback> rows) async {
+    final missing = {
+      for (final row in rows)
+        if (!state.value.coachNames.containsKey(row.coachUserId))
+          row.coachUserId,
+    };
+    if (missing.isEmpty) return;
+    try {
+      final names = await _coachRepo.userNames(missing);
+      if (_disposed || names.isEmpty) return;
+      state.value = state.value.copyWith(
+        coachNames: {...state.value.coachNames, ...names},
+      );
+    } catch (_) {
+      // Attribution is a nicety; the card still draws its fallback.
+    }
+  }
+
+  /// Writes the caller's feedback on the record on screen — the coach's route
+  /// is the only caller. True when it landed; false records [state.error].
+  Future<bool> saveCoachFeedback(String body) async {
+    final session = state.value.session;
+    if (session == null || _disposed) return false;
+    try {
+      await _coachRepo.saveFeedback(
+        coachId: _viewerId,
+        athleteId: _userId,
+        sessionId: session.sessionId,
+        body: body,
+      );
+      return true;
+    } catch (e) {
+      if (_disposed) return false;
+      state.value = state.value.copyWith(error: friendlyError(e));
+      return false;
+    }
+  }
+
+  /// Deletes the caller's own feedback row. False records [state.error].
+  Future<bool> deleteCoachFeedback(CoachFeedback feedback) async {
+    if (_disposed) return false;
+    try {
+      await _coachRepo.deleteFeedback(_viewerId, feedback.feedbackId);
+      return true;
+    } catch (e) {
+      if (_disposed) return false;
+      state.value = state.value.copyWith(error: friendlyError(e));
+      return false;
+    }
+  }
+
+  void dispose() {
+    _disposed = true;
+    _feedbackSub?.cancel();
+    state.dispose();
+  }
 }
 
 extension _FirstWhereOrNull<T> on List<T> {

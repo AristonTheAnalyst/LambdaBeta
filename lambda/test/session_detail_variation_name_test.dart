@@ -11,6 +11,7 @@ import 'package:lambda/data/repositories/exercise_repository.dart';
 import 'package:lambda/data/repositories/lesson_repository.dart';
 import 'package:lambda/data/repositories/session_repository.dart';
 import 'package:lambda/features/logs/viewmodel/session_detail_viewmodel.dart';
+import 'support/fake_coach_repository.dart';
 
 /// A variation pick on a past record must NAME the variation it now has the
 /// moment the write lands (2026-10-25). The row stores only the id; the name
@@ -173,6 +174,7 @@ void main() {
   late List<CustomVariation> catalog;
 
   SessionDetailViewModel buildVm() => SessionDetailViewModel(
+    coachRepo: FakeCoachRepository(),
     sessionRepo: repo,
     exerciseRepo: _FakeExerciseRepo(catalog),
     lessonRepo: _FakeLessonRepo(),

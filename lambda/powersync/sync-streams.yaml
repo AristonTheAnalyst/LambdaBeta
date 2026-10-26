@@ -126,6 +126,20 @@
 # migration BEFORE deploying this file — the new CTEs name the column, and
 # validation reads the real table.
 #
+# 2026-10-26 (coach authoring, #24): user_data gains fact_coach_assignment and
+# fact_coach_feedback — the two tables of the coaching hand-off. Both are
+# served to EITHER side of the row (coach_user_id or athlete_user_id is the
+# caller), the same shape coaching_relationship already uses, because both
+# parties read them and the RLS policies on each table gate the same way.
+# Neither rides coaching_data: that stream is the coach's view of an
+# athlete's training, while these rows are shared by construction (an offer,
+# a note) and its athlete-side consent gate would hide an invitation from the
+# very athlete who has to decide it. An assignment's snapshot is frozen text
+# in the row — no template is ever shared, and no dim row crosses users.
+# Push 20261026170000_coach_authoring.sql BEFORE deploying this file
+# (validation names the new tables), then deploy so the rows can come back
+# down; a local write survives on the device regardless.
+#
 # Deploy steps (PowerSync Dashboard → Sync Streams):
 #   1. Replace the current YAML with this file.
 #   2. Validate, then Deploy.
@@ -165,6 +179,14 @@ streams:
       - SELECT *, review_id as id FROM fact_program_review WHERE user_id = auth.user_id()
       - SELECT *, block_id as id FROM dim_program_block WHERE user_id = auth.user_id()
       - SELECT *, (coach_user_id || '-' || athlete_user_id) as id FROM coaching_relationship WHERE coach_user_id = auth.user_id() OR athlete_user_id = auth.user_id()
+      # Coach-authored workouts (2026-10-26, #24). Both sides read: the
+      # athlete decides an offer, the coach watches its status. The snapshot
+      # is frozen text in the row — an accepted assignment is copied into the
+      # athlete's own library, never a shared template.
+      - SELECT *, assignment_id as id FROM fact_coach_assignment WHERE coach_user_id = auth.user_id() OR athlete_user_id = auth.user_id()
+      # Coach feedback on a completed session (2026-10-26, #24): the coach
+      # writes it, both sides read it on the record itself.
+      - SELECT *, feedback_id as id FROM fact_coach_feedback WHERE coach_user_id = auth.user_id() OR athlete_user_id = auth.user_id()
 
   # Friends (2026-10-23). One bucket per friend: every query keys on the same
   # `my_friends` list, so the queries share buckets instead of adding one per

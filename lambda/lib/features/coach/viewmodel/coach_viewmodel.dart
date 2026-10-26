@@ -5,17 +5,21 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/utils/friendly_error.dart';
 import '../../../data/models/athlete.dart';
+import '../../../data/models/coach_assignment.dart';
 import '../../../data/models/coach_relationship.dart';
+import '../../../data/models/planned_session.dart';
 import '../../../data/repositories/coach_repository.dart';
 
-/// Everything the Coach screen draws (2026-10-26, #22): the four slices of
-/// the caller's coaching edges.
+/// Everything the Coach screen draws (2026-10-26, #22/#24): the four slices
+/// of the caller's coaching edges, plus the assignments each side sees.
 class CoachState {
   const CoachState({
     this.athletes = const [],
     this.coaches = const [],
     this.invitations = const [],
     this.pendingSent = const [],
+    this.assignmentInvitations = const [],
+    this.assignmentsSent = const [],
     this.isLoading = true,
     this.isInviting = false,
     this.error,
@@ -34,6 +38,14 @@ class CoachState {
   /// Nameless by design: the stream sends nothing about an unaccepted athlete.
   final List<Athlete> pendingSent;
 
+  /// Workouts a coach assigned to the caller that are still waiting on them
+  /// (2026-10-26, #24), newest first.
+  final List<CoachAssignment> assignmentInvitations;
+
+  /// Assignments the caller sent as a coach, declined ones dropped — the
+  /// roster's status line.
+  final List<CoachAssignment> assignmentsSent;
+
   /// True until the first emission lands, so the list doesn't flash its empty
   /// state over a local read that is about to return rows.
   final bool isLoading;
@@ -48,13 +60,16 @@ class CoachState {
       athletes.isEmpty &&
       coaches.isEmpty &&
       invitations.isEmpty &&
-      pendingSent.isEmpty;
+      pendingSent.isEmpty &&
+      assignmentInvitations.isEmpty;
 
   CoachState copyWith({
     List<Athlete>? athletes,
     List<Athlete>? coaches,
     List<Athlete>? invitations,
     List<Athlete>? pendingSent,
+    List<CoachAssignment>? assignmentInvitations,
+    List<CoachAssignment>? assignmentsSent,
     bool? isLoading,
     bool? isInviting,
     String? error,
@@ -64,6 +79,8 @@ class CoachState {
     coaches: coaches ?? this.coaches,
     invitations: invitations ?? this.invitations,
     pendingSent: pendingSent ?? this.pendingSent,
+    assignmentInvitations: assignmentInvitations ?? this.assignmentInvitations,
+    assignmentsSent: assignmentsSent ?? this.assignmentsSent,
     isLoading: isLoading ?? this.isLoading,
     isInviting: isInviting ?? this.isInviting,
     error: clearError ? null : error ?? this.error,
@@ -92,9 +109,17 @@ class CoachViewModel {
       _userIdOverride ?? Supabase.instance.client.auth.currentUser!.id;
 
   StreamSubscription<List<CoachRelationship>>? _sub;
+  StreamSubscription<List<CoachAssignment>>? _assignmentSub;
 
-  /// Subscribes the watch. Called from `initState`; idempotent, so a rebuild
-  /// never doubles the subscription.
+  /// The newest emission of each watch; the state is rebuilt from both so
+  /// neither stream can wipe the other's lists.
+  List<CoachRelationship> _relationships = const [];
+  List<CoachAssignment> _assignments = const [];
+  bool _relationshipsLoaded = false;
+  bool _assignmentsLoaded = false;
+
+  /// Subscribes the watches. Called from `initState`; idempotent, so a
+  /// rebuild never doubles a subscription.
   void start() {
     if (_disposed || _sub != null) return;
     final userId = _userId;
@@ -103,9 +128,26 @@ class CoachViewModel {
         .listen(
           (rows) {
             if (_disposed) return;
-            // A fresh state rather than copyWith: a later emission is a
-            // recovery, so it also drops a failure the first read recorded.
-            state.value = _split(rows, userId);
+            _relationships = rows;
+            _relationshipsLoaded = true;
+            _emit(userId);
+          },
+          onError: (Object e) {
+            if (_disposed) return;
+            state.value = state.value.copyWith(
+              isLoading: false,
+              error: friendlyError(e),
+            );
+          },
+        );
+    _assignmentSub = _repo
+        .watchAssignments(userId)
+        .listen(
+          (rows) {
+            if (_disposed) return;
+            _assignments = rows;
+            _assignmentsLoaded = true;
+            _emit(userId);
           },
           onError: (Object e) {
             if (_disposed) return;
@@ -117,10 +159,28 @@ class CoachViewModel {
         );
   }
 
-  /// Splits the caller's edges into the four lists. Accepted rows order by
-  /// name (the list the screen is about); pending rows by when they were
+  /// A fresh state rather than copyWith: a later emission is a recovery, so it
+  /// also drops a failure the first read recorded.
+  void _emit(String userId) {
+    if (_disposed) return;
+    state.value = _split(
+      _relationships,
+      _assignments,
+      userId,
+      isLoading: !(_relationshipsLoaded && _assignmentsLoaded),
+    );
+  }
+
+  /// Splits the caller's edges into the four lists, and the assignments into
+  /// the two sides (2026-10-26, #24). Accepted rows order by name (the list
+  /// the screen is about); pending rows and assignments by when they were
   /// written, newest first (the action still to take).
-  static CoachState _split(List<CoachRelationship> rows, String userId) {
+  static CoachState _split(
+    List<CoachRelationship> rows,
+    List<CoachAssignment> assignments,
+    String userId, {
+    required bool isLoading,
+  }) {
     final athletes = <Athlete>[];
     final coaches = <Athlete>[];
     final invitations = <Athlete>[];
@@ -140,20 +200,35 @@ class CoachViewModel {
         }
       }
     }
+    final assignmentInvitations = <CoachAssignment>[];
+    final assignmentsSent = <CoachAssignment>[];
+    for (final assignment in assignments) {
+      if (assignment.athleteUserId == userId) {
+        if (assignment.isPending) assignmentInvitations.add(assignment);
+      } else if (assignment.coachUserId == userId) {
+        if (!assignment.isDeclined) assignmentsSent.add(assignment);
+      }
+    }
     int byName(Athlete a, Athlete b) =>
         a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase());
     int newestFirst(Athlete a, Athlete b) =>
+        (b.createdDate ?? DateTime(0)).compareTo(a.createdDate ?? DateTime(0));
+    int newestAssignmentFirst(CoachAssignment a, CoachAssignment b) =>
         (b.createdDate ?? DateTime(0)).compareTo(a.createdDate ?? DateTime(0));
     athletes.sort(byName);
     coaches.sort(byName);
     invitations.sort(newestFirst);
     pendingSent.sort(newestFirst);
+    assignmentInvitations.sort(newestAssignmentFirst);
+    assignmentsSent.sort(newestAssignmentFirst);
     return CoachState(
       athletes: athletes,
       coaches: coaches,
       invitations: invitations,
       pendingSent: pendingSent,
-      isLoading: false,
+      assignmentInvitations: assignmentInvitations,
+      assignmentsSent: assignmentsSent,
+      isLoading: isLoading,
     );
   }
 
@@ -214,9 +289,86 @@ class CoachViewModel {
     state.value = state.value.copyWith(clearError: true);
   }
 
+  // ── Assignments (2026-10-26, #24) ──────────────────────────────────────────
+
+  /// The coach's workouts for the assign sheet; null when the read failed
+  /// ([state.error] carries the sentence).
+  Future<List<PlannedSession>?> loadWorkouts() async {
+    if (_disposed) return null;
+    try {
+      return await _repo.assignableWorkouts(_userId);
+    } catch (e) {
+      if (_disposed) return null;
+      state.value = state.value.copyWith(error: friendlyError(e));
+      return null;
+    }
+  }
+
+  /// Hands [workout] to [athlete]; the watch draws the sent row.
+  Future<bool> assign(
+    Athlete athlete,
+    PlannedSession workout, {
+    String? note,
+  }) async {
+    if (_disposed) return false;
+    try {
+      await _repo.createAssignment(
+        coachId: _userId,
+        athleteId: athlete.userId,
+        workout: workout,
+        note: note,
+      );
+      return true;
+    } catch (e) {
+      if (_disposed) return false;
+      state.value = state.value.copyWith(error: friendlyError(e));
+      return false;
+    }
+  }
+
+  /// The athlete's accept: the copy lands in their library, the invitation
+  /// leaves the list. False records [state.error].
+  Future<bool> acceptAssignment(CoachAssignment assignment) async {
+    if (_disposed) return false;
+    try {
+      await _repo.acceptAssignment(_userId, assignment);
+      return true;
+    } catch (e) {
+      if (_disposed) return false;
+      state.value = state.value.copyWith(error: friendlyError(e));
+      return false;
+    }
+  }
+
+  Future<bool> declineAssignment(CoachAssignment assignment) async {
+    if (_disposed) return false;
+    try {
+      await _repo.declineAssignment(_userId, assignment);
+      return true;
+    } catch (e) {
+      if (_disposed) return false;
+      state.value = state.value.copyWith(error: friendlyError(e));
+      return false;
+    }
+  }
+
+  /// The coach takes back a pending assignment.
+  Future<bool> withdrawAssignment(CoachAssignment assignment) async {
+    if (_disposed) return false;
+    try {
+      await _repo.withdrawAssignment(_userId, assignment);
+      return true;
+    } catch (e) {
+      if (_disposed) return false;
+      state.value = state.value.copyWith(error: friendlyError(e));
+      return false;
+    }
+  }
+
   void dispose() {
     _disposed = true;
     _sub?.cancel();
+    _assignmentSub?.cancel();
     state.dispose();
   }
 }

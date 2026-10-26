@@ -38,6 +38,8 @@ const _pkColumns = {
   'fact_goal': 'goal_id',
   'fact_goal_target': 'goal_target_id',
   'dim_friend_code': 'user_id',
+  'fact_coach_assignment': 'assignment_id',
+  'fact_coach_feedback': 'feedback_id',
 };
 
 // The tables with no single-column PK — their real Postgres primary key is

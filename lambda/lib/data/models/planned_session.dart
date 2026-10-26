@@ -10,6 +10,7 @@ class PlannedSession {
     this.archivedDate,
     this.createdDate,
     this.baseSessionId,
+    this.coachAssignmentId,
   });
 
   final String sessionId;
@@ -37,6 +38,13 @@ class PlannedSession {
   /// Whether this workout is a program copy rather than a library original.
   bool get isCopy => baseSessionId != null;
 
+  /// The coach assignment this workout was copied from on accept (2026-10-26,
+  /// #24). NULL = the athlete's own; set = a coach authored it and the athlete
+  /// accepted it into their library.
+  final String? coachAssignmentId;
+
+  bool get isCoachAssigned => coachAssignmentId != null;
+
   factory PlannedSession.fromMap(Map<String, dynamic> map) => PlannedSession(
     sessionId: map['session_id'] as String,
     userId: map['user_id'] as String,
@@ -49,6 +57,7 @@ class PlannedSession {
         ? DateTime.tryParse(map['created_date'] as String)
         : null,
     baseSessionId: map['base_session_id'] as String?,
+    coachAssignmentId: map['coach_assignment_id'] as String?,
   );
 
   Map<String, dynamic> toMap() => {
@@ -59,5 +68,6 @@ class PlannedSession {
     'date_archived': archivedDate?.toIso8601String(),
     'created_date': createdDate?.toIso8601String(),
     'base_session_id': baseSessionId,
+    'coach_assignment_id': coachAssignmentId,
   };
 }

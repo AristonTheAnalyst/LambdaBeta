@@ -15,6 +15,7 @@ import 'package:lambda/data/repositories/session_repository.dart';
 import 'package:lambda/features/logs/viewmodel/session_detail_viewmodel.dart';
 import 'package:lambda/features/session/view/session_history_peek.dart';
 import 'package:lambda/shared/widgets/session_chevron_button.dart';
+import 'support/fake_coach_repository.dart';
 
 /// The live Training page's history peek (2026-10-22).
 ///
@@ -130,6 +131,7 @@ void main() {
     addTearDown(tester.view.reset);
 
     final vm = SessionDetailViewModel(
+      coachRepo: FakeCoachRepository(),
       sessionRepo: repo,
       exerciseRepo: _FakeExerciseRepo(),
       lessonRepo: _FakeLessonRepo(),

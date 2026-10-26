@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lambda/data/models/coach_assignment.dart';
 import 'package:lambda/data/models/coach_relationship.dart';
 import 'package:lambda/data/repositories/coach_repository.dart';
 import 'package:lambda/features/coach/view/coach_screen.dart';
@@ -19,6 +20,10 @@ class _FakeCoachRepository extends Fake implements CoachRepository {
   @override
   Stream<List<CoachRelationship>> watchRelationships(String userId) =>
       Stream.value(rows);
+
+  @override
+  Stream<List<CoachAssignment>> watchAssignments(String userId) =>
+      Stream.value(const []);
 
   @override
   Future<CoachInvite> inviteByCode(String userId, String rawCode) async {
