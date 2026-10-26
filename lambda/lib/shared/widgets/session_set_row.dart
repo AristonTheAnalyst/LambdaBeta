@@ -867,32 +867,21 @@ class _SessionSetRowState extends State<SessionSetRow> {
                                 ),
                               ),
                             )
-                          // The live cell's box, drawn without its picker:
-                          // a past session's row and a live one read as the
-                          // same grid (2026-10-22). Same label, same ink,
-                          // same chevron as DropdownSelect's compact row.
-                          : _variationBox(
-                              Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Flexible(
-                                    child: UserNameText(
-                                      readOnlyVariationLabel,
-                                      style: AppFonts.ui(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w500,
-                                        color: variationId != null
-                                            ? AppColors.primary
-                                            : AppColors.inkSecondary,
-                                      ),
-                                    ),
-                                  ),
-                                  Icon(
-                                    Icons.keyboard_arrow_down,
-                                    size: 14,
-                                    color: AppColors.muted,
-                                  ),
-                                ],
+                          // A record draws its variation as plain text
+                          // (2026-10-26): the box and its chevron are the
+                          // picker's own grammar, and a read-only row has no
+                          // picker to open — the chevron would promise a
+                          // control that does not exist.
+                          : Center(
+                              child: UserNameText(
+                                readOnlyVariationLabel,
+                                style: AppFonts.ui(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                  color: variationId != null
+                                      ? AppColors.primary
+                                      : AppColors.inkSecondary,
+                                ),
                               ),
                             ),
                     ),
@@ -1147,9 +1136,10 @@ class _SessionSetRowState extends State<SessionSetRow> {
   /// real value off the plan stays neutral with primary ink. A deleted row is
   /// one red surface and never chips.
   ///
-  /// A read-only cell keeps the box (2026-10-22): the past-session viewer is
-  /// the live grid, not a bare-number list. Only a deleted row drops the
-  /// inner chrome, because the whole row is one red surface.
+  /// A read-only cell drops the box (2026-10-26): the past-session viewer in
+  /// view mode is a record, not a form — a filled, outlined slot is an
+  /// invitation to type that only edit mode can answer. The value keeps its
+  /// ink; only the chrome goes. A deleted row reads red either way.
   Widget _cell({
     Key? key,
     required TextEditingController controller,
@@ -1207,31 +1197,35 @@ class _SessionSetRowState extends State<SessionSetRow> {
                 ? AppColors.danger.withValues(alpha: 0.6)
                 : AppColors.muted.withValues(alpha: 0.6),
           ),
-          filled: true,
-          fillColor: widget.deleted
-              ? Colors.transparent
-              : planValue
-              ? AppColors.plannedFill
-              : AppColors.bg,
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(6),
-            borderSide: BorderSide(
-              // The chip's edge is `planned`, not its own fill: the lighter
-              // signal clears 3:1 against the planned row ground in every
-              // palette, while the fill stays deep enough to carry white ink.
-              color: widget.deleted
-                  ? Colors.transparent
-                  : planValue
-                  ? AppColors.planned
-                  : AppColors.border,
-              width: 0.5,
-            ),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(6),
-            borderSide: BorderSide(color: AppColors.primary, width: 1.5),
-          ),
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
+          filled: !_effectiveReadOnly,
+          fillColor: planValue ? AppColors.plannedFill : AppColors.bg,
+          enabledBorder: _effectiveReadOnly
+              ? InputBorder.none
+              : OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(6),
+                  borderSide: BorderSide(
+                    // The chip's edge is `planned`, not its own fill: the
+                    // lighter signal clears 3:1 against the planned row
+                    // ground in every palette, while the fill stays deep
+                    // enough to carry white ink.
+                    color: planValue ? AppColors.planned : AppColors.border,
+                    width: 0.5,
+                  ),
+                ),
+          focusedBorder: _effectiveReadOnly
+              ? InputBorder.none
+              : OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(6),
+                  borderSide: BorderSide(
+                    color: AppColors.primary,
+                    width: 1.5,
+                  ),
+                ),
+          border: _effectiveReadOnly
+              ? InputBorder.none
+              : OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(6),
+                ),
         ),
       ),
     );

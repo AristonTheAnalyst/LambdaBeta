@@ -96,6 +96,12 @@ void main() {
   Color fill(WidgetTester tester, String name, {String m = 'live'}) =>
       cell(tester, name, m: m).decoration!.fillColor!;
 
+  /// Whether the cell paints its own fill at all. A read-only row drops the
+  /// box (2026-10-26), so its chrome is asked for by this rather than by the
+  /// colour left unpainted in [fill].
+  bool fills(WidgetTester tester, String name, {String m = 'live'}) =>
+      cell(tester, name, m: m).decoration!.filled ?? false;
+
   Color edge(WidgetTester tester, String name, {String m = 'live'}) =>
       ((cell(tester, name, m: m).decoration!.enabledBorder!
                   as OutlineInputBorder)
@@ -375,7 +381,11 @@ void main() {
       plannedTarget: target(weight: '60', reps: '8-12'),
     );
 
-    expect(fill(tester, 'kg'), Colors.transparent);
+    expect(
+      fills(tester, 'kg'),
+      isFalse,
+      reason: 'the deleted row is one red surface — the cell adds none',
+    );
     expect(ink(tester, 'kg'), AppColors.danger);
     expect((row(tester).border! as Border).top.color, AppColors.danger);
   });
@@ -405,8 +415,8 @@ void main() {
       reason: 'the target is the guide, even on the red surface',
     );
     expect(
-      fill(tester, 'kg'),
-      Colors.transparent,
+      fills(tester, 'kg'),
+      isFalse,
       reason: 'an empty cell is never a chip',
     );
     expect(ink(tester, 'kg'), AppColors.danger);

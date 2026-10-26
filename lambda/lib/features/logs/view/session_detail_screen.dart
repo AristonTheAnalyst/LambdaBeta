@@ -972,9 +972,11 @@ class _DetailCardBuilder extends StatelessWidget {
       flat: true,
       rows: rows,
       onAddSet: state.isEditing ? () => viewModel.addDraftSet(order) : null,
-      // View mode keeps the ADD SET row's place, greyed — the flip between
-      // looking and editing changes values, never the card's shape.
-      reserveAddSet: !state.isEditing,
+      // View mode draws no ADD SET at all (2026-10-26): a past session read as
+      // a record carries no dead affordance. The card's shape may therefore
+      // change when editing starts — the button appearing is the honest
+      // signal that the page just became a form.
+      reserveAddSet: false,
       onReorderSets: state.isEditing
           ? (oldIndex, newIndex) =>
                 viewModel.reorderSets(order, oldIndex, newIndex)

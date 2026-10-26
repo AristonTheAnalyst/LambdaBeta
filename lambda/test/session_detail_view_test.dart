@@ -15,6 +15,7 @@ import 'package:lambda/data/repositories/lesson_repository.dart';
 import 'package:lambda/data/repositories/session_repository.dart';
 import 'package:lambda/features/logs/view/session_detail_screen.dart';
 import 'package:lambda/features/logs/viewmodel/session_detail_viewmodel.dart';
+import 'package:lambda/shared/widgets/dropdown_select.dart';
 import 'package:lambda/shared/widgets/lambda_input.dart';
 import 'package:lambda/shared/widgets/segmented_control.dart';
 import 'package:lambda/shared/widgets/session_chevron_button.dart';
@@ -315,6 +316,55 @@ void main() {
     // so it opens the frontier — a first PR derived from the session's own
     // rows, with no prior history to lean on.
     expect(find.bySemanticsLabel('1 PRs this session'), findsOneWidget);
+  });
+
+  testWidgets('view mode is a record — no ADD SET, flat cells, a plain '
+      'variation; edit mode brings the form back (2026-10-26)', (tester) async {
+    final vm = await pumpViewer(tester);
+
+    // What is NOT there: the dead row that would add a set, the boxed cell
+    // that invites a keystroke, and the picker's chevron with no picker.
+    expect(
+      find.text('+ ADD SET'),
+      findsNothing,
+      reason: 'a record offers no way to add to it',
+    );
+    final readOnlyKg = tester.widget<TextField>(
+      find.byKey(const ValueKey('history-set-1-kg')),
+    );
+    expect(readOnlyKg.decoration!.filled, isFalse);
+    expect(readOnlyKg.decoration!.enabledBorder, InputBorder.none);
+    expect(readOnlyKg.decoration!.focusedBorder, InputBorder.none);
+    // Scoped to the row: the exercise selector's own field (the card's
+    // header control) wears the same chevron.
+    final row = find.byKey(const ValueKey('session-set-row-history-set-1'));
+    expect(
+      find.descendant(of: row, matching: find.byIcon(Icons.keyboard_arrow_down)),
+      findsNothing,
+      reason:
+          'the variation cell is plain text — a chevron on a record '
+          'promises a picker that is not there',
+    );
+    expect(
+      find.descendant(of: row, matching: find.byType(DropdownSelect<String?>)),
+      findsNothing,
+    );
+    expect(find.text('No Variation'), findsOneWidget);
+
+    // And what edit mode must bring back — the flip is the assertion.
+    vm.startEditing();
+    await tester.pumpAndSettle();
+
+    expect(find.text('+ ADD SET'), findsOneWidget);
+    final editKg = tester.widget<TextField>(
+      find.byKey(const ValueKey('history-set-1-kg')),
+    );
+    expect(editKg.decoration!.filled, isTrue);
+    expect(editKg.decoration!.enabledBorder, isA<OutlineInputBorder>());
+    expect(
+      find.descendant(of: row, matching: find.byType(DropdownSelect<String?>)),
+      findsOneWidget,
+    );
   });
 
   testWidgets('view mode opens the ratings read-only', (tester) async {
