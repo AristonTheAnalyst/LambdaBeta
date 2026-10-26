@@ -145,7 +145,7 @@ class _ProgramBlockEditorScreenState extends State<ProgramBlockEditorScreen>
   Future<void> onSave() async => await _save();
 
   @override
-  void onDiscard() {
+  Future<void> onDiscard() async {
     final b = widget.block;
     setState(() {
       _nameCtrl.text = b?.name ?? '';

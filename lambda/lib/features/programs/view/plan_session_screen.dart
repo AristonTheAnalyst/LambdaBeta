@@ -262,12 +262,17 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
   }
 
   @override
-  void onDiscard() {
+  Future<void> onDiscard() {
     // Roll back to the open-time snapshot (or last Save): header fields and
     // sets. A workout created this editing session rolls back to
     // nonexistence; one with no exercises left after a full rollback is
     // removed rather than kept as an empty orphan.
-    widget.viewModel.discardWorkoutChanges();
+    //
+    // Awaited — the guard re-reads `hasUnsavedChanges` the moment this
+    // returns (2026-10-26). Un-awaited, the pop was decided mid-rollback,
+    // the guard declined, and the editor was left standing on its spinner
+    // with no workout under it.
+    return widget.viewModel.discardWorkoutChanges();
   }
 
   /// A nav-bar tab tap: run the unsaved-changes guard, then leave the editor

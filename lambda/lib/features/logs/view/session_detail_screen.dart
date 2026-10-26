@@ -173,7 +173,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
   }
 
   @override
-  void onDiscard() {
+  Future<void> onDiscard() async {
     _vm.cancelEditing();
   }
 

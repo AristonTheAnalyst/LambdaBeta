@@ -12,7 +12,7 @@ import '../../core/styles/app_fonts.dart';
 ///   bool get hasUnsavedChanges => _hasDirtyFields;
 ///
 ///   Future<void> onSave() async { ... }
-///   void onDiscard() { ... }
+///   Future<void> onDiscard() async { ... }
 ///
 ///   Widget build(BuildContext context) {
 ///     return buildGuardedScaffold(scaffold: Scaffold(...));
@@ -28,7 +28,13 @@ mixin UnsavedChangesGuard<T extends StatefulWidget> on State<T> {
 
   /// Override to perform cleanup after discard. Called when the user
   /// taps "Discard" — e.g., reset editing state.
-  void onDiscard() {}
+  ///
+  /// Awaited before the guard decides the pop (2026-10-26): the decision is a
+  /// re-read of [hasUnsavedChanges] once the dialog closes, and a rollback
+  /// still in flight reads as "still dirty" — the guard then declines to
+  /// leave the screen it just said it would leave. Whatever this does must be
+  /// finished by the time it returns.
+  Future<void> onDiscard() async {}
 
   /// Wraps [scaffold] in a [PopScope] that intercepts back navigation
   /// when there are unsaved changes. After save/discard, pops the screen.
@@ -146,6 +152,10 @@ mixin UnsavedChangesGuard<T extends StatefulWidget> on State<T> {
       await onSave();
       return;
     }
-    onDiscard();
+    // Awaited, and that is the whole fix (2026-10-26): the callers re-read
+    // [hasUnsavedChanges] after this returns, so a rollback that is still
+    // running makes the guard refuse the pop it just offered — and the screen
+    // is left on whatever the rollback leaves behind.
+    await onDiscard();
   }
 }

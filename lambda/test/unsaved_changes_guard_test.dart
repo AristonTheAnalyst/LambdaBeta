@@ -10,7 +10,11 @@ import 'package:lambda/shared/mixins/unsaved_changes_guard.dart';
 /// review settle, which has no Discard side at all: there the question really
 /// is "save first?", so it reads Save and finish / Stay.
 class _GuardedScreen extends StatefulWidget {
-  const _GuardedScreen();
+  const _GuardedScreen({this.discardDelay = Duration.zero});
+
+  /// How long the rollback takes. Non-zero in the test that proves the guard
+  /// waits for it before deciding the pop (2026-10-26).
+  final Duration discardDelay;
 
   @override
   State<_GuardedScreen> createState() => _GuardedScreenState();
@@ -28,7 +32,12 @@ class _GuardedScreenState extends State<_GuardedScreen>
   Future<void> onSave() async => setState(() => _dirty = false);
 
   @override
-  void onDiscard() => setState(() => _dirty = false);
+  Future<void> onDiscard() async {
+    if (widget.discardDelay > Duration.zero) {
+      await Future<void>.delayed(widget.discardDelay);
+    }
+    if (mounted) setState(() => _dirty = false);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -117,6 +126,34 @@ void main() {
     await tester.tap(find.text('Discard'));
     await tester.pumpAndSettle();
     expect(find.text('left'), findsOneWidget);
+  });
+
+  testWidgets('Discard is awaited before the pop is decided (2026-10-26)', (
+    tester,
+  ) async {
+    // The rollback is the slow part: `discardWorkoutChanges` walks the
+    // open-time snapshot through several repository writes. An un-awaited
+    // discard leaves `hasUnsavedChanges` true at the instant the guard
+    // re-reads it, so the guard refuses the pop it just offered and the
+    // editor is stranded behind its own spinner.
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: _GuardedScreen(discardDelay: Duration(milliseconds: 200)),
+      ),
+    );
+
+    await tester.tap(find.text('Back'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Discard'));
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('left'),
+      findsOneWidget,
+      reason: 'the guard leaves once the rollback it waited for is done',
+    );
+    expect(find.text('stayed'), findsNothing);
   });
 
   testWidgets('the review settle asks "save first?" — Save and finish / '

@@ -518,7 +518,9 @@ class WorkoutEditorViewModel {
     final w = state.value.editingWorkout;
     if (w == null) return;
     if (!_openedExisting) {
-      await deletePlannedSession();
+      // Deleting is the rollback for a workout born in this session, and the
+      // host learns about it on the way out like every other discard below.
+      await deletePlannedSession(notifyHost: false);
       return;
     }
     try {
@@ -579,10 +581,15 @@ class WorkoutEditorViewModel {
     } catch (e) {
       state.value = state.value.copyWith(error: friendlyError(e));
     }
-    closeWorkoutEditor();
+    // The host is not told (2026-10-26): every screen that opens this editor
+    // reloads its own list once the route it pushed is gone, and a reload
+    // fired from here lands mid-pop — the discard read as two reloads racing
+    // the transition. The rollback itself is still written before the pop, so
+    // the post-pop reload reads the rolled-back rows.
+    closeWorkoutEditor(notifyHost: false);
   }
 
-  void closeWorkoutEditor() {
+  void closeWorkoutEditor({bool notifyHost = true}) {
     // Clear editing state SYNCHRONOUSLY — dispose() commits pending
     // name/notes drafts, and a delayed clear would let a discarded draft
     // get written after the guard pops.
@@ -591,16 +598,19 @@ class WorkoutEditorViewModel {
     // When closing without saving (discard), still refresh the workout list
     // so that a newly-created-then-discarded workout shows its name correctly
     // and exercises added/removed during editing are reflected.
-    _host?.onContentsChanged();
+    //
+    // [notifyHost] is the caller's verdict on that: the discard path leaves
+    // the refresh to the opener's post-pop reload, which is already coming.
+    if (notifyHost) _host?.onContentsChanged();
   }
 
-  Future<void> deletePlannedSession() async {
+  Future<void> deletePlannedSession({bool notifyHost = true}) async {
     final w = state.value.editingWorkout;
     if (w == null) return;
     // Archive BEFORE clearing the editor — closeWorkoutEditor's list refetch
     // would otherwise race ahead and keep the deleted workout listed.
     await _plannedSessionRepo.deletePlannedSession(w.sessionId);
-    closeWorkoutEditor();
+    closeWorkoutEditor(notifyHost: notifyHost);
   }
 
   // ── Session name/notes — auto-commit on blur/change ─────────────────────

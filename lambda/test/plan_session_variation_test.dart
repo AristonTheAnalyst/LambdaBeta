@@ -540,6 +540,74 @@ void main() {
       );
     });
   });
+  // ── Discard leaves the editor ────────────────────────────────────────────
+  //
+  // The rollback is a chain of awaits (a rename, a delete, a set re-read).
+  // The guard re-reads `hasUnsavedChanges` the moment the warning closes, so
+  // an un-awaited rollback reads as "still dirty": the guard refuses the pop
+  // it just offered, and the rollback finishes anyway — leaving the editor
+  // standing on its spinner with no workout under it (2026-10-26).
+  group('Discard leaves the editor', () {
+    /// The editor pushed over a list, so a pop has somewhere to land and the
+    /// test can tell "landed" from "stranded".
+    Future<void> pumpListThenEditor(WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1206, 2622);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: Center(
+                child: TextButton(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => PlanSessionScreen(
+                        viewModel: vm,
+                        workout: PlannedSession(
+                          sessionId: sessionId,
+                          userId: userId,
+                          name: 'Psycho 1',
+                        ),
+                      ),
+                    ),
+                  ),
+                  child: const Text('the list'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('the list'));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('a discard lands back on the list, not on a spinner', (
+      tester,
+    ) async {
+      await pumpListThenEditor(tester);
+
+      // A structural edit is the cheapest thing that makes the editor dirty.
+      await tester.tap(find.text('+ ADD SET'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byIcon(Icons.arrow_back_ios_new));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Discard'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byType(PlanSessionScreen),
+        findsNothing,
+        reason:
+            'the pop is decided only after the rollback it offered has '
+            'finished, so it actually happens',
+      );
+      expect(find.text('the list'), findsOneWidget);
+    });
+  });
 }
 
 /// Registers a bundled typeface with the test's font collection under the
@@ -678,6 +746,23 @@ class _FakePlanned implements PlannedSessionRepository {
     sets.add(set);
     created.add(set);
     return set;
+  }
+
+  /// The rollback's first write, and the one the discard test turns on.
+  ///
+  /// It answers after a hop of its own, because a repository write is I/O: a
+  /// fake that settled inside the same microtask would let an un-awaited
+  /// rollback finish before the guard re-read the dirtiness it decides the
+  /// pop on, and the regression test would pass with the bug still in place.
+  @override
+  Future<void> updatePlannedSession(
+    String plannedSessionId, {
+    String? name,
+    String? notes,
+    bool clearNotes = false,
+    String userId = '',
+  }) async {
+    await Future<void>.delayed(Duration.zero);
   }
 
   @override

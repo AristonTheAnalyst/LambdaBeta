@@ -161,7 +161,7 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
   }
 
   @override
-  void onDiscard() {
+  Future<void> onDiscard() async {
     final s = _vm.state.value;
     _nameController.text = s.program?.name ?? '';
     _descriptionController.text = s.program?.description ?? '';

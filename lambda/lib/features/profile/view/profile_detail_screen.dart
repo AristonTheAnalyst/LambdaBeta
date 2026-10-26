@@ -63,7 +63,7 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen>
   Future<void> onSave() async => await _handleSave();
 
   @override
-  void onDiscard() => _viewModel.cancelEditing();
+  Future<void> onDiscard() async => _viewModel.cancelEditing();
 
   static const _genderOptions = [
     DropdownOption(label: 'Not specified', value: ''),
