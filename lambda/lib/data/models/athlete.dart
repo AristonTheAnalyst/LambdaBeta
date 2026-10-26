@@ -27,6 +27,13 @@ class Athlete {
   /// section can draw the same model.
   final DateTime? acceptedDate;
 
+  /// Whether either name part actually carries text — a pending invitation's
+  /// person has no synced name, and the screen draws its own fallback label
+  /// rather than this model's `Athlete`.
+  bool get hasName =>
+      (firstName?.trim().isNotEmpty ?? false) ||
+      (lastName?.trim().isNotEmpty ?? false);
+
   /// The name to draw: the athlete's own name, else the word `Athlete` while
   /// their row is on its way. Names are user-typed — read them through
   /// `UserNameText` on screen.

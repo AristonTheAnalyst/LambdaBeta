@@ -95,6 +95,16 @@
 # which 20261026140000_coaching_consent.sql adds; an unaccepted invitation
 # sends nothing. Push that migration BEFORE deploying this file.
 #
+# 2026-10-26 (coaching invites, #22): coaching_data gains a second CTE,
+# `my_coaches`, and a second NAME-ONLY dim_user slice beneath the athlete one.
+# The COACH's name reaches the ATHLETE from the moment the invitation exists —
+# an athlete cannot consent to an anonymous request, and the name is the
+# coach's own disclosure, made by typing the athlete's code. The reverse stays
+# gated: the ATHLETE's name reaches the coach only on acceptance. RPCs
+# coach_invite_by_code / accept_coaching_invitation /
+# remove_coaching_relationship and the consent-tightened coach policies land in
+# 20261026150000_coaching_invite_accept.sql — push it before this deploy.
+#
 # 2026-10-26 (multi-set goals): + fact_goal_target, a goal's requirement list
 # (each row "this set or better"). Both streams gain it — the owner's own
 # rows in user_data, a mutual friend's in friends_data beside the fact_goal
@@ -190,10 +200,17 @@ streams:
   # Coaching (2026-10-26). The coach's view of an athlete's completed
   # training, gated on CONSENT: `my_athletes` requires accepted_date, so an
   # invitation the athlete has not accepted sends nothing at all — not a
-  # name, not a session. #22's accept flow is what sets the date; the coach's
+  # name, not a session. The accept RPC is what sets the date; the coach's
   # invitation row itself already arrives through user_data. Streams bypass
   # RLS; this query is the privacy boundary (the RLS policies on the
-  # athlete's tables are the REST defence, tightened with #22).
+  # athlete's tables are the REST defence, tightened to the same gate in
+  # 20261026150000_coaching_invite_accept.sql).
+  #
+  # The gate is ASYMMETRIC on purpose (2026-10-26, #22): `my_coaches` carries
+  # the COACH's name to the ATHLETE from the moment a row exists — pending or
+  # accepted — because an athlete cannot consent to an anonymous request. It
+  # is name-only, and it is the coach's own disclosure. The athlete side
+  # (`my_athletes`) still yields nothing until acceptance.
   coaching_data:
     auto_subscribe: true
     with:
@@ -201,10 +218,16 @@ streams:
                    FROM coaching_relationship cr
                    WHERE cr.coach_user_id = auth.user_id()
                      AND cr.accepted_date IS NOT NULL
+      my_coaches: SELECT cr.coach_user_id AS coach_id
+                  FROM coaching_relationship cr
+                  WHERE cr.athlete_user_id = auth.user_id()
     queries:
       # A name-only slice, the friends stream's rule: body metrics and the
       # profile stay private.
       - SELECT user_id, user_name, user_lastname, user_id as id FROM dim_user WHERE user_id IN my_athletes
+      # The coach's name, to their invited athlete (pending rows included).
+      # Name-only, the same columns — nothing else about a coach is sent.
+      - SELECT user_id, user_name, user_lastname, user_id as id FROM dim_user WHERE user_id IN my_coaches
       # Completed records only — an athlete's live session is never sent.
       - SELECT *, session_id as id FROM fact_session WHERE user_id IN my_athletes AND end_datetime IS NOT NULL
       # Children keyed on user_id (one bucket per athlete), the friends

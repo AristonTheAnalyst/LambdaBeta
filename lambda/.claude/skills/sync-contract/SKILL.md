@@ -98,6 +98,14 @@ has not accepted matches nothing, so **no athlete row — not even a name —
 reaches the coach's device**. Push the migration before deploying this
 stream; the `accepted_date` column must exist or the CTE fails to parse.
 
+- **The gate is asymmetric (#22).** A second CTE, `my_coaches`
+  (`athlete_user_id = auth.user_id()`, pending rows included), feeds a second
+  NAME-ONLY `dim_user` slice. The coach's name reaches the athlete from the
+  moment the invitation exists — an athlete cannot consent to an anonymous
+  request, and typing the athlete's code was the coach's own disclosure. The
+  reverse stays gated: the athlete's name reaches the coach only on
+  acceptance. Everything else below is `my_athletes`-keyed and so
+  athlete-only.
 - What it sends: the athlete's name-only `dim_user` slice, completed
   `fact_session` rows (`end_datetime IS NOT NULL`), their exercise/set
   children keyed on `user_id IN my_athletes` (one bucket per athlete, never
@@ -106,12 +114,18 @@ stream; the `accepted_date` column must exist or the CTE fails to parse.
   private, exactly as on the friends path.
 - What it does NOT send: `fact_bodyweight`, `dim_program`, planned sessions
   — the record viewer reads names off the session's own snapshot.
-- The coach's own `coaching_relationship` rows ride `user_data` (own rows,
-  `SELECT *`), so the roster's local read sees the edge and its
-  `accepted_date`; the athlete's name still arrives only through
-  `coaching_data`. The app has no coach-side write in #21 — invite, accept
-  and revoke are #22's, and `coaching_relationship`'s `ps_crud` purge was
-  removed with the stream so a future write uploads normally.
+- **Writes are RPC-only (#22).** `coach_invite_by_code`,
+  `accept_coaching_invitation` and `remove_coaching_relationship` are
+  SECURITY DEFINER and are the only paths that change the edge; the client
+  mirrors their effects locally. The mirror's queued ops must pass RLS, so
+  `coaching_relationship` keeps exactly two client write policies: coach
+  INSERT with `accepted_date is null`, athlete UPDATE of their own row. The
+  invite RPC returns `created`, and the client mirrors only a new invitation
+  — an upsert against an already-accepted row would be refused by the
+  insert policy's check. The coach's own `coaching_relationship` rows ride
+  `user_data` (own rows, `SELECT *`), so the roster sees both pending and
+  accepted edges; the other side's name still arrives only through
+  `coaching_data`.
 
 **The own-row-only mirror rule.** `FriendRepository.addByCode` calls the
 SECURITY DEFINER RPC and then mirrors ONLY the caller's own directed row,
