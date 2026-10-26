@@ -39,8 +39,9 @@ class _FakePlanRepo extends Fake implements PlannedSessionRepository {
 
   @override
   Future<List<PlannedSessionExercise>> fetchPlannedExercises(
-    String plannedSessionId,
-  ) async => const [
+    String plannedSessionId, {
+    bool includeArchived = false,
+  }) async => const [
     PlannedSessionExercise(
       plannedExerciseId: 'pe1',
       plannedSessionId: 'ps1',
@@ -52,8 +53,9 @@ class _FakePlanRepo extends Fake implements PlannedSessionRepository {
 
   @override
   Future<List<PlannedSessionExerciseSet>> fetchPlannedSets(
-    String plannedSessionId,
-  ) async => const [
+    String plannedSessionId, {
+    bool includeArchived = false,
+  }) async => const [
     PlannedSessionExerciseSet(
       plannedSetId: 'pset1',
       plannedExerciseId: 'pe1',
@@ -67,10 +69,14 @@ class _FakePlanRepo extends Fake implements PlannedSessionRepository {
 
   @override
   Future<List<PlannedSessionExerciseSet>> readNormalizedPlannedSession(
-    String plannedSessionId,
-  ) async {
+    String plannedSessionId, {
+    bool includeArchived = false,
+  }) async {
     normalizedReads++;
-    return fetchPlannedSets(plannedSessionId);
+    return fetchPlannedSets(
+      plannedSessionId,
+      includeArchived: includeArchived,
+    );
   }
 
   @override

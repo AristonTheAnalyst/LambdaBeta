@@ -410,15 +410,23 @@ class PlannedSessionRepository {
 
   // ── Exercise groups ────────────────────────────────────────────────────────
 
+  /// A template's exercise groups, in order.
+  ///
+  /// [includeArchived] also brings back the groups a removal flagged. Every
+  /// read that SHOWS a workout hides them; the one caller that asks for them
+  /// is the review editor, where a removal made during the pass must stay on
+  /// the card so its note can explain it (2026-10-26).
   Future<List<PlannedSessionExercise>> fetchPlannedExercises(
-    String plannedSessionId,
-  ) async {
+    String plannedSessionId, {
+    bool includeArchived = false,
+  }) async {
     final rows = await ps.db.getAll(
       '''
       SELECT pe.*, e.exercise_name AS exercise_name
       FROM dim_planned_session_exercise pe
       LEFT JOIN dim_exercise e ON e.custom_exercise_id = pe.custom_exercise_id
-      WHERE pe.planned_session_id = ? AND pe.is_archived = 0
+      WHERE pe.planned_session_id = ?
+        ${includeArchived ? '' : 'AND pe.is_archived = 0'}
       ORDER BY pe.exercise_order
       ''',
       [plannedSessionId],
@@ -491,11 +499,15 @@ class PlannedSessionRepository {
 
   // ── Planned sets ───────────────────────────────────────────────────────────
 
-  /// Fetches a template's active target sets, hydrated with the exercise from
-  /// their parent group so consumers don't need to re-join.
+  /// Fetches a template's target sets, hydrated with the exercise from their
+  /// parent group so consumers don't need to re-join.
+  ///
+  /// [includeArchived] also brings back the rows a removal flagged — the
+  /// review editor's read (2026-10-26), same as [fetchPlannedExercises].
   Future<List<PlannedSessionExerciseSet>> fetchPlannedSets(
-    String plannedSessionId,
-  ) async {
+    String plannedSessionId, {
+    bool includeArchived = false,
+  }) async {
     final rows = await ps.db.getAll(
       '''
       SELECT s.*,
@@ -508,7 +520,8 @@ class PlannedSessionRepository {
         ON pe.planned_exercise_id = s.planned_exercise_id
       LEFT JOIN dim_exercise e ON e.custom_exercise_id = pe.custom_exercise_id
       LEFT JOIN dim_variation v ON v.custom_variation_id = s.custom_variation_id
-      WHERE pe.planned_session_id = ? AND s.is_archived = 0
+      WHERE pe.planned_session_id = ?
+        ${includeArchived ? '' : 'AND s.is_archived = 0'}
       ORDER BY pe.exercise_order, s.set_number
       ''',
       [plannedSessionId],
@@ -666,10 +679,31 @@ class PlannedSessionRepository {
   /// state — read identically, and the writing variant still repairs
   /// genuinely broken numbering on save (2026-10-13).
   Future<List<PlannedSessionExerciseSet>> readNormalizedPlannedSession(
-    String plannedSessionId,
-  ) async {
-    final sets = await fetchPlannedSets(plannedSessionId);
-    final exercises = await fetchPlannedExercises(plannedSessionId);
+    String plannedSessionId, {
+    bool includeArchived = false,
+  }) async {
+    final exercises = await fetchPlannedExercises(
+      plannedSessionId,
+      includeArchived: includeArchived,
+    );
+    // A removed GROUP keeps the rows under it — that is the review editor's
+    // whole point (2026-10-26). A set removed on its own stays hidden even
+    // there: the card draws no row the user could not put back.
+    final archivedGroups = {
+      for (final e in exercises)
+        if (e.isArchived) e.plannedExerciseId,
+    };
+    final allSets = await fetchPlannedSets(
+      plannedSessionId,
+      includeArchived: includeArchived,
+    );
+    final sets = includeArchived
+        ? [
+            for (final s in allSets)
+              if (!s.isArchived || archivedGroups.contains(s.plannedExerciseId))
+                s,
+          ]
+        : allSets;
     final exerciseOrder = {
       for (var i = 0; i < exercises.length; i++)
         exercises[i].plannedExerciseId: i + 1,

@@ -1099,8 +1099,12 @@ class FakePlannedSessions implements PlannedSessionRepository {
 
   @override
   Future<List<PlannedSessionExercise>> fetchPlannedExercises(
-    String plannedSessionId,
-  ) async => exercises[plannedSessionId] ?? const [];
+    String plannedSessionId, {
+    bool includeArchived = false,
+  }) async => [
+    for (final e in exercises[plannedSessionId] ?? const <PlannedSessionExercise>[])
+      if (includeArchived || !e.isArchived) e,
+  ];
 
   /// One workout by id — what the review landing resolves its cards through.
   Map<String, PlannedSession> byId = const {};

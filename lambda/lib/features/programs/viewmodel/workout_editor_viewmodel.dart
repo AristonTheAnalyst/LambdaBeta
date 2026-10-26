@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../../../core/powersync/database.dart' as ps;
 import '../../../core/utils/friendly_error.dart';
 import '../../../core/utils/undo_history.dart';
 import '../../../core/utils/name_limit.dart';
@@ -29,6 +28,7 @@ class PlanExerciseSlot {
     required this.exerciseOrder,
     required this.exerciseId,
     this.plannedExerciseId,
+    this.deleted = false,
   });
   final int exerciseOrder;
   final String exerciseId;
@@ -36,6 +36,11 @@ class PlanExerciseSlot {
   /// Null for a virtual slot (added this editing session, persisted on
   /// input/Save — never a silent keep-alive stub).
   final String? plannedExerciseId;
+
+  /// The group is archived — removed from the workout. Only an editor opened
+  /// [includeArchived] sees one at all: inside a review a removal stays on the
+  /// card, red, so its note can explain it (2026-10-26).
+  final bool deleted;
 }
 
 /// What the editor needs from the program it is editing.
@@ -254,10 +259,37 @@ class WorkoutEditorViewModel {
   String? _openedName;
   String? _openedNotes;
   bool _openedExisting = false;
+
+  /// Whether this editor reads the workout with its removals in it — true
+  /// inside a review (2026-10-26). A group removed during the pass stays on
+  /// the card, red, so the note can say why it went; outside a review the
+  /// planner keeps hiding every archived group, as it always has.
+  bool _includeArchived = false;
+
   final state = ValueNotifier(const WorkoutEditorState());
 
   String get _userId =>
       _userIdOverride ?? Supabase.instance.client.auth.currentUser!.id;
+
+  /// The editor's own read of a template's exercise groups — the one place
+  /// [_includeArchived] is spent, so every re-read agrees about what the
+  /// workout holds.
+  Future<List<PlannedSessionExercise>> _readGroups(String sessionId) =>
+      _plannedSessionRepo.fetchPlannedExercises(
+        sessionId,
+        includeArchived: _includeArchived,
+      );
+
+  /// The editor's own read of a template's sets. Inside a review it goes
+  /// through the normalizing read so a removed group's rows come back
+  /// numbered as they were, while a set removed on its own still drops.
+  Future<List<PlannedSessionExerciseSet>> _readSets(String sessionId) =>
+      _includeArchived
+      ? _plannedSessionRepo.readNormalizedPlannedSession(
+          sessionId,
+          includeArchived: true,
+        )
+      : _plannedSessionRepo.fetchPlannedSets(sessionId);
 
   /// Builds the editor's exercise slots from the persisted group rows.
   List<PlanExerciseSlot> _slotsFromExercises(
@@ -271,6 +303,7 @@ class WorkoutEditorViewModel {
           exerciseOrder: e.exerciseOrder,
           exerciseId: e.exerciseId ?? '',
           plannedExerciseId: e.plannedExerciseId,
+          deleted: e.isArchived,
         ),
     ];
   }
@@ -305,6 +338,7 @@ class WorkoutEditorViewModel {
       _openedExisting = false;
       _openedExercises = const [];
       _openedSetsSnapshot = const [];
+      _includeArchived = false;
       state.value = state.value.copyWith(
         editingWorkout: wp,
         workoutNameDraft: wp.name,
@@ -320,7 +354,14 @@ class WorkoutEditorViewModel {
     }
   }
 
-  Future<void> openEditWorkout(PlannedSession w) async {
+  /// [includeArchived] is the review editor's read (2026-10-26): the groups
+  /// the pass has removed stay on the card, red, so each removal can be
+  /// explained in its note. Every other caller keeps the planner's read.
+  Future<void> openEditWorkout(
+    PlannedSession w, {
+    bool includeArchived = false,
+  }) async {
+    _includeArchived = includeArchived;
     state.value = state.value.copyWith(
       editingWorkout: w,
       workoutNameDraft: w.name,
@@ -336,10 +377,9 @@ class WorkoutEditorViewModel {
       // shape — how many sets a group has, or what order the groups are in.
       final sets = await _plannedSessionRepo.readNormalizedPlannedSession(
         w.sessionId,
+        includeArchived: _includeArchived,
       );
-      final exercises = await _plannedSessionRepo.fetchPlannedExercises(
-        w.sessionId,
-      );
+      final exercises = await _readGroups(w.sessionId);
       _openedExercises = exercises;
       _openedSetsSnapshot = sets;
       _openedName = w.name;
@@ -364,6 +404,7 @@ class WorkoutEditorViewModel {
   /// Opens a standalone workout for editing (no program). Loads its name,
   /// notes, and planned sets into the editor.
   Future<void> openStandaloneWorkout(String sessionId) async {
+    _includeArchived = false;
     await _ensureCatalog();
     // One row by id — the old path read the ENTIRE standalone list to find
     // a single session (2026-10-13).
@@ -389,9 +430,7 @@ class WorkoutEditorViewModel {
       final sets = await _plannedSessionRepo.readNormalizedPlannedSession(
         sessionId,
       );
-      final exercises = await _plannedSessionRepo.fetchPlannedExercises(
-        sessionId,
-      );
+      final exercises = await _readGroups(sessionId);
       _openedExercises = exercises;
       _openedSetsSnapshot = sets;
       _openedName = w.name;
@@ -422,6 +461,7 @@ class WorkoutEditorViewModel {
       _openedExisting = false;
       _openedExercises = const [];
       _openedSetsSnapshot = const [];
+      _includeArchived = false;
       // Open the editor against the row we just created. Building state from
       // the returned object (rather than re-fetching) avoids a race where the
       // insert hasn't reflected into a follow-up SELECT yet — previously that
@@ -491,13 +531,10 @@ class WorkoutEditorViewModel {
         state.value = state.value.copyWith(workoutSetDrafts: const {});
       }
       // Refresh the rollback snapshot — a later Discard rolls back to this
-      // Save, not to open.
-      _openedExercises = await _plannedSessionRepo.fetchPlannedExercises(
-        workout.sessionId,
-      );
-      _openedSetsSnapshot = await _plannedSessionRepo.fetchPlannedSets(
-        workout.sessionId,
-      );
+      // Save, not to open. Read the way the editor opened it, so the
+      // snapshot holds exactly the groups and rows the card is showing.
+      _openedExercises = await _readGroups(workout.sessionId);
+      _openedSetsSnapshot = await _readSets(workout.sessionId);
       final savedName = state.value.workoutNameDraft.trim();
       final savedNotes = state.value.workoutNotesDraft.trim();
       _openedName = savedName.isEmpty ? null : savedName;
@@ -532,9 +569,7 @@ class WorkoutEditorViewModel {
         userId: _userId,
       );
       // Groups added since open are discarded; snapshot groups come back.
-      final currentExercises = await _plannedSessionRepo.fetchPlannedExercises(
-        w.sessionId,
-      );
+      final currentExercises = await _readGroups(w.sessionId);
       final snapshotIds = {
         for (final e in _openedExercises) e.plannedExerciseId,
       };
@@ -543,14 +578,19 @@ class WorkoutEditorViewModel {
           await _plannedSessionRepo.deletePlannedExercise(e.plannedExerciseId);
         }
       }
+      // Each snapshot group returns to the state it was opened in — its own
+      // archive flag, not a blanket un-archive (2026-10-26): a review's read
+      // also hands back groups that were already removed before it began, and
+      // a discard must leave those exactly as it found them.
       for (final e in _openedExercises) {
-        await ps.db.execute(
-          'UPDATE dim_planned_session_exercise SET is_archived = 0, exercise_order = ? WHERE planned_exercise_id = ?',
-          [e.exerciseOrder, e.plannedExerciseId],
+        if (e.isArchived) continue;
+        await _plannedSessionRepo.restorePlannedExercise(
+          e.plannedExerciseId,
+          exerciseOrder: e.exerciseOrder,
         );
       }
       // Rows added since open are discarded.
-      final current = await _plannedSessionRepo.fetchPlannedSets(w.sessionId);
+      final current = await _readSets(w.sessionId);
       final snapshotSetIds = {
         for (final s in _openedSetsSnapshot) s.plannedSetId,
       };
@@ -562,6 +602,10 @@ class WorkoutEditorViewModel {
       // Snapshot rows return to their open-time values (any archived during
       // editing come back).
       for (final s in _openedSetsSnapshot) {
+        // Removed when the editor opened: its card was red and inert, so
+        // nothing on it could have changed — and the rollback leaves it that
+        // way rather than resurrecting a removal the pass did not make.
+        if (s.isArchived) continue;
         await _plannedSessionRepo.updatePlannedSet(
           s.plannedSetId,
           targetWeight: s.targetWeight,
@@ -573,9 +617,9 @@ class WorkoutEditorViewModel {
           targetNotes: s.targetNotes,
           clearNotes: s.targetNotes == null,
         );
-        await ps.db.execute(
-          'UPDATE dim_planned_session_exercise_set SET is_archived = 0, set_number = ? WHERE planned_set_id = ?',
-          [s.setNumber, s.plannedSetId],
+        await _plannedSessionRepo.restorePlannedSet(
+          s.plannedSetId,
+          setNumber: s.setNumber,
         );
       }
     } catch (e) {
@@ -846,25 +890,33 @@ class WorkoutEditorViewModel {
         await _plannedSessionRepo.deletePlannedExercise(peId);
       }
 
-      final slots = [...cur.workoutExerciseSlots]..removeAt(idx);
-      int newActive = cur.activeSlotIndex;
-      if (newActive >= slots.length) {
-        newActive = (slots.length - 1).clamp(0, slots.length);
-      }
+      final exercises = await _readGroups(workout.sessionId);
+      final plannedSets = await _readSets(workout.sessionId);
+      final slots = _slotsFromExercises(exercises);
 
-      final exercises = await _plannedSessionRepo.fetchPlannedExercises(
-        workout.sessionId,
-      );
-      final plannedSets = await _plannedSessionRepo.fetchPlannedSets(
-        workout.sessionId,
-      );
+      int newActive;
+      if (_includeArchived) {
+        // Inside a review the group is still on the card — that is the whole
+        // point of removing it here — so the card does not shrink under the
+        // finger: the list keeps its length and the active tab keeps its
+        // place, whichever one was removed (2026-10-26).
+        newActive = slots.isEmpty
+            ? 0
+            : cur.activeSlotIndex.clamp(0, slots.length - 1);
+      } else {
+        final reduced = [...cur.workoutExerciseSlots]..removeAt(idx);
+        newActive = cur.activeSlotIndex;
+        if (newActive >= reduced.length) {
+          newActive = (reduced.length - 1).clamp(0, reduced.length);
+        }
+      }
 
       final drafts = Map<String, List<int>>.from(cur.workoutSetDrafts)
         ..remove(curSlot.plannedExerciseId ?? '');
 
       state.value = cur.copyWith(
         workoutPlannedExercises: exercises,
-        workoutExerciseSlots: _slotsFromExercises(exercises),
+        workoutExerciseSlots: slots,
         activeSlotIndex: newActive,
         workoutPlannedSessionExerciseSets: plannedSets,
         workoutSetDrafts: drafts,
@@ -890,20 +942,23 @@ class WorkoutEditorViewModel {
               setNumber: pset.setNumber,
             );
           }
-          final exercises = await _plannedSessionRepo.fetchPlannedExercises(
-            wid,
-          );
-          final plannedSets = await _plannedSessionRepo.fetchPlannedSets(wid);
+          final exercises = await _readGroups(wid);
+          final plannedSets = await _readSets(wid);
           final cur = state.value;
           final slots = _slotsFromExercises(exercises);
-          slots.insert(
-            index.clamp(0, slots.length),
-            PlanExerciseSlot(
-              exerciseOrder: index + 1,
-              exerciseId: slot.exerciseId,
-              plannedExerciseId: plannedExerciseId,
-            ),
-          );
+          // A review's read already holds the restored group — the insert is
+          // the planner's own way of putting back one its read omits
+          // (2026-10-26).
+          if (!slots.any((sl) => sl.plannedExerciseId == plannedExerciseId)) {
+            slots.insert(
+              index.clamp(0, slots.length),
+              PlanExerciseSlot(
+                exerciseOrder: index + 1,
+                exerciseId: slot.exerciseId,
+                plannedExerciseId: plannedExerciseId,
+              ),
+            );
+          }
           final drafts = Map<String, List<int>>.from(cur.workoutSetDrafts);
           if (plannedExerciseId != null) {
             drafts[plannedExerciseId] = List.of(draftIdsBefore);
@@ -973,6 +1028,7 @@ class WorkoutEditorViewModel {
             exerciseOrder: i + 1,
             exerciseId: slots[i].exerciseId,
             plannedExerciseId: slots[i].plannedExerciseId,
+            deleted: slots[i].deleted,
           ),
       ];
       state.value = cur.copyWith(
@@ -982,8 +1038,8 @@ class WorkoutEditorViewModel {
       await _plannedSessionRepo.renumberExerciseOrders(wid, [
         for (var i = 0; i < slots.length; i++) (slots[i].exerciseOrder, i),
       ]);
-      final exercises = await _plannedSessionRepo.fetchPlannedExercises(wid);
-      final sets = await _plannedSessionRepo.fetchPlannedSets(wid);
+      final exercises = await _readGroups(wid);
+      final sets = await _readSets(wid);
       state.value = state.value.copyWith(
         workoutPlannedExercises: exercises,
         workoutExerciseSlots: _slotsFromExercises(exercises),
@@ -1009,9 +1065,7 @@ class WorkoutEditorViewModel {
             for (var i = 0; i < restored.length; i++)
               (restored[i].exerciseOrder, i),
           ]);
-          final exercises = await _plannedSessionRepo.fetchPlannedExercises(
-            wid,
-          );
+          final exercises = await _readGroups(wid);
           state.value = state.value.copyWith(
             workoutPlannedExercises: exercises,
             workoutExerciseSlots: _slotsFromExercises(exercises),
@@ -1087,7 +1141,7 @@ class WorkoutEditorViewModel {
         await _plannedSessionRepo.renumberPlannedSets([
           for (final s in current) s.plannedSetId,
         ]);
-        final sets = await _plannedSessionRepo.fetchPlannedSets(wid);
+        final sets = await _readSets(wid);
         state.value = state.value.copyWith(
           workoutPlannedSessionExerciseSets: sets,
           workoutUnsavedChanges: true,
@@ -1103,7 +1157,7 @@ class WorkoutEditorViewModel {
           await _plannedSessionRepo.renumberPlannedSets(idsBefore);
           final wid = state.value.editingWorkout?.sessionId;
           if (wid != null) {
-            final sets = await _plannedSessionRepo.fetchPlannedSets(wid);
+            final sets = await _readSets(wid);
             state.value = state.value.copyWith(
               workoutPlannedSessionExerciseSets: sets,
               workoutUnsavedChanges: true,
@@ -1146,9 +1200,7 @@ class WorkoutEditorViewModel {
         exerciseId: exerciseId,
         setNumber: setNumber,
       );
-      final sets = await _plannedSessionRepo.fetchPlannedSets(
-        workout.sessionId,
-      );
+      final sets = await _readSets(workout.sessionId);
       state.value = state.value.copyWith(
         workoutPlannedSessionExerciseSets: sets,
       );
@@ -1338,9 +1390,7 @@ class WorkoutEditorViewModel {
         targetNotes: notes,
       );
       removeDraftPlannedSessionExerciseSet(plannedExerciseId, draftId);
-      final sets = await _plannedSessionRepo.fetchPlannedSets(
-        workout.sessionId,
-      );
+      final sets = await _readSets(workout.sessionId);
       state.value = state.value.copyWith(
         workoutPlannedSessionExerciseSets: sets,
       );
@@ -1376,9 +1426,7 @@ class WorkoutEditorViewModel {
         targetNotes: notes,
         clearNotes: clearNotes,
       );
-      final sets = await _plannedSessionRepo.fetchPlannedSets(
-        workout.sessionId,
-      );
+      final sets = await _readSets(workout.sessionId);
       state.value = state.value.copyWith(
         workoutPlannedSessionExerciseSets: sets,
         workoutUnsavedChanges: true,
@@ -1421,7 +1469,7 @@ class WorkoutEditorViewModel {
           targetNotes: ps.targetNotes,
         );
         box.value = created.plannedSetId;
-        final sets = await _plannedSessionRepo.fetchPlannedSets(wid);
+        final sets = await _readSets(wid);
         state.value = state.value.copyWith(
           workoutPlannedSessionExerciseSets: sets,
           workoutUnsavedChanges: true,
@@ -1439,7 +1487,7 @@ class WorkoutEditorViewModel {
           await _plannedSessionRepo.deletePlannedSet(id);
           final wid = state.value.editingWorkout?.sessionId;
           if (wid != null) {
-            final sets = await _plannedSessionRepo.fetchPlannedSets(wid);
+            final sets = await _readSets(wid);
             state.value = state.value.copyWith(
               workoutPlannedSessionExerciseSets: sets,
               workoutUnsavedChanges: true,
@@ -1470,7 +1518,7 @@ class WorkoutEditorViewModel {
       final wid = state.value.editingWorkout?.sessionId;
       if (wid == null) return;
       await _plannedSessionRepo.deletePlannedSet(setId);
-      final sets = await _plannedSessionRepo.fetchPlannedSets(wid);
+      final sets = await _readSets(wid);
       state.value = state.value.copyWith(
         workoutPlannedSessionExerciseSets: sets,
         workoutUnsavedChanges: true,
@@ -1488,7 +1536,7 @@ class WorkoutEditorViewModel {
           );
           final wid = state.value.editingWorkout?.sessionId;
           if (wid != null) {
-            final sets = await _plannedSessionRepo.fetchPlannedSets(wid);
+            final sets = await _readSets(wid);
             state.value = state.value.copyWith(
               workoutPlannedSessionExerciseSets: sets,
               workoutUnsavedChanges: true,

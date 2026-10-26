@@ -19,6 +19,7 @@ import 'package:lambda/features/programs/view/review_container.dart';
 import 'package:lambda/features/programs/viewmodel/workout_editor_viewmodel.dart';
 import 'package:lambda/shared/widgets/dropdown_select.dart';
 import 'package:lambda/shared/widgets/floating_bar.dart';
+import 'package:lambda/shared/widgets/lambda_input.dart';
 import 'package:lambda/shared/widgets/session_exercise_card.dart';
 import 'package:lambda/shared/widgets/undo_redo_buttons.dart';
 
@@ -434,6 +435,165 @@ void main() {
     });
   });
 
+  // ── A removed exercise stays on the card ─────────────────────────────────
+  //
+  // Removing a group archives it (`dim_planned_session_exercise.is_archived`),
+  // and the planner's reads drop archived groups — so a removal made during a
+  // pass left nothing on screen to explain it, and explaining changes is what
+  // a pass is for. Inside a review the editor reads the archived groups too
+  // and draws them with the deleted chrome: the selector's red name, red
+  // inert rows, and the note box still open under them (2026-10-26). Outside
+  // a review the planner keeps hiding them, exactly as before.
+  group('a removed exercise stays on the card', () {
+    setUp(() {
+      reviewSessionNotifier.value = null;
+      reviewNotesNotifier.value = const {};
+    });
+    tearDown(() {
+      reviewSessionNotifier.value = null;
+      reviewNotesNotifier.value = const {};
+    });
+
+    const benchGroupId = 'pe-$benchPressId';
+
+    /// One target row on Bench Press, then the group removed the way the
+    /// picker removes one: the group and every row under it archived.
+    Future<void> addBenchSetThenRemove() async {
+      planned.sets.add(
+        PlannedSessionExerciseSet(
+          plannedSetId: 'pset-bench-1',
+          plannedExerciseId: benchGroupId,
+          plannedSessionId: sessionId,
+          userId: userId,
+          setNumber: 1,
+          exerciseId: benchPressId,
+          targetWeight: '60',
+          targetReps: '10',
+        ),
+      );
+      await planned.deletePlannedExercise(benchGroupId);
+    }
+
+    testWidgets('outside a review the removal leaves no card', (tester) async {
+      await addBenchSetThenRemove();
+      await pumpEditor(tester);
+
+      final card = tester.widget<SessionExerciseCard>(
+        find.byType(SessionExerciseCard),
+      );
+      expect(
+        card.exerciseNames,
+        ['Cable Row'],
+        reason:
+            'the planner keeps hiding archived groups — a review is the only '
+            'reader that needs them back',
+      );
+      expect(card.deletedExercises, [false]);
+    });
+
+    testWidgets('inside a review the removal stays — red inert rows and the '
+        'note box still open', (tester) async {
+      planned.sets.add(
+        PlannedSessionExerciseSet(
+          plannedSetId: 'pset-bench-1',
+          plannedExerciseId: benchGroupId,
+          plannedSessionId: sessionId,
+          userId: userId,
+          setNumber: 1,
+          exerciseId: benchPressId,
+          targetWeight: '60',
+          targetReps: '10',
+        ),
+      );
+      await pumpEditorInReview(tester);
+
+      await vm.removePlannedExerciseGroup(1);
+      await tester.pumpAndSettle();
+
+      final card = tester.widget<SessionExerciseCard>(
+        find.byType(SessionExerciseCard),
+      );
+      expect(
+        card.exerciseNames,
+        ['Cable Row', 'Bench Press'],
+        reason:
+            'the removed exercise stays where the reason for its removal is '
+            'written; disappearing is what left the pass with nothing to say',
+      );
+      expect(
+        card.deletedExercises,
+        [false, true],
+        reason: 'the selector draws the removed name in the deleted chrome',
+      );
+      expect(
+        vm.state.value.activeSlotIndex,
+        0,
+        reason: 'removing an exercise never yanks the card to another one',
+      );
+
+      await switchTo(tester, 'Bench Press');
+
+      final row = tester.widget<Container>(
+        find.byKey(const ValueKey('session-set-row-planned-set-1')),
+      );
+      expect(
+        (row.decoration! as BoxDecoration).border!.top.color,
+        AppColors.danger,
+        reason: 'the rows under a removed exercise keep the deleted chrome',
+      );
+      final kg = tester.widget<TextField>(
+        find.byKey(const ValueKey('planned-set-1-kg')),
+      );
+      expect(
+        kg.readOnly,
+        isTrue,
+        reason: 'a removed target is read, never rewritten',
+      );
+      final note = tester.widget<LambdaInput>(
+        find.widgetWithText(LambdaInput, 'Review Note'),
+      );
+      expect(
+        note.onChanged,
+        isNotNull,
+        reason:
+            'the note beside the removed exercise is the screen\'s whole '
+            'reason for keeping it — the box has to take the words',
+      );
+    });
+
+    test('a discard puts back the removal the pass made, and leaves one the '
+        'workout had already dropped', () async {
+      // Bench Press was removed BEFORE the editor opened. Discard restores
+      // the open-time state, so it must not resurrect that one — only the
+      // group this editing session archived comes back.
+      await addBenchSetThenRemove();
+      await vm.openEditWorkout(
+        PlannedSession(sessionId: sessionId, userId: userId, name: 'Psycho 1'),
+        includeArchived: true,
+      );
+      expect(vm.state.value.workoutExerciseSlots.length, 2);
+
+      await vm.removePlannedExerciseGroup(0);
+      expect(planned.exercises[0].isArchived, isTrue);
+
+      await vm.discardWorkoutChanges();
+
+      expect(
+        planned.exercises[0].isArchived,
+        isFalse,
+        reason: 'the pass made that removal, so the rollback undoes it',
+      );
+      expect(
+        planned.exercises[1].isArchived,
+        isTrue,
+        reason:
+            'that removal was a fact when the editor opened — a discard '
+            'restores the open-time state, it does not resurrect what the '
+            'workout had already dropped',
+      );
+    });
+  });
+
   // ── Undo/redo, moved to the floor ────────────────────────────────────────
   //
   // The pair lived in this screen's header. It cannot ride the review bar's
@@ -693,17 +853,58 @@ class _FakePlanned implements PlannedSessionRepository {
         targetNotes: s.targetNotes,
         exerciseName: s.exerciseName,
         variationName: _variationNames[s.variationId],
+        // The removal flag travels with the read, or the review editor's
+        // red rows would come back as ordinary ones (2026-10-26).
+        isArchived: s.isArchived,
       );
+
+  /// The same row, archived or put back — the fake's soft delete/restore.
+  PlannedSessionExercise _archive(PlannedSessionExercise e, bool value) =>
+      PlannedSessionExercise(
+        plannedExerciseId: e.plannedExerciseId,
+        plannedSessionId: e.plannedSessionId,
+        userId: e.userId,
+        exerciseId: e.exerciseId,
+        exerciseOrder: e.exerciseOrder,
+        exerciseName: e.exerciseName,
+        isArchived: value,
+      );
+
+  PlannedSessionExerciseSet _archiveSet(
+    PlannedSessionExerciseSet s,
+    bool value,
+  ) => PlannedSessionExerciseSet(
+    plannedSetId: s.plannedSetId,
+    plannedExerciseId: s.plannedExerciseId,
+    plannedSessionId: s.plannedSessionId,
+    userId: s.userId,
+    setNumber: s.setNumber,
+    exerciseId: s.exerciseId,
+    variationId: s.variationId,
+    targetWeight: s.targetWeight,
+    targetReps: s.targetReps,
+    targetNotes: s.targetNotes,
+    exerciseName: s.exerciseName,
+    isArchived: value,
+  );
 
   @override
   Future<List<PlannedSessionExercise>> fetchPlannedExercises(
-    String plannedSessionId,
-  ) async => List.of(exercises);
+    String plannedSessionId, {
+    bool includeArchived = false,
+  }) async => [
+    for (final e in exercises)
+      if (includeArchived || !e.isArchived) e,
+  ];
 
   @override
   Future<List<PlannedSessionExerciseSet>> fetchPlannedSets(
-    String plannedSessionId,
-  ) async => sets.map(_hydrate).toList();
+    String plannedSessionId, {
+    bool includeArchived = false,
+  }) async => [
+    for (final s in sets)
+      if (includeArchived || !s.isArchived) _hydrate(s),
+  ];
 
   @override
   Future<List<PlannedSessionExerciseSet>> fetchNormalizedPlannedSets(
@@ -712,8 +913,62 @@ class _FakePlanned implements PlannedSessionRepository {
 
   @override
   Future<List<PlannedSessionExerciseSet>> readNormalizedPlannedSession(
-    String plannedSessionId,
-  ) async => sets.map(_hydrate).toList();
+    String plannedSessionId, {
+    bool includeArchived = false,
+  }) async {
+    // A removed group keeps its rows; a set removed on its own stays hidden —
+    // the repository's rule, mirrored (2026-10-26).
+    final archivedGroups = {
+      for (final e in exercises)
+        if (e.isArchived) e.plannedExerciseId,
+    };
+    return [
+      for (final s in sets)
+        if (!includeArchived
+            ? !s.isArchived
+            : (!s.isArchived ||
+                  archivedGroups.contains(s.plannedExerciseId)))
+          _hydrate(s),
+    ];
+  }
+
+  @override
+  Future<void> deletePlannedExercise(String plannedExerciseId) async {
+    for (var i = 0; i < exercises.length; i++) {
+      if (exercises[i].plannedExerciseId == plannedExerciseId) {
+        exercises[i] = _archive(exercises[i], true);
+      }
+    }
+    for (var i = 0; i < sets.length; i++) {
+      if (sets[i].plannedExerciseId == plannedExerciseId) {
+        sets[i] = _archiveSet(sets[i], true);
+      }
+    }
+  }
+
+  @override
+  Future<void> restorePlannedExercise(
+    String plannedExerciseId, {
+    required int exerciseOrder,
+  }) async {
+    for (var i = 0; i < exercises.length; i++) {
+      if (exercises[i].plannedExerciseId == plannedExerciseId) {
+        exercises[i] = _archive(exercises[i], false);
+      }
+    }
+  }
+
+  @override
+  Future<void> restorePlannedSet(
+    String plannedSetId, {
+    required int setNumber,
+  }) async {
+    for (var i = 0; i < sets.length; i++) {
+      if (sets[i].plannedSetId == plannedSetId) {
+        sets[i] = _archiveSet(sets[i], false);
+      }
+    }
+  }
 
   @override
   Future<PlannedSessionExerciseSet> createPlannedSet(

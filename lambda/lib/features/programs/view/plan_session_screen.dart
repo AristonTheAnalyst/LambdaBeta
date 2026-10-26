@@ -202,7 +202,13 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
         // the 'New Session' seed forever.
         await widget.viewModel.openStandaloneWorkout(sid);
       } else if (widget.workout != null) {
-        await widget.viewModel.openEditWorkout(widget.workout!);
+        // A review's editor reads the workout with its removals in it: a
+        // group deleted during the pass stays on the card, red, so its note
+        // can explain why it went (2026-10-26).
+        await widget.viewModel.openEditWorkout(
+          widget.workout!,
+          includeArchived: _reviewSession != null,
+        );
       } else if (widget.standalone) {
         await widget.viewModel.createStandaloneWorkoutAndOpen();
       } else {
@@ -736,6 +742,9 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
     final state = widget.viewModel.state.value;
     if (index < 0 || index >= state.workoutExerciseSlots.length) return;
     final slot = state.workoutExerciseSlots[index];
+    // Already removed (a review's read keeps it on the card): there is
+    // nothing left to remove, and undo is the way back (2026-10-26).
+    if (slot.deleted) return;
     final name = toProperCase(
       state.exerciseDetailMap[slot.exerciseId]?.name ?? 'exercise',
     );
@@ -753,7 +762,13 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
           ),
         ),
         content: Text(
-          'Remove $name from this workout?\n$setCount set${setCount == 1 ? '' : 's'} will be removed.',
+          // Inside a review the removal is a change worth explaining, so the
+          // card keeps the removed group on screen, red, until the pass
+          // finishes — the note beside it is where the reason goes. Outside a
+          // review the planner hides it like it always has (2026-10-26).
+          _reviewSession == null
+              ? 'Remove $name from this workout?\n$setCount set${setCount == 1 ? '' : 's'} will be removed.'
+              : 'Remove $name from this workout?\nIt stays on the card, red, so the review note can say why.',
           style: AppFonts.ui(color: AppColors.inkSecondary, height: 1.4),
         ),
         actions: [
@@ -1054,13 +1069,16 @@ class _PlanExerciseCard extends StatelessWidget {
             exerciseId: exerciseId,
             displayIndex: i + 1,
             isDraft: false,
-            dragIndex: i,
             initialWeightText: set.targetWeight ?? '',
             initialRepsText: set.targetReps ?? '',
             initialVariationId: set.variationId,
             initialVariationName: set.variationName,
             initialNotes: set.targetNotes,
             hasNotes: set.targetNotes?.isNotEmpty ?? false,
+            // A removed group stays on screen for its rows: red, inert, and
+            // outside the drag list (2026-10-26).
+            deleted: slot.deleted,
+            dragIndex: slot.deleted ? null : i,
             onRegisterCommit: vm.registerCommitHandle,
             onUnregisterCommit: vm.unregisterCommitHandle,
             onCommit: (isDraft, v, {bool immediate = false}) async {
@@ -1173,12 +1191,19 @@ class _PlanExerciseCard extends StatelessWidget {
           toProperCase(vm.exerciseDisplayName(slot.exerciseId)),
       ],
       exerciseMarks: exerciseMarks,
+      // The card names each slot's state for the selector: a group removed
+      // during this review reads red, exactly as a deleted exercise does on
+      // the session surfaces (2026-10-26).
+      deletedExercises: [
+        for (final slot in s.workoutExerciseSlots) slot.deleted,
+      ],
       activeIndex: s.activeSlotIndex,
       // Switching tabs is looking, and stays: the record is read one exercise
       // at a time. Reordering and adding are writing, and grey out — the plan
-      // underneath is not what is on screen.
+      // underneath is not what is on screen. A removed group is a record of
+      // its own: it stays readable, and nothing writes to it.
       onSelect: (i) => vm.tapTab(i),
-      onMove: original == null
+      onMove: original == null && !slot.deleted
           ? (i, dir) => vm.reorderExercises(i, i + dir)
           : null,
       onAdd: original == null ? onAddExercise : null,
@@ -1191,11 +1216,11 @@ class _PlanExerciseCard extends StatelessWidget {
       // to drag: the row is drawn dead to hold the card's height, and the
       // grid stops being reorderable — both are the card's own height and
       // order staying put across the flip.
-      onAddSet: original == null
+      onAddSet: original == null && !slot.deleted
           ? () => vm.addDraftPlannedSessionExerciseSet(plannedExerciseId)
           : null,
       reserveAddSet: original != null,
-      onReorderSets: original == null
+      onReorderSets: original == null && !slot.deleted
           ? (oldIndex, newIndex) =>
                 vm.reorderPlannedSets(plannedExerciseId, oldIndex, newIndex)
           : null,

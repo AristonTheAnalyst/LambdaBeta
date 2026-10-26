@@ -140,20 +140,31 @@ class _FakePlanRepo extends Fake implements PlannedSessionRepository {
 
   @override
   Future<List<PlannedSessionExercise>> fetchPlannedExercises(
-    String plannedSessionId,
-  ) async =>
-      [...exercises.values]
-        ..sort((a, b) => a.exerciseOrder.compareTo(b.exerciseOrder));
+    String plannedSessionId, {
+    bool includeArchived = false,
+  }) async => [
+    for (final e in [...exercises.values]
+      ..sort((a, b) => a.exerciseOrder.compareTo(b.exerciseOrder)))
+      if (includeArchived || !e.isArchived) e,
+  ];
 
   @override
   Future<List<PlannedSessionExerciseSet>> fetchPlannedSets(
-    String plannedSessionId,
-  ) async => sets.values.toList();
+    String plannedSessionId, {
+    bool includeArchived = false,
+  }) async => [
+    for (final s in sets.values)
+      if (includeArchived || !s.isArchived) s,
+  ];
 
   @override
   Future<List<PlannedSessionExerciseSet>> readNormalizedPlannedSession(
-    String plannedSessionId,
-  ) async => sets.values.toList();
+    String plannedSessionId, {
+    bool includeArchived = false,
+  }) async => fetchPlannedSets(
+    plannedSessionId,
+    includeArchived: includeArchived,
+  );
 
   @override
   Future<void> renumberExerciseOrders(
