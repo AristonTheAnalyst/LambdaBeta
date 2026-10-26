@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lambda/data/cache/past_sets_timeline_cache.dart';
 import 'package:lambda/data/models/custom_variation.dart';
 import 'package:lambda/data/models/exercise_detail.dart';
+import 'package:lambda/data/models/goal.dart';
 import 'package:lambda/data/models/planned_session_exercise_set.dart';
 import 'package:lambda/data/models/session_exercise.dart';
 import 'package:lambda/data/models/session_exercise_set.dart';
@@ -16,6 +17,7 @@ import 'package:lambda/data/repositories/program_repository.dart';
 import 'package:lambda/data/repositories/program_run_repository.dart';
 import 'package:lambda/data/repositories/session_repository.dart';
 import 'package:lambda/features/session/viewmodel/session_viewmodel.dart';
+import 'package:lambda/shared/widgets/exercise_target_picker.dart';
 
 /// The live-session commit pipeline (2026-10-13): keystrokes merge into one
 /// debounced write per settle, the authoritative read comes from the watch
@@ -259,10 +261,10 @@ class _FakeExerciseRepo extends Fake implements ExerciseRepository {
 void main() {
   late _FakeSessionRepo repo;
 
-  SessionViewModel buildVm() => SessionViewModel(
+  SessionViewModel buildVm({FakeProgramRepository? programs}) => SessionViewModel(
     sessionRepo: repo,
     exerciseRepo: _FakeExerciseRepo(),
-    programRepo: FakeProgramRepository(),
+    programRepo: programs ?? FakeProgramRepository(),
     programRunRepo: FakeProgramRunRepository(),
     lessonRepo: FakeLessonRepository(),
     plannedSessionRepo: FakePlannedSessionRepository(),
@@ -646,11 +648,117 @@ void main() {
       vm.dispose();
     });
   });
+
+  // ── A goal from the set under the thumb (2026-10-26) ─────────────────────
+  // The row's drawer opens the New goal form seeded with that row, and ADD
+  // writes the goal and folds it into the G badges IN PLACE: the set that
+  // meets the target wears its G while the user is still looking at it.
+
+  test('a goal written from a live set marks it at once, with no reload', () {
+    fakeAsync((async) {
+      final programs = FakeProgramRepository();
+      final vm = buildVm(programs: programs);
+      async.flushMicrotasks();
+      vm.startWorkout();
+      async.flushMicrotasks();
+
+      repo.rows['s1'] = repo.row(setId: 's1', weight: 100, reps: [3]);
+      repo._setsCtl.add(repo.rows.values.toList());
+      async.flushMicrotasks();
+      expect(vm.isGoalSet('s1'), isFalse);
+      final pullsBefore = repo.loadSetsCalls;
+
+      var written = false;
+      vm.createGoalFromTarget(
+        const ExerciseTarget(
+          exerciseId: 'ex1',
+          exerciseName: 'Bench',
+          weight: 100,
+          reps: 3,
+        ),
+      ).then((ok) => written = ok);
+      async.flushMicrotasks();
+
+      expect(written, isTrue);
+      final goal = programs.createdGoals.single;
+      expect(goal.userId, 'u1', reason: 'filed under the session\'s own user');
+      expect(goal.exerciseId, 'ex1');
+      expect(goal.variationId, isNull, reason: 'a plain set scopes no variation');
+      expect(goal.targetWeight, 100);
+      expect(goal.targetReps, 3);
+      expect(goal.programId, isNull, reason: 'a session writes a standalone goal');
+      expect(goal.goalId, isNotEmpty, reason: 'the id is minted before the write');
+      expect(
+        vm.isGoalSet('s1'),
+        isTrue,
+        reason: 'the set that meets the target wears its G at once',
+      );
+      expect(
+        repo.loadSetsCalls,
+        pullsBefore,
+        reason: 'the badge re-derives in place — no reload behind the form',
+      );
+      vm.dispose();
+    });
+  });
+
+  test('a failed goal write reports the error and marks nothing', () {
+    fakeAsync((async) {
+      final programs = FakeProgramRepository()..failCreate = true;
+      final vm = buildVm(programs: programs);
+      async.flushMicrotasks();
+      vm.startWorkout();
+      async.flushMicrotasks();
+
+      repo.rows['s1'] = repo.row(setId: 's1', weight: 100, reps: [3]);
+      repo._setsCtl.add(repo.rows.values.toList());
+      async.flushMicrotasks();
+
+      var written = true;
+      vm.createGoalFromTarget(
+        const ExerciseTarget(
+          exerciseId: 'ex1',
+          exerciseName: 'Bench',
+          weight: 100,
+          reps: 3,
+        ),
+      ).then((ok) => written = ok);
+      async.flushMicrotasks();
+
+      expect(written, isFalse);
+      expect(vm.error, isNotNull, reason: 'the sheet shows the reason it stayed open');
+      expect(
+        vm.isGoalSet('s1'),
+        isFalse,
+        reason: 'a goal that never wrote never marks a set',
+      );
+      vm.dispose();
+    });
+  });
 }
 
 // ── Unused-surface fakes (the VM constructs them; these tests never touch
 // their methods, so an accidental call fails loudly) ────────────────────────
-class FakeProgramRepository extends Fake implements ProgramRepository {}
+class FakeProgramRepository extends Fake implements ProgramRepository {
+  /// Every goal a view model has asked to create, in order.
+  final createdGoals = <Goal>[];
+
+  /// When set, the write fails — the form's own failure path.
+  bool failCreate = false;
+
+  @override
+  Future<void> createGoal(String userId, Goal goal) async {
+    if (failCreate) throw StateError('write failed');
+    createdGoals.add(goal);
+  }
+
+  @override
+  Future<List<({Goal goal, String? programName, String? blockName})>>
+  fetchGoalOptions(String userId) async => [
+    for (final goal in createdGoals)
+      (goal: goal, programName: null, blockName: null),
+  ];
+}
 
 class FakeProgramRunRepository extends Fake implements ProgramRunRepository {}
 

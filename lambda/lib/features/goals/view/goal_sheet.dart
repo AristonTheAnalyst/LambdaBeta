@@ -463,29 +463,46 @@ bool _sameDay(DateTime? a, DateTime? b) {
 /// failure said. A host that reuses this sheet from another surface (a live
 /// set opening its own target form, say) passes its own [draft] and its own
 /// [onAdd]; nothing here knows the goal list.
+///
+/// A session surface opens it the other way (2026-10-26): it passes a
+/// [seed] — the set under the user's thumb, exercise · variation · weight ·
+/// reps — and no [draft]. The sheet then owns a one-shot draft filled from
+/// the seed and takes it with it when it closes, because the door's meaning
+/// is "from THIS set": every open starts on the row it was opened from, and
+/// there is no form to resume. The goals screen keeps the long-lived [draft]
+/// it has always passed, so a dismissal there still keeps what was typed.
 Future<void> showAddGoalSheet(
   BuildContext context, {
   required Map<String, ExerciseDetail> detailMap,
   required List<CustomVariation> variations,
   required Map<String, DateTime> lastUsed,
   required List<PastSetRow> pastSets,
-  required ExerciseTargetDraft draft,
+  ExerciseTargetDraft? draft,
+  ExerciseTarget? seed,
   required Future<bool> Function(ExerciseTarget target) onAdd,
   void Function(PastSetRow set)? onOpenWorkout,
-}) => showLambdaModal<void>(
-  context,
-  fitContent: true,
-  keyboardAware: true,
-  child: _AddGoalSheet(
-    detailMap: detailMap,
-    variations: variations,
-    lastUsed: lastUsed,
-    pastSets: pastSets,
-    draft: draft,
-    onAdd: onAdd,
-    onOpenWorkout: onOpenWorkout,
-  ),
-);
+}) {
+  assert(
+    draft == null || seed == null,
+    'A draft and a seed are two spellings of the same form: the host keeps '
+    'the draft, or the sheet makes one from the seed.',
+  );
+  return showLambdaModal<void>(
+    context,
+    fitContent: true,
+    keyboardAware: true,
+    child: _AddGoalSheet(
+      detailMap: detailMap,
+      variations: variations,
+      lastUsed: lastUsed,
+      pastSets: pastSets,
+      draft: draft,
+      seed: seed,
+      onAdd: onAdd,
+      onOpenWorkout: onOpenWorkout,
+    ),
+  );
+}
 
 class _AddGoalSheet extends StatefulWidget {
   const _AddGoalSheet({
@@ -494,6 +511,7 @@ class _AddGoalSheet extends StatefulWidget {
     required this.lastUsed,
     required this.pastSets,
     required this.draft,
+    required this.seed,
     required this.onAdd,
     this.onOpenWorkout,
   });
@@ -507,8 +525,14 @@ class _AddGoalSheet extends StatefulWidget {
   /// The user's logged sets — the "already beat this" check's history.
   final List<PastSetRow> pastSets;
 
-  /// The form's contents, owned by the host so a dismissal keeps them.
-  final ExerciseTargetDraft draft;
+  /// The form's contents, owned by the host so a dismissal keeps them. Null
+  /// on a session door, which has nothing to resume: the sheet makes its own
+  /// from [seed] and disposes of it when it closes.
+  final ExerciseTargetDraft? draft;
+
+  /// What a session door opens the form on — the set the user swiped. Read
+  /// only when [draft] is null, and once: a dismissal ends the draft.
+  final ExerciseTarget? seed;
 
   /// Opens the workout that beat the typed target. Null in a host with no
   /// route to the logs — the sentence still reads, it just does not move.
@@ -532,9 +556,37 @@ class _AddGoalSheetState extends State<_AddGoalSheet> {
   String? _addedLabel;
   Timer? _addedTimer;
 
+  /// The form, wherever it came from: the host's long-lived draft (the goals
+  /// screen) or one made here from [widget.seed].
+  late final ExerciseTargetDraft _draft;
+
+  /// Whether [_draft] is this sheet's to dispose — a session door's draft
+  /// dies with the sheet, so the next set opens on its own values rather
+  /// than on the last one's.
+  late final bool _ownsDraft;
+
+  @override
+  void initState() {
+    super.initState();
+    final given = widget.draft;
+    _ownsDraft = given == null;
+    _draft = given ?? ExerciseTargetDraft();
+    final seed = widget.seed;
+    if (_ownsDraft && seed != null) {
+      _draft.seed(
+        exerciseId: seed.exerciseId,
+        variationId: seed.variationId,
+        weight: seed.weight,
+        reps: seed.reps,
+        notes: seed.notes,
+      );
+    }
+  }
+
   @override
   void dispose() {
     _addedTimer?.cancel();
+    if (_ownsDraft) _draft.dispose();
     super.dispose();
   }
 
@@ -559,7 +611,7 @@ class _AddGoalSheetState extends State<_AddGoalSheet> {
       target.reps,
     );
     setState(() {
-      widget.draft.reset();
+      _draft.reset();
       _addedLabel = label;
     });
     _addedTimer?.cancel();
@@ -630,7 +682,7 @@ class _AddGoalSheetState extends State<_AddGoalSheet> {
               variations: widget.variations,
               lastUsed: widget.lastUsed,
               pastSets: widget.pastSets,
-              draft: widget.draft,
+              draft: _draft,
               onOpenWorkout: widget.onOpenWorkout,
               onAdd: _add,
             ),

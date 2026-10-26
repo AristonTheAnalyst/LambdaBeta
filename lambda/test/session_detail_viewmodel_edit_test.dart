@@ -3,14 +3,17 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lambda/data/cache/past_sets_timeline_cache.dart';
 import 'package:lambda/data/models/custom_variation.dart';
 import 'package:lambda/data/models/exercise_detail.dart';
+import 'package:lambda/data/models/goal.dart';
 import 'package:lambda/data/models/lesson.dart';
 import 'package:lambda/data/models/session.dart';
 import 'package:lambda/data/models/session_exercise.dart';
 import 'package:lambda/data/models/session_exercise_set.dart';
 import 'package:lambda/data/repositories/exercise_repository.dart';
 import 'package:lambda/data/repositories/lesson_repository.dart';
+import 'package:lambda/data/repositories/program_repository.dart';
 import 'package:lambda/data/repositories/session_repository.dart';
 import 'package:lambda/features/logs/viewmodel/session_detail_viewmodel.dart';
+import 'package:lambda/shared/widgets/exercise_target_picker.dart';
 
 /// The past-session editor's debounce pipeline (2026-10-13): keystrokes
 /// merge into one write per settle, the settle patches both the grid and the
@@ -149,11 +152,12 @@ class _FakeExerciseRepo extends Fake implements ExerciseRepository {
 void main() {
   late _FakeSessionRepo repo;
 
-  SessionDetailViewModel buildVm() {
+  SessionDetailViewModel buildVm({_FakeProgramRepo? programs}) {
     final vm = SessionDetailViewModel(
       sessionRepo: repo,
       exerciseRepo: _FakeExerciseRepo(),
       lessonRepo: FakeLessonRepository(),
+      programRepo: programs ?? _FakeProgramRepo(),
       userId: 'u1',
     );
     return vm;
@@ -319,10 +323,76 @@ void main() {
       vm.dispose();
     });
   });
+
+  // ── A goal from the set under the thumb (2026-10-26) ─────────────────────
+  // The record's row carries the same drawer door the live grid has, and ADD
+  // writes the goal and folds it into the G badges IN PLACE: the record's own
+  // set — which is what the form was asking about — wears its G without a
+  // reload behind the sheet.
+
+  test('a goal written from the record marks its set at once, no reload', () {
+    fakeAsync((async) {
+      final programs = _FakeProgramRepo();
+      repo.rows['s1'] = repo.row('s1', weight: 100, reps: [3]);
+      final vm = buildVm(programs: programs);
+      vm.load('w1');
+      async.flushMicrotasks();
+      expect(vm.state.value.goalSetIds, isEmpty);
+      final readsBefore = repo.timelineReads;
+
+      var written = false;
+      vm.createGoalFromTarget(
+        const ExerciseTarget(
+          exerciseId: 'ex1',
+          exerciseName: 'Bench',
+          weight: 100,
+          reps: 3,
+        ),
+      ).then((ok) => written = ok);
+      async.flushMicrotasks();
+
+      expect(written, isTrue);
+      final goal = programs.createdGoals.single;
+      expect(goal.userId, 'u1', reason: 'the record is the user\'s own');
+      expect(goal.variationId, isNull);
+      expect(goal.targetWeight, 100);
+      expect(goal.targetReps, 3);
+      expect(goal.goalId, isNotEmpty);
+      expect(
+        vm.state.value.goalSetIds,
+        contains('s1'),
+        reason: 'the set that meets the target wears its G at once',
+      );
+      expect(
+        repo.timelineReads,
+        readsBefore,
+        reason: 'the badge re-derives in place — no timeline read',
+      );
+      vm.dispose();
+    });
+  });
 }
 
 class FakeLessonRepository extends Fake implements LessonRepository {
   @override
   Future<List<Lesson>> fetchLessons(String userId, String exerciseId) async =>
       [];
+}
+
+/// The goal write behind the record's drawer door — recorded, and answered by
+/// the same read the heavy context makes, so a later load sees its own row.
+class _FakeProgramRepo extends Fake implements ProgramRepository {
+  final createdGoals = <Goal>[];
+
+  @override
+  Future<void> createGoal(String userId, Goal goal) async {
+    createdGoals.add(goal);
+  }
+
+  @override
+  Future<List<({Goal goal, String? programName, String? blockName})>>
+  fetchGoalOptions(String userId) async => [
+    for (final goal in createdGoals)
+      (goal: goal, programName: null, blockName: null),
+  ];
 }

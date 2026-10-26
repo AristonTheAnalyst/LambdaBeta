@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:logging/logging.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide Session;
+import 'package:uuid/uuid.dart';
 import '../../../data/cache/past_sets_timeline_cache.dart';
 import '../../../data/models/custom_variation.dart';
 import '../../../data/models/exercise_detail.dart';
@@ -25,13 +26,19 @@ import '../../../data/repositories/program_run_repository.dart';
 import '../../../data/repositories/planned_session_repository.dart';
 import '../../../data/repositories/session_repository.dart';
 import '../../../core/utils/device_id.dart';
+import '../../../core/utils/friendly_error.dart';
 import '../../../core/utils/planned_target.dart';
 import '../../../core/utils/undo_history.dart';
+import '../../../shared/widgets/exercise_target_picker.dart';
 import '../../../shared/widgets/slide_pages.dart';
 import '../../logs/viewmodel/session_detail_viewmodel.dart';
 import '../../programs/model/program_achievements.dart';
 import '../model/pr_engine.dart';
 import '../model/session_local_state.dart';
+
+/// Goal ids are minted here, the way the goals screen mints its own: a goal
+/// created from a session is the same row, written from the other door.
+const _uuid = Uuid();
 
 class SessionViewModel extends ChangeNotifier {
   SessionViewModel({
@@ -550,6 +557,50 @@ class SessionViewModel extends ChangeNotifier {
   /// history it is derived from. Empty (never fatal) when the read fails: the
   /// grids must render without their marks rather than not at all.
   List<Goal> _goals = [];
+
+  /// The completed history the goal form reads — its "already beat this"
+  /// verdict and its picker ordering (2026-10-26). The live rows are not in
+  /// it: a session in progress is not yet history, and the form is asking
+  /// what has already been beaten.
+  List<PastSetRow> get pastSets => _pastSets;
+
+  /// Writes a goal from a set on this page (2026-10-26) — the row's own
+  /// drawer opens the New goal form seeded with it, and this is the write
+  /// behind its ADD.
+  ///
+  /// The same row the goals screen writes, and then the target is folded
+  /// into the derived G badges IN PLACE: `_recomputePRs` re-walks the merged
+  /// timeline against the new goal, so the set that meets it wears its `G`
+  /// while the user is still looking at the row — no reload, no re-entry.
+  Future<bool> createGoalFromTarget(ExerciseTarget target) async {
+    final notes = target.notes?.trim();
+    final goal = Goal(
+      goalId: _uuid.v4(),
+      userId: _userId,
+      // The name is the label's fallback: a goal outlives the exercise it
+      // names.
+      text: target.exerciseName,
+      description: (notes?.isEmpty ?? true) ? null : notes,
+      exerciseId: target.exerciseId,
+      variationId: target.variationId,
+      targetWeight: target.weight,
+      targetReps: target.reps,
+      targetDate: target.targetDate == null
+          ? null
+          : dateOnly(target.targetDate!),
+    );
+    try {
+      await _programRepo.createGoal(_userId, goal);
+    } catch (e) {
+      error = friendlyError(e);
+      notifyListeners();
+      return false;
+    }
+    _goals = [..._goals, goal];
+    _recomputePRs();
+    notifyListeners();
+    return true;
+  }
 
   // ── Previous-session reflection (prep page card, paged) ────────────────────
   /// Reflection data of a completed past session — PRs and lessons only —

@@ -2,12 +2,15 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide Session;
+import 'package:uuid/uuid.dart';
 import '../../../core/utils/device_id.dart';
+import '../../../core/utils/friendly_error.dart';
 import '../../../core/utils/name_limit.dart';
 import '../../../core/utils/undo_history.dart';
 import '../../../data/cache/past_sets_timeline_cache.dart';
 import '../../../data/models/custom_variation.dart';
 import '../../../data/models/exercise_detail.dart';
+import '../../../data/models/exercise_usage.dart';
 import '../../../data/models/goal.dart';
 import '../../../data/models/lesson.dart';
 import '../../../data/models/session.dart';
@@ -17,6 +20,7 @@ import '../../../data/repositories/exercise_repository.dart';
 import '../../../data/repositories/lesson_repository.dart';
 import '../../../data/repositories/program_repository.dart';
 import '../../../data/repositories/session_repository.dart';
+import '../../../shared/widgets/exercise_target_picker.dart';
 import '../../programs/model/program_achievements.dart';
 import '../../session/model/pr_engine.dart';
 import '../../session/model/session_local_state.dart'
@@ -308,6 +312,10 @@ class SessionDetailState {
   );
 }
 
+/// Goal ids are minted here, the way the goals screen mints its own: a goal
+/// created from a record is the same row, written from the other door.
+const _uuid = Uuid();
+
 class SessionDetailViewModel {
   SessionDetailViewModel({
     SessionRepository? sessionRepo,
@@ -352,6 +360,51 @@ class SessionDetailViewModel {
   /// wears the G badge (2026-10-20). Empty when the read failed — the grid
   /// renders bare rather than not at all.
   List<Goal> _goals = const [];
+
+  /// The completed history the goal form reads — its "already beat this"
+  /// verdict and its picker ordering (2026-10-26). The record on screen is in
+  /// it: this is a past session, and its own sets are exactly what the form
+  /// is asking about.
+  List<PastSetRow> get pastSets => _timelineAsc;
+
+  /// exerciseId/variation-id → the date last trained, over the same timeline
+  /// — the goal form's picker ordering on this surface.
+  Map<String, DateTime> get lastUsedByExercise => lastUsedByEntity(_timelineAsc);
+
+  /// Writes a goal from a set on this page (2026-10-26) — the row's own
+  /// drawer opens the New goal form seeded with it, and this is the write
+  /// behind its ADD.
+  ///
+  /// The same row the goals screen writes (`Goal` is scoped by user, and
+  /// this view model's user is the record's owner), and then the target is
+  /// folded into the derived G badges IN PLACE: `_computePRs` re-walks the
+  /// merged timeline against the new goal, so the set that meets it wears
+  /// its `G` with the record still on the desk — no reload.
+  Future<bool> createGoalFromTarget(ExerciseTarget target) async {
+    final notes = target.notes?.trim();
+    final goal = Goal(
+      goalId: _uuid.v4(),
+      userId: _userId,
+      text: target.exerciseName,
+      description: (notes?.isEmpty ?? true) ? null : notes,
+      exerciseId: target.exerciseId,
+      variationId: target.variationId,
+      targetWeight: target.weight,
+      targetReps: target.reps,
+      targetDate: target.targetDate == null
+          ? null
+          : dateOnly(target.targetDate!),
+    );
+    try {
+      await _programRepo.createGoal(_userId, goal);
+    } catch (e) {
+      state.value = state.value.copyWith(error: friendlyError(e));
+      return false;
+    }
+    _goals = [..._goals, goal];
+    _computePRs();
+    return true;
+  }
 
   // ── Undo/redo (structural actions only — 2026-10-13) ──────────────────────
   final ActionUndoHistory undoHistory = ActionUndoHistory();

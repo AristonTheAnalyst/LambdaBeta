@@ -6,9 +6,11 @@ import '../../../data/models/planned_session_exercise_set.dart';
 import '../../../data/models/session_exercise_set.dart';
 import '../../../shared/widgets/add_exercise_modal.dart';
 import '../../../shared/widgets/dropdown_select.dart';
+import '../../../shared/widgets/exercise_target_picker.dart';
 import '../../../shared/widgets/session_exercise_card.dart';
 import '../../../shared/widgets/exercise_selector.dart';
 import '../../../shared/widgets/session_set_row.dart';
+import '../../goals/view/goal_sheet.dart';
 import '../model/session_local_state.dart';
 import '../viewmodel/session_viewmodel.dart';
 import 'lessons_modal.dart';
@@ -103,6 +105,52 @@ Widget deletedSetRow(
     ],
     findSimilarVariations: vm.findSimilarVariations,
     submitNewVariation: vm.submitNewVariation,
+  );
+}
+
+/// The goal door on a live set (2026-10-26): the New goal form the goals
+/// screen composes, opened on the row the user swiped — exercise, variation,
+/// weight and reps already in it, and one keystroke away from being a target.
+///
+/// The row is re-read AFTER the pending commits are flushed: a value typed
+/// and not yet settled is still the value the user is looking at, and the
+/// form must open on what the row SHOWS, not on what was last written. The
+/// write behind ADD folds the new goal into the G badges in place, so the set
+/// that meets it turns green without a reload.
+///
+/// The form opens on a one-shot draft — a session door has nothing to resume,
+/// and a second row opens on its own values — and it wires no "open that
+/// workout" door: a live session does not leave itself to read a record.
+Future<void> _openGoalForSet(
+  BuildContext context,
+  SessionViewModel vm,
+  String setId,
+) async {
+  await vm.flushPendingCommits();
+  if (!context.mounted) return;
+  SessionExerciseSet? set;
+  for (final s in vm.sets) {
+    if (s.sessionExerciseSetId == setId) {
+      set = s;
+      break;
+    }
+  }
+  final exerciseId = set?.exerciseId;
+  if (set == null || exerciseId == null) return;
+  await showAddGoalSheet(
+    context,
+    detailMap: vm.exerciseDetailMap,
+    variations: vm.allVariations,
+    lastUsed: vm.lastUsedByExercise,
+    pastSets: vm.pastSets,
+    seed: ExerciseTarget(
+      exerciseId: exerciseId,
+      exerciseName: toProperCase(vm.exerciseDisplayName(exerciseId)),
+      variationId: set.variationId,
+      weight: set.weight,
+      reps: set.reps.isEmpty ? null : set.reps.first.toInt(),
+    ),
+    onAdd: vm.createGoalFromTarget,
   );
 }
 
@@ -288,6 +336,14 @@ class LiveExerciseCard extends StatelessWidget {
                 set,
                 weight: _parseWeight(v.weight),
                 reps: _parseReps(v.reps),
+              ),
+              // The goal door (2026-10-26): a set is where a target comes
+              // from. Every committed row carries it — a live session is the
+              // best moment to decide to chase what was just lifted.
+              onCreateGoal: () => _openGoalForSet(
+                context,
+                vm,
+                set.sessionExerciseSetId,
               ),
               variationOptions: variationOptions,
               allVariations: allVariations,

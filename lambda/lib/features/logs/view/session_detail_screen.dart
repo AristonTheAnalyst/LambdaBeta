@@ -16,6 +16,7 @@ import '../../../shared/widgets/add_exercise_modal.dart';
 import '../../../shared/widgets/bar_icon_button.dart';
 import '../../../shared/widgets/dropdown_select.dart';
 import '../../../shared/widgets/exercise_selector.dart';
+import '../../../shared/widgets/exercise_target_picker.dart';
 import '../../../shared/widgets/glass_button.dart';
 import '../../../shared/widgets/header_icon_button.dart';
 import '../../../shared/widgets/keyboard_floor_layout.dart';
@@ -25,6 +26,7 @@ import '../../../shared/widgets/session_date_bar.dart';
 import '../../../shared/widgets/session_exercise_card.dart';
 import '../../../shared/widgets/session_set_row.dart';
 import '../../../shared/widgets/undo_redo_buttons.dart';
+import '../../goals/view/goal_sheet.dart';
 import '../../session/model/session_local_state.dart';
 import '../../session/view/lessons_modal.dart';
 import '../../session/view/pr_history_sheet.dart';
@@ -688,6 +690,52 @@ class _DetailCardBuilder extends StatelessWidget {
   /// shows what is there and offers no way to change it (2026-10-23).
   final bool readOnly;
 
+  /// The goal door (2026-10-26): the New goal form the goals screen composes,
+  /// opened on the row the user swiped — the record's own set, variation,
+  /// weight and reps already in it. A past record is exactly where a target
+  /// comes from: the session is over, and what it showed is what to chase.
+  ///
+  /// The row is re-read AFTER the pending commits are flushed (the form must
+  /// open on what the row SHOWS), and the write behind ADD folds the new goal
+  /// into the G badges in place — the set that meets it turns green with the
+  /// record still on the desk.
+  ///
+  /// The form opens on a one-shot draft, and it wires no "open that workout"
+  /// door: this page walks records in place rather than pushing another
+  /// viewer over itself.
+  Future<void> _openGoalForSet(BuildContext context, String setId) async {
+    await viewModel.flushPendingCommits();
+    if (!context.mounted) return;
+    final fresh = viewModel.state.value;
+    SessionExerciseSet? set;
+    for (final sets in fresh.setsByOrder.values) {
+      for (final s in sets) {
+        if (s.sessionExerciseSetId == setId) {
+          set = s;
+          break;
+        }
+      }
+      if (set != null) break;
+    }
+    final exerciseId = set?.exerciseId;
+    if (set == null || exerciseId == null) return;
+    await showAddGoalSheet(
+      context,
+      detailMap: fresh.exerciseDetailMap,
+      variations: fresh.allVariations,
+      lastUsed: viewModel.lastUsedByExercise,
+      pastSets: viewModel.pastSets,
+      seed: ExerciseTarget(
+        exerciseId: exerciseId,
+        exerciseName: toProperCase(viewModel.exerciseDisplayName(exerciseId)),
+        variationId: set.variationId,
+        weight: set.weight,
+        reps: set.reps.isEmpty ? null : set.reps.first.toInt(),
+      ),
+      onAdd: viewModel.createGoalFromTarget,
+    );
+  }
+
   static String _fmtNum(num n) =>
       n == n.roundToDouble() ? n.toInt().toString() : n.toString();
 
@@ -873,6 +921,11 @@ class _DetailCardBuilder extends StatelessWidget {
             weight: _parseWeight(v.weight),
             reps: _parseReps(v.reps),
           ),
+          // The goal door (2026-10-26) — the owner's record in either mode.
+          // A friend's passes none: the write would file under their id.
+          onCreateGoal: readOnly
+              ? null
+              : () => _openGoalForSet(context, set.sessionExerciseSetId),
           variationOptions: variationOptions,
           allVariations: allVariations,
           findSimilarVariations: viewModel.findSimilarVariations,
