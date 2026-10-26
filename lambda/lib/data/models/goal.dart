@@ -18,6 +18,14 @@ import 'dart:convert';
 /// [targetDateHistory] remembers every move of that deadline — a goal whose
 /// date slipped is a fact worth keeping, not an overwrite. Both are optional:
 /// a goal with no clock on it is still a goal.
+///
+/// A goal is ONE target pair or a **list of them** (2026-10-26): a multi-set
+/// goal names several rungs ("100 × 5, then 110 × 3"), every one of which a
+/// session must meet with a distinct set. [targets] holds that list and is
+/// empty for a single-set goal, which keeps its numbers in [targetWeight] /
+/// [targetReps] exactly as it always has — one storage shape per shape, never
+/// a mirrored copy. [requirements] is the one reading every consumer uses, so
+/// nothing has to ask which shape it is holding.
 class Goal {
   const Goal({
     required this.goalId,
@@ -31,6 +39,7 @@ class Goal {
     this.variationId,
     this.targetWeight,
     this.targetReps,
+    this.targets = const [],
     this.targetDate,
     this.targetDateHistory = const [],
     this.createdDate,
@@ -67,6 +76,12 @@ class Goal {
   final num? targetWeight;
   final int? targetReps;
 
+  /// A multi-set goal's requirements, in the order they are listed and
+  /// matched. Empty on a single-set goal — see [requirements] for the one
+  /// reading that covers both shapes. Read from `fact_goal_target`; a row
+  /// written before that table existed simply has none.
+  final List<GoalTargetSet> targets;
+
   /// The day the goal should be hit by. NULL = no deadline — the goal is
   /// chased without a clock on it.
   final DateTime? targetDate;
@@ -81,7 +96,27 @@ class Goal {
   final DateTime? createdDate;
 
   bool get isExerciseGoal =>
-      exerciseId != null || targetWeight != null || targetReps != null;
+      exerciseId != null ||
+      targetWeight != null ||
+      targetReps != null ||
+      targets.isNotEmpty;
+
+  /// Whether this goal lists more than one requirement — the shape the card,
+  /// the sheet and the set form draw differently (2026-10-26).
+  bool get isMultiSet => targets.isNotEmpty;
+
+  /// The goal's requirements, whichever storage shape holds them: the child
+  /// rows when there are any, otherwise the parent's single pair as a list of
+  /// one. Empty when the goal names an exercise but no numbers at all (a
+  /// "train bench more" goal) and for a free-text goal with no exercise.
+  ///
+  /// The one reading every consumer uses — evaluation, the card, the sheet —
+  /// so none of them has to ask which shape it is holding.
+  List<GoalTargetSet> get requirements {
+    if (targets.isNotEmpty) return targets;
+    if (targetWeight == null && targetReps == null) return const [];
+    return [GoalTargetSet(weight: targetWeight, reps: targetReps)];
+  }
 
   /// Whether this goal is chased while [blockId] runs.
   ///
@@ -163,10 +198,49 @@ class Goal {
     variationId: variationId,
     targetWeight: targetWeight,
     targetReps: targetReps,
+    targets: targets,
     targetDate: clearTargetDate ? null : (targetDate ?? this.targetDate),
     targetDateHistory: targetDateHistory ?? this.targetDateHistory,
     createdDate: createdDate,
   );
+}
+
+/// One requirement of a goal — "this set or better": a set at or above this
+/// weight AND this reps count (2026-10-26).
+///
+/// A single-set goal has one of these, read off the parent's columns. A
+/// multi-set goal has several, stored as `fact_goal_target` rows; [order] is
+/// the 1-based `target_set_order` the list is kept and matched in, and null
+/// on the one derived from a single-set goal (where there is no row and no
+/// order to remember).
+class GoalTargetSet {
+  const GoalTargetSet({this.order, this.weight, this.reps});
+
+  final int? order;
+  final num? weight;
+  final int? reps;
+
+  Map<String, dynamic> toMap() => {
+    'order': order,
+    'weight': weight,
+    'reps': reps,
+  };
+
+  factory GoalTargetSet.fromMap(Map<String, dynamic> map) => GoalTargetSet(
+    order: Goal._toInt(map['order']),
+    weight: Goal._toNum(map['weight']),
+    reps: Goal._toInt(map['reps']),
+  );
+
+  /// Equality by value — the sheet's dirty check compares a draft's parsed
+  /// rows against the stored ones, and a fresh object with the same numbers
+  /// must read as the same requirement ([order] is position, not content).
+  @override
+  bool operator ==(Object other) =>
+      other is GoalTargetSet && other.weight == weight && other.reps == reps;
+
+  @override
+  int get hashCode => Object.hash(weight, reps);
 }
 
 /// One adjustment of a goal's target date — what it was, what it became, and

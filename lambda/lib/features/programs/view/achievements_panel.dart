@@ -5,6 +5,7 @@ import '../../../core/styles/app_fonts.dart';
 import '../../../core/styles/app_radius.dart';
 import '../../../core/styles/app_spacing.dart';
 import '../../../core/styles/app_text_styles.dart';
+import '../../../data/models/goal.dart';
 import '../../../shared/widgets/container_styles.dart';
 import '../../../shared/widgets/pr_event_row.dart';
 import '../model/program_achievements.dart';
@@ -149,13 +150,20 @@ class _GoalRow extends StatelessWidget {
     );
   }
 
-  /// "100kg × 1", or just the reps when there is no weight target.
+  /// "100kg × 1", or just the reps when there is no weight target — joined by
+  /// " · " when the goal lists several rungs (2026-10-26).
   static String _targetLabel(GoalAchievement g) {
     final parts = <String>[
-      if (g.goal.targetWeight != null)
-        '${formatPrNumber(g.goal.targetWeight!)}kg',
-      if (g.goal.targetReps != null) '× ${formatPrNumber(g.goal.targetReps!)}',
+      for (final target in g.goal.requirements) _oneTarget(target),
     ];
-    return parts.isEmpty ? 'Goal' : parts.join(' ');
+    return parts.isEmpty ? 'Goal' : parts.join(' · ');
+  }
+
+  static String _oneTarget(GoalTargetSet target) {
+    final parts = <String>[
+      if (target.weight != null) '${formatPrNumber(target.weight!)}kg',
+      if (target.reps != null) '× ${formatPrNumber(target.reps!)}',
+    ];
+    return parts.join(' ');
   }
 }

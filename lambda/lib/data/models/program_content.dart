@@ -188,6 +188,7 @@ class ContentGoal {
     this.variationId,
     this.targetWeight,
     this.targetReps,
+    this.targets = const [],
     this.text,
   });
 
@@ -203,6 +204,12 @@ class ContentGoal {
   /// user crossed or did not, so there is nothing for "8-15" to mean.
   final num? targetWeight;
   final int? targetReps;
+
+  /// A multi-set goal's rungs, in order (2026-10-26). Empty for a single-set
+  /// goal, whose one pair stays in [targetWeight] / [targetReps] — the same
+  /// one-storage-shape-per-shape rule the live row follows.
+  final List<GoalTargetSet> targets;
+
   final String? text;
 
   Map<String, dynamic> toMap() => {
@@ -213,6 +220,9 @@ class ContentGoal {
     'custom_variation_id': variationId,
     'target_weight': targetWeight,
     'target_reps': targetReps,
+    // Only when there are any: a single-set goal writes the document it
+    // always wrote, so no old snapshot's bytes (or hash) move.
+    if (targets.isNotEmpty) 'targets': [for (final t in targets) t.toMap()],
     'goal_text': text,
   };
 
@@ -224,6 +234,11 @@ class ContentGoal {
     variationId: map['custom_variation_id'] as String?,
     targetWeight: _toNum(map['target_weight']),
     targetReps: _toInt(map['target_reps']),
+    targets: [
+      for (final entry
+          in (map['targets'] is List ? map['targets'] as List : const []))
+        if (entry is Map) GoalTargetSet.fromMap(entry.cast<String, dynamic>()),
+    ],
     text: map['goal_text'] as String?,
   );
 
@@ -241,6 +256,7 @@ class ContentGoal {
     variationId: variationId,
     targetWeight: targetWeight,
     targetReps: targetReps,
+    targets: targets,
   );
 }
 

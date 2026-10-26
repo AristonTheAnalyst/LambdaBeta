@@ -41,7 +41,7 @@ progression mode lives on the RUN. Full plan of record:
 | **Program runs** | `fact_program_run` (carries `progression_mode` + `block_id`) | Literal |
 | **Reviews** (a recorded pass over a set of workouts **and goals** — standalone since 2026-10-07) | `fact_program_review` | Literal |
 | **Lessons** | `dim_lesson` | Literal |
-| **Goals** | `fact_goal` | Literal |
+| **Goals** (multi-set rungs 2026-10-26) | `fact_goal` + `fact_goal_target` | Literal |
 | **Friends** (nicknames 2026-10-25) | `dim_friend_code` + `friend_relationship` (carries `nickname`) | Literal |
 | **Bodyweight** | `fact_bodyweight` | Literal |
 | **PRs** | *(none)* | **Fully derived** — see below |
@@ -366,16 +366,42 @@ session_id (no logged session existed — a template was being edited).
 Reference data, not events — hence a dim despite the legacy `fact_lesson`
 name.
 
-### Goals — `fact_goal`
+### Goals — `fact_goal` (+ `fact_goal_target`, 2026-10-26)
 Goals are **PRs to be beat**: a target weight × reps for an exercise
-("bench 100kg × 1" = beat the current 1RM). Achieving a goal means the
-derived PR curve has caught up to or passed the target. `program_run_id` is
-an optional link to a run (created at run start via prompt). `achieved_date`
-marks completion (NULL = still chasing) — but it is **revocable**: the
-frontend must let the user clear an achievement (set `achieved_date` back to
-NULL), because a data-entry error (1000kg instead of 100kg) can falsely
-mark a goal achieved and the mistake should be undone by the user, not
-silently. Facts — hard-deleted.
+("bench 100kg × 1" = beat the current 1RM). Achievement is **derived on read**
+from the logged sets (`evaluateGoals` over `PastSetsTimelineCache`), never
+stored as the truth: a scored set meets a rung when its weight ≥ the rung's
+weight and its reps ≥ the rung's reps. `program_run_id` is
+an optional link to a run (created at run start via prompt). `block_id`
+scopes a goal to one phase (CHECK: a block implies a program). Facts —
+hard-deleted.
+
+**A goal has one of two shapes, and each shape has one storage.** A
+**single-set** goal keeps its pair in `fact_goal.target_weight` /
+`target_reps` and writes **no** child rows. A **multi-set** goal lists several
+rungs — "100 kg × 5, then 110 kg × 3" — leaves both parent columns NULL, and
+writes one `fact_goal_target` row per rung (`target_set_order` 1-based and
+dense). Nothing is mirrored onto the parent: two copies would be two answers.
+`achieved_date` is a legacy dormant column — the client schema deliberately
+does not carry it; a goal's outcome is derived on every read and frozen per
+run into `fact_program_review.achievements_json` at close.
+`Goal.requirements` is the one reading that covers both (child rows when
+present, else the parent pair), and every reader — evaluation, badges,
+labels, snapshots — goes through it.
+
+**Evaluation is a match, not a per-rung search.** Each rung means "this set
+or better" (weight ≥ w and reps ≥ r), and a multi-set goal is met only when
+**distinct** sets satisfy **all** rungs — one strong set cannot tick two
+rungs, and a rung is never stranded behind an easy one (the engine is a
+Kuhn augmenting-path match over the timeline; greedy in rung order fails when
+a 140 set arrives before the 100 it is also better than). The completion
+moment is the arrival of the set that finishes the match; every matched set
+wears the `G` badge, and the achievement's evidence is the latest witness.
+A single-set goal keeps its old rule: the earliest set that reaches the pair.
+An exercise goal with no numbers at all ("bench, any set") still means any
+performed set. Snapshots (`GoalAchievement`, `ContentGoal`) write the
+`targets` list only when it is non-empty, so a single-set document's bytes
+and hash never move.
 
 ### Friends — `dim_friend_code` + `friend_relationship` (2026-10-23)
 
@@ -632,11 +658,24 @@ sibling), `achievements_json` (run close), `created_date`.
 2026-10-06). Indexed on (user_id, created_date desc) since 2026-10-07 — the
 user-wide list the standalone Reviews tab reads.
 
-### fact_goal — goals (owner ALL, coach SELECT)
+### fact_goal — goals (owner ALL, coach SELECT, friend SELECT)
 `goal_id` (PK), `user_id`, `goal_text`, `custom_exercise_id` (nullable),
 `target_weight`, `target_reps`, `program_run_id` (nullable FK →
 fact_program_run), `achieved_date` (nullable, revocable),
-`goal_created_date`.
+`goal_created_date`. `target_weight` / `target_reps` hold a single-set goal's
+pair; a multi-set goal leaves both NULL and stores its rungs in
+`fact_goal_target` (2026-10-26).
+
+### fact_goal_target — a multi-set goal's requirement rungs (owner ALL, coach SELECT, friend SELECT)
+`goal_target_id` (PK), `goal_id` (FK → fact_goal, ON DELETE CASCADE),
+`user_id` (FK → dim_user, ON DELETE CASCADE), `target_set_order` (1-based,
+dense — the order the rungs are listed and matched in), `target_weight`
+(numeric, nullable), `target_reps` (nullable). One row per rung, each
+meaning "this set or better"; `fact_goal`'s pair stays NULL whenever rows
+exist here. Indexed on `(goal_id, target_set_order)` — the only read — and on
+`user_id` for the friends stream's per-friend buckets. The client mirrors the
+goal's cascade by hand (no local constraints): `deleteGoal`,
+`updateGoal`'s rewrite and `hardDeleteProgram` all delete the child rows.
 
 ### fact_bodyweight — weight measurements (owner ALL, coach SELECT)
 `user_weight_id` (PK), `user_id`, `user_weight`, `user_weight_date`
@@ -697,7 +736,8 @@ What actually happens to each table's rows.
 | fact_program_run | REST insert in `startProgramRun` (ends previous is_current first — required by the partial unique index; takes progressionMode) | `updateRunConfig` (mode + duration), `pauseCurrentRun`/`resumeRun` (is_current) | never in the UI (history); hard-deleted only with `hardDeleteProgram` |
 | dim_program_block | `createProgramBlock` (block editor) | `updateBlock`, `reorderBlocks` (block_order) | **archive** (`date_archived = now()`), `reactivateBlock` clears it; hard-deleted only with `hardDeleteProgram` |
 | fact_program_review | `beginReview` (row + "as found" baseline, one move; `program_id` null = standalone) or `scheduleReview` (row only — a dated review must not freeze today's plan) | `captureBaseline` (idempotent — only where NULL), `markWorkoutReviewed` / `unmarkWorkoutReviewed` (tick map, read-modify-write, guarded on open), `setExerciseNote` / `setWorkoutNote` (write-through, read-modify-write of the JSON), `completeReview` (snapshot + completed_date + outcome, one transaction), `closeRun` (kind = 'close'), `deleteReview` (hard delete, guarded `completed_date IS NULL` — the Reviews list's cancel), `deleteCompletedReview` (hard delete, guarded `completed_date IS NOT NULL` — deleting a record, 2026-10-19) | never in the UI (history); hard-deleted with `hardDeleteProgram` — and before runs, which they pin via NO ACTION — by `deleteReview` when an open pass is cancelled, and by `deleteCompletedReview` when a record is deleted |
-| fact_goal | run-start prompt, `createGoal` | `achieved_date` set/revoked | **hard DELETE** |
+| fact_goal | run-start prompt, `createGoal` | `achieved_date` set/revoked, `updateGoal` | **hard DELETE** |
+| fact_goal_target | `createGoal` / `updateGoal` write the rung list (delete-then-insert in one transaction); a single-set goal writes none | — (rewritten wholesale with the goal) | **hard DELETE** with its goal (client-mirrored cascade), `deleteGoal` and `hardDeleteProgram` |
 | fact_bodyweight | profile weight logging | — | hard delete (rarely used) |
 | dim_friend_code | `after insert on dim_user` trigger (SECURITY DEFINER) + migration backfill | never (codes are stable in v1) | never (cascade from auth.users → dim_user) |
 | friend_relationship | `add_friend_by_code` RPC writes BOTH directions; the client mirrors only the caller's own directed row | — | `remove_friend` RPC deletes both directions, callable from either side; the client also deletes its own local row and drops the friend's cached timeline |
@@ -714,11 +754,13 @@ Every table has RLS enabled. Three policy shapes:
    WHERE cr.coach_user_id = auth.uid() AND cr.athlete_user_id = <t>.user_id)`)
    — on every athlete-owned table.
 3. **friend access** (SELECT, `public.are_friends(auth.uid(), user_id)`,
-   2026-10-23) — on the seven tables a friend's history reads:
+   2026-10-23) — on the eight tables a friend's history reads:
    `fact_session` (additionally `end_datetime is not null`),
    `fact_session_exercise` / `fact_session_exercise_set` (additionally their
    parent session is completed), `dim_exercise`, `dim_variation`,
-   `dim_lesson`, `fact_goal`. `are_friends(a, b)` is SECURITY DEFINER and
+   `dim_lesson`, `fact_goal`, and (2026-10-26) `fact_goal_target` — a goal
+   row without its rungs reads as a goal with no target, which is why the
+   friends stream sends them and the REST defence matches. `are_friends(a, b)` is SECURITY DEFINER and
    requires **both** directed rows, so a half-pair grants nothing; it avoids
    recursive policy evaluation, and its only exposure is a boolean for a pair
    of UUIDs. The stream is the real privacy boundary — these policies are the
@@ -742,6 +784,7 @@ Every table has RLS enabled. Three policy shapes:
 | dim_program_block | ✅ | ✅ |
 | fact_program_review | ✅ | ✅ |
 | fact_goal | ✅ | ✅ |
+| fact_goal_target | ✅ | ✅ |
 | fact_bodyweight | ✅ | ✅ |
 | coaching_relationship | coach ALL (coach_user_id = uid) + read SELECT (either side) | — |
 | dim_friend_code | **owner SELECT only** (no insert/update/delete grants; the trigger writes it) | — |

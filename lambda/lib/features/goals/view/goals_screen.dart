@@ -290,6 +290,7 @@ class _GoalsScreenState extends State<GoalsScreen> {
         variationId: target.variationId,
         targetWeight: target.weight,
         targetReps: target.reps,
+        targets: target.targets,
         description: target.notes,
         targetDate: target.targetDate,
       ),
@@ -345,6 +346,9 @@ class _GoalsScreenState extends State<GoalsScreen> {
           variationId: target.variationId,
           targetWeight: target.weight,
           targetReps: target.reps,
+          // Empty for a single-set target — the picker fills one shape or
+          // the other (2026-10-26).
+          targets: target.targets,
           description: target.notes,
           targetDate: target.targetDate,
         );
@@ -838,7 +842,9 @@ class _GoalsScreenState extends State<GoalsScreen> {
       // The section headers name the exercise and variation, so the card
       // itself leads with the target (2026-10-19).
       child: GoalRow(
-        target: goalTargetValue(goal.targetWeight, goal.targetReps),
+        // The one reading covers both shapes: a single-set goal's pair and a
+        // multi-set goal's rungs (2026-10-26).
+        target: goalRequirementsValue(goal.requirements),
         targetDate: goal.targetDate,
         outcome: state.outcomes[goal.goalId],
       ),

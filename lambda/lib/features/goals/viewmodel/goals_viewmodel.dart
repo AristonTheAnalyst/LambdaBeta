@@ -164,12 +164,17 @@ class GoalsViewModel {
     String? variationId,
     num? targetWeight,
     int? targetReps,
+    List<GoalTargetSet> targets = const [],
     String? description,
     DateTime? targetDate,
   }) async {
     // The add form's notes are the goal's description — blank is no notes,
     // never an empty string (the same normalization the in-place edit applies).
     final notes = description?.trim();
+    // One storage shape per shape (2026-10-26): a multi-set goal keeps its
+    // rungs in `fact_goal_target` and leaves the parent pair null; a
+    // single-set goal writes no child rows at all.
+    final multi = targets.isNotEmpty;
     final goal = Goal(
       goalId: _uuid.v4(),
       userId: _userId,
@@ -179,8 +184,9 @@ class GoalsViewModel {
       description: (notes?.isEmpty ?? true) ? null : notes,
       exerciseId: exerciseId,
       variationId: variationId,
-      targetWeight: targetWeight,
-      targetReps: targetReps,
+      targetWeight: multi ? null : targetWeight,
+      targetReps: multi ? null : targetReps,
+      targets: targets,
       targetDate: targetDate == null ? null : dateOnly(targetDate),
     );
     try {
@@ -236,6 +242,7 @@ class GoalsViewModel {
     String? variationId,
     num? targetWeight,
     int? targetReps,
+    List<GoalTargetSet>? targets,
     String? description,
     DateTime? targetDate,
   }) async {
@@ -246,6 +253,7 @@ class GoalsViewModel {
       variationId: variationId,
       targetWeight: targetWeight,
       targetReps: targetReps,
+      targets: targets,
       description: description,
       targetDate: targetDate,
     );

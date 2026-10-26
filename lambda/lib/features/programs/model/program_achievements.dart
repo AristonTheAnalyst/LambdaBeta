@@ -127,6 +127,11 @@ class GoalAchievement {
     'exercise_id': goal.exerciseId,
     'target_weight': goal.targetWeight,
     'target_reps': goal.targetReps,
+    // A multi-set goal's rungs (2026-10-26). Written only when there are any,
+    // so a single-set record keeps the document it always had — an added
+    // empty key would change every old snapshot's bytes and its hash.
+    if (goal.targets.isNotEmpty)
+      'targets': [for (final t in goal.targets) t.toMap()],
     'achieved': achieved,
     'evidence_weight': evidenceWeight,
     'evidence_reps': evidenceReps,
@@ -145,6 +150,12 @@ class GoalAchievement {
       exerciseId: map['exercise_id'] as String?,
       targetWeight: _num(map['target_weight']),
       targetReps: _num(map['target_reps'])?.toInt(),
+      targets: [
+        for (final entry
+            in (map['targets'] is List ? map['targets'] as List : const []))
+          if (entry is Map)
+            GoalTargetSet.fromMap(entry.cast<String, dynamic>()),
+      ],
     ),
     achieved: map['achieved'] == true,
     evidenceWeight: _num(map['evidence_weight']),
@@ -183,10 +194,13 @@ List<PrEvent> prsAcrossScopes(
 
 /// Which goals in [goals] were met by sets logged in `[from, to)`.
 ///
-/// A goal is met when some single set for its exercise reaches the target
-/// weight AND the target reps — `weight >= targetWeight && reps >= targetReps`.
-/// Not the PR frontier, which answers a different question ("is this the best
-/// ever?") than a goal does ("did I do the thing I said I would?").
+/// A goal is met when every one of its requirements ([Goal.requirements]) is
+/// reached by a **distinct** set in scope — a single set can satisfy two rungs
+/// ("100 × 5" is also "90 × 3"), but two rungs always need two sets. A
+/// single-set goal (one requirement) therefore reduces to the original rule:
+/// some set at or above the target weight AND reps. Not the PR frontier, which
+/// answers a different question ("is this the best ever?") than a goal does
+/// ("did I do the thing I said I would?").
 ///
 /// A goal names exactly one variation, or none — and "none" is a scope of its
 /// own rather than a wildcard. A goal on plain bench is met by plain bench
@@ -212,8 +226,6 @@ List<GoalAchievement> evaluateGoals({
     }
 
     PastSetRow? strongest;
-    PastSetRow? firstQualifying;
-
     for (final set in sets) {
       if (set.exerciseId != exerciseId) continue;
       // Exact, null included: a no-variation goal asks for plain sets, so a
@@ -223,21 +235,28 @@ List<GoalAchievement> evaluateGoals({
       if (date.isBefore(from) || !date.isBefore(to)) continue;
 
       if (_heavierThan(set, strongest)) strongest = set;
-      if (_meetsTarget(set, goal) &&
-          (firstQualifying == null || _earlierThan(set, firstQualifying))) {
-        firstQualifying = set;
-      }
     }
 
-    // A hit's evidence is the set that FIRST met it — the set that achieved
-    // the goal, and the one the G marks wherever it is drawn (2026-10-20).
+    final witnesses = goalWitnessSets(
+      sets: sets,
+      exerciseId: exerciseId,
+      variationId: goal.variationId,
+      requirements: goal.requirements,
+      from: from,
+      to: to,
+    );
+
+    // A hit's evidence is the set that COMPLETED the goal — for one
+    // requirement the earliest set that met it (2026-10-20), for several the
+    // last of the witnesses, because the goal was not achieved before every
+    // rung had its set. That is the one the `G` marks wherever it is drawn.
     // A miss's evidence is the heaviest set at all, so the report says how
     // close it came rather than how recently it was attempted.
-    final evidence = firstQualifying ?? strongest;
+    final evidence = witnesses == null ? strongest : _latest(witnesses);
     out.add(
       GoalAchievement(
         goal: goal,
-        achieved: firstQualifying != null,
+        achieved: witnesses != null,
         evidenceWeight: evidence == null ? null : (evidence.weight ?? 0),
         evidenceReps: evidence == null || evidence.reps.isEmpty
             ? null
@@ -263,8 +282,41 @@ bool _earlierThan(PastSetRow set, PastSetRow than) {
   return d < 0 || (d == 0 && set.setNumber < than.setNumber);
 }
 
-bool _meetsTarget(PastSetRow set, Goal goal) =>
-    setReachesTarget(set, weight: goal.targetWeight, reps: goal.targetReps);
+/// The set that completed [goal] — the latest witness of its requirement list
+/// — or null while it stands (2026-10-26).
+///
+/// The completion row under the deadline opens this set's workout, and the
+/// frozen record's `Completed <day>` reads from it. For a single-set goal it
+/// is the earliest set that met the target, which is what that row has always
+/// shown; for several rungs it is the rung that finished the list.
+PastSetRow? goalCompletionSet({
+  required Goal goal,
+  required List<PastSetRow> sets,
+}) {
+  final exerciseId = goal.exerciseId;
+  if (exerciseId == null) return null;
+  final witnesses = goalWitnessSets(
+    sets: sets,
+    exerciseId: exerciseId,
+    variationId: goal.variationId,
+    requirements: goal.requirements,
+  );
+  if (witnesses == null || witnesses.isEmpty) return null;
+  return _latest(witnesses);
+}
+
+/// The latest of [sets] in timeline order — the set whose arrival completed a
+/// multi-set goal.
+PastSetRow _latest(List<PastSetRow> sets) {
+  var latest = sets.first;
+  for (final set in sets.skip(1)) {
+    if (_earlierThan(latest, set)) latest = set;
+  }
+  return latest;
+}
+
+bool _reachesRequirement(PastSetRow set, GoalTargetSet requirement) =>
+    setReachesTarget(set, weight: requirement.weight, reps: requirement.reps);
 
 /// Whether [set] reaches [weight] × [reps] — the one goal rule: a single set
 /// at or above BOTH numbers.
@@ -292,6 +344,9 @@ bool setReachesTarget(PastSetRow set, {num? weight, int? reps}) {
 /// marks on every set grid, and the one the focused goal sheet's completion
 /// row opens. A goal is achieved once: later sets that also reach the target
 /// are repeats, not achievements, and stay unmarked.
+///
+/// The single-requirement form of [goalWitnessSets] — one target pair is a
+/// one-rung list, and both go through the same matching rule (2026-10-26).
 PastSetRow? earliestSetReaching({
   required List<PastSetRow> sets,
   required String exerciseId,
@@ -299,23 +354,100 @@ PastSetRow? earliestSetReaching({
   num? weight,
   int? reps,
 }) {
-  PastSetRow? first;
-  for (final set in sets) {
-    if (set.exerciseId != exerciseId) continue;
-    if (set.variationId != variationId) continue;
-    if (!setReachesTarget(set, weight: weight, reps: reps)) continue;
-    if (first == null || _earlierThan(set, first)) first = set;
+  final witnesses = goalWitnessSets(
+    sets: sets,
+    exerciseId: exerciseId,
+    variationId: variationId,
+    requirements: [GoalTargetSet(weight: weight, reps: reps)],
+  );
+  return witnesses?.first;
+}
+
+/// The sets that achieved [requirements] — one **distinct** set per
+/// requirement, in requirement order — or null when they were not all met
+/// (2026-10-26).
+///
+/// One set can satisfy several requirements ("100 × 5" also reaches "90 × 3"),
+/// so this is a bipartite assignment rather than a per-requirement search.
+/// Greedy in requirement order is not enough: it hands the only 140 set to the
+/// 100 rung and strands the 140 one. The sets are walked in timeline order and
+/// each one tries to enter the matching by an augmenting path (Kuhn's
+/// algorithm), re-pairing requirements that already found a set — so the
+/// assignment exists whenever one exists. The walk stops at the first set
+/// whose arrival completes the matching: that is the moment the goal was
+/// achieved.
+///
+/// [Goal.requirements] empty means an exercise goal that states no numbers —
+/// one empty requirement, which any performed set meets. That is the reading
+/// this evaluation has always had for such a goal; callers that want "no
+/// target, no verdict" (the creation form's caption) check for themselves.
+List<PastSetRow>? goalWitnessSets({
+  required List<PastSetRow> sets,
+  required String exerciseId,
+  required String? variationId,
+  required List<GoalTargetSet> requirements,
+  DateTime? from,
+  DateTime? to,
+}) {
+  final wanted = requirements.isEmpty ? const [GoalTargetSet()] : requirements;
+  final candidates =
+      <PastSetRow>[
+        for (final set in sets)
+          if (set.exerciseId == exerciseId &&
+              set.variationId == variationId &&
+              (from == null || !set.sessionCreatedDate.isBefore(from)) &&
+              (to == null || set.sessionCreatedDate.isBefore(to)))
+            set,
+      ]..sort((a, b) {
+        final byDate = a.sessionCreatedDate.compareTo(b.sessionCreatedDate);
+        return byDate != 0 ? byDate : a.setNumber.compareTo(b.setNumber);
+      });
+
+  // requirement index → the candidate index that holds it. -1 = unmatched.
+  final owner = List<int>.filled(wanted.length, -1);
+  var matched = 0;
+  for (var s = 0; s < candidates.length; s++) {
+    final visited = List<bool>.filled(wanted.length, false);
+    if (!_augment(s, candidates, wanted, owner, visited)) continue;
+    matched++;
+    if (matched == wanted.length) {
+      return [for (final index in owner) candidates[index]];
+    }
   }
-  return first;
+  return null;
+}
+
+/// One augmenting step of [goalWitnessSets]: try to seat candidate [setIndex]
+/// at some requirement it reaches, evicting (and re-seating) that
+/// requirement's current set when it has one.
+bool _augment(
+  int setIndex,
+  List<PastSetRow> candidates,
+  List<GoalTargetSet> requirements,
+  List<int> owner,
+  List<bool> visited,
+) {
+  final set = candidates[setIndex];
+  for (var r = 0; r < requirements.length; r++) {
+    if (visited[r] || !_reachesRequirement(set, requirements[r])) continue;
+    visited[r] = true;
+    final holder = owner[r];
+    if (holder < 0 ||
+        _augment(holder, candidates, requirements, owner, visited)) {
+      owner[r] = setIndex;
+      return true;
+    }
+  }
+  return false;
 }
 
 /// The `fact_session_exercise_set` ids that achieved one of [goals] — the
 /// sets drawn green with the `G` badge (2026-10-20).
 ///
-/// One id per goal at most: the earliest set that met it ([earliestSetReaching]).
-/// A set that achieves two goals is listed once — the badge says "a goal was
-/// achieved here", not which one. Free-text goals have nothing to measure and
-/// mark nothing.
+/// Every witness is listed — a multi-set goal needs one set per requirement,
+/// all distinct — and a set that achieves two goals is listed once, because
+/// the badge says "a goal was achieved here", not which one (2026-10-26).
+/// Free-text goals have nothing to measure and mark nothing.
 Set<String> goalAchievingSetIds({
   required List<Goal> goals,
   required List<PastSetRow> sets,
@@ -324,14 +456,16 @@ Set<String> goalAchievingSetIds({
   for (final goal in goals) {
     final exerciseId = goal.exerciseId;
     if (exerciseId == null) continue;
-    final set = earliestSetReaching(
+    final witnesses = goalWitnessSets(
       sets: sets,
       exerciseId: exerciseId,
       variationId: goal.variationId,
-      weight: goal.targetWeight,
-      reps: goal.targetReps,
+      requirements: goal.requirements,
     );
-    if (set != null) ids.add(set.sessionExerciseSetId);
+    if (witnesses == null) continue;
+    for (final set in witnesses) {
+      ids.add(set.sessionExerciseSetId);
+    }
   }
   return ids;
 }

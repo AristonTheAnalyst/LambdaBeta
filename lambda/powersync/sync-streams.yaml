@@ -89,6 +89,16 @@
 # forever — a stalled upload checkpoint on that device, never a user-visible
 # error.
 #
+# 2026-10-26 (multi-set goals): + fact_goal_target, a goal's requirement list
+# (each row "this set or better"). Both streams gain it — the owner's own
+# rows in user_data, a mutual friend's in friends_data beside the fact_goal
+# rows that already stream. Push 20261026120000_goal_targets.sql BEFORE
+# shipping a build that writes it: the table does not exist server-side until
+# then, so every insert would fail the upload. This file must also be
+# redeployed for the rows to come back DOWN — a local write survives on the
+# device regardless, but a resync would drop a multi-set goal's requirements
+# until the stream names the table.
+#
 # Deploy steps (PowerSync Dashboard → Sync Streams):
 #   1. Replace the current YAML with this file.
 #   2. Validate, then Deploy.
@@ -124,6 +134,7 @@ streams:
       - SELECT *, planned_set_id as id FROM dim_planned_session_exercise_set WHERE user_id = auth.user_id()
       - SELECT *, planned_session_program_id as id FROM dim_planned_session_program WHERE user_id = auth.user_id()
       - SELECT *, goal_id as id FROM fact_goal WHERE user_id = auth.user_id()
+      - SELECT *, goal_target_id as id FROM fact_goal_target WHERE user_id = auth.user_id()
       - SELECT *, review_id as id FROM fact_program_review WHERE user_id = auth.user_id()
       - SELECT *, block_id as id FROM dim_program_block WHERE user_id = auth.user_id()
       - SELECT *, (coach_user_id || '-' || athlete_user_id) as id FROM coaching_relationship WHERE coach_user_id = auth.user_id() OR athlete_user_id = auth.user_id()
@@ -165,3 +176,7 @@ streams:
       - SELECT *, custom_variation_id as id FROM dim_variation WHERE user_id IN my_friends
       - SELECT *, lesson_id as id FROM dim_lesson WHERE user_id IN my_friends
       - SELECT *, goal_id as id FROM fact_goal WHERE user_id IN my_friends
+      # A friend's multi-set requirements ride beside the goals they belong
+      # to (2026-10-26) — the goal row alone would read as a goal with no
+      # target.
+      - SELECT *, goal_target_id as id FROM fact_goal_target WHERE user_id IN my_friends

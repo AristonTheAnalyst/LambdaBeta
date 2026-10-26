@@ -416,4 +416,24 @@ const schema = Schema([
       Index('user_idx', [IndexedColumn.ascending('user_id')]),
     ],
   ),
+  Table(
+    'fact_goal_target',
+    [
+      Column.text('goal_target_id'),
+      Column.text('goal_id'),
+      Column.text('user_id'),
+      // 1-based, dense: the order the requirements are listed and matched in.
+      Column.integer('target_set_order'),
+      // Numeric on the server, text in the mirror — the same mapping
+      // fact_goal.target_weight uses.
+      Column.text('target_weight'),
+      Column.integer('target_reps'),
+    ],
+    indexes: [
+      // One goal's requirements, in order — the only read there is.
+      Index('goal_idx', [IndexedColumn.ascending('goal_id')]),
+      // The friends stream pages children by user (one bucket per friend).
+      Index('user_idx', [IndexedColumn.ascending('user_id')]),
+    ],
+  ),
 ]);

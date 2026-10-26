@@ -19,6 +19,7 @@ import 'dropdown_select.dart';
 import 'glass_button.dart';
 import 'lambda_input.dart';
 import 'lambda_search_field.dart';
+import 'segmented_control.dart';
 
 /// What [ExerciseTargetPicker] produced — the exercise, optionally a variation,
 /// the weight × reps being chased, and the notes saying why.
@@ -27,6 +28,10 @@ import 'lambda_search_field.dart';
 /// optional and sits between two required values, and a callback whose third
 /// parameter can mean either "no variation" or "the caller forgot" is a bug
 /// waiting to be written.
+///
+/// Two shapes, one object (2026-10-26): a single-set target carries its one
+/// pair in [weight] / [reps] and leaves [targets] empty; a multi-set target
+/// carries its rungs in [targets] and leaves the pair null.
 class ExerciseTarget {
   const ExerciseTarget({
     required this.exerciseId,
@@ -34,6 +39,7 @@ class ExerciseTarget {
     this.variationId,
     this.weight,
     this.reps,
+    this.targets = const [],
     this.notes,
     this.targetDate,
   });
@@ -51,12 +57,28 @@ class ExerciseTarget {
   final num? weight;
   final int? reps;
 
+  /// A multi-set goal's requirements, in the order they were listed. Empty =
+  /// a single-set target.
+  final List<GoalTargetSet> targets;
+
   /// Free prose about the target — the goal's own notes. NULL when left blank,
   /// the one spelling of "none" the goal model normalizes to.
   final String? notes;
 
   /// The day the goal is aimed at. NULL = no deadline.
   final DateTime? targetDate;
+}
+
+/// One requirement row after the first, in a multi-set draft (2026-10-26) —
+/// a pair of cells of its own, disposed with the draft that owns them.
+class TargetRowDraft {
+  final weightCtrl = TextEditingController();
+  final repsCtrl = TextEditingController();
+
+  void dispose() {
+    weightCtrl.dispose();
+    repsCtrl.dispose();
+  }
 }
 
 /// What the New Goal form has in it, owned by the host rather than the sheet
@@ -71,6 +93,16 @@ class ExerciseTargetDraft {
   final weightCtrl = TextEditingController();
   final repsCtrl = TextEditingController();
   final notesCtrl = TextEditingController();
+
+  /// Whether the form states several requirements instead of one — a
+  /// multi-set goal ("100 × 5, then 110 × 3"), every one of which a session
+  /// must meet with its own set (2026-10-26). The first requirement always
+  /// lives in [weightCtrl] / [repsCtrl]; the rest in [extraRows].
+  bool multiSet = false;
+
+  /// The second and later requirement rows, in order. Empty in single mode
+  /// and while the form states only one row.
+  final List<TargetRowDraft> extraRows = [];
 
   /// The pick made in the exercise dropdown; null = still asking.
   String? exerciseId;
@@ -87,6 +119,8 @@ class ExerciseTargetDraft {
     weightCtrl.clear();
     repsCtrl.clear();
     notesCtrl.clear();
+    multiSet = false;
+    _clearRows();
     exerciseId = null;
     variationId = null;
     targetDate = null;
@@ -96,26 +130,115 @@ class ExerciseTargetDraft {
   /// the normalization it lands on again after a save. The numbers use the
   /// same text a target reads as (`100`, not `100.0`), so the box shows what
   /// the row showed (2026-10-19).
+  ///
+  /// [targets] is the stored requirement list and [multiSet] chooses the
+  /// shape; a single-set goal's pair arrives in [weight] / [reps] exactly as
+  /// it always has (2026-10-26).
   void seed({
     String? exerciseId,
     String? variationId,
     num? weight,
     int? reps,
+    List<GoalTargetSet> targets = const [],
+    bool multiSet = false,
     String? notes,
     DateTime? targetDate,
   }) {
     this.exerciseId = exerciseId;
     this.variationId = variationId;
-    weightCtrl.text = weight == null ? '' : goalNumberText(weight);
-    repsCtrl.text = reps?.toString() ?? '';
+    this.multiSet = multiSet;
+    _clearRows();
+    if (multiSet && targets.isNotEmpty) {
+      _fill(weightCtrl, repsCtrl, targets.first);
+      for (final target in targets.skip(1)) {
+        final row = TargetRowDraft();
+        _fill(row.weightCtrl, row.repsCtrl, target);
+        extraRows.add(row);
+      }
+    } else {
+      weightCtrl.text = weight == null ? '' : goalNumberText(weight);
+      repsCtrl.text = reps?.toString() ?? '';
+    }
     notesCtrl.text = notes ?? '';
     this.targetDate = targetDate;
+  }
+
+  static void _fill(
+    TextEditingController weightCtrl,
+    TextEditingController repsCtrl,
+    GoalTargetSet target,
+  ) {
+    weightCtrl.text = target.weight == null
+        ? ''
+        : goalNumberText(target.weight!);
+    repsCtrl.text = target.reps?.toString() ?? '';
+  }
+
+  /// The requirement rows the form states right now, in order — a row with no
+  /// numbers is dropped, because a blank cell is not a rung yet. Empty means
+  /// "no numbers at all", the reading the single form has always given an
+  /// empty pair.
+  List<GoalTargetSet> get statedTargets {
+    final out = <GoalTargetSet>[];
+    void add(TextEditingController weightCtrl, TextEditingController repsCtrl) {
+      final weight = double.tryParse(weightCtrl.text.trim());
+      final reps = int.tryParse(repsCtrl.text.trim());
+      if (weight == null && reps == null) return;
+      out.add(GoalTargetSet(order: out.length + 1, weight: weight, reps: reps));
+    }
+
+    add(weightCtrl, repsCtrl);
+    for (final row in extraRows) {
+      add(row.weightCtrl, row.repsCtrl);
+    }
+    return out;
+  }
+
+  /// The cells of requirement row [index] (0 = the pair the form always
+  /// draws).
+  ({TextEditingController weight, TextEditingController reps}) rowAt(
+    int index,
+  ) => index == 0
+      ? (weight: weightCtrl, reps: repsCtrl)
+      : (
+          weight: extraRows[index - 1].weightCtrl,
+          reps: extraRows[index - 1].repsCtrl,
+        );
+
+  /// The number of rows currently drawn.
+  int get rowCount => 1 + extraRows.length;
+
+  /// Draws one more empty requirement row.
+  void addRow() => extraRows.add(TargetRowDraft());
+
+  /// Removes requirement row [index]. Removing the first promotes the next
+  /// row into its cells, so the form always keeps the one pair it always
+  /// draws; the last row cannot be removed.
+  void removeRowAt(int index) {
+    if (index == 0) {
+      if (extraRows.isEmpty) return;
+      final next = extraRows.removeAt(0);
+      weightCtrl.text = next.weightCtrl.text;
+      repsCtrl.text = next.repsCtrl.text;
+      next.dispose();
+      return;
+    }
+    if (index > extraRows.length) return;
+    extraRows.removeAt(index - 1).dispose();
+  }
+
+  void _clearRows() {
+    for (final row in extraRows) {
+      row.dispose();
+    }
+    extraRows.clear();
   }
 
   void dispose() {
     weightCtrl.dispose();
     repsCtrl.dispose();
     notesCtrl.dispose();
+    _clearRows();
   }
 }
 
@@ -342,6 +465,7 @@ class _ExerciseTargetPickerState extends State<ExerciseTargetPicker> {
     final id = widget.draft.exerciseId;
     if (!widget.enabled || id == null || _adding) return;
     final notes = widget.draft.notesCtrl.text.trim();
+    final multi = widget.draft.multiSet;
     setState(() => _adding = true);
     try {
       await widget.onAdd(
@@ -349,8 +473,13 @@ class _ExerciseTargetPickerState extends State<ExerciseTargetPicker> {
           exerciseId: id,
           exerciseName: _displayNameFor(id) ?? '',
           variationId: widget.draft.variationId,
-          weight: double.tryParse(widget.draft.weightCtrl.text.trim()),
-          reps: int.tryParse(widget.draft.repsCtrl.text.trim()),
+          // A multi-set target has no single pair — its rungs are the target
+          // (2026-10-26).
+          weight: multi
+              ? null
+              : double.tryParse(widget.draft.weightCtrl.text.trim()),
+          reps: multi ? null : int.tryParse(widget.draft.repsCtrl.text.trim()),
+          targets: multi ? widget.draft.statedTargets : const [],
           notes: notes.isEmpty ? null : notes,
           targetDate: widget.draft.targetDate,
         ),
@@ -378,21 +507,43 @@ class _ExerciseTargetPickerState extends State<ExerciseTargetPicker> {
   /// judged by the one goal rule ([setReachesTarget]), so the sentence and the
   /// goals list's verdicts can never disagree. The day it names is the FIRST
   /// day the target was met — the day the goal would be completed on — not
-  /// the day of the best set since (2026-10-20). Null while the form is not
-  /// yet a target — no exercise, or neither number typed.
+  /// the day of the best set since (2026-10-20).
+  ///
+  /// Multi-set drafts answer the same question over the whole requirement
+  /// list: the day named is the one the LAST rung was met, because the goal
+  /// was not complete before then (2026-10-26). Null while the form is not
+  /// yet a target — no exercise, or no numbers typed.
   PastSetRow? get _achievingSet {
     final exerciseId = widget.draft.exerciseId;
     if (exerciseId == null) return null;
-    final weight = double.tryParse(widget.draft.weightCtrl.text.trim());
-    final reps = int.tryParse(widget.draft.repsCtrl.text.trim());
-    if (weight == null && reps == null) return null;
-    return earliestSetReaching(
+    final List<GoalTargetSet> requirements;
+    if (widget.draft.multiSet) {
+      requirements = widget.draft.statedTargets;
+    } else {
+      final weight = double.tryParse(widget.draft.weightCtrl.text.trim());
+      final reps = int.tryParse(widget.draft.repsCtrl.text.trim());
+      if (weight == null && reps == null) return null;
+      requirements = [GoalTargetSet(weight: weight, reps: reps)];
+    }
+    if (requirements.isEmpty) return null;
+    final witnesses = goalWitnessSets(
       sets: widget.pastSets,
       exerciseId: exerciseId,
       variationId: widget.draft.variationId,
-      weight: weight,
-      reps: reps,
+      requirements: requirements,
     );
+    if (witnesses == null || witnesses.isEmpty) return null;
+    // The completion set is the latest witness — the rung that finished it.
+    var latest = witnesses.first;
+    for (final set in witnesses.skip(1)) {
+      final byDate = set.sessionCreatedDate.compareTo(
+        latest.sessionCreatedDate,
+      );
+      if (byDate > 0 || (byDate == 0 && set.setNumber > latest.setNumber)) {
+        latest = set;
+      }
+    }
+    return latest;
   }
 
   /// Opens the app's own calendar under the sheet. A pick writes to the draft —
@@ -449,9 +600,19 @@ class _ExerciseTargetPickerState extends State<ExerciseTargetPicker> {
       children: [
         _exerciseSelector(),
         const SizedBox(height: AppSpacing.md),
+        // The shape is the user's to choose, and a reading keeps the one the
+        // goal was written with — so the switch is only drawn where it can be
+        // used (2026-10-26).
+        if (widget.enabled) ...[
+          _modeToggle(),
+          const SizedBox(height: AppSpacing.md),
+        ],
         _gridHeaders(),
         const SizedBox(height: 6),
-        _setRow(achieved: achieved != null),
+        if (widget.draft.multiSet)
+          _multiSetRows()
+        else
+          _setRow(achieved: achieved != null),
         if (achieved != null && widget.showAchievedNote) ...[
           const SizedBox(height: AppSpacing.sm),
           _achievedNote(achieved),
@@ -839,6 +1000,111 @@ class _ExerciseTargetPickerState extends State<ExerciseTargetPicker> {
     ),
   );
 
+  /// One target or a list of them. The subtle treatment: this is a mode of the
+  /// form, not the form's action (2026-10-26).
+  Widget _modeToggle() => SegmentedControl<bool>(
+    subtle: true,
+    options: const [
+      SegmentOption(label: 'Single set', value: false),
+      SegmentOption(label: 'Multi-set', value: true),
+    ],
+    value: widget.draft.multiSet,
+    onChange: (value) => setState(() => widget.draft.multiSet = value),
+  );
+
+  /// The multi-set form: one numbered row per requirement, an × on every row
+  /// that can go, and the ADD SET under them. Every row draws the variation
+  /// cell against the draft's one value — a goal names one variation, so the
+  /// cell is shared rather than per row.
+  Widget _multiSetRows() {
+    final count = widget.draft.rowCount;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (var i = 0; i < count; i++) ...[
+          if (i > 0) const SizedBox(height: 6),
+          _multiRow(i),
+        ],
+        if (widget.enabled) ...[
+          const SizedBox(height: AppSpacing.sm),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: GlassButton(
+              label: 'Add set',
+              icon: Icons.add,
+              compact: true,
+              onPressed: () => setState(widget.draft.addRow),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  /// One numbered requirement row — the set row's chrome, prefixed by its
+  /// place in the list and followed by the × that drops it (2026-10-26).
+  Widget _multiRow(int index) {
+    final cells = widget.draft.rowAt(index);
+    final removable = widget.enabled && widget.draft.rowCount > 1;
+    return Container(
+      key: ValueKey('goal-set-row-$index'),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceHigh,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(color: AppColors.border, width: 0.5),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          SizedBox(
+            width: 14,
+            child: Text(
+              '${index + 1}',
+              textAlign: TextAlign.center,
+              style: AppFonts.mono(
+                fontSize: AppTextStyles.xs,
+                fontWeight: FontWeight.w700,
+                color: AppColors.inkSecondary,
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: _cell(
+              key: ValueKey('goal-kg-$index'),
+              controller: cells.weight,
+              decimal: true,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: _cell(
+              key: ValueKey('goal-reps-$index'),
+              controller: cells.reps,
+              decimal: false,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Expanded(flex: 2, child: _variationCell()),
+          if (removable) ...[
+            const SizedBox(width: 4),
+            GestureDetector(
+              key: ValueKey('goal-set-remove-$index'),
+              onTap: () => setState(() => widget.draft.removeRowAt(index)),
+              behavior: HitTestBehavior.opaque,
+              child: SizedBox(
+                width: 40,
+                height: 40,
+                child: Icon(Icons.close, size: 16, color: AppColors.muted),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   /// One set row, in the live set row's exact chrome — `surfaceHigh`, radius
   /// 8, a 0.5 hairline, 6px gaps. No number cell: a goal is one set to beat,
   /// so the row is only the target itself — KG · REPS · VARIATION.
@@ -981,6 +1247,29 @@ class _ExerciseTargetPickerState extends State<ExerciseTargetPicker> {
 String goalTargetLabel(String exerciseName, num? weight, int? reps) {
   final target = goalTargetValue(weight, reps);
   return target.isEmpty ? exerciseName : '$exerciseName — $target';
+}
+
+/// A multi-set goal's line: the exercise and every rung, "Bench — 100 kg × 5 ·
+/// 110 kg × 3" (2026-10-26). The plural of [goalTargetLabel].
+String goalTargetsLabel(String exerciseName, List<GoalTargetSet> targets) {
+  final target = goalRequirementsValue(targets);
+  return target.isEmpty ? exerciseName : '$exerciseName — $target';
+}
+
+/// A requirement list as one target value — "100 kg × 5 · 110 kg × 3".
+///
+/// The one reading of the multi-set shape's numbers, shared by the goal card,
+/// the review rows and the summary tiles. A single requirement renders exactly
+/// as [goalTargetValue] does, so the lists describe a goal the same way
+/// whichever storage shape holds it (2026-10-26). Empty when no requirement
+/// states a number.
+String goalRequirementsValue(List<GoalTargetSet> targets) {
+  final parts = <String>[];
+  for (final target in targets) {
+    final value = goalTargetValue(target.weight, target.reps);
+    if (value.isNotEmpty) parts.add(value);
+  }
+  return parts.join(' · ');
 }
 
 /// The target alone — "100 kg × 5", empty when neither number was recorded —

@@ -156,6 +156,11 @@ class _GoalSheetState extends State<_GoalSheet> {
     variationId: goal.variationId,
     weight: goal.targetWeight,
     reps: goal.targetReps,
+    // The values and the shape are separate facts: a single-set goal's one
+    // pair arrives in weight/reps, a multi-set goal's rungs in targets —
+    // and `multiSet` is what the toggle shows (2026-10-26).
+    targets: goal.requirements,
+    multiSet: goal.isMultiSet,
     notes: goal.description,
     targetDate: goal.targetDate,
   );
@@ -179,31 +184,30 @@ class _GoalSheetState extends State<_GoalSheet> {
   /// goal, which is the one the grids mark with `G` and the one whose workout
   /// the completion row opens (2026-10-20). Read against the stored goal
   /// rather than the draft: the completion day belongs to the target that was
-  /// actually met, and an edit in progress has not met anything yet.
-  PastSetRow? _deriveCompletedSet() {
-    final goal = _goal;
-    final exerciseId = goal.exerciseId;
-    if (exerciseId == null) return null;
-    return earliestSetReaching(
-      sets: _sets,
-      exerciseId: exerciseId,
-      variationId: goal.variationId,
-      weight: goal.targetWeight,
-      reps: goal.targetReps,
-    );
-  }
+  /// actually met, and an edit in progress has not met anything yet. A
+  /// multi-set goal is complete on its LAST rung (`goalCompletionSet`,
+  /// 2026-10-26), because the earlier ones only finish it.
+  PastSetRow? _deriveCompletedSet() =>
+      goalCompletionSet(goal: _goal, sets: _sets);
 
   /// Whether the draft says something the stored goal does not. Text is
   /// compared trimmed (blank and absent are one spelling of no notes) and the
-  /// day by calendar day, never by clock.
+  /// day by calendar day, never by clock. The target is compared per shape
+  /// (2026-10-26): a multi-set draft against the stored requirement list — a
+  /// toggled shape or a reordered/re-numbered rung is a change — and a
+  /// single-set draft against the stored pair.
   bool get _dirty {
     final goal = _goal;
     final weight = double.tryParse(_draft.weightCtrl.text.trim());
     final reps = int.tryParse(_draft.repsCtrl.text.trim());
+    final targetsDiffer = _draft.multiSet != goal.isMultiSet
+        ? true
+        : _draft.multiSet
+        ? !_sameTargets(_draft.statedTargets, goal.requirements)
+        : weight != goal.targetWeight || reps != goal.targetReps;
     return _draft.exerciseId != goal.exerciseId ||
         _draft.variationId != goal.variationId ||
-        weight != goal.targetWeight ||
-        reps != goal.targetReps ||
+        targetsDiffer ||
         _draft.notesCtrl.text.trim() != (goal.description ?? '') ||
         !_sameDay(_draft.targetDate, goal.targetDate);
   }
@@ -446,6 +450,17 @@ bool _sameDay(DateTime? a, DateTime? b) {
   return a.year == b.year && a.month == b.month && a.day == b.day;
 }
 
+/// Whether two requirement lists state the same rungs in the same order —
+/// [GoalTargetSet] equals by its numbers, so the comparison is positional
+/// (2026-10-26).
+bool _sameTargets(List<GoalTargetSet> a, List<GoalTargetSet> b) {
+  if (a.length != b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    if (a[i] != b[i]) return false;
+  }
+  return true;
+}
+
 /// The New goal sheet — the target composer the focused goal sheet rests in,
 /// live, and one sheet for a whole sitting with the goal list (2026-10-26).
 ///
@@ -605,11 +620,9 @@ class _AddGoalSheetState extends State<_AddGoalSheet> {
       );
       return;
     }
-    final label = goalTargetLabel(
-      target.exerciseName,
-      target.weight,
-      target.reps,
-    );
+    final label = target.targets.isEmpty
+        ? goalTargetLabel(target.exerciseName, target.weight, target.reps)
+        : goalTargetsLabel(target.exerciseName, target.targets);
     setState(() {
       _draft.reset();
       _addedLabel = label;

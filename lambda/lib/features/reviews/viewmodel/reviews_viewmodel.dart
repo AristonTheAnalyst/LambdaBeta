@@ -8,7 +8,7 @@ import '../../../data/repositories/planned_session_repository.dart';
 import '../../../data/repositories/program_history_repository.dart';
 import '../../../data/repositories/program_repository.dart';
 import '../../../shared/widgets/exercise_target_picker.dart'
-    show goalTargetValue;
+    show goalRequirementsValue;
 import '../../goals/view/goal_row.dart' show goalExerciseNameFor;
 import '../../programs/viewmodel/program_history_viewmodel.dart'
     show StartedReview;
@@ -126,10 +126,7 @@ Future<List<ReviewableGoal>> fetchReviewableGoals({
       ReviewableGoal(
         goalId: option.goal.goalId,
         exerciseName: goalExerciseNameFor(option.goal, details),
-        target: goalTargetValue(
-          option.goal.targetWeight,
-          option.goal.targetReps,
-        ),
+        target: goalRequirementsValue(option.goal.requirements),
         targetWeight: option.goal.targetWeight,
         targetReps: option.goal.targetReps,
       ),

@@ -553,6 +553,19 @@ class ProgramRepository {
       await tx.execute('DELETE FROM fact_program_review WHERE program_id = ?', [
         programId,
       ]);
+      // The goals' requirement rows before the goals themselves — the server
+      // cascades them, the local SQLite has no FK to do it (2026-10-26).
+      await tx.execute(
+        '''
+        DELETE FROM fact_goal_target
+        WHERE goal_id IN (SELECT goal_id FROM fact_goal
+                          WHERE program_id = ?
+                             OR block_id IN (SELECT block_id
+                                             FROM dim_program_block
+                                             WHERE program_id = ?))
+        ''',
+        [programId, programId],
+      );
       // Goals FK block_id AND program_run_id — they block both of the next two.
       // Matching on block as well as program is belt-and-braces. The server
       // cannot hold the gap: fact_goal_block_scope_check requires program_id
@@ -1433,7 +1446,66 @@ class ProgramRepository {
       'ORDER BY goal_created_date',
       args,
     );
-    return rows.map((r) => Goal.fromMap(r)).toList();
+    return _attachGoalTargets(rows.map((r) => Goal.fromMap(r)).toList());
+  }
+
+  /// Fills each goal's [Goal.targets] from `fact_goal_target` (2026-10-26).
+  ///
+  /// One extra read for the whole list rather than one per goal: a goal row
+  /// and its requirements are two tables, and nothing here ever needs one
+  /// without the other. A single-set goal has no rows, so its [targets] stays
+  /// empty and [Goal.requirements] reads the parent pair — the one shape rule.
+  Future<List<Goal>> _attachGoalTargets(List<Goal> goals) async {
+    if (goals.isEmpty) return goals;
+    final ids = [for (final g in goals) g.goalId];
+    final placeholders = List.filled(ids.length, '?').join(', ');
+    final rows = await ps.db.getAll(
+      'SELECT goal_id, target_set_order, target_weight, target_reps '
+      'FROM fact_goal_target WHERE goal_id IN ($placeholders) '
+      'ORDER BY goal_id, target_set_order',
+      ids,
+    );
+    if (rows.isEmpty) return goals;
+    final byGoal = <String, List<GoalTargetSet>>{};
+    for (final row in rows) {
+      final goalId = row['goal_id'] as String?;
+      if (goalId == null) continue;
+      byGoal
+          .putIfAbsent(goalId, () => [])
+          .add(
+            // `GoalTargetSet.fromMap` owns the column→value conversion (it
+            // lives beside `Goal`, where `_toNum`/`_toInt` are library-private)
+            // — the row's own keys are re-mapped to the model's.
+            GoalTargetSet.fromMap({
+              'order': row['target_set_order'],
+              'weight': row['target_weight'],
+              'reps': row['target_reps'],
+            }),
+          );
+    }
+    return [
+      for (final goal in goals)
+        if (byGoal.containsKey(goal.goalId))
+          Goal(
+            goalId: goal.goalId,
+            userId: goal.userId,
+            programId: goal.programId,
+            blockId: goal.blockId,
+            programRunId: goal.programRunId,
+            text: goal.text,
+            description: goal.description,
+            exerciseId: goal.exerciseId,
+            variationId: goal.variationId,
+            targetWeight: goal.targetWeight,
+            targetReps: goal.targetReps,
+            targets: byGoal[goal.goalId]!,
+            targetDate: goal.targetDate,
+            targetDateHistory: goal.targetDateHistory,
+            createdDate: goal.createdDate,
+          )
+        else
+          goal,
+    ];
   }
 
   /// Every goal [userId] has — any scope — with the names of the program and
@@ -1456,7 +1528,7 @@ class ProgramRepository {
       ''',
       [userId],
     );
-    return rows.map(_goalOption).toList();
+    return _optionsWithTargets(rows);
   }
 
   /// The named goals, same shape as [fetchGoalOptions] — the read a standalone
@@ -1478,7 +1550,24 @@ class ProgramRepository {
       WHERE g.goal_id IN ($placeholders)
       ORDER BY g.goal_created_date, g.goal_id
       ''', goalIds);
-    return rows.map(_goalOption).toList();
+    return _optionsWithTargets(rows);
+  }
+
+  /// [fetchGoalOptions]'s rows with each goal's requirement list attached —
+  /// a multi-set goal would read as a goal with no target without it
+  /// (2026-10-26).
+  Future<List<({Goal goal, String? programName, String? blockName})>>
+  _optionsWithTargets(List<Map<String, dynamic>> rows) async {
+    final options = rows.map(_goalOption).toList();
+    final goals = await _attachGoalTargets([for (final o in options) o.goal]);
+    return [
+      for (final (index, option) in options.indexed)
+        (
+          goal: goals[index],
+          programName: option.programName,
+          blockName: option.blockName,
+        ),
+    ];
   }
 
   ({Goal goal, String? programName, String? blockName}) _goalOption(
@@ -1492,39 +1581,72 @@ class ProgramRepository {
   /// Writes a goal. The goal carries its own scope — program, block, variation
   /// and run link are all on [Goal], so there is no second place for a caller
   /// to pass one that disagrees with the row.
+  ///
+  /// A multi-set goal ([Goal.targets] non-empty) writes its requirement rows
+  /// into `fact_goal_target` in the same transaction (2026-10-26); a
+  /// single-set goal writes none and keeps the parent pair as its target.
   Future<void> createGoal(String userId, Goal goal) async {
-    await ps.db.execute(
-      '''
-      INSERT INTO fact_goal
-        (id, goal_id, user_id, program_id, block_id, program_run_id, goal_text,
-         goal_description, custom_exercise_id, custom_variation_id,
-         target_weight, target_reps, target_date,
-         target_date_history_json, goal_created_date)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ''',
-      [
-        goal.goalId,
-        goal.goalId,
-        userId,
-        goal.programId,
-        goal.blockId,
-        goal.programRunId,
-        goal.text,
-        goal.description,
-        goal.exerciseId,
-        goal.variationId,
-        goal.targetWeight,
-        goal.targetReps,
-        // Time-of-day-free: "the 5th" is the same day on every device.
-        // Stored as ISO-8601 like every date column — SQLite binds no
-        // `DateTime`, and a raw one throws the whole insert away.
-        goal.targetDate == null
-            ? null
-            : dateOnly(goal.targetDate!).toIso8601String(),
-        encodeGoalTargetDateHistory(goal.targetDateHistory),
-        DateTime.now().toUtc().toIso8601String(),
-      ],
-    );
+    await ps.safeWriteTransaction((tx) async {
+      await tx.execute(
+        '''
+        INSERT INTO fact_goal
+          (id, goal_id, user_id, program_id, block_id, program_run_id, goal_text,
+           goal_description, custom_exercise_id, custom_variation_id,
+           target_weight, target_reps, target_date,
+           target_date_history_json, goal_created_date)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''',
+        [
+          goal.goalId,
+          goal.goalId,
+          userId,
+          goal.programId,
+          goal.blockId,
+          goal.programRunId,
+          goal.text,
+          goal.description,
+          goal.exerciseId,
+          goal.variationId,
+          goal.targetWeight,
+          goal.targetReps,
+          // Time-of-day-free: "the 5th" is the same day on every device.
+          // Stored as ISO-8601 like every date column — SQLite binds no
+          // `DateTime`, and a raw one throws the whole insert away.
+          goal.targetDate == null
+              ? null
+              : dateOnly(goal.targetDate!).toIso8601String(),
+          encodeGoalTargetDateHistory(goal.targetDateHistory),
+          DateTime.now().toUtc().toIso8601String(),
+        ],
+      );
+      await _insertGoalTargets(tx.execute, goal.goalId, userId, goal.targets);
+    });
+  }
+
+  /// Writes one goal's requirement rows, renumbered from 1 — the list's order
+  /// IS the requirement's order (2026-10-26).
+  ///
+  /// [execute] is the caller's own statement runner, so the rows land inside
+  /// the transaction that wrote their goal — the client has no foreign keys,
+  /// so nothing else would stop a goal row from existing without them.
+  Future<void> _insertGoalTargets(
+    Future<void> Function(String sql, List<Object?> params) execute,
+    String goalId,
+    String userId,
+    List<GoalTargetSet> targets,
+  ) async {
+    for (final (index, target) in targets.indexed) {
+      final id = _uuid.v4();
+      await execute(
+        '''
+        INSERT INTO fact_goal_target
+          (id, goal_target_id, goal_id, user_id, target_set_order,
+           target_weight, target_reps)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''',
+        [id, id, goalId, userId, index + 1, target.weight, target.reps],
+      );
+    }
   }
 
   /// Rewrites a goal's description — the notes attached to the goal itself.
@@ -1566,11 +1688,12 @@ class ProgramRepository {
     String? variationId,
     num? targetWeight,
     int? targetReps,
+    List<GoalTargetSet>? targets,
     String? description,
     DateTime? targetDate,
   }) async {
     final rows = await ps.db.getAll(
-      'SELECT goal_text, target_date, target_date_history_json '
+      'SELECT goal_text, target_date, target_date_history_json, user_id '
       'FROM fact_goal WHERE goal_id = ? LIMIT 1',
       [goalId],
     );
@@ -1593,26 +1716,39 @@ class ProgramRepository {
     }
 
     final notes = description?.trim();
-    await ps.safeExec(
-      '''
-      UPDATE fact_goal
-      SET goal_text = ?, goal_description = ?, custom_exercise_id = ?,
-          custom_variation_id = ?, target_weight = ?, target_reps = ?,
-          target_date = ?, target_date_history_json = ?
-      WHERE goal_id = ?
-      ''',
-      [
-        exerciseName ?? rows.first['goal_text'] as String?,
-        notes == null || notes.isEmpty ? null : notes,
-        exerciseId,
-        variationId,
-        targetWeight,
-        targetReps,
-        next?.toIso8601String(),
-        encodeGoalTargetDateHistory(history),
-        goalId,
-      ],
-    );
+    final userId = '${rows.first['user_id']}';
+    await ps.safeWriteTransaction((tx) async {
+      await tx.execute(
+        '''
+        UPDATE fact_goal
+        SET goal_text = ?, goal_description = ?, custom_exercise_id = ?,
+            custom_variation_id = ?, target_weight = ?, target_reps = ?,
+            target_date = ?, target_date_history_json = ?
+        WHERE goal_id = ?
+        ''',
+        [
+          exerciseName ?? rows.first['goal_text'] as String?,
+          notes == null || notes.isEmpty ? null : notes,
+          exerciseId,
+          variationId,
+          targetWeight,
+          targetReps,
+          next?.toIso8601String(),
+          encodeGoalTargetDateHistory(history),
+          goalId,
+        ],
+      );
+      // The requirement list is replaced whole (2026-10-26): a goal carries
+      // its targets as one value, and re-pairing row ids would be bookkeeping
+      // nothing reads. [targets] null leaves the stored list alone — a
+      // deadline-only edit has no opinion about it.
+      if (targets != null) {
+        await tx.execute('DELETE FROM fact_goal_target WHERE goal_id = ?', [
+          goalId,
+        ]);
+        await _insertGoalTargets(tx.execute, goalId, userId, targets);
+      }
+    });
     return _readGoal(goalId);
   }
 
@@ -1660,11 +1796,24 @@ class ProgramRepository {
       'SELECT * FROM fact_goal WHERE goal_id = ? LIMIT 1',
       [goalId],
     );
-    return rows.isEmpty ? null : Goal.fromMap(rows.first);
+    if (rows.isEmpty) return null;
+    final goals = await _attachGoalTargets([Goal.fromMap(rows.first)]);
+    return goals.first;
   }
 
+  /// Removes a goal and its requirement rows.
+  ///
+  /// The children go FIRST because the mirror declares no foreign keys: the
+  /// local SQLite would happily leave orphaned `fact_goal_target` rows for a
+  /// goal that no longer exists, and the server's cascade only fires once the
+  /// upload reaches it — a row the device reads in the meantime.
   Future<void> deleteGoal(String goalId) async {
-    await ps.db.execute('DELETE FROM fact_goal WHERE goal_id = ?', [goalId]);
+    await ps.safeWriteTransaction((tx) async {
+      await tx.execute('DELETE FROM fact_goal_target WHERE goal_id = ?', [
+        goalId,
+      ]);
+      await tx.execute('DELETE FROM fact_goal WHERE goal_id = ?', [goalId]);
+    });
   }
 }
 

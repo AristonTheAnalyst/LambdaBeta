@@ -939,6 +939,7 @@ class FakeProgramRepository implements ProgramRepository {
           String? variationId,
           num? targetWeight,
           int? targetReps,
+          List<GoalTargetSet>? targets,
           String? description,
           DateTime? targetDate,
         })
@@ -952,6 +953,7 @@ class FakeProgramRepository implements ProgramRepository {
     String? variationId,
     num? targetWeight,
     int? targetReps,
+    List<GoalTargetSet>? targets,
     String? description,
     DateTime? targetDate,
   }) async {
@@ -962,6 +964,7 @@ class FakeProgramRepository implements ProgramRepository {
       variationId: variationId,
       targetWeight: targetWeight,
       targetReps: targetReps,
+      targets: targets,
       description: description,
       targetDate: targetDate,
     ));
@@ -984,6 +987,9 @@ class FakeProgramRepository implements ProgramRepository {
       variationId: variationId,
       targetWeight: targetWeight,
       targetReps: targetReps,
+      // A null list means "no opinion" and keeps the stored requirements, the
+      // same reading the real UPDATE makes (2026-10-26).
+      targets: targets ?? before.targets,
       targetDate: next,
       targetDateHistory: _sameGoalDay(before.targetDate, next)
           ? before.targetDateHistory
