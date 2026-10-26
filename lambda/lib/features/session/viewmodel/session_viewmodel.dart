@@ -554,6 +554,12 @@ class SessionViewModel extends ChangeNotifier {
   /// counted, and only loses the accent chrome.
   Set<String> goalSetIds = {};
 
+  /// The merged timeline [goalSetIds] is derived from — completed history
+  /// plus this session's own rows, oldest first (2026-10-26). The exercise
+  /// goals sheet asks it what has been achieved; the G badges and the sheet
+  /// therefore answer from one list.
+  List<PastSetRow> goalTimeline = const [];
+
   /// The user's goals, read with the timeline so the badge refreshes with the
   /// history it is derived from. Empty (never fatal) when the read fails: the
   /// grids must render without their marks rather than not at all.
@@ -1737,6 +1743,7 @@ class SessionViewModel extends ChangeNotifier {
       allPrEvents = [];
       prEventsBySetId = {};
       goalSetIds = {};
+      goalTimeline = const [];
       return;
     }
     final combined = <PastSetRow>[
@@ -1802,12 +1809,21 @@ class SessionViewModel extends ChangeNotifier {
     // Goal sets over the same merged timeline, so a live session's own row
     // can wear the G the moment it achieves the target (2026-10-20).
     goalSetIds = goalAchievingSetIds(goals: _goals, sets: combined);
+    goalTimeline = combined;
   }
 
   bool isPrSet(String setId) => prSetIds.contains(setId);
 
   /// Whether [setId] achieved one of the user's goals.
   bool isGoalSet(String setId) => goalSetIds.contains(setId);
+
+  /// [exerciseId]'s goals, met or not — the exercise goals sheet's list,
+  /// which filters and sorts them itself (2026-10-26). Free-text goals name
+  /// no exercise and never appear here.
+  List<Goal> goalsForExercise(String exerciseId) => [
+    for (final goal in _goals)
+      if (goal.exerciseId == exerciseId) goal,
+  ];
 
   /// The PRs this session landed for [exerciseId] — the count its card pill
   /// and the floor's trophy tile show, and the PR History sheet's

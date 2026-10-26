@@ -135,12 +135,6 @@ class SessionSetRow extends StatefulWidget {
     // commit is otherwise blur-only and typed values would be lost.
     this.onRegisterCommit,
     this.onUnregisterCommit,
-    // ── The goal door (2026-10-26) ──
-    // A set is where a target comes from — "that was 100 × 3, I want 110" —
-    // so the row's own drawer carries it. Null hides the action; the row
-    // also withholds it from drafts (nothing committed yet) and from deleted
-    // rows (not performed work).
-    this.onCreateGoal,
     // ── Bridge callbacks (screen closures over its VM) ──
     required this.onCommit,
     required this.onVariationChanged,
@@ -202,12 +196,6 @@ class SessionSetRow extends StatefulWidget {
 
   final void Function(Future<void> Function())? onRegisterCommit;
   final void Function(Future<void> Function())? onUnregisterCommit;
-
-  /// Opens the host's New goal form on this row (2026-10-26). The screen
-  /// owns what "on this row" means — it seeds the form from the set as it
-  /// stands, flushing any pending keystroke first — and the row only draws
-  /// the door.
-  final VoidCallback? onCreateGoal;
 
   /// Commit: `(isDraft, values, {immediate})`. Draft commits also carry the
   /// row-local variation and notes; real-set commits carry weight/reps only
@@ -283,13 +271,6 @@ class _SessionSetRowState extends State<SessionSetRow> {
   bool get _gated => widget.onEditConfirm != null && !widget.editConfirmed;
 
   bool get _effectiveReadOnly => widget.readOnly || _gated || widget.deleted;
-
-  /// Whether the drawer carries the goal door. The screen decides where the
-  /// door exists at all ([SessionSetRow.onCreateGoal]); the row withholds it
-  /// where there is nothing to chase: a draft still being typed, and a
-  /// deleted row, which is a fact being shown rather than performed work.
-  bool get _canCreateGoal =>
-      widget.onCreateGoal != null && !widget.deleted && !_isDraft;
 
   /// Real (non-draft) rows commit on every keystroke — the value is
   /// recognized as it's being typed, so navigating away (back, switching
@@ -745,8 +726,7 @@ class _SessionSetRowState extends State<SessionSetRow> {
     // A deleted row never took the plan's variation: the cell still names it
     // as a guide, so what the set was meant to do survives the deletion
     // (2026-10-23).
-    final deletedVariationGuide =
-        widget.deleted && plannedVariationName != null
+    final deletedVariationGuide = widget.deleted && plannedVariationName != null
         ? plannedVariationName
         : null;
 
@@ -992,15 +972,6 @@ class _SessionSetRowState extends State<SessionSetRow> {
       row = SwipeActions(
         borderRadius: AppRadius.md,
         actions: [
-          // The goal door leads the drawer, so the half-swipe still lands on
-          // Note · Delete: the two the thumb goes to mid-session (2026-10-26).
-          if (_canCreateGoal)
-            SwipeAction(
-              icon: Icons.track_changes,
-              color: AppColors.success,
-              foreground: AppColors.bg,
-              onTap: widget.onCreateGoal!,
-            ),
           if (!_isDraft)
             SwipeAction(
               icon: Icons.copy_rounded,
@@ -1028,20 +999,11 @@ class _SessionSetRowState extends State<SessionSetRow> {
       );
     } else {
       // Plain read-only rows (the past-session viewer's view mode, the
-      // training-page preview): swipe reveals Note, and the goal door where
-      // the screen offers one — a past record is the other place a target
-      // comes from (2026-10-26). A friend's record passes no door: the
-      // sheet would file the goal under their id.
+      // training-page preview): swipe reveals Note, and nothing else — a
+      // record is a fact being read.
       row = SwipeActions(
         borderRadius: AppRadius.md,
         actions: [
-          if (_canCreateGoal)
-            SwipeAction(
-              icon: Icons.track_changes,
-              color: AppColors.success,
-              foreground: AppColors.bg,
-              onTap: widget.onCreateGoal!,
-            ),
           SwipeAction(
             icon: Icons.sticky_note_2_outlined,
 
@@ -1253,16 +1215,11 @@ class _SessionSetRowState extends State<SessionSetRow> {
               ? InputBorder.none
               : OutlineInputBorder(
                   borderRadius: BorderRadius.circular(6),
-                  borderSide: BorderSide(
-                    color: AppColors.primary,
-                    width: 1.5,
-                  ),
+                  borderSide: BorderSide(color: AppColors.primary, width: 1.5),
                 ),
           border: _effectiveReadOnly
               ? InputBorder.none
-              : OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(6),
-                ),
+              : OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
         ),
       ),
     );

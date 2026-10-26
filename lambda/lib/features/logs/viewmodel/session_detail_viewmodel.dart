@@ -422,6 +422,22 @@ class SessionDetailViewModel {
   /// renders bare rather than not at all.
   List<Goal> _goals = const [];
 
+  /// The merged timeline the goal verdicts are derived from — history plus
+  /// the record's current rows — written by [_computePRs] (2026-10-26). The
+  /// exercise goals sheet asks it what has been achieved, so the sheet and
+  /// the G badges answer from one list.
+  List<PastSetRow> _goalTimeline = const [];
+
+  /// See [_goalTimeline].
+  List<PastSetRow> get goalTimeline => _goalTimeline;
+
+  /// [exerciseId]'s goals, met or not — the exercise goals sheet's list,
+  /// which filters and sorts them itself (2026-10-26).
+  List<Goal> goalsForExercise(String exerciseId) => [
+    for (final goal in _goals)
+      if (goal.exerciseId == exerciseId) goal,
+  ];
+
   /// The completed history the goal form reads — its "already beat this"
   /// verdict and its picker ordering (2026-10-26). The record on screen is in
   /// it: this is a past session, and its own sets are exactly what the form
@@ -430,7 +446,8 @@ class SessionDetailViewModel {
 
   /// exerciseId/variation-id → the date last trained, over the same timeline
   /// — the goal form's picker ordering on this surface.
-  Map<String, DateTime> get lastUsedByExercise => lastUsedByEntity(_timelineAsc);
+  Map<String, DateTime> get lastUsedByExercise =>
+      lastUsedByEntity(_timelineAsc);
 
   /// Writes a goal from a set on this page (2026-10-26) — the row's own
   /// drawer opens the New goal form seeded with it, and this is the write
@@ -863,6 +880,9 @@ class SessionDetailViewModel {
       // met each target, so only it wears the G (2026-10-20).
       goalSetIds: goalAchievingSetIds(goals: _goals, sets: combined),
     );
+    // Kept beside the state, not in it: the goals sheet reads it through the
+    // view model, the same way the goals themselves are held (2026-10-26).
+    _goalTimeline = combined;
   }
 
   /// This workout's current sets as timeline rows — set-number order, all

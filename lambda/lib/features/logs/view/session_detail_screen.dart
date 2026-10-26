@@ -32,6 +32,7 @@ import '../../../shared/widgets/session_set_row.dart';
 import '../../../shared/widgets/slide_up_modal.dart';
 import '../../../shared/widgets/undo_redo_buttons.dart';
 import '../../../shared/widgets/user_name_text.dart';
+import '../../goals/view/exercise_goals_sheet.dart';
 import '../../goals/view/goal_sheet.dart';
 import '../../session/model/session_local_state.dart';
 import '../../session/view/lessons_modal.dart';
@@ -552,6 +553,12 @@ class SessionDetailView extends StatelessWidget {
                   onLessonTap: exerciseId == null
                       ? null
                       : () => _openLessons(context, exerciseId),
+                  // The goals door (2026-10-26) — the owner's record only: a
+                  // friend's or athlete's page draws no bullseye, because
+                  // the New goal behind it would file under their id.
+                  onGoalTap: exerciseId == null || readOnly
+                      ? null
+                      : () => _openGoals(context, exerciseId),
                 ),
               ),
             ],
@@ -576,6 +583,34 @@ class SessionDetailView extends StatelessWidget {
       // The record's own review boundary, when a pass has covered it
       // (2026-10-26): PRs landed since that pass lead the feed.
       sinceLastReviewAt: state.reviewCheckpoint,
+      // A PR that also met a goal draws green (2026-10-26).
+      goalSetIds: state.goalSetIds,
+    );
+  }
+
+  /// The floor's bullseye (2026-10-26): the exercise's goals on the PR
+  /// History sheet's furniture, open ones first by default. The New goal door
+  /// inside it seeds the goals screen's form with just this exercise.
+  void _openGoals(BuildContext context, String exerciseId) {
+    final name = toProperCase(viewModel.exerciseDisplayName(exerciseId));
+    showExerciseGoalsSheet(
+      context,
+      exerciseName: name,
+      listenable: viewModel.state,
+      goalsFor: () => viewModel.goalsForExercise(exerciseId),
+      setsFor: () => viewModel.goalTimeline,
+      variationNames: {
+        for (final v in state.allVariations) v.variationId: v.name,
+      },
+      onNewGoal: () => showAddGoalSheet(
+        context,
+        detailMap: state.exerciseDetailMap,
+        variations: state.allVariations,
+        lastUsed: viewModel.lastUsedByExercise,
+        pastSets: viewModel.pastSets,
+        seed: ExerciseTarget(exerciseId: exerciseId, exerciseName: name),
+        onAdd: viewModel.createGoalFromTarget,
+      ),
     );
   }
 
@@ -732,51 +767,6 @@ class _DetailCardBuilder extends StatelessWidget {
   final bool readOnly;
 
   /// The goal door (2026-10-26): the New goal form the goals screen composes,
-  /// opened on the row the user swiped — the record's own set, variation,
-  /// weight and reps already in it. A past record is exactly where a target
-  /// comes from: the session is over, and what it showed is what to chase.
-  ///
-  /// The row is re-read AFTER the pending commits are flushed (the form must
-  /// open on what the row SHOWS), and the write behind ADD folds the new goal
-  /// into the G badges in place — the set that meets it turns green with the
-  /// record still on the desk.
-  ///
-  /// The form opens on a one-shot draft, and it wires no "open that workout"
-  /// door: this page walks records in place rather than pushing another
-  /// viewer over itself.
-  Future<void> _openGoalForSet(BuildContext context, String setId) async {
-    await viewModel.flushPendingCommits();
-    if (!context.mounted) return;
-    final fresh = viewModel.state.value;
-    SessionExerciseSet? set;
-    for (final sets in fresh.setsByOrder.values) {
-      for (final s in sets) {
-        if (s.sessionExerciseSetId == setId) {
-          set = s;
-          break;
-        }
-      }
-      if (set != null) break;
-    }
-    final exerciseId = set?.exerciseId;
-    if (set == null || exerciseId == null) return;
-    await showAddGoalSheet(
-      context,
-      detailMap: fresh.exerciseDetailMap,
-      variations: fresh.allVariations,
-      lastUsed: viewModel.lastUsedByExercise,
-      pastSets: viewModel.pastSets,
-      seed: ExerciseTarget(
-        exerciseId: exerciseId,
-        exerciseName: toProperCase(viewModel.exerciseDisplayName(exerciseId)),
-        variationId: set.variationId,
-        weight: set.weight,
-        reps: set.reps.isEmpty ? null : set.reps.first.toInt(),
-      ),
-      onAdd: viewModel.createGoalFromTarget,
-    );
-  }
-
   static String _fmtNum(num n) =>
       n == n.roundToDouble() ? n.toInt().toString() : n.toString();
 
@@ -963,11 +953,6 @@ class _DetailCardBuilder extends StatelessWidget {
             weight: _parseWeight(v.weight),
             reps: _parseReps(v.reps),
           ),
-          // The goal door (2026-10-26) — the owner's record in either mode.
-          // A friend's passes none: the write would file under their id.
-          onCreateGoal: readOnly
-              ? null
-              : () => _openGoalForSet(context, set.sessionExerciseSetId),
           variationOptions: variationOptions,
           allVariations: allVariations,
           findSimilarVariations: viewModel.findSimilarVariations,
@@ -1057,6 +1042,7 @@ class _DetailCardBuilder extends StatelessWidget {
         sessionSetIds: viewModel.sessionPrSetIdsFor(exerciseId),
         sessionStartedAt: state.session?.createdDatetime,
         sinceLastReviewAt: state.reviewCheckpoint,
+        goalSetIds: state.goalSetIds,
       ),
       // The plan-linked blue is the selector field and the set rows,
       // matching live (2026-10-23) — the session's plan is a fact about the
@@ -1224,9 +1210,7 @@ class _CoachFeedbackCard extends StatelessWidget {
       eyebrow: state.sessionTitle,
       feedback: mine,
       onSave: viewModel.saveCoachFeedback,
-      onDelete: mine == null
-          ? null
-          : () => viewModel.deleteCoachFeedback(mine),
+      onDelete: mine == null ? null : () => viewModel.deleteCoachFeedback(mine),
       // The ViewModel records its refusal as a sentence for the user; the
       // sheet that caused it draws it under the field.
       errorText: () => viewModel.state.value.error,
@@ -1533,7 +1517,8 @@ class _CoachFeedbackSheetState extends State<_CoachFeedbackSheet> {
               key: const ValueKey('session-coach-feedback-input'),
               controller: _controller,
               label: 'Note',
-              placeholder: 'How did the session go?\nWhat to keep, what to fix?',
+              placeholder:
+                  'How did the session go?\nWhat to keep, what to fix?',
               // The sheet's ground is `surface`: a step up for the field
               // (frontend-design §6, the ground rule).
               elevated: true,

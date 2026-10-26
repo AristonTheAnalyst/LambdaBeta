@@ -382,7 +382,8 @@ straight runs.
 
 **The floor-bar stat tile (2026-10-22).** `SessionStatsTiles`
 (`features/session/view/session_stats_bar.dart`) is the session floor's
-pair of doors — trophy (session PRs) and note glyph (exercise notes), each a
+doors — trophy (session PRs), goals bullseye (2026-10-26) and note glyph
+(exercise notes), each tile a
 48-tall glass tile (`kSessionBarControlSize`, the undo/redo boxes' own
 height) reading **icon + count**, never a word: 24px glyph, 8pt insets,
 mono 17 w800 count, `FittedBox` so a narrow stage narrows the line. The
@@ -407,7 +408,17 @@ record — then `PREVIOUSLY`, so a record read from Logs never files a
 later PR under "previously"; the note glyph opens the grouped exercise-notes modal
 (`sessionId` / `sessionStartedAt` / `sessionIsLive` = the same session),
 which stands the same three shelves with its own drawn by `sessionId`.
-Both follow the date bar, so a walk moves the doors with the sets. The
+Both follow the date bar, so a walk moves the doors with the sets. **Between
+the two tiles stands the goals bullseye** (2026-10-26) — not a tile but a
+green `BarIconButton` (`track_changes`), drawn only when the surface passes
+`onGoalTap`, so the live page and the viewer carry it (star · trophy ·
+bullseye · note) and the planner, a friend's record and an athlete's record
+do not. It opens `showExerciseGoalsSheet`
+(`features/goals/view/exercise_goals_sheet.dart`) on the PR sheet's
+furniture — the exercise's goals, Open by default behind a status control,
+ordered by `SortButton`, a met goal in success ink — and a PR whose set
+achieved a goal draws **success** instead of accent in the trophy's own
+sheet (the same `goalSetIds`). The
 old `PRs Achieved` modal and the per-exercise breakdown sheets are gone. The live session and the past-session viewer draw
 the same tiles beside the same star (`BarIconButton`, `star_rounded`,
 "Session ratings", **accent** glass — a door to session content, not

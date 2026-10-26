@@ -20,6 +20,7 @@ Future<void> _pumpTiles(
   bool gain = true,
   VoidCallback? onPrTap,
   VoidCallback? onLessonTap,
+  VoidCallback? onGoalTap,
 }) async {
   tester.view.physicalSize = const Size(1206, 2622);
   tester.view.devicePixelRatio = 3;
@@ -36,6 +37,7 @@ Future<void> _pumpTiles(
               gain: gain,
               onPrTap: onPrTap,
               onLessonTap: onLessonTap,
+              onGoalTap: onGoalTap,
             ),
           ),
         ),
@@ -151,5 +153,52 @@ void main() {
     await tester.pump();
     expect(prTaps, 1);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('the goals bullseye rides the row only when there is a door', (
+    tester,
+  ) async {
+    var goalTaps = 0;
+    await _pumpTiles(
+      tester,
+      prCount: 1,
+      lessonCount: 1,
+      onPrTap: () {},
+      onLessonTap: () {},
+      onGoalTap: () => goalTaps++,
+    );
+
+    // The bullseye stands between the PRs tile and the note's, in the
+    // success glass a met goal wears (2026-10-26).
+    final bullseye = find.byKey(const ValueKey('session-goals-button'));
+    expect(bullseye, findsOneWidget);
+    expect(
+      tester.getCenter(bullseye).dx,
+      greaterThan(
+        tester.getCenter(find.byKey(const ValueKey('session-prs-tile'))).dx,
+      ),
+    );
+    expect(
+      tester.getCenter(bullseye).dx,
+      lessThan(
+        tester.getCenter(find.byKey(const ValueKey('session-lessons-tile'))).dx,
+      ),
+    );
+    await tester.tap(bullseye);
+    await tester.pump();
+    expect(goalTaps, 1);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('the planner — no goal data — draws no bullseye', (tester) async {
+    await _pumpTiles(
+      tester,
+      prCount: 12,
+      lessonCount: 3,
+      gain: false,
+      onPrTap: () {},
+      onLessonTap: () {},
+    );
+    expect(find.byKey(const ValueKey('session-goals-button')), findsNothing);
   });
 }

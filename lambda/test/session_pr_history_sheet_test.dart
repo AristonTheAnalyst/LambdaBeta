@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lambda/core/styles/app_colors.dart';
 import 'package:lambda/features/session/model/pr_engine.dart';
 import 'package:lambda/features/session/view/pr_history_sheet.dart';
 
@@ -70,6 +71,7 @@ Future<void> _openSheet(
   DateTime? sessionStartedAt,
   bool sessionIsLive = false,
   DateTime? sinceLastReviewAt,
+  Set<String> goalSetIds = const {},
   // The third group needs a taller stage than the 0.7 sheet offers at the
   // default phone height, or its entries sit past the list's viewport and
   // never lay out for the order assertions.
@@ -94,6 +96,7 @@ Future<void> _openSheet(
                 sessionStartedAt: sessionStartedAt,
                 sessionIsLive: sessionIsLive,
                 sinceLastReviewAt: sinceLastReviewAt,
+                goalSetIds: goalSetIds,
               ),
               child: const Text('open'),
             ),
@@ -413,5 +416,25 @@ void main() {
       tester.getSize(find.byKey(const ValueKey('pr-history-sheet'))).height,
       closeTo(screenHeight * 0.7, 1),
     );
+  });
+
+  testWidgets('a PR that achieved a goal draws green, not accent', (
+    tester,
+  ) async {
+    await _openSheet(tester, goalSetIds: const {'s2'});
+
+    // The set that met a goal wears the success ink everywhere else in the
+    // app; the feed says the same thing the same way (2026-10-26).
+    final met = tester.widget<Text>(find.text('60kg × 8'));
+    expect(met.style?.color, AppColors.success);
+
+    // Its neighbour, a PR that met nothing, keeps the accent.
+    final plain = tester.widget<Text>(
+      find.descendant(
+        of: find.byKey(const ValueKey('pr-history-entry-s1')),
+        matching: find.text('60kg × 5'),
+      ),
+    );
+    expect(plain.style?.color, AppColors.accent);
   });
 }
