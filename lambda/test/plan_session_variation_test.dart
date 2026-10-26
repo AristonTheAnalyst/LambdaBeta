@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lambda/core/styles/app_colors.dart';
 import 'package:lambda/core/styles/app_fonts.dart';
+import 'package:lambda/core/styles/app_text_styles.dart';
 import 'package:lambda/data/models/custom_exercise.dart';
 import 'package:lambda/data/models/custom_variation.dart';
 import 'package:lambda/data/models/exercise_detail.dart';
@@ -17,7 +18,9 @@ import 'package:lambda/features/programs/view/plan_session_screen.dart';
 import 'package:lambda/features/programs/view/review_container.dart';
 import 'package:lambda/features/programs/viewmodel/workout_editor_viewmodel.dart';
 import 'package:lambda/shared/widgets/dropdown_select.dart';
+import 'package:lambda/shared/widgets/floating_bar.dart';
 import 'package:lambda/shared/widgets/session_exercise_card.dart';
+import 'package:lambda/shared/widgets/undo_redo_buttons.dart';
 
 /// A variation picked on an empty draft set, and the exercise switch that used
 /// to eat it.
@@ -418,14 +421,122 @@ void main() {
         pill(),
         findsNothing,
         reason:
-            'the review bar is the floor during a pass — a second bar '
-            'above it stacks two floors on one screen',
+            'the review bar is the floor during a pass, and the numbers it '
+            'carries are what CHANGED — these counts would answer a '
+            'question the bar already answers',
       );
       expect(find.text('EXERCISES'), findsNothing);
       expect(
         find.byType(ReviewBar),
         findsOneWidget,
         reason: 'and the bar that took its place is up',
+      );
+    });
+  });
+
+  // ── Undo/redo, moved to the floor ────────────────────────────────────────
+  //
+  // The pair lived in this screen's header. It cannot ride the review bar's
+  // own row at 402pt: four workout glyphs leave the label slot exactly the
+  // width 'Review Complete' needs (pinned by review_container_test's
+  // geometry group), and two more controls would trade that line for an
+  // ellipsis. So inside a pass it takes the floor's storey above the bar —
+  // where the live session keeps its own pair — and the header keeps none.
+  group('undo/redo inside a pass', () {
+    setUp(() {
+      reviewSessionNotifier.value = null;
+      reviewWorkoutNotesNotifier.value = const {};
+    });
+    tearDown(() {
+      reviewSessionNotifier.value = null;
+      reviewWorkoutNotesNotifier.value = const {};
+    });
+
+    Finder pair() => find.byType(UndoRedoButtons);
+
+    testWidgets('the header keeps none, and a fresh workout has nothing to '
+        'step through', (tester) async {
+      await pumpEditorInReview(tester);
+
+      expect(
+        pair(),
+        findsNothing,
+        reason:
+            'the header pair is gone inside a pass, and with no history '
+            'there is nothing for the floor storey to offer either',
+      );
+    });
+
+    testWidgets('a structural edit brings the pair to the floor, above the '
+        'bar — never into its row', (tester) async {
+      await pumpEditorInReview(tester);
+
+      await tester.tap(find.text('+ ADD SET'));
+      await tester.pumpAndSettle();
+
+      expect(
+        pair(),
+        findsOneWidget,
+        reason: 'the edit is on the undo stack, and the pair is the way back',
+      );
+      expect(
+        find.ancestor(of: pair(), matching: find.byType(FloatingBar)),
+        findsOneWidget,
+        reason:
+            'the pair stands in the floor\'s own container, the way the '
+            'live session\'s does',
+      );
+      expect(
+        find.descendant(of: find.byType(ReviewBar), matching: pair()),
+        findsNothing,
+        reason:
+            'the bar\'s row is full: two more glyphs would ellipsize the '
+            'line that says what state the pass is in',
+      );
+
+      await tester.tap(
+        find.descendant(of: pair(), matching: find.byIcon(Icons.undo)),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey('draft-1')),
+        findsNothing,
+        reason: 'undo stepped the set back off the card',
+      );
+      expect(
+        pair(),
+        findsOneWidget,
+        reason:
+            'and the redo side keeps the pair up — an undo that is '
+            'stepped back is still a step',
+      );
+    });
+
+    testWidgets('the bar keeps its whole line with the pair standing above '
+        'it', (tester) async {
+      // The width that decides where the pair lives: the bar's label slot is
+      // what the four glyphs leave of 402pt, and 'Review Complete' is the
+      // longest line it can wear. If the pair were in the row, this is the
+      // assertion that would fail.
+      await pumpEditorInReview(tester);
+      await tester.tap(find.text('+ ADD SET'));
+      await tester.pumpAndSettle();
+
+      expect(pair(), findsOneWidget);
+      expect(
+        tester
+            .getSize(
+              find.descendant(
+                of: find.byType(ReviewBar),
+                matching: find.byType(AnimatedSwitcher),
+              ),
+            )
+            .width,
+        greaterThanOrEqualTo(_labelLineWidth(kReviewCompleteLabel)),
+        reason:
+            'the floor storey is what buys this room — the pair costs the '
+            'label nothing',
       );
     });
   });
@@ -439,6 +550,24 @@ Future<void> _loadFont(String family, List<String> assets) async {
     loader.addFont(rootBundle.load(asset));
   }
   await loader.load();
+}
+
+/// A bar label's own line width, painted with the real font — the room the
+/// label slot has to hold whole. Painted rather than remembered, so the
+/// assertion moves with the words (the same helper review_container_test
+/// uses, where the four-glyph budget is pinned).
+double _labelLineWidth(String label) {
+  final painter = TextPainter(
+    text: TextSpan(
+      text: label,
+      style: AppFonts.ui(
+        fontSize: AppTextStyles.sm,
+        fontWeight: FontWeight.w700,
+      ),
+    ),
+    textDirection: TextDirection.ltr,
+  )..layout();
+  return painter.width;
 }
 
 /// The planner's reads and writes, in memory. Set rows are numbered per group

@@ -423,6 +423,13 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
         // and carries the numbers that matter — what CHANGED — so the pill
         // stands down with the nav bar, and the page's inset shrinks with it
         // ([FloatingBarOverlay] measures whatever is actually above the floor).
+        //
+        // Inside a pass the storey above the review bar is the undo/redo pair
+        // instead (2026-10-26) — the live session's own floor keeps its pair
+        // in the row above the bar, and the review's bar row has no room for
+        // it: four glyphs already leave the label exactly the width
+        // 'Review Complete' needs at 402pt. Shown while there is something to
+        // step through, like the header pair it replaces.
         final statsBar = _reviewSession == null
             ? FloatingBar(
                 child: _PlanStatsBar(
@@ -430,7 +437,15 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
                   exerciseCount: state.workoutExerciseSlots.length,
                 ),
               )
-            : null;
+            : (widget.viewModel.canUndo || widget.viewModel.canRedo
+                  ? _ReviewUndoRedoBar(
+                      viewModel: widget.viewModel,
+                      // The record on screen is not the plan underneath, and
+                      // an undo would rewrite the page the user is not on
+                      // (the bar's tick and note lock for the same reason).
+                      locked: original != null,
+                    )
+                  : null);
         return _navBar(
           buildGuardedScaffold(
             scaffold: Scaffold(
@@ -668,7 +683,14 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (widget.viewModel.canUndo || widget.viewModel.canRedo) ...[
+                  // Inside a pass the pair lives at the floor, above the
+                  // review bar (2026-10-26): the review's own bar owns the
+                  // bottom of the screen and cannot hold two more glyphs, so
+                  // its storey does — and the header keeps only the verbs
+                  // that belong to the workout's identity.
+                  if (review == null &&
+                      (widget.viewModel.canUndo ||
+                          widget.viewModel.canRedo)) ...[
                     UndoRedoButtons(
                       canUndo: widget.viewModel.canUndo,
                       canRedo: widget.viewModel.canRedo,
@@ -858,6 +880,50 @@ class _PlanStatsBar extends StatelessWidget {
         StatsTile(label: 'SETS', value: '$setCount'),
         StatsTile(label: 'EXERCISES', value: '$exerciseCount'),
       ],
+    );
+  }
+}
+
+/// The review editor's undo/redo pair, on the floor above the review bar
+/// (2026-10-26; it was in this screen's header, where the bottom of the
+/// screen could not reach it).
+///
+/// It cannot ride the review bar's own row at 402pt: four workout glyphs
+/// leave the label slot exactly the width 'Review Complete' needs, and two
+/// more controls would trade that line for an ellipsis. So the pair takes the
+/// storey the counts pill uses outside a pass — the same floating container,
+/// stacked on the same gap, right-aligned over the bar's own glyph cluster so
+/// the floor reads as one control column rather than two bars. The live
+/// session's floor keeps its pair in the same place (above its bar), which is
+/// the shape this screen is being held to.
+class _ReviewUndoRedoBar extends StatelessWidget {
+  const _ReviewUndoRedoBar({required this.viewModel, this.locked = false});
+
+  final WorkoutEditorViewModel viewModel;
+
+  /// Whether the pair is drawn but does not act — the record is on screen,
+  /// and an undo would rewrite the plan underneath a page the user is not on.
+  final bool locked;
+
+  @override
+  Widget build(BuildContext context) {
+    return FloatingBar(
+      // The bar's own right inset (`AppSpacing.md`), so the pair's edge lands
+      // over the glyphs' edge below it.
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            UndoRedoButtons(
+              canUndo: viewModel.canUndo && !locked,
+              canRedo: viewModel.canRedo && !locked,
+              onUndo: viewModel.undo,
+              onRedo: viewModel.redo,
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
