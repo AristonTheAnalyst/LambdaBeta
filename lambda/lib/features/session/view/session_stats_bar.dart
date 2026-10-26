@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../../../core/styles/app_colors.dart';
-import '../../../core/styles/app_fonts.dart';
 import '../../../core/styles/app_radius.dart';
 import '../../../core/styles/app_spacing.dart';
 import '../../../core/utils/session_format.dart';
@@ -16,7 +15,7 @@ import 'pr_history_sheet.dart';
 /// The active workout's summary doors, in the Training page's sticky bottom
 /// bar: a trophy, a bullseye and a book — the trophy, bullseye and book
 /// openings the ACTIVE exercise's PRs, goals and notes ([SessionStatsTiles],
-/// 2026-10-22), the bullseye carrying its open-goal count (2026-10-27). Every
+/// 2026-10-22), all three glyphs alone (2026-10-27). Every
 /// door opens at any count, like the PR Lab's own bar — an exercise with no
 /// notes still has its cues behind the book, so nothing goes dead
 /// (2026-10-23). The trophy opens that exercise's PR History sheet, the book
@@ -120,10 +119,11 @@ class SessionStatsBar extends StatelessWidget {
 }
 
 /// The bar's doors, drawn (2026-10-22): a trophy, a bullseye and a note glyph,
-/// each a glass control the height of the undo/redo boxes beside them, the
-/// bullseye alone carrying a number — the exercise's open goals (2026-10-27).
-/// Presentational only — the live bar binds a VM, the past-session viewer
-/// binds its own state, and the planner binds the workout editor.
+/// each a glyph alone on a glass control the height of the undo/redo boxes
+/// beside them (2026-10-27 — the bullseye's open-goal count rides only the
+/// semantics now). Presentational only — the live bar binds a VM, the
+/// past-session viewer binds its own state, and the planner binds the workout
+/// editor.
 ///
 /// **A door is neutral until it has something to say** (2026-10-27): the
 /// container is the app's primary glass by default and the accent glass only
@@ -161,9 +161,9 @@ class SessionStatsTiles extends StatelessWidget {
   final int prCount;
   final int lessonCount;
 
-  /// How many of the exercise's goals still stand — the number the bullseye
-  /// draws and what lights it (2026-10-27). Read through `goalCompletionSet`
-  /// over the same merged timeline the `G` badge uses.
+  /// How many of the exercise's goals still stand — what lights the bullseye
+  /// and what it reads to a screen reader (2026-10-27). Read through
+  /// `goalCompletionSet` over the same merged timeline the `G` badge uses.
   final int goalCount;
 
   final VoidCallback? onPrTap;
@@ -206,7 +206,6 @@ class SessionStatsTiles extends StatelessWidget {
             child: _control(
               key: const ValueKey('session-goals-button'),
               icon: Icons.track_changes,
-              value: '$goalCount',
               semanticsLabel: _goalSemantics(goalCount),
               active: goalCount > 0,
               onTap: onGoalTap,
@@ -229,13 +228,11 @@ class SessionStatsTiles extends StatelessWidget {
 
   /// The PR Lab's control recipe (2026-10-22): [kSessionBarControlSize] tall
   /// so the doors stand level with the undo/redo boxes and the star beside
-  /// them, a 24px glyph, and — on the bullseye alone — the mono 17 count.
-  /// Three equal thirds of the row at 402pt; `FittedBox` narrows the line
-  /// rather than overflowing it on a small stage.
+  /// them, a 24px glyph and nothing else (2026-10-27 removed the last drawn
+  /// count). Three equal thirds of the row at 402pt.
   Widget _control({
     Key? key,
     required IconData icon,
-    String? value,
     required String semanticsLabel,
     required bool active,
     required VoidCallback? onTap,
@@ -247,17 +244,14 @@ class SessionStatsTiles extends StatelessWidget {
     return Semantics(
       button: true,
       label: semanticsLabel,
-      // The reading is the whole control; the glyph and bare number must not
-      // announce themselves separately.
+      // The reading is the whole control; the glyph must not announce itself
+      // separately.
       excludeSemantics: true,
       child: GestureDetector(
         onTap: onTap,
         child: Container(
           key: key,
           height: kSessionBarControlSize,
-          // 4: two numbers left this row (2026-10-27), and the bullseye's
-          // icon + count must fit its third at 402pt without scaling down.
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
           decoration: door
               ? glassBox(active ? AppColors.accent : AppColors.primary)
               : BoxDecoration(
@@ -265,28 +259,7 @@ class SessionStatsTiles extends StatelessWidget {
                   borderRadius: BorderRadius.circular(AppRadius.md),
                   border: Border.all(color: AppColors.border, width: 0.5),
                 ),
-          child: Center(
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(icon, size: 24, color: color),
-                  if (value != null) ...[
-                    const SizedBox(width: AppSpacing.xs),
-                    Text(
-                      value,
-                      style: AppFonts.mono(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w800,
-                        color: color,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
+          child: Center(child: Icon(icon, size: 24, color: color)),
         ),
       ),
     );

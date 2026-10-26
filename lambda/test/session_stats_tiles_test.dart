@@ -4,9 +4,10 @@ import 'package:lambda/core/styles/app_colors.dart';
 import 'package:lambda/features/session/view/session_stats_bar.dart';
 
 /// The session bar's three doors (2026-10-22, reworked 2026-10-27): the
-/// trophy, the goals bullseye and the note. The trophy and the note carry no
-/// number — their colour says whether the feed behind them has anything —
-/// while the bullseye keeps the exercise's open-goal count.
+/// trophy, the goals bullseye and the note — **glyphs alone**, none of them
+/// drawing a count (the open-goal number the bullseye briefly carried was
+/// removed the same day). What a door's feed holds still rides its semantics
+/// and decides its colour.
 ///
 /// A door is the app's neutral glass until it has something to say, then the
 /// accent: PRs gained (the whole shelf on the planner), open goals standing,
@@ -69,8 +70,7 @@ Color? _ink(WidgetTester tester, String key) =>
     tester.widget<Icon>(_inTile(key, find.byType(Icon))).color;
 
 void main() {
-  testWidgets('the doors draw their glyphs, and only the bullseye carries a '
-      'number', (tester) async {
+  testWidgets('the doors draw their glyphs alone — no counts', (tester) async {
     await _pumpTiles(
       tester,
       prCount: 12,
@@ -97,12 +97,19 @@ void main() {
       findsOneWidget,
     );
 
-    // The open-goal count is the row's only number (2026-10-27).
-    expect(_inTile('session-goals-button', find.text('2')), findsOneWidget);
-    expect(find.text('+12'), findsNothing);
-    expect(find.text('+3'), findsNothing);
-    expect(find.text('12'), findsNothing);
-    expect(find.text('3'), findsNothing);
+    // No door draws a number (2026-10-27): the counts ride the semantics
+    // alone, and the row reads as three glyphs.
+    for (final key in const [
+      'session-prs-tile',
+      'session-goals-button',
+      'session-lessons-tile',
+    ]) {
+      expect(
+        _inTile(key, find.byType(Text)),
+        findsNothing,
+        reason: '$key must draw its glyph alone',
+      );
+    }
 
     // One row of 48pt controls, and the line must not overflow.
     expect(
@@ -195,9 +202,8 @@ void main() {
     await tester.pump();
     expect(prTaps, 1);
 
-    // "0" is the absence reading, but the doors still open the exercise's
-    // whole story — the PR Lab's own rule (2026-10-23).
-    expect(_inTile('session-goals-button', find.text('0')), findsOneWidget);
+    // A `0` draws nothing, but the doors still open the exercise's whole
+    // story — the PR Lab's own rule (2026-10-23).
     await tester.tap(find.byKey(const ValueKey('session-goals-button')));
     await tester.pump();
     expect(goalTaps, 1);
@@ -243,7 +249,12 @@ void main() {
       onGoalTap: () {},
     );
     expect(find.byKey(const ValueKey('session-goals-button')), findsOneWidget);
-    expect(_inTile('session-goals-button', find.text('4')), findsOneWidget);
+
+    // The number is gone from the glyph, but the count still reaches a
+    // screen reader (2026-10-27).
+    final handle = tester.ensureSemantics();
+    expect(find.bySemanticsLabel('4 open goals'), findsOneWidget);
+    handle.dispose();
   });
 
   testWidgets('a plan reads its shelves plainly — still doors, never a gain', (
@@ -261,10 +272,15 @@ void main() {
       onGoalTap: () {},
     );
 
-    // A plan gained nothing, so no reading may claim a session gain.
-    expect(find.text('+12'), findsNothing);
-    expect(find.text('+3'), findsNothing);
-    expect(_inTile('session-goals-button', find.text('2')), findsOneWidget);
+    // A plan gained nothing, so no reading may claim a session gain — and no
+    // door draws a number at all (2026-10-27).
+    expect(
+      find.descendant(
+        of: find.byType(SessionStatsTiles),
+        matching: find.byType(Text),
+      ),
+      findsNothing,
+    );
 
     // Doorness does not change with the reading: the doors still open.
     await tester.tap(find.byKey(const ValueKey('session-prs-tile')));

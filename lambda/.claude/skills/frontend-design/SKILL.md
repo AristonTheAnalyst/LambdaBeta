@@ -385,10 +385,9 @@ straight runs.
 session floor's three doors — trophy (PRs), goals bullseye and note glyph
 (exercise notes), each a third of the row's inner slot and a
 48-tall glass control (`kSessionBarControlSize`, the undo/redo boxes' own
-height) with a 24px glyph. **Only the bullseye carries a number**
-(2026-10-27): the exercise's open goals, mono 17 w800; the trophy and the
-note are glyphs alone — their `+n` / `0` counts are gone, riding only the
-semantics. **A door is neutral until it has something to say**
+height) with a 24px glyph — **a glyph alone: no door draws a count**
+(2026-10-27), the feeds' sizes riding only the semantics. **A door is
+neutral until it has something to say**
 (2026-10-27): `primary` glass and ink while its feed is empty, the
 **accent** glass and ink once it is not — the trophy when the session
 gained PRs (the whole shelf on the planner), the bullseye when open goals
