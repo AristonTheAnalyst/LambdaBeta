@@ -37,6 +37,7 @@ import '../../../shared/widgets/container_styles.dart';
 import '../../../shared/widgets/section_divider.dart';
 import '../../logs/view/logs_screen.dart';
 import '../../logs/viewmodel/session_detail_viewmodel.dart';
+import '../model/past_session_seed.dart';
 import '../model/session_local_state.dart';
 import '../viewmodel/session_viewmodel.dart';
 import 'foreign_session_preview.dart';
@@ -1193,6 +1194,18 @@ void _openSessionPicker(BuildContext context, SessionViewModel vm) {
   );
 }
 
+/// The Training page's "From past session" list (2026-10-26): the same
+/// training-log cards, newest first, read for a different verb — the row
+/// tapped seeds today's session instead of opening the record.
+Future<void> _openPastSessionPicker(BuildContext context, SessionViewModel vm) {
+  return showLambdaModal<void>(
+    context,
+    fitContent: true,
+    backgroundColor: AppColors.bg,
+    child: _SessionPickerSheet(vm: vm, seedMode: true),
+  );
+}
+
 /// Bordered pager chevron — the glass recipe when actionable, hairline +
 /// muted when disabled — so the enabled state reads as a real button.
 Widget _pagerButton(IconData icon, bool enabled, VoidCallback onTap) {
@@ -1227,10 +1240,19 @@ Widget _pagerButton(IconData icon, bool enabled, VoidCallback onTap) {
 /// training-logs style: date, planned pill, exercise × set summaries, and
 /// the pre/post ratings (notes are omitted from the preview). Tapping a row
 /// selects that session in the viewer card.
+///
+/// In [seedMode] the list is the Training page's "From past session" door
+/// (2026-10-26): the same rows, but a tap hands the record to the view model
+/// to repeat, so the card's own verbs (delete, the PR trophy, the current
+/// selection) are not drawn — none of them is about picking a record to copy.
 class _SessionPickerSheet extends StatefulWidget {
-  const _SessionPickerSheet({required this.vm});
+  const _SessionPickerSheet({required this.vm, this.seedMode = false});
 
   final SessionViewModel vm;
+
+  /// Picking seeds today's session rather than selecting the viewer's
+  /// record.
+  final bool seedMode;
 
   @override
   State<_SessionPickerSheet> createState() => _SessionPickerSheetState();
@@ -1292,7 +1314,7 @@ class _SessionPickerSheetState extends State<_SessionPickerSheet> {
                 AppSpacing.sm,
               ),
               child: Text(
-                'ALL SESSIONS',
+                widget.seedMode ? 'FROM PAST SESSION' : 'ALL SESSIONS',
                 style: AppFonts.mono(
                   fontSize: AppTextStyles.xs,
                   fontWeight: FontWeight.w600,
@@ -1323,7 +1345,9 @@ class _SessionPickerSheetState extends State<_SessionPickerSheet> {
         padding: const EdgeInsets.all(AppSpacing.xl),
         child: Center(
           child: Text(
-            'No completed sessions yet',
+            widget.seedMode
+                ? 'No completed sessions to repeat'
+                : 'No completed sessions yet',
             style: TextStyle(
               color: AppColors.inkSecondary,
               fontSize: AppTextStyles.sm,
@@ -1345,12 +1369,27 @@ class _SessionPickerSheetState extends State<_SessionPickerSheet> {
   }
 
   Widget _pickerRow(BuildContext context, SessionWithSets w) {
+    final seedMode = widget.seedMode;
     return SessionLogCard(
       workout: w,
-      selected: w.session.sessionId == widget.vm.reflectionSession?.sessionId,
-      prsByExercise: _prCounts[w.session.sessionId] ?? const {},
-      onDelete: () => _confirmDelete(w),
-      onTap: () {
+      selected:
+          !seedMode &&
+          w.session.sessionId == widget.vm.reflectionSession?.sessionId,
+      prsByExercise: seedMode
+          ? null
+          : _prCounts[w.session.sessionId] ?? const {},
+      onDelete: seedMode ? null : () => _confirmDelete(w),
+      onTap: () async {
+        if (seedMode) {
+          // Read first, close second: the page behind must never be visible
+          // with a Start that would still begin a freestyle session because
+          // the seed had not landed yet (2026-10-26).
+          await widget.vm.selectPastSession(w);
+          if (context.mounted) {
+            Navigator.of(context, rootNavigator: true).pop();
+          }
+          return;
+        }
         Navigator.of(context, rootNavigator: true).pop();
         widget.vm.selectReflectionSession(w.session.sessionId);
       },
@@ -1787,13 +1826,19 @@ class _TrainingPageState extends State<_TrainingPage> {
   }
 }
 
+/// The picker's "From past session" choice — a door out of the sheet, not a
+/// template: it closes the picker and opens the record list instead.
+const _kSeedFromPastSession = 'from-past-session';
+
 /// Lets the user pick which session template to log — a standalone
-/// template, a program planned session, or none (free-form).
+/// template, a program planned session, or none (free-form); the last row
+/// opens the past-session list that seeds today's session from a record
+/// (2026-10-26).
 Future<void> _showWorkoutPickerSheet(
   BuildContext context,
   SessionViewModel vm,
 ) async {
-  await showModalBottomSheet<String>(
+  final choice = await showModalBottomSheet<String>(
     context: context,
     useRootNavigator: true,
     backgroundColor: AppColors.surface,
@@ -1989,11 +2034,54 @@ Future<void> _showWorkoutPickerSheet(
                 ),
               ),
           ],
+          // A door, not a value: this row closes the picker and opens the
+          // record list that seeds today's session from a past one
+          // (2026-10-26). It sits last because it is the odd one out.
+          InkWell(
+            key: const ValueKey('picker-from-past-session'),
+            onTap: () => Navigator.of(ctx).pop(_kSeedFromPastSession),
+            child: Container(
+              margin: const EdgeInsets.fromLTRB(
+                AppSpacing.lg,
+                0,
+                AppSpacing.lg,
+                AppSpacing.xs,
+              ),
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.lg,
+                vertical: AppSpacing.md,
+              ),
+              // Pressable picker rows — the glass recipe.
+              decoration: glassBox(AppColors.primary),
+              child: Row(
+                children: [
+                  Icon(Icons.history, size: 18, color: AppColors.primary),
+                  const SizedBox(width: AppSpacing.sm),
+                  Expanded(
+                    child: Text(
+                      'From past session',
+                      style: AppFonts.ui(
+                        fontSize: AppTextStyles.md,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                  ),
+                  Icon(Icons.chevron_right, size: 18, color: AppColors.muted),
+                ],
+              ),
+            ),
+          ),
           const SizedBox(height: AppSpacing.md),
         ],
       ),
     ),
   );
+  // The picker closed on the record door: the list of completed sessions is
+  // the next step, and picking one there is what seeds the page.
+  if (choice == _kSeedFromPastSession && context.mounted) {
+    await _openPastSessionPicker(context, vm);
+  }
 }
 
 /// "You've completed this training block" — shown on the idle training page
@@ -2086,9 +2174,16 @@ class _SessionPreview extends StatefulWidget {
 class _SessionPreviewState extends State<_SessionPreview> {
   int _selectedIndex = 0;
 
+  static String _fmtNum(num n) =>
+      n == n.roundToDouble() ? n.toInt().toString() : n.toString();
+
   @override
   Widget build(BuildContext context) {
     final vm = widget.vm;
+    // A record picked to repeat draws what Start will write (2026-10-26):
+    // the record's arrangement and weights, not the plan's targets.
+    final seed = vm.pastSessionSeed;
+    if (seed != null) return _seededPreview(vm, seed);
     final order = vm.plannedExerciseOrder;
     if (order.isEmpty) return _freestylePreview(vm);
     final activeIndex = _selectedIndex.clamp(0, order.length - 1);
@@ -2107,6 +2202,66 @@ class _SessionPreviewState extends State<_SessionPreview> {
       flat: true,
       rows: _previewRows(vm, exerciseId),
       // No pills / history / ADD SET — all greyed or hidden via nulls.
+    );
+  }
+
+  /// A repeated record, previewed as the live card will draw it the moment
+  /// Start is pressed: each set's kg as a real value (the planned chip when
+  /// it meets the plan), reps empty with the plan's target ghosted in, and
+  /// the recorded variation. It asks [PastSessionSeed.exercisesToCopy] — the
+  /// same question Start's write asks — so the preview can never promise a
+  /// row Start does not write (2026-10-26).
+  Widget _seededPreview(SessionViewModel vm, PastSessionSeed seed) {
+    final groups = seed.exercisesToCopy(vm.plannedSetById);
+    if (groups.isEmpty) return _freestylePreview(vm);
+    final activeIndex = _selectedIndex.clamp(0, groups.length - 1);
+    final group = groups[activeIndex];
+    return SessionExerciseCard(
+      exerciseNames: [
+        for (final g in groups)
+          toProperCase(vm.exerciseDisplayName(g.exerciseId)),
+      ],
+      activeIndex: activeIndex,
+      onSelect: (i) => setState(() => _selectedIndex = i),
+      // The plan's blue reads off the record's plan link: a freestyle record
+      // repeats flat, exactly as it will after Start.
+      planned: seed.plan != null,
+      flat: true,
+      rows: [
+        for (var i = 0; i < group.sets.length; i++)
+          _seededRow(vm, group.sets[i], i + 1),
+      ],
+    );
+  }
+
+  /// One row of a repeated record — the live row read-only, so the value
+  /// grammar (chips, tints, ghosts) is the one the session will wear.
+  Widget _seededRow(SessionViewModel vm, SeedSet row, int index) {
+    final set = row.source;
+    return SessionSetRow(
+      key: ValueKey('seed-${set.sessionExerciseSetId}'),
+      mode: SetRowMode.live,
+      exerciseId: set.exerciseId ?? '',
+      displayIndex: index,
+      isDraft: false,
+      initialWeightText: set.weight != null ? _fmtNum(set.weight!) : '',
+      // Never the record's: reps are today's performance.
+      initialRepsText: '',
+      initialVariationId: row.variationId,
+      initialVariationName: row.variationId == null ? null : set.variationName,
+      initialNotes: null,
+      hasNotes: false,
+      plannedTarget: vm.plannedSetById[set.plannedSetId],
+      readOnly: true,
+      onCommit: (_, _, {bool immediate = false}) async {},
+      onVariationChanged: (_) {},
+      onNotesSave: (_) {},
+      onDelete: () async {},
+      onDuplicate: (_) {},
+      variationOptions: _noVariationOptions,
+      allVariations: const [],
+      findSimilarVariations: (_) => const [],
+      submitNewVariation: _inertSubmitVariation,
     );
   }
 

@@ -33,6 +33,7 @@ import '../../../shared/widgets/exercise_target_picker.dart';
 import '../../../shared/widgets/slide_pages.dart';
 import '../../logs/viewmodel/session_detail_viewmodel.dart';
 import '../../programs/model/program_achievements.dart';
+import '../model/past_session_seed.dart';
 import '../model/pr_engine.dart';
 import '../model/session_local_state.dart';
 
@@ -893,8 +894,15 @@ class SessionViewModel extends ChangeNotifier {
     return order;
   }
 
+  /// The record the next session will repeat — "From past session"
+  /// (2026-10-26). Set by [selectPastSession] and consumed (and cleared) by
+  /// [startWorkout]; any template pick clears it, because picking a template
+  /// is picking what today's session follows.
+  PastSessionSeed? pastSessionSeed;
+
   /// Picks a standalone workout to log.
   Future<void> selectStandaloneWorkout(PlannedSession w) async {
+    pastSessionSeed = null;
     selectedStandaloneWorkout = w;
     selectedPlannedSession = null;
     final sets = await _plannedSessionRepo.readNormalizedPlannedSession(
@@ -907,15 +915,81 @@ class SessionViewModel extends ChangeNotifier {
 
   /// Picks a different planned workout to log and loads its planned sets.
   Future<void> selectPlannedSession(PlannedSession w) async {
+    pastSessionSeed = null;
     selectedPlannedSession = w;
     selectedStandaloneWorkout = null;
     await _loadSelectedSessionSets();
     notifyListeners();
   }
 
+  /// Picks a completed session to repeat (2026-10-26): reads its exercise
+  /// arrangement once and resolves the plan it rode on, so Start can copy the
+  /// record without a second read.
+  ///
+  /// The plan is attributed the way a restore attributes it (program
+  /// membership picks the list), because a record that followed a plan starts
+  /// today's session following the same one — that is what fills the header
+  /// with the plan's name and the card's empty cells with its guides. A
+  /// freestyle record follows no plan: the session starts flat, and the
+  /// card's own history is the only guide it needs.
+  Future<void> selectPastSession(SessionWithSets source) async {
+    List<SessionExercise> exercises;
+    try {
+      exercises = await _sessionRepo.loadSessionExercises(
+        source.session.sessionId,
+      );
+    } catch (_) {
+      // The arrangement can still be read off the sets (first appearance);
+      // only the plan links would be lost, and a repeat that copies the
+      // morning's weights is better than a picker row that does nothing.
+      exercises = const [];
+    }
+    final planId = source.session.plannedSessionId;
+    PlannedSession? template;
+    if (planId != null) {
+      try {
+        template = await _plannedSessionRepo.fetchPlannedSessionById(planId);
+      } catch (_) {}
+    }
+    if (template != null) {
+      final plan = template;
+      final templateId = plan.sessionId;
+      // Attribute the selection so the header reads the plan's live name and
+      // the planned rows keep their guides — the same classification the
+      // restore's `_restorePlannedContext` makes.
+      final inProgram = availableWorkouts.any((w) => w.sessionId == templateId);
+      if (inProgram) {
+        selectedPlannedSession = plan;
+        selectedStandaloneWorkout = null;
+      } else {
+        selectedStandaloneWorkout = plan;
+        selectedPlannedSession = null;
+      }
+      try {
+        final plannedSets = await _plannedSessionRepo
+            .readNormalizedPlannedSession(templateId);
+        plannedSetsByExercise = _plannedMapFromSets(plannedSets);
+        plannedExerciseOrder = _plannedOrderFromSets(plannedSets);
+      } catch (_) {}
+    } else {
+      selectedPlannedSession = null;
+      selectedStandaloneWorkout = null;
+      plannedSetsByExercise = {};
+      plannedExerciseOrder = [];
+    }
+    pastSessionSeed = PastSessionSeed(
+      source: source.session,
+      exercises: exercises,
+      sets: source.sets,
+      plan: template,
+    );
+    notifyListeners();
+  }
+
   /// Clears the template selection — the session becomes free-form
   /// (no planned sets, no program attribution).
   void clearTemplateSelection() {
+    pastSessionSeed = null;
     selectedPlannedSession = null;
     selectedStandaloneWorkout = null;
     plannedSetsByExercise = {};
@@ -955,6 +1029,12 @@ class SessionViewModel extends ChangeNotifier {
         return;
       }
       if (currentWorkoutId != null) return;
+
+      // A session seeded from a past record owns the idle page (2026-10-26):
+      // the picker's defaults must not re-choose a template underneath it —
+      // a tab switch is not a reason to drop the repeat, re-name the header
+      // or swap the guides to another plan's.
+      if (pastSessionSeed != null) return;
 
       programProgress = await _programRunRepo.getProgress(_userId);
       final programId = programProgress?.program.programId;
@@ -1186,10 +1266,7 @@ class SessionViewModel extends ChangeNotifier {
   /// remounting there would only throw away the user's scroll and filters
   /// (2026-10-25).
   Future<void> refreshShownReflection({bool bumpVersion = true}) async {
-    await _loadPastSets(
-      keepReflectionPosition: true,
-      bumpVersion: bumpVersion,
-    );
+    await _loadPastSets(keepReflectionPosition: true, bumpVersion: bumpVersion);
   }
 
   /// Resets the pager to the most recent completed session — called when the
@@ -3231,15 +3308,22 @@ class SessionViewModel extends ChangeNotifier {
     error = null;
     notifyListeners();
     try {
+      final seed = pastSessionSeed;
       final template = selectedStandaloneWorkout ?? selectedPlannedSession;
       final id = await _sessionRepo.createSession(
         _userId,
         preNotes: startNotes.trim().isEmpty ? null : startNotes.trim(),
-        programRunId: selectedStandaloneWorkout != null
+        // A repeat writes no run (2026-10-26): it is not the program's next
+        // session, and finishing it must never advance the run's cursor.
+        programRunId: seed != null || selectedStandaloneWorkout != null
             ? null
             : programProgress?.run.programRunId,
-        plannedSessionId: template?.sessionId,
-        plannedSessionName: template?.name,
+        // A seeded session follows the record's own plan, not whatever the
+        // picker has chosen: the record is the input.
+        plannedSessionId: seed != null
+            ? seed.plannedSessionId
+            : template?.sessionId,
+        plannedSessionName: seed != null ? seed.planName : template?.name,
         preFeeling: sessionFeeling,
         // Stamped so this device can always tell its own session from
         // another device's (2026-10-15).
@@ -3255,7 +3339,15 @@ class SessionViewModel extends ChangeNotifier {
       // Start lives ON the training page now — no slide; the pre-questionnaire
       // answers were captured into createSession above and are cleared when
       // the post-questionnaire completes.
-      await _materializePlannedSets();
+      if (seed != null) {
+        // The record is the source of truth once Start is pressed: it has
+        // been read, resolved and previewed, and a live session never needs
+        // it again.
+        await _materializeSeededSets(seed);
+        pastSessionSeed = null;
+      } else {
+        await _materializePlannedSets();
+      }
       // Reload so rows hydrate their exerciseId from the parent exercise row
       // (insertSet returns bare rows) — _seedExerciseSlots' draft logic keys
       // on it, and without the reload it would seed phantom drafts on top of
@@ -3323,6 +3415,55 @@ class SessionViewModel extends ChangeNotifier {
             weight: plannedWeightValue(p.targetWeight),
             reps: const [],
             plannedSetId: p.plannedSetId,
+          ),
+        );
+      }
+    }
+    sets = materialized;
+  }
+
+  /// Start's other materialization (2026-10-26): a session seeded from a past
+  /// record copies the record instead of the plan's targets — the same
+  /// arrangement, each set's numeric kg as the real weight, the variation and
+  /// the planned links, with **reps never copied** (a rep count is today's
+  /// performance; the target's blue guide is what the empty cell shows).
+  ///
+  /// The rows go through the same three writes [startWorkout] uses for a plan
+  /// ([SessionRepository.insertSessionExercise], then
+  /// [SessionRepository.insertSet] per set) — a repeat is a normal session
+  /// from here on, and nothing about it is a new kind of row. No
+  /// `dim_planned_session` row is created: the linked plan is the one that
+  /// already exists.
+  Future<void> _materializeSeededSets(PastSessionSeed seed) async {
+    final id = currentWorkoutId;
+    if (id == null) return;
+    final materialized = <SessionExerciseSet>[];
+    var exerciseOrder = 1;
+    // The preview and this write ask the same question, so what the user saw
+    // before Start is what lands here.
+    for (final group in seed.exercisesToCopy(plannedSetById)) {
+      final sessionExercise = await _sessionRepo.insertSessionExercise(
+        sessionId: id,
+        userId: _userId,
+        exerciseId: group.exerciseId,
+        exerciseOrder: exerciseOrder++,
+        plannedExerciseId: group.plannedExerciseId,
+      );
+      sessionExercises.add(sessionExercise);
+      var setNumber = 1;
+      for (final row in group.sets) {
+        materialized.add(
+          await _sessionRepo.insertSet(
+            sessionExerciseId: sessionExercise.sessionExerciseId,
+            sessionId: id,
+            userId: _userId,
+            setNumber: setNumber++,
+            weight: row.weight,
+            // Never real: the record's reps were that performance's, and
+            // nothing was performed today yet.
+            reps: const [],
+            variationId: row.variationId,
+            plannedSetId: row.plannedSetId,
           ),
         );
       }
@@ -3528,6 +3669,9 @@ class SessionViewModel extends ChangeNotifier {
     currentWorkoutId = null;
     workoutStartedAt = null;
     previousSessionId = null;
+    // A seed belongs to the page it was picked on, never to an ended or
+    // cancelled session (2026-10-26).
+    pastSessionSeed = null;
     // Every session opens on the bar's default stack — EXERCISE, today's
     // sets — whatever the last session was reading (2026-10-23).
     dateBarMode = SessionDateMode.exercise;
