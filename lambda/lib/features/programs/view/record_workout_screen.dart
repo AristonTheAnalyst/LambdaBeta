@@ -23,7 +23,7 @@ import '../../../shared/widgets/session_exercise_card.dart';
 import '../../../shared/widgets/session_set_row.dart';
 import '../../../shared/widgets/undo_redo_buttons.dart';
 import '../../goals/view/exercise_goals_sheet.dart';
-import '../../session/view/lessons_modal.dart';
+import '../../session/view/exercise_notes_modal.dart';
 import '../../session/view/pr_history_sheet.dart';
 import '../../session/view/session_stats_bar.dart';
 import '../viewmodel/record_workout_viewmodel.dart';
@@ -275,9 +275,9 @@ class _RecordWorkoutScreenState extends State<RecordWorkoutScreen> {
               Expanded(
                 child: SessionStatsTiles(
                   prCount: exerciseId == null ? 0 : _vm.prCountFor(exerciseId),
-                  lessonCount: exerciseId == null
+                  exerciseNoteCount: exerciseId == null
                       ? 0
-                      : _vm.lessonCountFor(exerciseId),
+                      : _vm.noteCountFor(exerciseId),
                   goalCount: exerciseId == null
                       ? 0
                       : _vm.openGoalsFor(exerciseId),
@@ -287,9 +287,9 @@ class _RecordWorkoutScreenState extends State<RecordWorkoutScreen> {
                   onPrTap: exerciseId == null
                       ? null
                       : () => _openPrHistory(exerciseId),
-                  onLessonTap: exerciseId == null
+                  onNoteTap: exerciseId == null
                       ? null
-                      : () => _openLessons(exerciseId),
+                      : () => _openNotes(exerciseId),
                   onGoalTap: exerciseId == null
                       ? null
                       : () => _openGoals(exerciseId),
@@ -346,16 +346,16 @@ class _RecordWorkoutScreenState extends State<RecordWorkoutScreen> {
   /// modal with its composer, pin, edit and delete gone — the notes are the
   /// user's, but this page is a record of what was, not a shelf to write on
   /// (the friend record's rule, 2026-10-23).
-  void _openLessons(String exerciseId) {
-    showLessonsModal(
+  void _openNotes(String exerciseId) {
+    showExerciseNotesModal(
       context,
       listenable: _vm,
-      lessonsFor: _vm.lessonsFor,
-      loadLessonsFor: _vm.loadLessonsFor,
-      addLesson: (id, text) async {},
-      toggleLessonPin: (id, lessonId) async {},
-      deleteLesson: (id, lessonId) async {},
-      updateLesson: (id, lessonId, text) async {},
+      notesFor: _vm.notesFor,
+      loadNotesFor: _vm.loadNotesFor,
+      addNote: (id, text) async {},
+      toggleNotePin: (id, exerciseNoteId) async {},
+      deleteNote: (id, exerciseNoteId) async {},
+      updateNote: (id, exerciseNoteId, text) async {},
       exerciseId: exerciseId,
       exerciseName: _exerciseName(exerciseId),
       readOnly: true,

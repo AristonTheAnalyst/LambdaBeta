@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/utils/session_format.dart';
-import '../../../data/models/lesson.dart';
+import '../../../data/models/exercise_note.dart';
 import '../../../data/models/planned_session_exercise_set.dart';
 import '../../../data/models/session_exercise_set.dart';
 import '../../../shared/widgets/add_exercise_modal.dart';
@@ -11,7 +11,7 @@ import '../../../shared/widgets/exercise_selector.dart';
 import '../../../shared/widgets/session_set_row.dart';
 import '../model/session_local_state.dart';
 import '../viewmodel/session_viewmodel.dart';
-import 'lessons_modal.dart';
+import 'exercise_notes_modal.dart';
 import 'pr_history_sheet.dart';
 
 /// Opens the shared exercise picker wired to [vm] — the one picker behind both
@@ -158,25 +158,25 @@ class LiveExerciseCard extends StatelessWidget {
         ]..sort((a, b) => a.set.setNumber.compareTo(b.set.setNumber));
         final draftIds = vm.draftSlotsByExercise[exerciseId] ?? const <int>[];
 
-        // The pinned lesson shows right under the exercise — pinning is what
+        // The pinned note shows right under the exercise — pinning is what
         // decides whether a note appears there.
-        Lesson? pinnedLesson;
-        for (final l in vm.lessonsFor(exerciseId)) {
+        ExerciseNote? pinnedNote;
+        for (final l in vm.notesFor(exerciseId)) {
           if (l.pinned) {
-            pinnedLesson = l;
+            pinnedNote = l;
             break;
           }
         }
 
-        void openLessonsModal() => showLessonsModal(
+        void openExerciseNotesModal() => showExerciseNotesModal(
           context,
           listenable: vm,
-          lessonsFor: vm.lessonsFor,
-          loadLessonsFor: vm.loadLessonsFor,
-          addLesson: vm.addLesson,
-          toggleLessonPin: vm.toggleLessonPin,
-          deleteLesson: vm.deleteLesson,
-          updateLesson: vm.updateLessonText,
+          notesFor: vm.notesFor,
+          loadNotesFor: vm.loadNotesFor,
+          addNote: vm.addNote,
+          toggleNotePin: vm.toggleNotePin,
+          deleteNote: vm.deleteNote,
+          updateNote: vm.updateNoteText,
           exerciseId: exerciseId,
           exerciseName: name,
           sessionId: vm.currentWorkoutId,
@@ -361,18 +361,18 @@ class LiveExerciseCard extends StatelessWidget {
             vm,
             onRemoveExercise: onRemoveExercise,
           ),
-          pinnedLesson: pinnedLesson != null
-              ? PinnedLessonData(
-                  text: pinnedLesson.text,
-                  date: pinnedLesson.createdDate,
+          pinnedNote: pinnedNote != null
+              ? PinnedNoteData(
+                  text: pinnedNote.text,
+                  date: pinnedNote.createdDate,
                 )
               : null,
-          onPinnedLessonTap: openLessonsModal,
-          // Session-scoped count — past sessions' lessons stay visible in
+          onPinnedNoteTap: openExerciseNotesModal,
+          // Session-scoped count — past sessions' notes stay visible in
           // the modal and the pinned bar, but don't inflate the button's
           // number.
-          lessonsCount: vm.lessonsThisSession(exerciseId).length,
-          onLessonsTap: openLessonsModal,
+          exerciseNotesCount: vm.exerciseNotesThisSession(exerciseId).length,
+          onExerciseNotesTap: openExerciseNotesModal,
           // The pill counts and opens this session's PRs for the exercise —
           // the same feed the floor's trophy opens (2026-10-22). The count
           // never decides doorness: the sheet holds the exercise's whole
@@ -532,10 +532,10 @@ class DeletedExerciseCard extends StatelessWidget {
           onSelect: vm.viewDeletedPlannedExerciseAt,
           onMove: null,
           onAdd: null,
-          pinnedLesson: null,
-          onPinnedLessonTap: null,
-          lessonsCount: 0,
-          onLessonsTap: null,
+          pinnedNote: null,
+          onPinnedNoteTap: null,
+          exerciseNotesCount: 0,
+          onExerciseNotesTap: null,
           prCount: 0,
           onPrTap: null,
           // The same flat reading the live card wears, with no outer rim:

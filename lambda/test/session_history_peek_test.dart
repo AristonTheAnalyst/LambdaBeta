@@ -5,12 +5,12 @@ import 'package:lambda/data/cache/past_sets_timeline_cache.dart';
 import 'package:lambda/data/models/custom_exercise.dart';
 import 'package:lambda/data/models/custom_variation.dart';
 import 'package:lambda/data/models/exercise_detail.dart';
-import 'package:lambda/data/models/lesson.dart';
+import 'package:lambda/data/models/exercise_note.dart';
 import 'package:lambda/data/models/session.dart';
 import 'package:lambda/data/models/session_exercise.dart';
 import 'package:lambda/data/models/session_exercise_set.dart';
 import 'package:lambda/data/repositories/exercise_repository.dart';
-import 'package:lambda/data/repositories/lesson_repository.dart';
+import 'package:lambda/data/repositories/exercise_note_repository.dart';
 import 'package:lambda/data/repositories/session_repository.dart';
 import 'package:lambda/features/logs/viewmodel/session_detail_viewmodel.dart';
 import 'package:lambda/features/session/view/session_history_peek.dart';
@@ -97,9 +97,9 @@ class _FakeExerciseRepo extends Fake implements ExerciseRepository {
   Future<List<CustomVariation>> fetchVariations(String userId) async => [];
 }
 
-class _FakeLessonRepo extends Fake implements LessonRepository {
+class _FakeExerciseNoteRepo extends Fake implements ExerciseNoteRepository {
   @override
-  Future<List<Lesson>> fetchLessons(String userId, String exerciseId) async =>
+  Future<List<ExerciseNote>> fetchNotes(String userId, String exerciseId) async =>
       const [];
 }
 
@@ -134,7 +134,7 @@ void main() {
       coachRepo: FakeCoachRepository(),
       sessionRepo: repo,
       exerciseRepo: _FakeExerciseRepo(),
-      lessonRepo: _FakeLessonRepo(),
+      noteRepo: _FakeExerciseNoteRepo(),
       userId: 'u1',
     );
     await vm.load(sessionId);

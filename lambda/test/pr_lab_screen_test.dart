@@ -22,7 +22,7 @@ Finder _inSheet(Finder matching) => find.descendant(
 
 /// A reading inside one action-bar tile — the tiles are glyph + number only,
 /// and both numbers have look-alikes elsewhere on the stage (a reps cell, a
-/// lesson body), so every count is read where it is drawn.
+/// note body), so every count is read where it is drawn.
 Finder _inTile(String key, String text) =>
     find.descendant(of: find.byKey(ValueKey(key)), matching: find.text(text));
 
@@ -49,9 +49,9 @@ void main() {
     expect(find.text('20 Oct 2026'), findsOneWidget);
     expect(find.text('TODAY -'), findsOneWidget);
     // Session-scoped metrics: the bench's gains in the fake session — two
-    // PRs and two lessons stamped with its id — drawn as gains.
+    // PRs and two notes stamped with its id — drawn as gains.
     expect(_inTile('pr-lab-prs-tile', '+2'), findsOneWidget);
-    expect(_inTile('pr-lab-lessons-tile', '+2'), findsOneWidget);
+    expect(_inTile('pr-lab-notes-tile', '+2'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -76,7 +76,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('pr-lab-sheet')), findsOneWidget);
 
-    // The header wears the Lessons sheet's recipe: the exercise as an
+    // The header wears the Notes sheet's recipe: the exercise as an
     // eyebrow over the title, with the all-time count beside the close.
     expect(_inSheet(find.text('BENCH PRESS')), findsOneWidget);
     expect(_inSheet(find.text('PR History')), findsOneWidget);
@@ -101,7 +101,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Incline Bench Press'), findsOneWidget);
     expect(_inTile('pr-lab-prs-tile', '+2'), findsOneWidget);
-    expect(_inTile('pr-lab-lessons-tile', '+1'), findsOneWidget);
+    expect(_inTile('pr-lab-notes-tile', '+1'), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('pr-lab-prs-tile')));
     await tester.pumpAndSettle();
@@ -118,33 +118,33 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Cable Fly'), findsOneWidget);
     expect(_inTile('pr-lab-prs-tile', '+1'), findsOneWidget);
-    expect(_inTile('pr-lab-lessons-tile', '0'), findsOneWidget);
+    expect(_inTile('pr-lab-notes-tile', '0'), findsOneWidget);
 
-    // Zero lessons means no session lessons, not a dead tile — the modal
-    // still opens over the exercise's seeded past lesson.
-    await tester.tap(find.byKey(const ValueKey('pr-lab-lessons-tile')));
+    // Zero notes means no session notes, not a dead tile — the modal
+    // still opens over the exercise's seeded past note.
+    await tester.tap(find.byKey(const ValueKey('pr-lab-notes-tile')));
     await tester.pumpAndSettle();
-    expect(find.text('Lessons'), findsOneWidget);
+    expect(find.text('Notes'), findsOneWidget);
     expect(
       find.text('Slight elbow bend held all the way through — never lock out.'),
       findsOneWidget,
     );
-    // No lessons in this session: the session's shelf is not drawn empty,
-    // and the one earlier lesson sits under its own heading.
+    // No notes in this session: the session's shelf is not drawn empty,
+    // and the one earlier note sits under its own heading.
     expect(find.text('THIS SESSION'), findsNothing);
     expect(find.text('PREVIOUSLY'), findsOneWidget);
   });
 
-  testWidgets('the book tile opens the lessons modal over seeded rows', (
+  testWidgets('the book tile opens the notes modal over seeded rows', (
     tester,
   ) async {
     await _pumpLab(tester);
-    await tester.tap(find.byKey(const ValueKey('pr-lab-lessons-tile')));
+    await tester.tap(find.byKey(const ValueKey('pr-lab-notes-tile')));
     await tester.pumpAndSettle();
 
     // The same header recipe as the PR sheet: eyebrow over the title.
     expect(find.text('BENCH PRESS'), findsOneWidget);
-    expect(find.text('Lessons'), findsOneWidget);
+    expect(find.text('Notes'), findsOneWidget);
     expect(
       find.text(
         'Wider grip was shifting the bar path left. Back to ring finger on '
@@ -153,8 +153,8 @@ void main() {
       findsOneWidget,
     );
 
-    // This session's lessons lead, the ones before it follow — the pinned
-    // old lesson stays under its own heading instead of jumping the line.
+    // This session's notes lead, the ones before it follow — the pinned
+    // old note stays under its own heading instead of jumping the line.
     expect(find.text('THIS SESSION'), findsOneWidget);
     expect(find.text('PREVIOUSLY'), findsOneWidget);
     final sessionTop = tester.getRect(find.text('THIS SESSION')).top;
@@ -280,12 +280,12 @@ void main() {
     expect(killer.style?.color, AppColors.accent);
   });
 
-  testWidgets('the lessons sheet draws readable type and ink', (tester) async {
+  testWidgets('the notes sheet draws readable type and ink', (tester) async {
     await _pumpLab(tester);
-    await tester.tap(find.byKey(const ValueKey('pr-lab-lessons-tile')));
+    await tester.tap(find.byKey(const ValueKey('pr-lab-notes-tile')));
     await tester.pumpAndSettle();
 
-    const sheetKey = ValueKey('pr-lab-lessons-sheet');
+    const sheetKey = ValueKey('pr-lab-notes-sheet');
     expectReadableText(tester, find.byKey(sheetKey));
     Finder inSheet(Finder matching) =>
         find.descendant(of: find.byKey(sheetKey), matching: matching);
@@ -332,7 +332,7 @@ void main() {
     // The tiles keep counting the session on the desk, whatever date the
     // card is showing.
     expect(_inTile('pr-lab-prs-tile', '+2'), findsOneWidget);
-    expect(_inTile('pr-lab-lessons-tile', '+2'), findsOneWidget);
+    expect(_inTile('pr-lab-notes-tile', '+2'), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('pr-lab-next-session')));
     await tester.pumpAndSettle();

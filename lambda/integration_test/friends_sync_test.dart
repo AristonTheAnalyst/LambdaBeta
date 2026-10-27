@@ -10,7 +10,7 @@ import 'package:lambda/data/models/friend.dart';
 import 'package:lambda/data/models/goal.dart';
 import 'package:lambda/data/models/session_exercise_set.dart';
 import 'package:lambda/data/repositories/friend_repository.dart';
-import 'package:lambda/data/repositories/lesson_repository.dart';
+import 'package:lambda/data/repositories/exercise_note_repository.dart';
 import 'package:lambda/data/repositories/program_repository.dart';
 import 'package:lambda/data/repositories/session_repository.dart';
 import 'package:lambda/features/friends/viewmodel/friends_viewmodel.dart';
@@ -97,7 +97,7 @@ void main() {
 
   /// The friend's history: one completed session (a 100×5 set — a first PR
   /// and a goal hit — and a flagged 120×5 row that must count for neither),
-  /// one ACTIVE session that must never surface, plus a lesson and a goal.
+  /// one ACTIVE session that must never surface, plus a note and a goal.
   Future<({String completedId, SessionExerciseSet set})> seedFriendHistory() async {
     final repo = SessionRepository();
     final completedId = await repo.createSession(friend, deviceId: 'friend-phone');
@@ -129,7 +129,7 @@ void main() {
     // A live session on the friend's phone — never synced to this device.
     await repo.createSession(friend, deviceId: 'friend-phone');
 
-    await LessonRepository().createLesson(
+    await ExerciseNoteRepository().createNote(
       friend,
       squat,
       'Chest up, sit back',
@@ -249,7 +249,7 @@ void main() {
     addTearDown(detail.dispose);
     await waitFor(
       () => detail.state.value.pastSetsLoaded,
-      reason: 'the heavy context (timeline, goals, lessons)',
+      reason: 'the heavy context (timeline, goals, notes)',
     );
 
     final state = detail.state.value;
@@ -268,7 +268,7 @@ void main() {
       reason: '90×3 was met by the 100×5 set',
     );
     expect(
-      state.lessonsByExercise[squat]?.single.text,
+      state.notesByExercise[squat]?.single.text,
       'Chest up, sit back',
       reason: 'the friend\'s notes read under the friend\'s id',
     );

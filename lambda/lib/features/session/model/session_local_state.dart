@@ -2,8 +2,8 @@ import '../../../data/models/session_exercise_set.dart';
 
 /// Pure local/in-memory state for the session screen — never persisted.
 /// A history "session" is a display-only grouping of already-persisted
-/// [PastSetRow]s. (Lessons used to live here too, before they got a real
-/// backing table — see data/models/lesson.dart.)
+/// [PastSetRow]s. (Notes used to live here too, before they got a real
+/// backing table — see data/models/exercise_note.dart.)
 
 class ExerciseHistorySession {
   const ExerciseHistorySession({required this.date, required this.sets});

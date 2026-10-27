@@ -10,7 +10,7 @@ import 'package:lambda/data/models/session_exercise.dart';
 import 'package:lambda/data/models/session_exercise_set.dart';
 import 'package:lambda/data/models/session.dart';
 import 'package:lambda/data/repositories/exercise_repository.dart';
-import 'package:lambda/data/repositories/lesson_repository.dart';
+import 'package:lambda/data/repositories/exercise_note_repository.dart';
 import 'package:lambda/data/repositories/planned_session_repository.dart';
 import 'package:lambda/data/repositories/program_repository.dart';
 import 'package:lambda/data/repositories/program_run_repository.dart';
@@ -282,7 +282,7 @@ void main() {
     exerciseRepo: _FakeExerciseRepo(),
     programRepo: FakeProgramRepository(),
     programRunRepo: FakeProgramRunRepository(),
-    lessonRepo: FakeLessonRepository(),
+    noteRepo: FakeExerciseNoteRepository(),
     plannedSessionRepo: FakePlannedSessionRepository(),
     waitForFirstSync: () async {},
     userId: 'u1',
@@ -1053,7 +1053,7 @@ class FakeProgramRepository extends Fake implements ProgramRepository {}
 
 class FakeProgramRunRepository extends Fake implements ProgramRunRepository {}
 
-class FakeLessonRepository extends Fake implements LessonRepository {}
+class FakeExerciseNoteRepository extends Fake implements ExerciseNoteRepository {}
 
 class FakePlannedSessionRepository extends Fake
     implements PlannedSessionRepository {}

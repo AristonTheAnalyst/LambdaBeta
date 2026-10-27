@@ -1,58 +1,58 @@
-// LAB COPY — the /dev/pr-lab layout sandbox's own in-memory lessons. Never
+// LAB COPY — the /dev/pr-lab layout sandbox's own in-memory notes. Never
 // import this from a production screen. Edit freely: nothing here can reach
 // the real session, planner, logs or PR History demo (2026-10-21).
 
 import 'package:flutter/foundation.dart';
 
-import '../../../data/models/lesson.dart';
+import '../../../data/models/exercise_note.dart';
 
 /// The fake session on the stage — the fixture's `_todaySessionId`, repeated
 /// here because the fixture keeps it private (and the lab must not edit the
-/// production demo's file to reach it). Lessons stamped with this id are the
+/// production demo's file to reach it). Notes stamped with this id are the
 /// ones the session-scoped book tile counts.
 const String kPrLabSessionId = 'demo-session-2026-10-20';
 
-/// The lab's lessons, kept in memory only — seeded fake rows for the demo
+/// The lab's notes, kept in memory only — seeded fake rows for the demo
 /// exercises, with every write landing in this object and nowhere else.
 ///
-/// The lab's lessons modal (`showPrLabLessonsModal`) is bound to a
+/// The lab's notes modal (`showPrLabNotesModal`) is bound to a
 /// [Listenable] + plain callbacks, so the lab can hand it this store exactly
 /// the way the live session hands it `SessionViewModel` — same interactions,
 /// no database and no viewmodel (2026-10-21).
-class PrLabLessonStore extends ChangeNotifier {
-  PrLabLessonStore() : _lessons = _seedLessons();
+class PrLabNoteStore extends ChangeNotifier {
+  PrLabNoteStore() : _notes = _seedNotes();
 
-  /// Exercise id → its lessons, oldest first.
-  final Map<String, List<Lesson>> _lessons;
+  /// Exercise id → its notes, oldest first.
+  final Map<String, List<ExerciseNote>> _notes;
 
-  /// The lessons for one exercise, in creation order — the modal sorts
+  /// The notes for one exercise, in creation order — the modal sorts
   /// (pinned first, then newest) itself.
-  List<Lesson> lessonsFor(String exerciseId) =>
-      _lessons[exerciseId] ?? const [];
+  List<ExerciseNote> notesFor(String exerciseId) =>
+      _notes[exerciseId] ?? const [];
 
-  /// Every lesson the exercise has, any session.
-  int countFor(String exerciseId) => lessonsFor(exerciseId).length;
+  /// Every note the exercise has, any session.
+  int countFor(String exerciseId) => notesFor(exerciseId).length;
 
-  /// The lessons added in the session on stage — what the action bar's book
-  /// tile quotes (2026-10-21). Past lessons are still opened by the tile;
+  /// The notes added in the session on stage — what the action bar's book
+  /// tile quotes (2026-10-21). Past notes are still opened by the tile;
   /// they just do not count as this session's work.
-  int sessionCountFor(String exerciseId) => lessonsFor(
+  int sessionCountFor(String exerciseId) => notesFor(
     exerciseId,
-  ).where((lesson) => lesson.sessionId == kPrLabSessionId).length;
+  ).where((note) => note.sessionId == kPrLabSessionId).length;
 
   /// The modal's load hook. The store is already in memory, so this is a
   /// no-op kept for the shared sheet's signature.
-  Future<void> loadLessonsFor(String exerciseId) async {}
+  Future<void> loadNotesFor(String exerciseId) async {}
 
-  Future<void> addLesson(String exerciseId, String text) async {
+  Future<void> addNote(String exerciseId, String text) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty) return;
-    final list = _lessons.putIfAbsent(exerciseId, () => []);
+    final list = _notes.putIfAbsent(exerciseId, () => []);
     list.add(
-      Lesson(
+      ExerciseNote(
         // Monotonic enough for a demo: the list only ever grows.
-        lessonId:
-            'lab-lesson-$exerciseId-${DateTime.now().microsecondsSinceEpoch}',
+        exerciseNoteId:
+            'lab-note-$exerciseId-${DateTime.now().microsecondsSinceEpoch}',
         userId: 'demo-user',
         exerciseId: exerciseId,
         text: trimmed,
@@ -65,78 +65,78 @@ class PrLabLessonStore extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> togglePin(String exerciseId, String lessonId) async {
+  Future<void> togglePin(String exerciseId, String exerciseNoteId) async {
     _replace(
       exerciseId,
-      lessonId,
-      (lesson) => Lesson(
-        lessonId: lesson.lessonId,
-        userId: lesson.userId,
-        exerciseId: lesson.exerciseId,
-        text: lesson.text,
-        pinned: !lesson.pinned,
-        createdDate: lesson.createdDate,
-        sessionId: lesson.sessionId,
+      exerciseNoteId,
+      (note) => ExerciseNote(
+        exerciseNoteId: note.exerciseNoteId,
+        userId: note.userId,
+        exerciseId: note.exerciseId,
+        text: note.text,
+        pinned: !note.pinned,
+        createdDate: note.createdDate,
+        sessionId: note.sessionId,
       ),
     );
   }
 
   Future<void> updateText(
     String exerciseId,
-    String lessonId,
+    String exerciseNoteId,
     String text,
   ) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty) return;
     _replace(
       exerciseId,
-      lessonId,
-      (lesson) => Lesson(
-        lessonId: lesson.lessonId,
-        userId: lesson.userId,
-        exerciseId: lesson.exerciseId,
+      exerciseNoteId,
+      (note) => ExerciseNote(
+        exerciseNoteId: note.exerciseNoteId,
+        userId: note.userId,
+        exerciseId: note.exerciseId,
         text: trimmed,
-        pinned: lesson.pinned,
-        createdDate: lesson.createdDate,
-        sessionId: lesson.sessionId,
+        pinned: note.pinned,
+        createdDate: note.createdDate,
+        sessionId: note.sessionId,
       ),
     );
   }
 
-  Future<void> deleteLesson(String exerciseId, String lessonId) async {
-    final list = _lessons[exerciseId];
+  Future<void> deleteNote(String exerciseId, String exerciseNoteId) async {
+    final list = _notes[exerciseId];
     if (list == null) return;
-    list.removeWhere((lesson) => lesson.lessonId == lessonId);
+    list.removeWhere((note) => note.exerciseNoteId == exerciseNoteId);
     notifyListeners();
   }
 
   void _replace(
     String exerciseId,
-    String lessonId,
-    Lesson Function(Lesson lesson) update,
+    String exerciseNoteId,
+    ExerciseNote Function(ExerciseNote note) update,
   ) {
-    final list = _lessons[exerciseId];
+    final list = _notes[exerciseId];
     if (list == null) return;
-    final index = list.indexWhere((lesson) => lesson.lessonId == lessonId);
+    final index = list.indexWhere((note) => note.exerciseNoteId == exerciseNoteId);
     if (index < 0) return;
     list[index] = update(list[index]);
     notifyListeners();
   }
 }
 
-/// The fake lessons — exercise ids are [kDemoExercises]' ids from
+/// The fake notes — exercise ids are [kDemoExercises]' ids from
 /// `pr_history_fixture.dart`, so the pills have something to open on every
 /// tab of the stage.
-Map<String, List<Lesson>> _seedLessons() {
-  Lesson lesson({
+Map<String, List<ExerciseNote>> _seedNotes() {
+  ExerciseNote note({
     required String exerciseId,
     required String id,
     required String text,
     required DateTime date,
     bool pinned = false,
     String? sessionId,
-  }) => Lesson(
-    lessonId: id,
+  }) => ExerciseNote(
+    exerciseNoteId: id,
     userId: 'demo-user',
     exerciseId: exerciseId,
     text: text,
@@ -147,13 +147,13 @@ Map<String, List<Lesson>> _seedLessons() {
 
   return {
     'demo-bench': [
-      lesson(
+      note(
         exerciseId: 'demo-bench',
         id: 'lab-bench-l1',
         text: 'Elbows tucked at 45° — own the descent, don\'t bounce.',
         date: DateTime(2026, 8, 4, 18, 12),
       ),
-      lesson(
+      note(
         exerciseId: 'demo-bench',
         id: 'lab-bench-l2',
         text:
@@ -161,14 +161,14 @@ Map<String, List<Lesson>> _seedLessons() {
         date: DateTime(2026, 9, 8, 18, 40),
         pinned: true,
       ),
-      lesson(
+      note(
         exerciseId: 'demo-bench',
         id: 'lab-bench-l3',
         text: 'Leg drive starts before the bar leaves the chest, not after.',
         date: DateTime(2026, 10, 20, 18, 22),
         sessionId: kPrLabSessionId,
       ),
-      lesson(
+      note(
         exerciseId: 'demo-bench',
         id: 'lab-bench-l4',
         text: 'Third set: bar drifted over the face. Same groove as set one.',
@@ -177,20 +177,20 @@ Map<String, List<Lesson>> _seedLessons() {
       ),
     ],
     'demo-incline': [
-      lesson(
+      note(
         exerciseId: 'demo-incline',
         id: 'lab-incline-l1',
         text: 'Bench at 30° — 45° turns it into a shoulder press.',
         date: DateTime(2026, 9, 3, 17, 55),
       ),
-      lesson(
+      note(
         exerciseId: 'demo-incline',
         id: 'lab-incline-l2',
         text:
             'Pause on the chest for a one-count; the bounce was the whole PR.',
         date: DateTime(2026, 9, 17, 18, 21),
       ),
-      lesson(
+      note(
         exerciseId: 'demo-incline',
         id: 'lab-incline-l3',
         text: 'Seat one notch up — the shoulder stopped pinching at 30°.',
@@ -199,7 +199,7 @@ Map<String, List<Lesson>> _seedLessons() {
       ),
     ],
     'demo-fly': [
-      lesson(
+      note(
         exerciseId: 'demo-fly',
         id: 'lab-fly-l1',
         text: 'Slight elbow bend held all the way through — never lock out.',

@@ -13,13 +13,13 @@ import '../../../data/models/custom_variation.dart';
 import '../../../data/models/exercise_detail.dart';
 import '../../../data/models/exercise_usage.dart';
 import '../../../data/models/goal.dart';
-import '../../../data/models/lesson.dart';
+import '../../../data/models/exercise_note.dart';
 import '../../../data/models/session.dart';
 import '../../../data/models/session_exercise.dart';
 import '../../../data/models/session_exercise_set.dart';
 import '../../../data/repositories/exercise_repository.dart';
 import '../../../data/repositories/coach_repository.dart';
-import '../../../data/repositories/lesson_repository.dart';
+import '../../../data/repositories/exercise_note_repository.dart';
 import '../../../data/repositories/program_history_repository.dart';
 import '../../../data/repositories/program_repository.dart';
 import '../../../data/repositories/session_repository.dart';
@@ -112,8 +112,8 @@ class SessionDetailState {
     this.allVariations = const [],
     this.newExCreating = false,
     this.newVarCreating = false,
-    // Lessons and history
-    this.lessonsByExercise = const {},
+    // Notes and history
+    this.notesByExercise = const {},
     this.historyByExercise = const {},
     this.pastSetsLoaded = false,
     this.prsByExercise = const {},
@@ -151,7 +151,7 @@ class SessionDetailState {
   final bool newExCreating;
   final bool newVarCreating;
 
-  final Map<String, List<Lesson>> lessonsByExercise;
+  final Map<String, List<ExerciseNote>> notesByExercise;
   final Map<String, List<ExerciseHistorySession>> historyByExercise;
   final bool pastSetsLoaded;
   final Map<String, int> prsByExercise;
@@ -280,7 +280,7 @@ class SessionDetailState {
     List<CustomVariation>? allVariations,
     bool? newExCreating,
     bool? newVarCreating,
-    Map<String, List<Lesson>>? lessonsByExercise,
+    Map<String, List<ExerciseNote>>? notesByExercise,
     Map<String, List<ExerciseHistorySession>>? historyByExercise,
     bool? pastSetsLoaded,
     Map<String, int>? prsByExercise,
@@ -325,7 +325,7 @@ class SessionDetailState {
     allVariations: allVariations ?? this.allVariations,
     newExCreating: newExCreating ?? this.newExCreating,
     newVarCreating: newVarCreating ?? this.newVarCreating,
-    lessonsByExercise: lessonsByExercise ?? this.lessonsByExercise,
+    notesByExercise: notesByExercise ?? this.notesByExercise,
     historyByExercise: historyByExercise ?? this.historyByExercise,
     pastSetsLoaded: pastSetsLoaded ?? this.pastSetsLoaded,
     prsByExercise: prsByExercise ?? this.prsByExercise,
@@ -354,7 +354,7 @@ class SessionDetailViewModel {
   SessionDetailViewModel({
     SessionRepository? sessionRepo,
     ExerciseRepository? exerciseRepo,
-    LessonRepository? lessonRepo,
+    ExerciseNoteRepository? noteRepo,
     ProgramRepository? programRepo,
     ProgramHistoryRepository? historyRepo,
     CoachRepository? coachRepo,
@@ -363,7 +363,7 @@ class SessionDetailViewModel {
     this.readOnly = false,
   }) : _sessionRepo = sessionRepo ?? SessionRepository(),
        _exerciseRepo = exerciseRepo ?? ExerciseRepository(),
-       _lessonRepo = lessonRepo ?? LessonRepository(),
+       _noteRepo = noteRepo ?? ExerciseNoteRepository(),
        _programRepo = programRepo ?? ProgramRepository(),
        _historyRepo = historyRepo ?? ProgramHistoryRepository(),
        _coachRepo = coachRepo ?? CoachRepository(),
@@ -377,7 +377,7 @@ class SessionDetailViewModel {
 
   final SessionRepository _sessionRepo;
   final ExerciseRepository _exerciseRepo;
-  final LessonRepository _lessonRepo;
+  final ExerciseNoteRepository _noteRepo;
   final ProgramRepository _programRepo;
   final ProgramHistoryRepository _historyRepo;
   final CoachRepository _coachRepo;
@@ -616,7 +616,7 @@ class SessionDetailViewModel {
   /// Lab's pager, not a navigation. The record being left stays on screen
   /// until the new read lands (never a spinner over a page that already has
   /// sets), and nothing belonging to it survives the step: edit mode and its
-  /// drafts end, and the session-scoped reads (PRs, history, lessons) are
+  /// drafts end, and the session-scoped reads (PRs, history, notes) are
   /// rebuilt for the record arriving.
   Future<void> walkTo(String sessionId) =>
       _loadSession(sessionId, inPlace: true);
@@ -659,7 +659,7 @@ class SessionDetailViewModel {
     // Fast path: the workout + its own exercise rows and sets are all the
     // screen needs to render. The heavy queries (full past-sets timeline,
     // exercise catalog) load in the background and populate
-    // lessons/history/PR data without blocking.
+    // notes/history/PR data without blocking.
     try {
       final results = await Future.wait([
         _sessionRepo.fetchSession(sessionId),
@@ -684,7 +684,7 @@ class SessionDetailViewModel {
               allVariations: carried.allVariations,
               historyByExercise: carried.historyByExercise,
               pastSetsLoaded: carried.pastSetsLoaded,
-              lessonsByExercise: carried.lessonsByExercise,
+              notesByExercise: carried.notesByExercise,
               dateBarMode: carried.dateBarMode,
             )
           : state.value;
@@ -709,11 +709,11 @@ class SessionDetailViewModel {
       // The sheets' review split, the same way: the record's own boundary,
       // read beside the page rather than blocking it (2026-10-26).
       if (session != null) unawaited(_loadReviewCheckpoint(session));
-      // Lessons for the session's exercises load with the session, so the
+      // Notes for the session's exercises load with the session, so the
       // card's pill and the floor tile count from the first frame — waiting
       // for the modal to open would leave both reading zero (2026-10-22).
       for (final id in {for (final sl in slots) sl.exerciseId}) {
-        unawaited(loadLessonsFor(id));
+        unawaited(loadNotesFor(id));
       }
     } catch (e) {
       if (token != _loadToken) return;
@@ -1287,7 +1287,7 @@ class SessionDetailViewModel {
         workoutSetDrafts: drafts,
         activeSlotIndex: slots.length - 1,
       );
-      loadLessonsFor(exerciseId);
+      loadNotesFor(exerciseId);
     }
 
     _recordUndo(
@@ -2198,7 +2198,7 @@ class SessionDetailViewModel {
     }
   }
 
-  // ── Lessons ────────────────────────────────────────────────────────────────
+  // ── Notes ────────────────────────────────────────────────────────────────
 
   /// All active variations, most recently used first — the set-row picker
   /// order. Variations are a flat per-user library.
@@ -2237,90 +2237,90 @@ class SessionDetailViewModel {
     );
   }
 
-  List<Lesson> lessonsFor(String exerciseId) =>
-      state.value.lessonsByExercise[exerciseId] ?? const [];
+  List<ExerciseNote> notesFor(String exerciseId) =>
+      state.value.notesByExercise[exerciseId] ?? const [];
 
-  /// The lessons born in THIS session for [exerciseId] — what the card's
+  /// The notes born in THIS session for [exerciseId] — what the card's
   /// pill, the floor tile and the breakdown sheet count. Past sessions'
-  /// lessons stay visible in the modal and the pinned bar but don't inflate
+  /// notes stay visible in the modal and the pinned bar but don't inflate
   /// the number (the live session's rule, mirrored 2026-10-22).
-  int sessionLessonsCount(String exerciseId) {
+  int sessionExerciseNotesCount(String exerciseId) {
     final sessionId = state.value.session?.sessionId;
     if (sessionId == null) return 0;
     var count = 0;
-    for (final l in lessonsFor(exerciseId)) {
+    for (final l in notesFor(exerciseId)) {
       if (l.sessionId == sessionId) count++;
     }
     return count;
   }
 
-  Future<void> loadLessonsFor(String exerciseId) async {
+  Future<void> loadNotesFor(String exerciseId) async {
     try {
-      final lessons = await _lessonRepo.fetchLessons(_userId, exerciseId);
-      final map = Map<String, List<Lesson>>.from(state.value.lessonsByExercise);
-      map[exerciseId] = lessons;
-      state.value = state.value.copyWith(lessonsByExercise: map);
+      final notes = await _noteRepo.fetchNotes(_userId, exerciseId);
+      final map = Map<String, List<ExerciseNote>>.from(state.value.notesByExercise);
+      map[exerciseId] = notes;
+      state.value = state.value.copyWith(notesByExercise: map);
     } catch (e) {
       state.value = state.value.copyWith(error: e.toString());
     }
   }
 
-  Future<void> addLesson(String exerciseId, String text) async {
+  Future<void> addNote(String exerciseId, String text) async {
     if (text.trim().isEmpty) return;
     try {
       // A cue written while reading a record was learned NOW — stamping the
       // record's id would back-date it into that past session's own shelf,
       // editing a workout the reader only navigated to (2026-10-23). Left
-      // session-less, it lands under AFTER and the record's lessons stay
+      // session-less, it lands under AFTER and the record's notes stay
       // untouched.
-      await _lessonRepo.createLesson(_userId, exerciseId, text.trim());
-      await loadLessonsFor(exerciseId);
+      await _noteRepo.createNote(_userId, exerciseId, text.trim());
+      await loadNotesFor(exerciseId);
     } catch (e) {
       state.value = state.value.copyWith(error: e.toString());
     }
   }
 
-  Future<void> toggleLessonPin(String exerciseId, String lessonId) async {
-    final lesson = lessonsFor(
+  Future<void> toggleNotePin(String exerciseId, String exerciseNoteId) async {
+    final note = notesFor(
       exerciseId,
-    ).firstWhereOrNull((l) => l.lessonId == lessonId);
-    if (lesson == null) return;
+    ).firstWhereOrNull((l) => l.exerciseNoteId == exerciseNoteId);
+    if (note == null) return;
     try {
-      await _lessonRepo.setPinned(
+      await _noteRepo.setPinned(
         _userId,
         exerciseId,
-        lessonId,
-        !lesson.pinned,
+        exerciseNoteId,
+        !note.pinned,
       );
-      await loadLessonsFor(exerciseId);
+      await loadNotesFor(exerciseId);
     } catch (e) {
       state.value = state.value.copyWith(error: e.toString());
     }
   }
 
-  Future<void> deleteLesson(String exerciseId, String lessonId) async {
+  Future<void> deleteNote(String exerciseId, String exerciseNoteId) async {
     try {
-      await _lessonRepo.deleteLesson(lessonId);
-      await loadLessonsFor(exerciseId);
+      await _noteRepo.deleteNote(exerciseNoteId);
+      await loadNotesFor(exerciseId);
     } catch (e) {
       state.value = state.value.copyWith(error: e.toString());
     }
   }
 
-  Future<void> updateLessonText(
+  Future<void> updateNoteText(
     String exerciseId,
-    String lessonId,
+    String exerciseNoteId,
     String text,
   ) async {
     if (text.trim().isEmpty) return;
     try {
-      await _lessonRepo.updateLesson(
+      await _noteRepo.updateNote(
         _userId,
         exerciseId,
-        lessonId,
+        exerciseNoteId,
         text.trim(),
       );
-      await loadLessonsFor(exerciseId);
+      await loadNotesFor(exerciseId);
     } catch (e) {
       state.value = state.value.copyWith(error: e.toString());
     }

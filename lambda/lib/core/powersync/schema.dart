@@ -248,15 +248,15 @@ const schema = Schema([
     ],
   ),
   Table(
-    'dim_lesson',
+    'dim_exercise_note',
     [
-      Column.text('lesson_id'),
+      Column.text('exercise_note_id'),
       Column.text('user_id'),
       Column.text('custom_exercise_id'),
-      Column.text('lesson_text'),
+      Column.text('note_text'),
       Column.integer('pinned'),
       Column.integer('is_archived'),
-      Column.text('lesson_created_date'),
+      Column.text('note_created_date'),
       Column.text('session_id'),
     ],
     indexes: [

@@ -10,7 +10,7 @@ import '../../../core/styles/app_spacing.dart';
 import '../../../core/styles/app_text_styles.dart';
 import '../../../core/utils/session_format.dart';
 import '../../../data/models/coach_feedback.dart';
-import '../../../data/models/lesson.dart';
+import '../../../data/models/exercise_note.dart';
 import '../../../data/models/session_exercise_set.dart';
 import '../../../shared/mixins/unsaved_changes_guard.dart';
 import '../../../shared/router/app_router.dart';
@@ -35,7 +35,7 @@ import '../../../shared/widgets/user_name_text.dart';
 import '../../goals/view/exercise_goals_sheet.dart';
 import '../../goals/view/goal_sheet.dart';
 import '../../session/model/session_local_state.dart';
-import '../../session/view/lessons_modal.dart';
+import '../../session/view/exercise_notes_modal.dart';
 import '../../session/view/pr_history_sheet.dart';
 import '../../session/view/ratings_sheet.dart';
 import '../../session/view/session_stats_bar.dart';
@@ -73,11 +73,11 @@ class SessionDetailScreen extends StatefulWidget {
 
   /// Whose record this is; null reads the signed-in user's own. The friend
   /// viewer passes the friend's id, and every read — the record, its walk
-  /// stamps, the catalog, PRs, lessons and goals — follows it (2026-10-23).
+  /// stamps, the catalog, PRs, notes and goals — follows it (2026-10-23).
   final String? userId;
 
   /// A friend's record: no edit path, no Restore, no write affordance
-  /// anywhere. The header's edit button and the lessons modal's composer are
+  /// anywhere. The header's edit button and the notes modal's composer are
   /// the two doors this closes; everything else was already read-only in
   /// view mode.
   final bool readOnly;
@@ -333,7 +333,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
 /// undo/redo with the historic trash, the ratings pencil and the two count
 /// tiles. The old PRs | Details | Reflection toggle is gone; its three
 /// surfaces live behind the floor now — PRs behind the trophy, pre/post
-/// answers behind the pencil, lessons behind the book — and the sets were
+/// answers behind the pencil, notes behind the book — and the sets were
 /// always the page itself.
 ///
 /// Shared between the /logs route (with its Edit header glyph) and read-only
@@ -356,7 +356,7 @@ class SessionDetailView extends StatelessWidget {
   final SessionDetailState state;
 
   /// A friend's record (2026-10-23): the Restore button is not drawn and the
-  /// lessons modal opens without its composer — no write affordance exists on
+  /// notes modal opens without its composer — no write affordance exists on
   /// the page.
   final bool readOnly;
 
@@ -465,9 +465,9 @@ class SessionDetailView extends StatelessWidget {
     // it (2026-10-22).
     final exerciseId = state.activeSlot?.exerciseId;
     final prCount = exerciseId == null ? 0 : viewModel.prCountFor(exerciseId);
-    final lessonCount = exerciseId == null
+    final exerciseNoteCount = exerciseId == null
         ? 0
-        : viewModel.sessionLessonsCount(exerciseId);
+        : viewModel.sessionExerciseNotesCount(exerciseId);
     final goalCount = exerciseId == null
         ? 0
         : viewModel.openGoalsFor(exerciseId);
@@ -565,7 +565,7 @@ class SessionDetailView extends StatelessWidget {
               Expanded(
                 child: SessionStatsTiles(
                   prCount: prCount,
-                  lessonCount: lessonCount,
+                  exerciseNoteCount: exerciseNoteCount,
                   goalCount: goalCount,
                   // Doors at any count — the PR Lab's bar recipe. A past
                   // record with no session PRs still opens onto the
@@ -574,9 +574,9 @@ class SessionDetailView extends StatelessWidget {
                   onPrTap: exerciseId == null
                       ? null
                       : () => _openPrHistory(context, exerciseId),
-                  onLessonTap: exerciseId == null
+                  onNoteTap: exerciseId == null
                       ? null
-                      : () => _openLessons(context, exerciseId),
+                      : () => _openNotes(context, exerciseId),
                   // The goals door (2026-10-26) — the owner's record only: a
                   // friend's or athlete's page draws no bullseye, because
                   // the New goal behind it would file under their id.
@@ -638,20 +638,20 @@ class SessionDetailView extends StatelessWidget {
     );
   }
 
-  /// The floor's book door: the active exercise's lessons, grouped around
+  /// The floor's book door: the active exercise's notes, grouped around
   /// the record on screen — its own, the ones before it, and the ones added
   /// since. The record's id is the scope, not "whatever session happens to
   /// be live".
-  void _openLessons(BuildContext context, String exerciseId) {
-    showLessonsModal(
+  void _openNotes(BuildContext context, String exerciseId) {
+    showExerciseNotesModal(
       context,
       listenable: viewModel.state,
-      lessonsFor: viewModel.lessonsFor,
-      loadLessonsFor: viewModel.loadLessonsFor,
-      addLesson: viewModel.addLesson,
-      toggleLessonPin: viewModel.toggleLessonPin,
-      deleteLesson: viewModel.deleteLesson,
-      updateLesson: viewModel.updateLessonText,
+      notesFor: viewModel.notesFor,
+      loadNotesFor: viewModel.loadNotesFor,
+      addNote: viewModel.addNote,
+      toggleNotePin: viewModel.toggleNotePin,
+      deleteNote: viewModel.deleteNote,
+      updateNote: viewModel.updateNoteText,
       exerciseId: exerciseId,
       exerciseName: toProperCase(viewModel.exerciseDisplayName(exerciseId)),
       sessionId: state.session?.sessionId,
@@ -797,7 +797,7 @@ class _DetailCardBuilder extends StatelessWidget {
   final SessionDetailExerciseSlot slot;
   final VoidCallback onAddExercise;
 
-  /// A friend's record: no Restore button, no lessons composer — the card
+  /// A friend's record: no Restore button, no notes composer — the card
   /// shows what is there and offers no way to change it (2026-10-23).
   final bool readOnly;
 
@@ -893,29 +893,29 @@ class _DetailCardBuilder extends StatelessWidget {
         if (r.sessionExerciseSetId != null) r.sessionExerciseSetId!,
     };
 
-    // The pinned lesson shows right under the exercise — pinning is what
+    // The pinned note shows right under the exercise — pinning is what
     // decides whether a note appears there.
-    Lesson? pinnedLesson;
-    for (final l in viewModel.lessonsFor(exerciseId)) {
+    ExerciseNote? pinnedNote;
+    for (final l in viewModel.notesFor(exerciseId)) {
       if (l.pinned) {
-        pinnedLesson = l;
+        pinnedNote = l;
         break;
       }
     }
 
-    void openLessonsModal() => showLessonsModal(
+    void openExerciseNotesModal() => showExerciseNotesModal(
       context,
       listenable: viewModel.state,
-      lessonsFor: viewModel.lessonsFor,
-      loadLessonsFor: viewModel.loadLessonsFor,
-      addLesson: viewModel.addLesson,
-      toggleLessonPin: viewModel.toggleLessonPin,
-      deleteLesson: viewModel.deleteLesson,
-      updateLesson: viewModel.updateLessonText,
+      notesFor: viewModel.notesFor,
+      loadNotesFor: viewModel.loadNotesFor,
+      addNote: viewModel.addNote,
+      toggleNotePin: viewModel.toggleNotePin,
+      deleteNote: viewModel.deleteNote,
+      updateNote: viewModel.updateNoteText,
       exerciseId: exerciseId,
       exerciseName: name,
       // The record being read, not "whatever is live" — this session's
-      // lessons form the sheet's first group, and its start splits the rest
+      // notes form the sheet's first group, and its start splits the rest
       // into before and after (2026-10-23).
       sessionId: state.session?.sessionId,
       sessionStartedAt: state.session?.createdDatetime,
@@ -1056,17 +1056,17 @@ class _DetailCardBuilder extends StatelessWidget {
           ? (i, dir) => viewModel.reorderExercises(i, i + dir)
           : null,
       onAdd: state.isEditing ? onAddExercise : null,
-      pinnedLesson: pinnedLesson != null
-          ? PinnedLessonData(
-              text: pinnedLesson.text,
-              date: pinnedLesson.createdDate,
+      pinnedNote: pinnedNote != null
+          ? PinnedNoteData(
+              text: pinnedNote.text,
+              date: pinnedNote.createdDate,
             )
           : null,
-      onPinnedLessonTap: openLessonsModal,
+      onPinnedNoteTap: openExerciseNotesModal,
       // Session-scoped, so the pill, the floor tile and the live card's
-      // count agree — a past session's lessons don't inflate this one.
-      lessonsCount: viewModel.sessionLessonsCount(exerciseId),
-      onLessonsTap: openLessonsModal,
+      // count agree — a past session's notes don't inflate this one.
+      exerciseNotesCount: viewModel.sessionExerciseNotesCount(exerciseId),
+      onExerciseNotesTap: openExerciseNotesModal,
       prCount: viewModel.prCountFor(exerciseId),
       // Always a door, like the floor's trophy: the sheet holds the
       // exercise's whole history, not only this record's gains (2026-10-23).

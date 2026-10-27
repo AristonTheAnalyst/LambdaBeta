@@ -375,8 +375,8 @@ class _SnapshotWorkoutCard extends StatelessWidget {
       // its editing affordances switched off.
       onMove: null,
       onAdd: null,
-      lessonsCount: 0,
-      onLessonsTap: null,
+      exerciseNotesCount: 0,
+      onExerciseNotesTap: null,
       prCount: 0,
       onPrTap: null,
       rows: [

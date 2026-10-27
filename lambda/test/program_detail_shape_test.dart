@@ -3,7 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lambda/data/models/program.dart';
 import 'package:lambda/data/models/program_block.dart';
 import 'package:lambda/data/models/program_run.dart';
-import 'package:lambda/data/repositories/lesson_repository.dart';
+import 'package:lambda/data/repositories/exercise_note_repository.dart';
 import 'package:lambda/features/programs/view/program_detail_screen.dart';
 import 'package:lambda/features/programs/viewmodel/program_detail_viewmodel.dart';
 
@@ -68,7 +68,7 @@ void main() {
     FakeProgramRunRepository? runRepo,
   }) async {
     final vm = ProgramDetailViewModel(
-      lessonRepo: _FakeLessons(),
+      noteRepo: _FakeNotes(),
       // Null is fine for the tests that only look: nothing on a rendered row
       // reaches a repository. The one test that taps Begin must pass a fake,
       // or the write would go to the PowerSync database this host has not got.
@@ -287,9 +287,9 @@ void main() {
   });
 }
 
-/// Only here because `LessonRepository`'s constructor evaluates the global
+/// Only here because `ExerciseNoteRepository`'s constructor evaluates the global
 /// `ps.db` — the one repository that cannot be default-constructed off-device.
-class _FakeLessons implements LessonRepository {
+class _FakeNotes implements ExerciseNoteRepository {
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

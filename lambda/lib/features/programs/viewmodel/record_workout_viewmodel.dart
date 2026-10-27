@@ -2,10 +2,10 @@ import 'package:flutter/foundation.dart';
 
 import '../../../data/cache/past_sets_timeline_cache.dart';
 import '../../../data/models/goal.dart';
-import '../../../data/models/lesson.dart';
+import '../../../data/models/exercise_note.dart';
 import '../../../data/models/program_content.dart';
 import '../../../data/models/session_exercise_set.dart';
-import '../../../data/repositories/lesson_repository.dart';
+import '../../../data/repositories/exercise_note_repository.dart';
 import '../../../data/repositories/program_history_repository.dart';
 import '../../../data/repositories/program_repository.dart';
 import '../../session/model/pr_engine.dart';
@@ -35,7 +35,7 @@ class RecordWorkoutState {
     this.goalTimeline = const [],
     this.allPrEvents = const [],
     this.goals = const [],
-    this.lessonsByExercise = const {},
+    this.notesByExercise = const {},
     this.goalSetIds = const {},
   });
 
@@ -65,7 +65,7 @@ class RecordWorkoutState {
   final List<Goal> goals;
 
   /// Exercise notes by exercise id — the note tile's shelf.
-  final Map<String, List<Lesson>> lessonsByExercise;
+  final Map<String, List<ExerciseNote>> notesByExercise;
 
   /// The set ids that met a goal — a PR on one of them draws green in the PR
   /// History sheet, the session floors' rule (2026-10-26).
@@ -201,7 +201,7 @@ class RecordWorkoutState {
     List<PastSetRow>? goalTimeline,
     List<PrEvent>? allPrEvents,
     List<Goal>? goals,
-    Map<String, List<Lesson>>? lessonsByExercise,
+    Map<String, List<ExerciseNote>>? notesByExercise,
     Set<String>? goalSetIds,
   }) => RecordWorkoutState(
     versions: versions,
@@ -210,7 +210,7 @@ class RecordWorkoutState {
     goalTimeline: goalTimeline ?? this.goalTimeline,
     allPrEvents: allPrEvents ?? this.allPrEvents,
     goals: goals ?? this.goals,
-    lessonsByExercise: lessonsByExercise ?? this.lessonsByExercise,
+    notesByExercise: notesByExercise ?? this.notesByExercise,
     goalSetIds: goalSetIds ?? this.goalSetIds,
   );
 }
@@ -233,12 +233,12 @@ class RecordWorkoutViewModel extends ValueNotifier<RecordWorkoutState> {
     int initialIndex = 0,
     String? userId,
     Future<List<PastSetRow>> Function(String userId)? timelineLoader,
-    LessonRepository? lessonRepository,
+    ExerciseNoteRepository? exerciseNoteRepository,
     ProgramRepository? programRepository,
   }) : _userId = userId,
        _timelineLoader =
            timelineLoader ?? ((id) => PastSetsTimelineCache.instance.get(id)),
-       _lessonRepoOverride = lessonRepository,
+       _noteRepoOverride = exerciseNoteRepository,
        _programRepoOverride = programRepository,
        super(
          RecordWorkoutState(
@@ -251,14 +251,14 @@ class RecordWorkoutViewModel extends ValueNotifier<RecordWorkoutState> {
 
   final String? _userId;
   final Future<List<PastSetRow>> Function(String userId) _timelineLoader;
-  final LessonRepository? _lessonRepoOverride;
+  final ExerciseNoteRepository? _noteRepoOverride;
   final ProgramRepository? _programRepoOverride;
 
   // Built on first use, not in the constructor: the repositories open the
   // database as they are made, and a record with no user (a host test) must
   // be constructible without one (2026-10-27).
-  late final LessonRepository _lessonRepo =
-      _lessonRepoOverride ?? LessonRepository();
+  late final ExerciseNoteRepository _noteRepo =
+      _noteRepoOverride ?? ExerciseNoteRepository();
   late final ProgramRepository _programRepo =
       _programRepoOverride ?? ProgramRepository();
 
@@ -274,7 +274,7 @@ class RecordWorkoutViewModel extends ValueNotifier<RecordWorkoutState> {
 
   /// The floor's shelves, read once (2026-10-27): the timeline (through the
   /// shared cache — the first reader pays the query), the goal list, the
-  /// lessons for every exercise any version holds. Each read is swallowed on
+  /// notes for every exercise any version holds. Each read is swallowed on
   /// failure: a record must draw whatever answered.
   Future<void> loadContext() async {
     final userId = _userId;
@@ -311,10 +311,10 @@ class RecordWorkoutViewModel extends ValueNotifier<RecordWorkoutState> {
         for (final exercise in version.session?.exercises ?? const [])
           if (exercise.exerciseId != null) exercise.exerciseId!,
     };
-    var lessons = const <String, List<Lesson>>{};
+    var notes = const <String, List<ExerciseNote>>{};
     if (exerciseIds.isNotEmpty) {
       try {
-        lessons = await _lessonRepo.fetchLessonsForExercises(
+        notes = await _noteRepo.fetchNotesForExercises(
           userId,
           exerciseIds.toList(),
         );
@@ -330,7 +330,7 @@ class RecordWorkoutViewModel extends ValueNotifier<RecordWorkoutState> {
       goalTimeline: asc,
       allPrEvents: prEvents(asc),
       goals: goals,
-      lessonsByExercise: lessons,
+      notesByExercise: notes,
       goalSetIds: goalAchievingSetIds(goals: goals, sets: asc),
     );
   }
@@ -370,7 +370,7 @@ class RecordWorkoutViewModel extends ValueNotifier<RecordWorkoutState> {
       goalTimeline: value.goalTimeline,
       allPrEvents: value.allPrEvents,
       goals: value.goals,
-      lessonsByExercise: value.lessonsByExercise,
+      notesByExercise: value.notesByExercise,
       goalSetIds: value.goalSetIds,
     );
   }
@@ -383,7 +383,7 @@ class RecordWorkoutViewModel extends ValueNotifier<RecordWorkoutState> {
       goalTimeline: value.goalTimeline,
       allPrEvents: value.allPrEvents,
       goals: value.goals,
-      lessonsByExercise: value.lessonsByExercise,
+      notesByExercise: value.notesByExercise,
       goalSetIds: value.goalSetIds,
     );
   }
@@ -401,22 +401,22 @@ class RecordWorkoutViewModel extends ValueNotifier<RecordWorkoutState> {
   int prCountFor(String exerciseId) =>
       value.allPrEvents.where((e) => e.exerciseId == exerciseId).length;
 
-  List<Lesson> lessonsFor(String exerciseId) =>
-      value.lessonsByExercise[exerciseId] ?? const [];
+  List<ExerciseNote> notesFor(String exerciseId) =>
+      value.notesByExercise[exerciseId] ?? const [];
 
-  int lessonCountFor(String exerciseId) => lessonsFor(exerciseId).length;
+  int noteCountFor(String exerciseId) => notesFor(exerciseId).length;
 
   /// The exercise's notes, re-read on demand — the notes modal's own loading
   /// path, the same shape the editor and the session VMs give it.
-  Future<void> loadLessonsFor(String exerciseId) async {
+  Future<void> loadNotesFor(String exerciseId) async {
     final userId = _userId;
     if (userId == null) return;
     try {
-      final lessons = await _lessonRepo.fetchLessons(userId, exerciseId);
+      final notes = await _noteRepo.fetchNotes(userId, exerciseId);
       if (_disposed) return;
-      final map = Map<String, List<Lesson>>.from(value.lessonsByExercise);
-      map[exerciseId] = lessons;
-      value = value.copyWith(lessonsByExercise: map);
+      final map = Map<String, List<ExerciseNote>>.from(value.notesByExercise);
+      map[exerciseId] = notes;
+      value = value.copyWith(notesByExercise: map);
     } catch (_) {
       // The shelf keeps what it had.
     }

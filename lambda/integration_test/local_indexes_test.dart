@@ -85,7 +85,7 @@ void main() {
     ]);
     expectIndexed(indexes, 'dim_exercise', ['user_id']);
     expectIndexed(indexes, 'dim_variation', ['user_id']);
-    expectIndexed(indexes, 'dim_lesson', ['user_id', 'custom_exercise_id']);
+    expectIndexed(indexes, 'dim_exercise_note', ['user_id', 'custom_exercise_id']);
     expectIndexed(indexes, 'dim_planned_session', ['user_id']);
     expectIndexed(indexes, 'dim_planned_session_exercise', [
       'planned_session_id',

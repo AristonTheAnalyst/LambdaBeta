@@ -2,11 +2,11 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lambda/data/models/goal.dart';
-import 'package:lambda/data/models/lesson.dart';
+import 'package:lambda/data/models/exercise_note.dart';
 import 'package:lambda/data/models/program_content.dart';
 import 'package:lambda/data/models/program_review.dart';
 import 'package:lambda/data/models/session_exercise_set.dart';
-import 'package:lambda/data/repositories/lesson_repository.dart';
+import 'package:lambda/data/repositories/exercise_note_repository.dart';
 import 'package:lambda/data/repositories/program_history_repository.dart';
 import 'package:lambda/data/repositories/program_repository.dart';
 import 'package:lambda/features/programs/viewmodel/record_workout_viewmodel.dart';
@@ -454,8 +454,8 @@ void main() {
       targetReps: reps,
     );
 
-    Lesson lessonOf(String id) => Lesson(
-      lessonId: id,
+    ExerciseNote noteOf(String id) => ExerciseNote(
+      exerciseNoteId: id,
       userId: 'u1',
       exerciseId: 'e1',
       text: 'Elbows tucked',
@@ -483,9 +483,9 @@ void main() {
             pastSet(id: 'b', weight: 110, reps: 3, date: DateTime(2026, 9, 2)),
             pastSet(id: 'a', weight: 100, reps: 5, date: DateTime(2026, 9, 1)),
           ],
-          lessonRepository: _Lessons(
+          exerciseNoteRepository: _Notes(
             byExercise: {
-              'e1': [lessonOf('l1'), lessonOf('l2')],
+              'e1': [noteOf('l1'), noteOf('l2')],
             },
           ),
           programRepository: FakeProgramRepository(
@@ -506,7 +506,7 @@ void main() {
           ['a', 'b'],
           reason: 'oldest first — the trophy\'s shelf order on every floor',
         );
-        expect(vm.lessonCountFor('e1'), 2);
+        expect(vm.noteCountFor('e1'), 2);
         expect(vm.goalsForExercise('e1'), hasLength(2));
         expect(
           vm.openGoalsFor('e1'),
@@ -526,14 +526,14 @@ void main() {
           initialIndex: 0,
           userId: 'u1',
           timelineLoader: (_) async => throw StateError('offline'),
-          lessonRepository: _Lessons(throwOnBatch: true),
+          exerciseNoteRepository: _Notes(throwOnBatch: true),
           programRepository: _OfflineGoals(),
         );
 
         await vm.loadContext();
 
         expect(vm.prCountFor('e1'), 0);
-        expect(vm.lessonCountFor('e1'), 0);
+        expect(vm.noteCountFor('e1'), 0);
         expect(vm.openGoalsFor('e1'), 0);
         expect(vm.value.goalSetIds, isEmpty);
         // The version itself is untouched: the shelves are extras on a record.
@@ -554,7 +554,7 @@ void main() {
             reads++;
             return [pastSet(id: 'a')];
           },
-          lessonRepository: _Lessons(),
+          exerciseNoteRepository: _Notes(),
           programRepository: FakeProgramRepository(),
         );
 
@@ -575,33 +575,33 @@ void main() {
       final vm = RecordWorkoutViewModel(versions: stack(), initialIndex: 0);
 
       await vm.loadContext();
-      await vm.loadLessonsFor('e1');
+      await vm.loadNotesFor('e1');
 
       expect(vm.value.allPrEvents, isEmpty);
-      expect(vm.lessonCountFor('e1'), 0);
+      expect(vm.noteCountFor('e1'), 0);
     });
 
     test('the note tile\'s shelf re-reads on demand', () async {
-      final lessons = _Lessons();
+      final notes = _Notes();
       final vm = RecordWorkoutViewModel(
         versions: stack(),
         initialIndex: 0,
         userId: 'u1',
         timelineLoader: (_) async => const [],
-        lessonRepository: lessons,
+        exerciseNoteRepository: notes,
         programRepository: FakeProgramRepository(),
       );
 
       await vm.loadContext();
-      expect(vm.lessonCountFor('e1'), 0);
+      expect(vm.noteCountFor('e1'), 0);
 
-      lessons.byExercise = {
-        'e1': [lessonOf('l1')],
+      notes.byExercise = {
+        'e1': [noteOf('l1')],
       };
-      await vm.loadLessonsFor('e1');
+      await vm.loadNotesFor('e1');
 
-      expect(vm.lessonCountFor('e1'), 1);
-      expect(vm.lessonsFor('e1').single.lessonId, 'l1');
+      expect(vm.noteCountFor('e1'), 1);
+      expect(vm.notesFor('e1').single.exerciseNoteId, 'l1');
     });
   });
 
@@ -781,15 +781,15 @@ void main() {
   });
 }
 
-/// The lesson shelves, handed in — what the note door reads and re-reads.
-class _Lessons implements LessonRepository {
-  _Lessons({this.byExercise = const {}, this.throwOnBatch = false});
+/// The note shelves, handed in — what the note door reads and re-reads.
+class _Notes implements ExerciseNoteRepository {
+  _Notes({this.byExercise = const {}, this.throwOnBatch = false});
 
-  Map<String, List<Lesson>> byExercise;
+  Map<String, List<ExerciseNote>> byExercise;
   bool throwOnBatch;
 
   @override
-  Future<Map<String, List<Lesson>>> fetchLessonsForExercises(
+  Future<Map<String, List<ExerciseNote>>> fetchNotesForExercises(
     String userId,
     List<String> exerciseIds,
   ) async {
@@ -801,7 +801,7 @@ class _Lessons implements LessonRepository {
   }
 
   @override
-  Future<List<Lesson>> fetchLessons(String userId, String exerciseId) async =>
+  Future<List<ExerciseNote>> fetchNotes(String userId, String exerciseId) async =>
       byExercise[exerciseId] ?? const [];
 
   @override

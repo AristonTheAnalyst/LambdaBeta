@@ -22,8 +22,8 @@ import 'pr_lab_date_bar.dart';
 import 'pr_lab_exercise_card.dart';
 import 'pr_lab_exercise_selector.dart';
 import 'pr_lab_header_icon_button.dart';
-import 'pr_lab_lessons.dart';
-import 'pr_lab_lessons_modal.dart';
+import 'pr_lab_notes.dart';
+import 'pr_lab_exercise_notes_modal.dart';
 import 'pr_lab_page_header.dart';
 import 'pr_lab_planned_name_chip.dart';
 import 'pr_lab_ratings_sheet.dart';
@@ -58,10 +58,10 @@ const Map<String, String> _plannedSessionNames = {
 /// action bar's pencil — the session's pre/post ratings and notes as a sheet,
 /// the other door to the wizard's bookend pages (2026-10-22) — its two metric
 /// tiles (the trophy opens the lab's PR feed for the exercise on screen, the
-/// book its lessons modal, both split into what this session added and what
+/// book its notes modal, both split into what this session added and what
 /// came before), and the date bar's arrows, which walk that exercise's past
 /// sessions. The tiles' counts are the SESSION's gains ("+2" PRs, "+1"
-/// lesson), not the all-time totals the doors open; they never move as the
+/// note), not the all-time totals the doors open; they never move as the
 /// date bar walks, because the session on the desk is always the one being
 /// counted (2026-10-21). Walking off today puts the card in its read-only
 /// historical reading, and the pencil's sheet read-only with it.
@@ -81,12 +81,12 @@ class _PrLabScreenState extends State<PrLabScreen> {
   /// right arrow back toward today.
   int _historyIndex = 0;
 
-  /// The lessons the book tile opens — in memory, seeded, and lab-owned. No
+  /// The notes the book tile opens — in memory, seeded, and lab-owned. No
   /// database, no repository; the shared sheet just writes here.
-  final PrLabLessonStore _lessons = PrLabLessonStore();
+  final PrLabNoteStore _notes = PrLabNoteStore();
 
   /// Pre/post ratings and notes, keyed by the date the date bar is naming.
-  /// In memory like the lesson store: the pencil's sheet writes here and
+  /// In memory like the note store: the pencil's sheet writes here and
   /// nothing else reads it — the wizard pages are not part of this stage.
   final Map<String, PrLabRatings> _ratings = {};
 
@@ -144,7 +144,7 @@ class _PrLabScreenState extends State<PrLabScreen> {
 
   @override
   void dispose() {
-    _lessons.dispose();
+    _notes.dispose();
     super.dispose();
   }
 
@@ -159,21 +159,21 @@ class _PrLabScreenState extends State<PrLabScreen> {
     );
   }
 
-  /// The book tile — the lab's lessons modal over the lab's own store, so
+  /// The book tile — the lab's notes modal over the lab's own store, so
   /// add/pin/edit/delete all work and all stay in memory. The session id is
-  /// what separates the lessons typed into today's session from the earlier
+  /// what separates the notes typed into today's session from the earlier
   /// ones (2026-10-21).
-  void _openLessons() {
+  void _openNotes() {
     final exercise = _exercise;
-    showPrLabLessonsModal(
+    showPrLabNotesModal(
       context,
-      listenable: _lessons,
-      lessonsFor: _lessons.lessonsFor,
-      loadLessonsFor: _lessons.loadLessonsFor,
-      addLesson: _lessons.addLesson,
-      toggleLessonPin: _lessons.togglePin,
-      deleteLesson: _lessons.deleteLesson,
-      updateLesson: _lessons.updateText,
+      listenable: _notes,
+      notesFor: _notes.notesFor,
+      loadNotesFor: _notes.loadNotesFor,
+      addNote: _notes.addNote,
+      toggleNotePin: _notes.togglePin,
+      deleteNote: _notes.deleteNote,
+      updateNote: _notes.updateText,
       exerciseId: exercise.id,
       exerciseName: exercise.name,
       sessionId: kPrLabSessionId,
@@ -398,16 +398,16 @@ class _PrLabScreenState extends State<PrLabScreen> {
                       // Session-scoped metrics: both tiles quote what THIS
                       // session added for the exercise on screen — the same
                       // "+N" the session's pills carry — and they hold while
-                      // the date bar walks the history. The lessons tile
-                      // rebuilds as the store changes so a lesson added in
+                      // the date bar walks the history. The notes tile
+                      // rebuilds as the store changes so a note added in
                       // the modal shows up on the bar behind it.
                       child: ListenableBuilder(
-                        listenable: _lessons,
+                        listenable: _notes,
                         builder: (context, _) => _PrLabStatsBar(
                           prCount: demoSessionPrsFor(exercise.id),
-                          lessonCount: _lessons.sessionCountFor(exercise.id),
+                          exerciseNoteCount: _notes.sessionCountFor(exercise.id),
                           onTapPrs: _openHistory,
-                          onTapLessons: _openLessons,
+                          onTapNotes: _openNotes,
                         ),
                       ),
                     ),
@@ -527,22 +527,22 @@ const _allVariations = <({String id, String name})>[
 /// dev-only scenery, not a shared widget — at the bar's new scale (tiles as
 /// tall as the undo/redo boxes beside them, the nav bar's 24px glyphs), and
 /// reads SESSION-scoped: the trophy counts the PRs the session on the desk
-/// added for the exercise, drawn as a gain ("+2"), the book the lessons typed
+/// added for the exercise, drawn as a gain ("+2"), the book the notes typed
 /// into it ("+1"); a session that added none reads "0". Both doors still open
-/// the full feed behind the number — the all-time PRs, every lesson the
+/// the full feed behind the number — the all-time PRs, every note the
 /// exercise has — and both stay tappable at 0 (2026-10-21).
 class _PrLabStatsBar extends StatelessWidget {
   const _PrLabStatsBar({
     required this.prCount,
-    required this.lessonCount,
+    required this.exerciseNoteCount,
     required this.onTapPrs,
-    required this.onTapLessons,
+    required this.onTapNotes,
   });
 
   final int prCount;
-  final int lessonCount;
+  final int exerciseNoteCount;
   final VoidCallback onTapPrs;
-  final VoidCallback onTapLessons;
+  final VoidCallback onTapNotes;
 
   /// A gain reads "+2"; a session that added none reads "0" — a "+0" would
   /// claim a change where there was none.
@@ -564,11 +564,11 @@ class _PrLabStatsBar extends StatelessWidget {
         const SizedBox(width: AppSpacing.sm),
         Expanded(
           child: _tile(
-            key: const ValueKey('pr-lab-lessons-tile'),
+            key: const ValueKey('pr-lab-notes-tile'),
             icon: Icons.menu_book_outlined,
-            value: _gain(lessonCount),
-            semanticsLabel: '$lessonCount lessons this session',
-            onTap: onTapLessons,
+            value: _gain(exerciseNoteCount),
+            semanticsLabel: '$exerciseNoteCount notes this session',
+            onTap: onTapNotes,
           ),
         ),
       ],

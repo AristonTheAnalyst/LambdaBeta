@@ -9,7 +9,7 @@ import '../../../core/styles/app_fonts.dart';
 import '../../../shared/widgets/container_styles.dart';
 
 /// The card-header pill button shared by the three session surfaces — the
-/// Lessons / History / PRs chrome. Greyed (`enabled` false) renders the
+/// Notes / History / PRs chrome. Greyed (`enabled` false) renders the
 /// placeholder state (the PRs placeholder, the planner's disabled pills).
 class PrLabCardPillButton extends StatelessWidget {
   const PrLabCardPillButton({

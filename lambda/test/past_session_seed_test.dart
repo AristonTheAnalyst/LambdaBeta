@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lambda/data/cache/past_sets_timeline_cache.dart';
 import 'package:lambda/data/models/custom_variation.dart';
 import 'package:lambda/data/models/exercise_detail.dart';
-import 'package:lambda/data/models/lesson.dart';
+import 'package:lambda/data/models/exercise_note.dart';
 import 'package:lambda/data/models/planned_session.dart';
 import 'package:lambda/data/models/planned_session_exercise_set.dart';
 import 'package:lambda/data/models/program_progress.dart';
@@ -13,7 +13,7 @@ import 'package:lambda/data/models/session.dart';
 import 'package:lambda/data/models/session_exercise.dart';
 import 'package:lambda/data/models/session_exercise_set.dart';
 import 'package:lambda/data/repositories/exercise_repository.dart';
-import 'package:lambda/data/repositories/lesson_repository.dart';
+import 'package:lambda/data/repositories/exercise_note_repository.dart';
 import 'package:lambda/data/repositories/planned_session_repository.dart';
 import 'package:lambda/data/repositories/program_repository.dart';
 import 'package:lambda/data/repositories/program_run_repository.dart';
@@ -260,7 +260,7 @@ void main() {
       exerciseRepo: _EmptyExerciseRepo(),
       programRepo: _FakeProgramRepository(),
       programRunRepo: _NoRunProgramRepository(),
-      lessonRepo: _FakeLessonRepository(),
+      noteRepo: _FakeExerciseNoteRepository(),
       plannedSessionRepo: plans,
       waitForFirstSync: () async {},
       userId: 'u1',
@@ -712,8 +712,8 @@ class _NoRunProgramRepository extends Fake implements ProgramRunRepository {
   Future<ProgramProgress?> getProgress(String userId) async => null;
 }
 
-class _FakeLessonRepository extends Fake implements LessonRepository {
+class _FakeExerciseNoteRepository extends Fake implements ExerciseNoteRepository {
   @override
-  Future<List<Lesson>> fetchLessons(String userId, String exerciseId) async =>
+  Future<List<ExerciseNote>> fetchNotes(String userId, String exerciseId) async =>
       const [];
 }

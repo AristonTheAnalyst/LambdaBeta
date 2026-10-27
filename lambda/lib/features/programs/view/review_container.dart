@@ -417,7 +417,7 @@ class _ReviewRouteState extends State<ReviewRoute> {
   ///
   /// Built on the first open, not with the route: a record never opens one,
   /// and constructing a [WorkoutEditorViewModel] evaluates the global
-  /// PowerSync database through its lesson repository — which is also what
+  /// PowerSync database through its note repository — which is also what
   /// lets a host test render a record with no database under it.
   WorkoutEditorViewModel? _editor;
   WorkoutEditorViewModel get _editorFor =>

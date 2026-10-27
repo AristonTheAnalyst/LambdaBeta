@@ -15,9 +15,9 @@ import 'pr_lab_set_row.dart';
 import '../../../shared/widgets/lambda_input.dart';
 import '../../../shared/widgets/lambda_readout.dart';
 
-/// Minimal, VM-free pinned-lesson data for the card's lesson bar.
-class PrLabPinnedLessonData {
-  const PrLabPinnedLessonData({required this.text, required this.date});
+/// Minimal, VM-free pinned-note data for the card's note bar.
+class PrLabPinnedNoteData {
+  const PrLabPinnedNoteData({required this.text, required this.date});
 
   final String text;
   final DateTime date;
@@ -63,9 +63,9 @@ class PrLabExerciseCard extends StatefulWidget {
     this.deletedExercises = const [],
     this.onMove,
     this.onAdd,
-    // ── Pinned lesson (sits between the selector and the pills) ──
-    this.pinnedLesson,
-    this.onPinnedLessonTap,
+    // ── Pinned note (sits between the selector and the pills) ──
+    this.pinnedNote,
+    this.onPinnedNoteTap,
     // ── Review note — the open review's note for the ACTIVE exercise ──
     this.reviewNote,
     this.onReviewNoteChanged,
@@ -102,16 +102,16 @@ class PrLabExerciseCard extends StatefulWidget {
   /// Null greys the popover's Add Exercise row.
   final VoidCallback? onAdd;
 
-  final PrLabPinnedLessonData? pinnedLesson;
+  final PrLabPinnedNoteData? pinnedNote;
 
-  /// Null renders the lesson bar inert (no tap).
-  final VoidCallback? onPinnedLessonTap;
+  /// Null renders the note bar inert (no tap).
+  final VoidCallback? onPinnedNoteTap;
 
   /// The review's note for the exercise on screen, when there is one.
   ///
-  /// Shown as a footer box under the sets, never in the pinned lesson's slot:
+  /// Shown as a footer box under the sets, never in the pinned note's slot:
   /// a note exists to be re-read WHILE the pass is being made, so hiding it
-  /// behind a tap would defeat it, but a lesson says how to do the lift and a
+  /// behind a tap would defeat it, but a note says how to do the lift and a
   /// review note says how it went — two different things, two places. On the
   /// completed record [onReviewNoteChanged] is null and the box renders the
   /// note as plain text — and only when there is one, unless
@@ -218,11 +218,11 @@ class _PrLabExerciseCardState extends State<PrLabExerciseCard> {
               marks: widget.exerciseMarks,
               deleted: widget.deletedExercises,
             ),
-            // The pinned lesson sits right under the exercise — stays
+            // The pinned note sits right under the exercise — stays
             // visible while viewing history too.
-            if (widget.pinnedLesson != null) ...[
+            if (widget.pinnedNote != null) ...[
               const SizedBox(height: 6),
-              _pinnedLessonBar(widget.pinnedLesson!),
+              _pinnedNoteBar(widget.pinnedNote!),
             ],
             // The selector breathes: 16, not 12 — the top of the card read
             // crowded with the column labels starting a hair under the field
@@ -231,7 +231,7 @@ class _PrLabExerciseCardState extends State<PrLabExerciseCard> {
             _setsGrid(),
             const SizedBox(height: AppSpacing.md),
             // The review's note on this exercise — a FOOTER, not a header.
-            // The slot under the selector belongs to the pinned lesson (how
+            // The slot under the selector belongs to the pinned note (how
             // to do the lift); a note about how it went is about the work,
             // and reads after the sets it is about.
             if (_showsReviewNote) ...[
@@ -244,11 +244,11 @@ class _PrLabExerciseCardState extends State<PrLabExerciseCard> {
     );
   }
 
-  /// The pinned lesson bar, right under the exercise. On the flat card its
+  /// The pinned note bar, right under the exercise. On the flat card its
   /// `bg` fill is the page itself, so the bar reads as the hairline alone —
-  /// the chip that says "this line is the lesson", not a second ground
+  /// the chip that says "this line is the note", not a second ground
   /// under the selector (2026-10-22).
-  Widget _pinnedLessonBar(PrLabPinnedLessonData lesson) {
+  Widget _pinnedNoteBar(PrLabPinnedNoteData note) {
     final bar = Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
       decoration: lambdaBox(ContainerTone.bg, radius: AppRadius.md),
@@ -257,7 +257,7 @@ class _PrLabExerciseCardState extends State<PrLabExerciseCard> {
           Icon(Icons.push_pin, size: 10, color: AppColors.primary),
           const SizedBox(width: 4),
           Text(
-            'LESSON',
+            'NOTE',
             style: AppFonts.mono(
               fontSize: 13,
               letterSpacing: 0.8,
@@ -267,20 +267,20 @@ class _PrLabExerciseCardState extends State<PrLabExerciseCard> {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              lesson.text,
+              note.text,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: AppFonts.ui(fontSize: 13, color: AppColors.muted),
             ),
           ),
           Text(
-            DateFormat('MMM d').format(lesson.date),
+            DateFormat('MMM d').format(note.date),
             style: AppFonts.mono(fontSize: 13, color: AppColors.muted),
           ),
         ],
       ),
     );
-    final onTap = widget.onPinnedLessonTap;
+    final onTap = widget.onPinnedNoteTap;
     if (onTap == null) return bar;
     return GestureDetector(onTap: onTap, child: bar);
   }

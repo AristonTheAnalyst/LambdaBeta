@@ -5,7 +5,7 @@ import '../../../core/styles/app_fonts.dart';
 import '../../../core/styles/app_radius.dart';
 import '../../../core/styles/app_spacing.dart';
 import '../../../core/styles/app_text_styles.dart';
-import '../../../data/models/lesson.dart';
+import '../../../data/models/exercise_note.dart';
 import '../../../shared/widgets/glass_button.dart';
 import '../../../shared/widgets/user_name_text.dart';
 import '../../../shared/widgets/container_styles.dart';
@@ -17,17 +17,17 @@ import 'sheet_section_label.dart';
 /// Bound to a [Listenable] + a handful of callbacks rather than a concrete
 /// viewmodel type, so both `SessionViewModel` (a `ChangeNotifier`) and
 /// `WorkoutEditorViewModel` (a `ValueNotifier<WorkoutEditorState>`) can
-/// reuse this same modal for the exact same `fact_lesson` data — lessons are
+/// reuse this same modal for the exact same `dim_exercise_note` data — notes are
 /// per-exercise and cross-session, not tied to either feature.
 ///
 /// The feed is grouped in chronological order, newest first (2026-10-23):
-/// the lessons added after the session on the desk (`AFTER`, drawn only
+/// the notes added after the session on the desk (`AFTER`, drawn only
 /// when it holds something), then the session itself — `THIS
 /// SESSION` while it is the live one, its date (`18 OCT 2026`) when it is a
 /// past record — then everything from before it (`PREVIOUSLY`). Reading a
-/// past record from Logs needs the third shelf: a lesson written afterwards
+/// past record from Logs needs the third shelf: a note written afterwards
 /// is not "previously". The old `NEW` badge is gone: the heading already
-/// says which lessons are new, and the two would say it twice. Pin,
+/// says which notes are new, and the two would say it twice. Pin,
 /// tap-to-edit, swipe-to-delete and add all behave as before.
 ///
 /// Where a review stands behind the record (2026-10-26), the caller also
@@ -40,30 +40,30 @@ import 'sheet_section_label.dart';
 /// time — the checkpoint divides the whole outside-the-session shelf
 /// instead: since the pass leads, the rest is `PREVIOUSLY`. Without a
 /// checkpoint nothing moves: the three shelves stand as they always did.
-void showLessonsModal(
+void showExerciseNotesModal(
   BuildContext context, {
   required Listenable listenable,
-  required List<Lesson> Function(String exerciseId) lessonsFor,
-  required Future<void> Function(String exerciseId) loadLessonsFor,
-  required Future<void> Function(String exerciseId, String text) addLesson,
-  required Future<void> Function(String exerciseId, String lessonId)
-  toggleLessonPin,
-  required Future<void> Function(String exerciseId, String lessonId)
-  deleteLesson,
+  required List<ExerciseNote> Function(String exerciseId) notesFor,
+  required Future<void> Function(String exerciseId) loadNotesFor,
+  required Future<void> Function(String exerciseId, String text) addNote,
+  required Future<void> Function(String exerciseId, String exerciseNoteId)
+  toggleNotePin,
+  required Future<void> Function(String exerciseId, String exerciseNoteId)
+  deleteNote,
   required Future<void> Function(
     String exerciseId,
-    String lessonId,
+    String exerciseNoteId,
     String text,
   )
-  updateLesson,
+  updateNote,
   required String exerciseId,
   required String exerciseName,
 
-  /// When non-null (the session on the desk's id), its lessons form the
+  /// When non-null (the session on the desk's id), its notes form the
   /// sheet's first group.
   String? sessionId,
 
-  /// When the session on the desk started — what places a lesson added
+  /// When the session on the desk started — what places a note added
   /// outside it into `PREVIOUSLY` or `AFTER`. Null keeps the lab's two
   /// groups.
   DateTime? sessionStartedAt,
@@ -79,7 +79,7 @@ void showLessonsModal(
 
   /// Where the last review of this ground ended (2026-10-26) — resolved by
   /// the caller, which is the only one that knows a pass stands behind the
-  /// record. A lesson written after it leads the sheet as `SINCE LAST
+  /// record. A note written after it leads the sheet as `SINCE LAST
   /// REVIEW`; one written after the session but no later than it stays
   /// `AFTER`. Null keeps the three shelves exactly as they were.
   DateTime? sinceLastReviewAt,
@@ -88,14 +88,14 @@ void showLessonsModal(
     context,
     fitContent: true,
     keyboardAware: true,
-    child: _LessonsModalContent(
+    child: _ExerciseNotesModalContent(
       listenable: listenable,
-      lessonsFor: lessonsFor,
-      loadLessonsFor: loadLessonsFor,
-      addLesson: addLesson,
-      toggleLessonPin: toggleLessonPin,
-      deleteLesson: deleteLesson,
-      updateLesson: updateLesson,
+      notesFor: notesFor,
+      loadNotesFor: loadNotesFor,
+      addNote: addNote,
+      toggleNotePin: toggleNotePin,
+      deleteNote: deleteNote,
+      updateNote: updateNote,
       exerciseId: exerciseId,
       exerciseName: exerciseName,
       sessionId: sessionId,
@@ -107,15 +107,15 @@ void showLessonsModal(
   );
 }
 
-class _LessonsModalContent extends StatefulWidget {
-  const _LessonsModalContent({
+class _ExerciseNotesModalContent extends StatefulWidget {
+  const _ExerciseNotesModalContent({
     required this.listenable,
-    required this.lessonsFor,
-    required this.loadLessonsFor,
-    required this.addLesson,
-    required this.toggleLessonPin,
-    required this.deleteLesson,
-    required this.updateLesson,
+    required this.notesFor,
+    required this.loadNotesFor,
+    required this.addNote,
+    required this.toggleNotePin,
+    required this.deleteNote,
+    required this.updateNote,
     required this.exerciseId,
     required this.exerciseName,
     this.sessionId,
@@ -126,14 +126,14 @@ class _LessonsModalContent extends StatefulWidget {
   });
 
   final Listenable listenable;
-  final List<Lesson> Function(String exerciseId) lessonsFor;
-  final Future<void> Function(String exerciseId) loadLessonsFor;
-  final Future<void> Function(String exerciseId, String text) addLesson;
-  final Future<void> Function(String exerciseId, String lessonId)
-  toggleLessonPin;
-  final Future<void> Function(String exerciseId, String lessonId) deleteLesson;
-  final Future<void> Function(String exerciseId, String lessonId, String text)
-  updateLesson;
+  final List<ExerciseNote> Function(String exerciseId) notesFor;
+  final Future<void> Function(String exerciseId) loadNotesFor;
+  final Future<void> Function(String exerciseId, String text) addNote;
+  final Future<void> Function(String exerciseId, String exerciseNoteId)
+  toggleNotePin;
+  final Future<void> Function(String exerciseId, String exerciseNoteId) deleteNote;
+  final Future<void> Function(String exerciseId, String exerciseNoteId, String text)
+  updateNote;
   final String exerciseId;
   final String exerciseName;
   final String? sessionId;
@@ -148,18 +148,18 @@ class _LessonsModalContent extends StatefulWidget {
   final DateTime? sinceLastReviewAt;
 
   @override
-  State<_LessonsModalContent> createState() => _LessonsModalContentState();
+  State<_ExerciseNotesModalContent> createState() => _ExerciseNotesModalContentState();
 }
 
-class _LessonsModalContentState extends State<_LessonsModalContent> {
+class _ExerciseNotesModalContentState extends State<_ExerciseNotesModalContent> {
   bool _adding = false;
   final _draftCtrl = TextEditingController();
 
   @override
   void initState() {
     super.initState();
-    widget.loadLessonsFor(widget.exerciseId);
-    // The Save Lesson button draws its enabled state from the draft, so the
+    widget.loadNotesFor(widget.exerciseId);
+    // The Save ExerciseNote button draws its enabled state from the draft, so the
     // modal has to rebuild as it is typed into.
     _draftCtrl.addListener(_onDraftChanged);
   }
@@ -173,9 +173,9 @@ class _LessonsModalContentState extends State<_LessonsModalContent> {
 
   void _onDraftChanged() => setState(() {});
 
-  void _addLesson() {
+  void _addNote() {
     if (_draftCtrl.text.trim().isEmpty) return;
-    widget.addLesson(widget.exerciseId, _draftCtrl.text);
+    widget.addNote(widget.exerciseId, _draftCtrl.text);
     _draftCtrl.clear();
     setState(() => _adding = false);
   }
@@ -185,10 +185,10 @@ class _LessonsModalContentState extends State<_LessonsModalContent> {
     return ListenableBuilder(
       listenable: widget.listenable,
       builder: (context, _) {
-        final lessons = widget.lessonsFor(widget.exerciseId);
+        final notes = widget.notesFor(widget.exerciseId);
         // Pinned first, then newest by datetime (Dart's sort is unstable, so
         // sort by both keys explicitly to preserve chronological order).
-        final ordered = [...lessons]
+        final ordered = [...notes]
           ..sort((a, b) {
             final pin = (b.pinned ? 1 : 0).compareTo(a.pinned ? 1 : 0);
             return pin != 0 ? pin : b.createdDate.compareTo(a.createdDate);
@@ -196,7 +196,7 @@ class _LessonsModalContentState extends State<_LessonsModalContent> {
         // Chronological, newest first (2026-10-23): what has been added
         // since the session, the session itself, then what came before it.
         // Pin order holds inside each group, so a pinned old cue never jumps
-        // the line into another shelf. A lesson added after the session is
+        // the line into another shelf. A note added after the session is
         // not "previously" — reading a past record needs the third shelf, or
         // the headings would misdate it. A live session's middle shelf is
         // "this session"; a record's is its date.
@@ -204,72 +204,72 @@ class _LessonsModalContentState extends State<_LessonsModalContent> {
         final sessionLabel = widget.sessionIsLive || startedAt == null
             ? 'This session'
             : DateFormat('d MMM yyyy').format(startedAt);
-        bool inThisSession(Lesson lesson) =>
-            widget.sessionId != null && lesson.sessionId == widget.sessionId;
-        final sessionLessons = [
-          for (final lesson in ordered)
-            if (inThisSession(lesson)) lesson,
+        bool inThisSession(ExerciseNote note) =>
+            widget.sessionId != null && note.sessionId == widget.sessionId;
+        final sessionExerciseNotes = [
+          for (final note in ordered)
+            if (inThisSession(note)) note,
         ];
-        final afterLessons = [
-          for (final lesson in ordered)
-            if (!inThisSession(lesson) &&
+        final afterNotes = [
+          for (final note in ordered)
+            if (!inThisSession(note) &&
                 startedAt != null &&
-                lesson.createdDate.isAfter(startedAt))
-              lesson,
+                note.createdDate.isAfter(startedAt))
+              note,
         ];
         // A checkpoint behind the record splits the after-group in two
         // (2026-10-26): what landed since the last review leads, and what
         // landed after the session but no later than that review keeps the
         // `AFTER` shelf. A strict split, drawn newest-first — the newer half
-        // must come first, or the sheet would file a later lesson under an
+        // must come first, or the sheet would file a later note under an
         // older heading. With no session on the desk (the planner) there is
         // no after-group to split: the checkpoint divides the whole shelf
         // outside the session instead, so the pass still leads and what came
         // at or before it is `PREVIOUSLY`.
         final checkpoint = widget.sinceLastReviewAt;
-        bool afterCheckpoint(Lesson lesson) =>
-            checkpoint != null && lesson.createdDate.isAfter(checkpoint);
-        final sinceReviewLessons = [
-          for (final lesson in ordered)
-            if (!inThisSession(lesson) &&
-                (startedAt == null || lesson.createdDate.isAfter(startedAt)) &&
-                afterCheckpoint(lesson))
-              lesson,
+        bool afterCheckpoint(ExerciseNote note) =>
+            checkpoint != null && note.createdDate.isAfter(checkpoint);
+        final sinceReviewNotes = [
+          for (final note in ordered)
+            if (!inThisSession(note) &&
+                (startedAt == null || note.createdDate.isAfter(startedAt)) &&
+                afterCheckpoint(note))
+              note,
         ];
-        final afterRemainderLessons = [
-          for (final lesson in afterLessons)
-            if (!afterCheckpoint(lesson)) lesson,
+        final afterRemainderNotes = [
+          for (final note in afterNotes)
+            if (!afterCheckpoint(note)) note,
         ];
-        final previousLessons = [
-          for (final lesson in ordered)
-            if (!inThisSession(lesson) &&
+        final previousNotes = [
+          for (final note in ordered)
+            if (!inThisSession(note) &&
                 (startedAt == null
-                    ? !afterCheckpoint(lesson)
-                    : !lesson.createdDate.isAfter(startedAt)))
-              lesson,
+                    ? !afterCheckpoint(note)
+                    : !note.createdDate.isAfter(startedAt)))
+              note,
         ];
         final groups = <Widget>[];
-        void addGroup(String label, List<Lesson> groupLessons) {
-          if (groupLessons.isEmpty) return;
+        void addGroup(String label, List<ExerciseNote> groupNotes) {
+          if (groupNotes.isEmpty) return;
           if (groups.isNotEmpty) {
             groups.add(const SizedBox(height: AppSpacing.md));
           }
           groups.add(SheetSectionLabel(label));
           groups.add(const SizedBox(height: AppSpacing.sm));
-          for (var i = 0; i < groupLessons.length; i++) {
+          for (var i = 0; i < groupNotes.length; i++) {
             if (i > 0) groups.add(const SizedBox(height: AppSpacing.sm));
-            final lesson = groupLessons[i];
+            final note = groupNotes[i];
             groups.add(
-              _LessonRow(
-                lesson: lesson,
+              _NoteRow(
+                note: note,
                 readOnly: widget.readOnly,
                 onTogglePin: () =>
-                    widget.toggleLessonPin(widget.exerciseId, lesson.lessonId),
+                    widget.toggleNotePin(widget.exerciseId, note.exerciseNoteId),
                 onDelete: () =>
-                    widget.deleteLesson(widget.exerciseId, lesson.lessonId),
-                onUpdateText: (text) => widget.updateLesson(
+                    widget.deleteNote(widget.exerciseId, note.exerciseNoteId),
+                onUpdateText: (text) => widget.updateNote(
                   widget.exerciseId,
-                  lesson.lessonId,
+                  note.exerciseNoteId,
                   text,
                 ),
               ),
@@ -277,14 +277,14 @@ class _LessonsModalContentState extends State<_LessonsModalContent> {
           }
         }
 
-        addGroup('Since last review', sinceReviewLessons);
-        addGroup('After', afterRemainderLessons);
-        addGroup(sessionLabel, sessionLessons);
-        addGroup('Previously', previousLessons);
+        addGroup('Since last review', sinceReviewNotes);
+        addGroup('After', afterRemainderNotes);
+        addGroup(sessionLabel, sessionExerciseNotes);
+        addGroup('Previously', previousNotes);
         return SafeArea(
-          key: const ValueKey('lessons-sheet'),
+          key: const ValueKey('notes-sheet'),
           child: SizedBox(
-            // Fixed half-screen sheet: small lesson counts don't inflate it
+            // Fixed half-screen sheet: small note counts don't inflate it
             // and the empty state doesn't collapse it to full screen — the
             // list scrolls within this height.
             height: MediaQuery.of(context).size.height * 0.5,
@@ -359,7 +359,7 @@ class _LessonsModalContentState extends State<_LessonsModalContent> {
                             solid: true,
                             // Nothing to save until something is typed.
                             disabled: _draftCtrl.text.trim().isEmpty,
-                            onPressed: _addLesson,
+                            onPressed: _addNote,
                           ),
                         ),
                         const SizedBox(width: AppSpacing.sm),
@@ -412,16 +412,16 @@ class _LessonsModalContentState extends State<_LessonsModalContent> {
   }
 }
 
-class _LessonRow extends StatefulWidget {
-  const _LessonRow({
-    required this.lesson,
+class _NoteRow extends StatefulWidget {
+  const _NoteRow({
+    required this.note,
     required this.onTogglePin,
     required this.onDelete,
     required this.onUpdateText,
     this.readOnly = false,
   });
 
-  final Lesson lesson;
+  final ExerciseNote note;
   final VoidCallback onTogglePin;
   final VoidCallback onDelete;
   final void Function(String text) onUpdateText;
@@ -431,18 +431,18 @@ class _LessonRow extends StatefulWidget {
   final bool readOnly;
 
   @override
-  State<_LessonRow> createState() => _LessonRowState();
+  State<_NoteRow> createState() => _NoteRowState();
 }
 
-class _LessonRowState extends State<_LessonRow> {
+class _NoteRowState extends State<_NoteRow> {
   bool _editing = false;
   late final TextEditingController _editCtrl;
 
   @override
   void initState() {
     super.initState();
-    _editCtrl = TextEditingController(text: widget.lesson.text);
-    // Save draws its enabled state from the text against the lesson it is
+    _editCtrl = TextEditingController(text: widget.note.text);
+    // Save draws its enabled state from the text against the note it is
     // editing, so the editor has to rebuild as it is typed into.
     _editCtrl.addListener(_onEditChanged);
   }
@@ -456,11 +456,11 @@ class _LessonRowState extends State<_LessonRow> {
 
   void _onEditChanged() => setState(() {});
 
-  /// Whether the text differs from the lesson being edited. An empty one is
-  /// not a lesson, so it never counts as a change to save.
+  /// Whether the text differs from the note being edited. An empty one is
+  /// not a note, so it never counts as a change to save.
   bool get _editDiffers =>
       _editCtrl.text.trim().isNotEmpty &&
-      _editCtrl.text.trim() != widget.lesson.text.trim();
+      _editCtrl.text.trim() != widget.note.text.trim();
 
   void _save() {
     if (_editCtrl.text.trim().isEmpty) return;
@@ -469,7 +469,7 @@ class _LessonRowState extends State<_LessonRow> {
   }
 
   void _cancel() {
-    _editCtrl.text = widget.lesson.text;
+    _editCtrl.text = widget.note.text;
     setState(() => _editing = false);
   }
 
@@ -500,9 +500,9 @@ class _LessonRowState extends State<_LessonRow> {
     );
   }
 
-  /// Read view: pin box + lesson text (tap the text to edit it).
+  /// Read view: pin box + note text (tap the text to edit it).
   Widget _view() {
-    final lesson = widget.lesson;
+    final note = widget.note;
     // The pin box, drawn either as the control it is or as the state it
     // shows on a friend's read-only shelf.
     final pinBox = Container(
@@ -510,7 +510,7 @@ class _LessonRowState extends State<_LessonRow> {
       height: 40,
       margin: const EdgeInsets.only(right: AppSpacing.sm, top: 1),
       alignment: Alignment.center,
-      decoration: lesson.pinned
+      decoration: note.pinned
           ? glassBox(AppColors.accent, radius: 6)
           : BoxDecoration(
               color: Colors.transparent,
@@ -522,7 +522,7 @@ class _LessonRowState extends State<_LessonRow> {
         // A lone glyph control draws at the nav scale, 18–20
         // (typography §3).
         size: 18,
-        color: lesson.pinned ? AppColors.accent : AppColors.muted,
+        color: note.pinned ? AppColors.accent : AppColors.muted,
       ),
     );
     final textBody = Column(
@@ -531,7 +531,7 @@ class _LessonRowState extends State<_LessonRow> {
         // The sheet's content: the ladder's body size, with a line
         // height for prose.
         Text(
-          lesson.text,
+          note.text,
           style: AppFonts.ui(
             fontSize: AppTextStyles.body,
             height: 1.35,
@@ -540,7 +540,7 @@ class _LessonRowState extends State<_LessonRow> {
         ),
         const SizedBox(height: 4),
         Text(
-          DateFormat('MMM d · h:mm a').format(lesson.createdDate),
+          DateFormat('MMM d · h:mm a').format(note.createdDate),
           style: AppFonts.mono(
             fontSize: AppTextStyles.xs,
             fontWeight: FontWeight.w500,
@@ -562,8 +562,8 @@ class _LessonRowState extends State<_LessonRow> {
           // no word beside it (accessibility §5). A friend's shelf has no
           // action to announce, so it reads the pin's state instead.
           label: widget.readOnly
-              ? (lesson.pinned ? 'Pinned note' : 'Unpinned note')
-              : (lesson.pinned ? 'Unpin note' : 'Pin note'),
+              ? (note.pinned ? 'Pinned note' : 'Unpinned note')
+              : (note.pinned ? 'Unpin note' : 'Pin note'),
           child: widget.readOnly
               ? pinBox
               : GestureDetector(onTap: widget.onTogglePin, child: pinBox),
@@ -574,7 +574,7 @@ class _LessonRowState extends State<_LessonRow> {
               ? textBody
               : GestureDetector(
                   onTap: () => setState(() {
-                    _editCtrl.text = widget.lesson.text;
+                    _editCtrl.text = widget.note.text;
                     _editing = true;
                   }),
                   child: textBody,

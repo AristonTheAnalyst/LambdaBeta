@@ -29,7 +29,7 @@ const _pkColumns = {
   'fact_program_run': 'program_run_id',
   'fact_program_review': 'review_id',
   'dim_program_block': 'block_id',
-  'dim_lesson': 'lesson_id',
+  'dim_exercise_note': 'exercise_note_id',
   'dim_planned_session': 'session_id',
   'dim_planned_session_exercise_set': 'planned_set_id',
   'dim_planned_session_exercise': 'planned_exercise_id',
@@ -246,7 +246,7 @@ PowerSyncDatabase get db =>
 /// app's own on the way out.
 ///
 /// Repositories read `db` per call, so a swap takes effect for any repo
-/// already constructed — with one exception, [LessonRepository], which
+/// already constructed — with one exception, [ExerciseNoteRepository], which
 /// captures the database it was given at construction and therefore only
 /// follows a swap made before it exists.
 PowerSyncDatabase? swapDatabase(PowerSyncDatabase database) {
@@ -351,6 +351,10 @@ Future<void> openDatabase() async {
         'dim_program_goal',
         'fact_rest',
         'fact_pr',
+        // The exercise-note rename (2026-10-28): `dim_lesson` became
+        // `dim_exercise_note`, so a queued write under the old name can
+        // never upload and would stall the checkpoint.
+        'dim_lesson',
         // Schema redesign v2 (2026-08-24) — dropped/restructured tables.
         'fact_session_set',
         'dim_planned_session_set',

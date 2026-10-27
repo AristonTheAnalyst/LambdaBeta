@@ -200,7 +200,7 @@ void main() {
     );
   });
 
-  testWidgets('the box reads after the sets, never in the lesson slot', (
+  testWidgets('the box reads after the sets, never in the note slot', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -212,7 +212,7 @@ void main() {
             onSelect: (_) {},
             rows: const [],
             onAddSet: () {},
-            pinnedLesson: PinnedLessonData(
+            pinnedNote: PinnedNoteData(
               text: 'Keep the elbows tucked',
               date: DateTime(2026, 10, 1),
             ),
@@ -250,11 +250,11 @@ void main() {
             onSelect: (_) {},
             rows: const [],
             onAddSet: () {},
-            pinnedLesson: PinnedLessonData(
+            pinnedNote: PinnedNoteData(
               text: cue,
               date: DateTime(2026, 10, 1),
             ),
-            onPinnedLessonTap: () => viewAll++,
+            onPinnedNoteTap: () => viewAll++,
           ),
         ),
       ),
@@ -422,7 +422,7 @@ void main() {
   testWidgets('the flat card has no door row under the selector; the boxed '
       'card still does', (tester) async {
     // The session look's doors are on the floor (PRs behind the trophy,
-    // lessons behind the book), so the card goes selector straight to the
+    // notes behind the book), so the card goes selector straight to the
     // grid — the lab's arrangement, which the flat card mirrors. The boxed
     // card keeps its three pills, because the planner and the review
     // editors have no floor to carry them (2026-10-22).

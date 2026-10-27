@@ -51,9 +51,9 @@ class DevScreen extends StatelessWidget {
                   const SizedBox(height: AppSpacing.sm),
                   _NavCard(
                     icon: Icons.bug_report_outlined,
-                    label: 'Lesson Debug',
-                    subtitle: 'Raw dim_lesson rows + upload queue',
-                    onTap: () => context.push('/dev/lesson-debug'),
+                    label: 'ExerciseNote Debug',
+                    subtitle: 'Raw dim_exercise_note rows + upload queue',
+                    onTap: () => context.push('/dev/note-debug'),
                   ),
                   const SizedBox(height: AppSpacing.sm),
                   _NavCard(

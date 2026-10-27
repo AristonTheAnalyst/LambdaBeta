@@ -9,7 +9,7 @@ import '../../../shared/widgets/exercise_target_picker.dart';
 import '../../goals/view/exercise_goals_sheet.dart';
 import '../../goals/view/goal_sheet.dart';
 import '../viewmodel/session_viewmodel.dart';
-import 'lessons_modal.dart';
+import 'exercise_notes_modal.dart';
 import 'pr_history_sheet.dart';
 
 /// The active workout's summary doors, in the Training page's sticky bottom
@@ -19,7 +19,7 @@ import 'pr_history_sheet.dart';
 /// door opens at any count, like the PR Lab's own bar — an exercise with no
 /// notes still has its cues behind the book, so nothing goes dead
 /// (2026-10-23). The trophy opens that exercise's PR History sheet, the book
-/// its lessons modal — scoped to the exercise on the card and the session on
+/// its notes modal — scoped to the exercise on the card and the session on
 /// the desk — and the bullseye its goals sheet.
 class SessionStatsBar extends StatelessWidget {
   const SessionStatsBar({super.key, required this.vm});
@@ -64,16 +64,16 @@ class SessionStatsBar extends StatelessWidget {
     );
   }
 
-  void _openLessons(BuildContext context, String exerciseId) {
-    showLessonsModal(
+  void _openNotes(BuildContext context, String exerciseId) {
+    showExerciseNotesModal(
       context,
       listenable: vm,
-      lessonsFor: vm.lessonsFor,
-      loadLessonsFor: vm.loadLessonsFor,
-      addLesson: vm.addLesson,
-      toggleLessonPin: vm.toggleLessonPin,
-      deleteLesson: vm.deleteLesson,
-      updateLesson: vm.updateLessonText,
+      notesFor: vm.notesFor,
+      loadNotesFor: vm.loadNotesFor,
+      addNote: vm.addNote,
+      toggleNotePin: vm.toggleNotePin,
+      deleteNote: vm.deleteNote,
+      updateNote: vm.updateNoteText,
       exerciseId: exerciseId,
       exerciseName: toProperCase(vm.exerciseDisplayName(exerciseId)),
       sessionId: vm.currentWorkoutId,
@@ -93,22 +93,22 @@ class SessionStatsBar extends StatelessWidget {
         // behind it has something to say.
         final exerciseId = vm.activeSlot?.activeExerciseId;
         final prs = exerciseId == null ? 0 : vm.sessionPrCountFor(exerciseId);
-        final lessons = exerciseId == null
+        final notes = exerciseId == null
             ? 0
-            : vm.lessonsThisSession(exerciseId).length;
+            : vm.exerciseNotesThisSession(exerciseId).length;
         final goals = exerciseId == null ? 0 : vm.openGoalsFor(exerciseId);
         return SessionStatsTiles(
           prCount: prs,
-          lessonCount: lessons,
+          exerciseNoteCount: notes,
           goalCount: goals,
           // Doors at any count: the sheets hold the exercise's whole story,
           // not only this session's additions (2026-10-23).
           onPrTap: exerciseId == null
               ? null
               : () => _openPrHistory(context, exerciseId),
-          onLessonTap: exerciseId == null
+          onNoteTap: exerciseId == null
               ? null
-              : () => _openLessons(context, exerciseId),
+              : () => _openNotes(context, exerciseId),
           onGoalTap: exerciseId == null
               ? null
               : () => _openGoals(context, exerciseId),
@@ -150,16 +150,16 @@ class SessionStatsTiles extends StatelessWidget {
   const SessionStatsTiles({
     super.key,
     required this.prCount,
-    required this.lessonCount,
+    required this.exerciseNoteCount,
     this.goalCount = 0,
     this.onPrTap,
-    this.onLessonTap,
+    this.onNoteTap,
     this.onGoalTap,
     this.gain = true,
   });
 
   final int prCount;
-  final int lessonCount;
+  final int exerciseNoteCount;
 
   /// How many of the exercise's goals still stand — what lights the bullseye
   /// and what it reads to a screen reader (2026-10-27). Read through
@@ -167,7 +167,7 @@ class SessionStatsTiles extends StatelessWidget {
   final int goalCount;
 
   final VoidCallback? onPrTap;
-  final VoidCallback? onLessonTap;
+  final VoidCallback? onNoteTap;
 
   /// The exercise's goals — the bullseye drawn beside the PRs control when
   /// this is set (2026-10-26).
@@ -215,11 +215,11 @@ class SessionStatsTiles extends StatelessWidget {
         ],
         Expanded(
           child: _control(
-            key: const ValueKey('session-lessons-tile'),
+            key: const ValueKey('session-notes-tile'),
             icon: Icons.sticky_note_2_outlined,
-            semanticsLabel: _semantics(lessonCount, 'exercise note'),
-            active: lessonCount > 0,
-            onTap: onLessonTap,
+            semanticsLabel: _semantics(exerciseNoteCount, 'exercise note'),
+            active: exerciseNoteCount > 0,
+            onTap: onNoteTap,
           ),
         ),
       ],

@@ -1,5 +1,5 @@
 // LAB COPY — the /dev/pr-lab layout sandbox's own copy of the shared
-// Lessons modal. Never import this from a production screen. Edit freely:
+// Notes modal. Never import this from a production screen. Edit freely:
 // nothing here can reach the real session, planner, logs or PR History demo
 // (2026-10-21).
 
@@ -11,7 +11,7 @@ import '../../../core/styles/app_fonts.dart';
 import '../../../core/styles/app_radius.dart';
 import '../../../core/styles/app_spacing.dart';
 import '../../../core/styles/app_text_styles.dart';
-import '../../../data/models/lesson.dart';
+import '../../../data/models/exercise_note.dart';
 import '../../../shared/widgets/container_styles.dart';
 import '../../../shared/widgets/glass_button.dart';
 import '../../../shared/widgets/lambda_input.dart';
@@ -20,35 +20,35 @@ import '../../../shared/widgets/user_name_text.dart';
 import 'pr_lab_section_label.dart';
 import 'pr_lab_swipe_actions.dart';
 
-/// The lab's Lessons sheet — bound to a [Listenable] + callbacks rather than
+/// The lab's Notes sheet — bound to a [Listenable] + callbacks rather than
 /// a concrete viewmodel, exactly like the shared modal it is copied from.
 ///
-/// The one difference is the feed's shape: the lessons typed into the session
-/// on the desk lead under a `THIS SESSION` heading, and every lesson from
+/// The one difference is the feed's shape: the notes typed into the session
+/// on the desk lead under a `THIS SESSION` heading, and every note from
 /// before it follows under `PREVIOUS` (2026-10-21). The shared modal's `NEW`
-/// badge is gone here — the heading already says which lessons are new, and
+/// badge is gone here — the heading already says which notes are new, and
 /// the two would say it twice. The sheet otherwise behaves identically: pin,
 /// tap-to-edit, swipe-to-delete, add.
-void showPrLabLessonsModal(
+void showPrLabNotesModal(
   BuildContext context, {
   required Listenable listenable,
-  required List<Lesson> Function(String exerciseId) lessonsFor,
-  required Future<void> Function(String exerciseId) loadLessonsFor,
-  required Future<void> Function(String exerciseId, String text) addLesson,
-  required Future<void> Function(String exerciseId, String lessonId)
-  toggleLessonPin,
-  required Future<void> Function(String exerciseId, String lessonId)
-  deleteLesson,
+  required List<ExerciseNote> Function(String exerciseId) notesFor,
+  required Future<void> Function(String exerciseId) loadNotesFor,
+  required Future<void> Function(String exerciseId, String text) addNote,
+  required Future<void> Function(String exerciseId, String exerciseNoteId)
+  toggleNotePin,
+  required Future<void> Function(String exerciseId, String exerciseNoteId)
+  deleteNote,
   required Future<void> Function(
     String exerciseId,
-    String lessonId,
+    String exerciseNoteId,
     String text,
   )
-  updateLesson,
+  updateNote,
   required String exerciseId,
   required String exerciseName,
 
-  /// When non-null (the live session's id), lessons created in that session
+  /// When non-null (the live session's id), notes created in that session
   /// form the sheet's first group.
   String? sessionId,
 }) {
@@ -56,14 +56,14 @@ void showPrLabLessonsModal(
     context,
     fitContent: true,
     keyboardAware: true,
-    child: _PrLabLessonsModalContent(
+    child: _PrLabNotesModalContent(
       listenable: listenable,
-      lessonsFor: lessonsFor,
-      loadLessonsFor: loadLessonsFor,
-      addLesson: addLesson,
-      toggleLessonPin: toggleLessonPin,
-      deleteLesson: deleteLesson,
-      updateLesson: updateLesson,
+      notesFor: notesFor,
+      loadNotesFor: loadNotesFor,
+      addNote: addNote,
+      toggleNotePin: toggleNotePin,
+      deleteNote: deleteNote,
+      updateNote: updateNote,
       exerciseId: exerciseId,
       exerciseName: exerciseName,
       sessionId: sessionId,
@@ -71,47 +71,47 @@ void showPrLabLessonsModal(
   );
 }
 
-class _PrLabLessonsModalContent extends StatefulWidget {
-  const _PrLabLessonsModalContent({
+class _PrLabNotesModalContent extends StatefulWidget {
+  const _PrLabNotesModalContent({
     required this.listenable,
-    required this.lessonsFor,
-    required this.loadLessonsFor,
-    required this.addLesson,
-    required this.toggleLessonPin,
-    required this.deleteLesson,
-    required this.updateLesson,
+    required this.notesFor,
+    required this.loadNotesFor,
+    required this.addNote,
+    required this.toggleNotePin,
+    required this.deleteNote,
+    required this.updateNote,
     required this.exerciseId,
     required this.exerciseName,
     this.sessionId,
   });
 
   final Listenable listenable;
-  final List<Lesson> Function(String exerciseId) lessonsFor;
-  final Future<void> Function(String exerciseId) loadLessonsFor;
-  final Future<void> Function(String exerciseId, String text) addLesson;
-  final Future<void> Function(String exerciseId, String lessonId)
-  toggleLessonPin;
-  final Future<void> Function(String exerciseId, String lessonId) deleteLesson;
-  final Future<void> Function(String exerciseId, String lessonId, String text)
-  updateLesson;
+  final List<ExerciseNote> Function(String exerciseId) notesFor;
+  final Future<void> Function(String exerciseId) loadNotesFor;
+  final Future<void> Function(String exerciseId, String text) addNote;
+  final Future<void> Function(String exerciseId, String exerciseNoteId)
+  toggleNotePin;
+  final Future<void> Function(String exerciseId, String exerciseNoteId) deleteNote;
+  final Future<void> Function(String exerciseId, String exerciseNoteId, String text)
+  updateNote;
   final String exerciseId;
   final String exerciseName;
   final String? sessionId;
 
   @override
-  State<_PrLabLessonsModalContent> createState() =>
-      _PrLabLessonsModalContentState();
+  State<_PrLabNotesModalContent> createState() =>
+      _PrLabNotesModalContentState();
 }
 
-class _PrLabLessonsModalContentState extends State<_PrLabLessonsModalContent> {
+class _PrLabNotesModalContentState extends State<_PrLabNotesModalContent> {
   bool _adding = false;
   final _draftCtrl = TextEditingController();
 
   @override
   void initState() {
     super.initState();
-    widget.loadLessonsFor(widget.exerciseId);
-    // The Save Lesson button draws its enabled state from the draft, so the
+    widget.loadNotesFor(widget.exerciseId);
+    // The Save ExerciseNote button draws its enabled state from the draft, so the
     // modal has to rebuild as it is typed into.
     _draftCtrl.addListener(_onDraftChanged);
   }
@@ -125,9 +125,9 @@ class _PrLabLessonsModalContentState extends State<_PrLabLessonsModalContent> {
 
   void _onDraftChanged() => setState(() {});
 
-  void _addLesson() {
+  void _addNote() {
     if (_draftCtrl.text.trim().isEmpty) return;
-    widget.addLesson(widget.exerciseId, _draftCtrl.text);
+    widget.addNote(widget.exerciseId, _draftCtrl.text);
     _draftCtrl.clear();
     setState(() => _adding = false);
   }
@@ -137,50 +137,50 @@ class _PrLabLessonsModalContentState extends State<_PrLabLessonsModalContent> {
     return ListenableBuilder(
       listenable: widget.listenable,
       builder: (context, _) {
-        final lessons = widget.lessonsFor(widget.exerciseId);
+        final notes = widget.notesFor(widget.exerciseId);
         // Pinned first, then newest by datetime (Dart's sort is unstable, so
         // sort by both keys explicitly to preserve chronological order).
-        final ordered = [...lessons]
+        final ordered = [...notes]
           ..sort((a, b) {
             final pin = (b.pinned ? 1 : 0).compareTo(a.pinned ? 1 : 0);
             return pin != 0 ? pin : b.createdDate.compareTo(a.createdDate);
           });
-        // The session on the desk's lessons lead; everything from before it
+        // The session on the desk's notes lead; everything from before it
         // follows under its own heading. Pin order holds inside each group,
         // so a pinned old cue never jumps the line into this session's shelf.
-        final sessionLessons = widget.sessionId == null
-            ? const <Lesson>[]
+        final sessionExerciseNotes = widget.sessionId == null
+            ? const <ExerciseNote>[]
             : [
-                for (final lesson in ordered)
-                  if (lesson.sessionId == widget.sessionId) lesson,
+                for (final note in ordered)
+                  if (note.sessionId == widget.sessionId) note,
               ];
-        final previousLessons = [
-          for (final lesson in ordered)
+        final previousNotes = [
+          for (final note in ordered)
             if (widget.sessionId == null ||
-                lesson.sessionId != widget.sessionId)
-              lesson,
+                note.sessionId != widget.sessionId)
+              note,
         ];
         final groups = <Widget>[];
-        void addGroup(String label, List<Lesson> lessons) {
-          if (lessons.isEmpty) return;
+        void addGroup(String label, List<ExerciseNote> notes) {
+          if (notes.isEmpty) return;
           if (groups.isNotEmpty) {
             groups.add(const SizedBox(height: AppSpacing.md));
           }
           groups.add(PrLabSectionLabel(label));
           groups.add(const SizedBox(height: AppSpacing.sm));
-          for (var i = 0; i < lessons.length; i++) {
+          for (var i = 0; i < notes.length; i++) {
             if (i > 0) groups.add(const SizedBox(height: AppSpacing.sm));
-            final lesson = lessons[i];
+            final note = notes[i];
             groups.add(
-              _PrLabLessonRow(
-                lesson: lesson,
+              _PrLabNoteRow(
+                note: note,
                 onTogglePin: () =>
-                    widget.toggleLessonPin(widget.exerciseId, lesson.lessonId),
+                    widget.toggleNotePin(widget.exerciseId, note.exerciseNoteId),
                 onDelete: () =>
-                    widget.deleteLesson(widget.exerciseId, lesson.lessonId),
-                onUpdateText: (text) => widget.updateLesson(
+                    widget.deleteNote(widget.exerciseId, note.exerciseNoteId),
+                onUpdateText: (text) => widget.updateNote(
                   widget.exerciseId,
-                  lesson.lessonId,
+                  note.exerciseNoteId,
                   text,
                 ),
               ),
@@ -188,12 +188,12 @@ class _PrLabLessonsModalContentState extends State<_PrLabLessonsModalContent> {
           }
         }
 
-        addGroup('This session', sessionLessons);
-        addGroup('Previously', previousLessons);
+        addGroup('This session', sessionExerciseNotes);
+        addGroup('Previously', previousNotes);
         return SafeArea(
-          key: const ValueKey('pr-lab-lessons-sheet'),
+          key: const ValueKey('pr-lab-notes-sheet'),
           child: SizedBox(
-            // Fixed half-screen sheet: small lesson counts don't inflate it
+            // Fixed half-screen sheet: small note counts don't inflate it
             // and the empty state doesn't collapse it to full screen — the
             // list scrolls within this height.
             height: MediaQuery.of(context).size.height * 0.5,
@@ -226,7 +226,7 @@ class _PrLabLessonsModalContentState extends State<_PrLabLessonsModalContent> {
                               ),
                             ),
                             Text(
-                              'Lessons',
+                              'Notes',
                               style: AppFonts.ui(
                                 fontSize: AppTextStyles.lg,
                                 fontWeight: FontWeight.w800,
@@ -239,7 +239,7 @@ class _PrLabLessonsModalContentState extends State<_PrLabLessonsModalContent> {
                       GlassButton(
                         label: '',
                         icon: Icons.add,
-                        semanticsLabel: 'Add lesson',
+                        semanticsLabel: 'Add note',
                         compact: true,
                         onPressed: () => setState(() => _adding = true),
                       ),
@@ -262,11 +262,11 @@ class _PrLabLessonsModalContentState extends State<_PrLabLessonsModalContent> {
                       children: [
                         Expanded(
                           child: GlassButton(
-                            label: 'Save Lesson',
+                            label: 'Save ExerciseNote',
                             solid: true,
                             // Nothing to save until something is typed.
                             disabled: _draftCtrl.text.trim().isEmpty,
-                            onPressed: _addLesson,
+                            onPressed: _addNote,
                           ),
                         ),
                         const SizedBox(width: AppSpacing.sm),
@@ -295,7 +295,7 @@ class _PrLabLessonsModalContentState extends State<_PrLabLessonsModalContent> {
                                 vertical: AppSpacing.xl,
                               ),
                               child: Text(
-                                'No lessons yet — tap Add to record a cue or breakthrough.',
+                                'No notes yet — tap Add to record a cue or breakthrough.',
                                 textAlign: TextAlign.center,
                                 style: AppFonts.ui(
                                   fontSize: AppTextStyles.sm,
@@ -317,32 +317,32 @@ class _PrLabLessonsModalContentState extends State<_PrLabLessonsModalContent> {
   }
 }
 
-class _PrLabLessonRow extends StatefulWidget {
-  const _PrLabLessonRow({
-    required this.lesson,
+class _PrLabNoteRow extends StatefulWidget {
+  const _PrLabNoteRow({
+    required this.note,
     required this.onTogglePin,
     required this.onDelete,
     required this.onUpdateText,
   });
 
-  final Lesson lesson;
+  final ExerciseNote note;
   final VoidCallback onTogglePin;
   final VoidCallback onDelete;
   final void Function(String text) onUpdateText;
 
   @override
-  State<_PrLabLessonRow> createState() => _PrLabLessonRowState();
+  State<_PrLabNoteRow> createState() => _PrLabNoteRowState();
 }
 
-class _PrLabLessonRowState extends State<_PrLabLessonRow> {
+class _PrLabNoteRowState extends State<_PrLabNoteRow> {
   bool _editing = false;
   late final TextEditingController _editCtrl;
 
   @override
   void initState() {
     super.initState();
-    _editCtrl = TextEditingController(text: widget.lesson.text);
-    // Save draws its enabled state from the text against the lesson it is
+    _editCtrl = TextEditingController(text: widget.note.text);
+    // Save draws its enabled state from the text against the note it is
     // editing, so the editor has to rebuild as it is typed into.
     _editCtrl.addListener(_onEditChanged);
   }
@@ -356,11 +356,11 @@ class _PrLabLessonRowState extends State<_PrLabLessonRow> {
 
   void _onEditChanged() => setState(() {});
 
-  /// Whether the text differs from the lesson being edited. An empty one is
-  /// not a lesson, so it never counts as a change to save.
+  /// Whether the text differs from the note being edited. An empty one is
+  /// not a note, so it never counts as a change to save.
   bool get _editDiffers =>
       _editCtrl.text.trim().isNotEmpty &&
-      _editCtrl.text.trim() != widget.lesson.text.trim();
+      _editCtrl.text.trim() != widget.note.text.trim();
 
   void _save() {
     if (_editCtrl.text.trim().isEmpty) return;
@@ -369,7 +369,7 @@ class _PrLabLessonRowState extends State<_PrLabLessonRow> {
   }
 
   void _cancel() {
-    _editCtrl.text = widget.lesson.text;
+    _editCtrl.text = widget.note.text;
     setState(() => _editing = false);
   }
 
@@ -399,9 +399,9 @@ class _PrLabLessonRowState extends State<_PrLabLessonRow> {
     );
   }
 
-  /// Read view: pin box + lesson text (tap the text to edit it).
+  /// Read view: pin box + note text (tap the text to edit it).
   Widget _view() {
-    final lesson = widget.lesson;
+    final note = widget.note;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -413,7 +413,7 @@ class _PrLabLessonRowState extends State<_PrLabLessonRow> {
           button: true,
           // The action, not the glyph — the pin is a lone icon control with
           // no word beside it (accessibility §5).
-          label: lesson.pinned ? 'Unpin lesson' : 'Pin lesson',
+          label: note.pinned ? 'Unpin note' : 'Pin note',
           child: GestureDetector(
             onTap: widget.onTogglePin,
             child: Container(
@@ -421,7 +421,7 @@ class _PrLabLessonRowState extends State<_PrLabLessonRow> {
               height: 40,
               margin: const EdgeInsets.only(right: AppSpacing.sm, top: 1),
               alignment: Alignment.center,
-              decoration: lesson.pinned
+              decoration: note.pinned
                   ? glassBox(AppColors.accent, radius: 6)
                   : BoxDecoration(
                       color: Colors.transparent,
@@ -433,7 +433,7 @@ class _PrLabLessonRowState extends State<_PrLabLessonRow> {
                 // A lone glyph control draws at the nav scale, 18–20
                 // (typography §3).
                 size: 18,
-                color: lesson.pinned ? AppColors.accent : AppColors.muted,
+                color: note.pinned ? AppColors.accent : AppColors.muted,
               ),
             ),
           ),
@@ -441,7 +441,7 @@ class _PrLabLessonRowState extends State<_PrLabLessonRow> {
         Expanded(
           child: GestureDetector(
             onTap: () => setState(() {
-              _editCtrl.text = widget.lesson.text;
+              _editCtrl.text = widget.note.text;
               _editing = true;
             }),
             child: Column(
@@ -450,7 +450,7 @@ class _PrLabLessonRowState extends State<_PrLabLessonRow> {
                 // The sheet's content: the ladder's body size, with a line
                 // height for prose (it had neither before, 2026-10-21).
                 Text(
-                  lesson.text,
+                  note.text,
                   style: AppFonts.ui(
                     fontSize: AppTextStyles.body,
                     height: 1.35,
@@ -459,7 +459,7 @@ class _PrLabLessonRowState extends State<_PrLabLessonRow> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  DateFormat('MMM d · h:mm a').format(lesson.createdDate),
+                  DateFormat('MMM d · h:mm a').format(note.createdDate),
                   style: AppFonts.mono(
                     fontSize: AppTextStyles.xs,
                     fontWeight: FontWeight.w500,
@@ -484,7 +484,7 @@ class _PrLabLessonRowState extends State<_PrLabLessonRow> {
           autofocus: true,
           minLines: 2,
           maxLines: 3,
-          placeholder: 'Lesson text…',
+          placeholder: 'ExerciseNote text…',
           // The sheet's default background is a surface ground.
           elevated: true,
         ),

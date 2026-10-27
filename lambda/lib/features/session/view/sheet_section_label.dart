@@ -8,7 +8,7 @@ import '../../../core/styles/app_text_styles.dart';
 /// two hairlines, so the break between groups reads as a rule across the
 /// sheet with the name set into it.
 ///
-/// The PR History sheet and the Lessons modal both split their feed into
+/// The PR History sheet and the Notes modal both split their feed into
 /// what the session on the desk added and what came before it, and both say
 /// so with this one widget. The label is the header's own mono caps,
 /// tracked, and white like a title rather than a muted caption, so the two

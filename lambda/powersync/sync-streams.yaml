@@ -71,7 +71,7 @@
 #
 # 2026-10-23 (friends): + friends_data, a SECOND auto-subscribed stream:
 # dim_friend_code, friend_relationship, and each mutual friend's completed
-# sessions plus the rows the viewer reads (exercises, variations, lessons,
+# sessions plus the rows the viewer reads (exercises, variations, exercise notes,
 # goals) and a NAME-ONLY dim_user slice. Push
 # 20261023120000_friends.sql BEFORE deploying this stream — validation names
 # the new tables — and bump the app version first so old builds keep
@@ -117,11 +117,11 @@
 #
 # 2026-10-26 (per-friend privacy tiers, #23): + friend_relationship
 # .share_notes — the owner's per-friend choice to send NOTES with their
-# history. friends_data now sends a friend's exercise notes (dim_lesson) only
+# history. friends_data now sends a friend's exercise notes (dim_exercise_note) only
 # when that friend shares them, and splits fact_session into two disjoint
 # queries: the full row for sharers, the row with NULL pre_notes/post_notes
 # for everyone else. Postgres RLS is row-level and cannot mask a column, so
-# the stream is where session-note privacy is enforced (the dim_lesson row
+# the stream is where session-note privacy is enforced (the dim_exercise_note row
 # policy is the REST half, in 20261026160000_friend_privacy.sql). Push that
 # migration BEFORE deploying this file — the new CTEs name the column, and
 # validation reads the real table.
@@ -169,7 +169,7 @@ streams:
       - SELECT *, pr_view_setting_id as id FROM dim_pr_view_setting WHERE user_id = auth.user_id()
       - SELECT *, program_id as id FROM dim_program WHERE user_id = auth.user_id()
       - SELECT *, program_run_id as id FROM fact_program_run WHERE user_id = auth.user_id()
-      - SELECT *, lesson_id as id FROM dim_lesson WHERE user_id = auth.user_id()
+      - SELECT *, exercise_note_id as id FROM dim_exercise_note WHERE user_id = auth.user_id()
       - SELECT *, session_id as id FROM dim_planned_session WHERE user_id = auth.user_id()
       - SELECT *, planned_exercise_id as id FROM dim_planned_session_exercise WHERE user_id = auth.user_id()
       - SELECT *, planned_set_id as id FROM dim_planned_session_exercise_set WHERE user_id = auth.user_id()
@@ -252,8 +252,8 @@ streams:
       - SELECT *, custom_variation_id as id FROM dim_variation WHERE user_id IN my_friends
       # Exercise notes are the second tier (2026-10-26, #23): a friend's
       # notes stream only when that friend shares them. The REST policy on
-      # dim_lesson carries the same gate.
-      - SELECT *, lesson_id as id FROM dim_lesson WHERE user_id IN friends_sharing_notes
+      # dim_exercise_note carries the same gate.
+      - SELECT *, exercise_note_id as id FROM dim_exercise_note WHERE user_id IN friends_sharing_notes
       - SELECT *, goal_id as id FROM fact_goal WHERE user_id IN my_friends
       # A friend's multi-set requirements ride beside the goals they belong
       # to (2026-10-26) — the goal row alone would read as a goal with no
@@ -300,6 +300,6 @@ streams:
       - SELECT *, session_exercise_set_id as id FROM fact_session_exercise_set WHERE user_id IN my_athletes
       - SELECT *, custom_exercise_id as id FROM dim_exercise WHERE user_id IN my_athletes
       - SELECT *, custom_variation_id as id FROM dim_variation WHERE user_id IN my_athletes
-      - SELECT *, lesson_id as id FROM dim_lesson WHERE user_id IN my_athletes
+      - SELECT *, exercise_note_id as id FROM dim_exercise_note WHERE user_id IN my_athletes
       - SELECT *, goal_id as id FROM fact_goal WHERE user_id IN my_athletes
       - SELECT *, goal_target_id as id FROM fact_goal_target WHERE user_id IN my_athletes

@@ -7,13 +7,13 @@ import 'package:lambda/core/styles/app_text_styles.dart';
 import 'package:lambda/data/models/custom_exercise.dart';
 import 'package:lambda/data/models/custom_variation.dart';
 import 'package:lambda/data/models/exercise_detail.dart';
-import 'package:lambda/data/models/lesson.dart';
+import 'package:lambda/data/models/exercise_note.dart';
 import 'package:lambda/data/models/planned_session.dart';
 import 'package:lambda/data/models/planned_session_exercise.dart';
 import 'package:lambda/data/models/planned_session_exercise_set.dart';
 import 'package:lambda/data/models/session_exercise_set.dart';
 import 'package:lambda/data/repositories/exercise_repository.dart';
-import 'package:lambda/data/repositories/lesson_repository.dart';
+import 'package:lambda/data/repositories/exercise_note_repository.dart';
 import 'package:lambda/data/repositories/planned_session_repository.dart';
 import 'package:lambda/data/repositories/session_repository.dart';
 import 'package:lambda/features/programs/view/plan_session_screen.dart';
@@ -68,7 +68,7 @@ void main() {
   const pausedVariationId = 'v-paused';
 
   late _FakePlanned planned;
-  late _FakeLessons lessons;
+  late _FakeNotes notes;
   late _FakeSessions sessions;
   late WorkoutEditorViewModel vm;
 
@@ -76,11 +76,11 @@ void main() {
     planned = _FakePlanned(userId: userId, sessionId: sessionId)
       ..addExercise(cableRowId, name: 'Cable Row', order: 1)
       ..addExercise(benchPressId, name: 'Bench Press', order: 2);
-    lessons = _FakeLessons();
+    notes = _FakeNotes();
     sessions = _FakeSessions();
     vm = WorkoutEditorViewModel(
       exerciseRepo: _FakeExercises(),
-      lessonRepo: lessons,
+      noteRepo: notes,
       workoutRepo: sessions,
       workoutPlanRepo: planned,
       // The identity `Supabase.instance` would otherwise supply. Without it a
@@ -526,7 +526,7 @@ void main() {
             '— the session floors\' rule',
       );
       expect(
-        tiles.onLessonTap,
+        tiles.onNoteTap,
         isNotNull,
         reason: 'and the exercise\'s whole notes shelf behind the note',
       );
@@ -559,7 +559,7 @@ void main() {
         isNull,
         reason: 'the flat card draws no PRs pill to wire — the floor owns it',
       );
-      expect(card.onLessonsTap, isNull);
+      expect(card.onExerciseNotesTap, isNull);
       expect(
         find.text('Notes'),
         findsNothing,
@@ -657,17 +657,17 @@ void main() {
     );
 
     test('the note tile counts the exercise\'s whole shelf', () async {
-      lessons.lessons.addAll([
-        Lesson(
-          lessonId: 'l-1',
+      notes.notes.addAll([
+        ExerciseNote(
+          exerciseNoteId: 'l-1',
           userId: userId,
           exerciseId: cableRowId,
           text: 'Elbows in',
           pinned: false,
           createdDate: DateTime(2026, 10, 1),
         ),
-        Lesson(
-          lessonId: 'l-2',
+        ExerciseNote(
+          exerciseNoteId: 'l-2',
           userId: userId,
           exerciseId: benchPressId,
           text: 'Pause at the chest',
@@ -676,13 +676,13 @@ void main() {
         ),
       ]);
 
-      await vm.loadLessonsFor(cableRowId);
-      await vm.loadLessonsFor(benchPressId);
+      await vm.loadNotesFor(cableRowId);
+      await vm.loadNotesFor(benchPressId);
 
-      expect(vm.lessonCountFor(cableRowId), 1);
-      expect(vm.lessonCountFor(benchPressId), 1);
+      expect(vm.noteCountFor(cableRowId), 1);
+      expect(vm.noteCountFor(benchPressId), 1);
       expect(
-        vm.lessonCountFor('ex-unknown'),
+        vm.noteCountFor('ex-unknown'),
         0,
         reason:
             'an exercise with nothing written has an empty shelf, not an '
@@ -1450,29 +1450,29 @@ class _FakeExercises implements ExerciseRepository {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
-/// Only here because `LessonRepository`'s constructor evaluates the global
+/// Only here because `ExerciseNoteRepository`'s constructor evaluates the global
 /// `ps.db` — the one repository that cannot be default-constructed off-device.
 /// The editor's notes reads — an in-memory shelf, so the floor's note tile
 /// can be handed a count and the modal its rows (2026-10-26). Everything else
 /// is the editor never calling it.
-class _FakeLessons implements LessonRepository {
-  final List<Lesson> lessons = [];
+class _FakeNotes implements ExerciseNoteRepository {
+  final List<ExerciseNote> notes = [];
 
   @override
-  Future<List<Lesson>> fetchLessons(String userId, String exerciseId) async => [
-    for (final lesson in lessons)
-      if (lesson.exerciseId == exerciseId) lesson,
+  Future<List<ExerciseNote>> fetchNotes(String userId, String exerciseId) async => [
+    for (final note in notes)
+      if (note.exerciseId == exerciseId) note,
   ];
 
   @override
-  Future<Map<String, List<Lesson>>> fetchLessonsForExercises(
+  Future<Map<String, List<ExerciseNote>>> fetchNotesForExercises(
     String userId,
     List<String> exerciseIds,
   ) async => {
     for (final id in exerciseIds)
       id: [
-        for (final lesson in lessons)
-          if (lesson.exerciseId == id) lesson,
+        for (final note in notes)
+          if (note.exerciseId == id) note,
       ],
   };
 

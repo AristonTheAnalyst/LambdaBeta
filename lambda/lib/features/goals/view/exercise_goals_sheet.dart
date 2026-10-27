@@ -30,7 +30,7 @@ import '../../programs/model/program_achievements.dart';
 /// disagree about whether a target stands.
 ///
 /// The list is drawn from a [Listenable] and a getter rather than a snapshot
-/// (the lessons modal's pattern): the New goal door opens the goals screen's
+/// (the notes modal's pattern): the New goal door opens the goals screen's
 /// form over this sheet, and the goal it writes must appear here without the
 /// sheet closing and reopening.
 Future<void> showExerciseGoalsSheet(
@@ -211,7 +211,7 @@ class _ExerciseGoalsSheetState extends State<_ExerciseGoalsSheet> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // The Lessons and PR History sheets' own header recipe —
+                  // The Notes and PR History sheets' own header recipe —
                   // the exercise uppercased as an eyebrow over the title —
                   // so every door opens onto the same furniture.
                   UserNameText(

@@ -173,7 +173,7 @@ class _NavBarDemoScreenState extends State<NavBarDemoScreen> {
                         title: 'Bar path notes',
                         body:
                             'Elbows under the bar, wrists stacked. Pinned '
-                            'lessons live on the exercise card so they are '
+                            'notes live on the exercise card so they are '
                             'there mid-set, not in a notebook.',
                       ),
                       const SizedBox(height: AppSpacing.lg),

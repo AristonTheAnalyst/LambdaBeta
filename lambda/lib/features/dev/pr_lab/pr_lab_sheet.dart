@@ -197,7 +197,7 @@ class _PrLabHistorySheetState extends State<_PrLabHistorySheet> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // The Lessons sheet's own header recipe — the
+                        // The Notes sheet's own header recipe — the
                         // exercise uppercased as an eyebrow over the title —
                         // so both doors open onto the same furniture
                         // (2026-10-21).

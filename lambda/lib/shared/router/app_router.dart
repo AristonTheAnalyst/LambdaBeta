@@ -12,7 +12,7 @@ import '../../features/dev/lab/lab_screen.dart';
 import '../../features/dev/view/dev_screen.dart';
 import '../../features/dev/view/experimental_screen.dart';
 import '../../features/dev/view/gallery_screen.dart';
-import '../../features/dev/view/lesson_debug_screen.dart';
+import '../../features/dev/view/exercise_note_debug_screen.dart';
 import '../../features/dev/view/nav_bar_demo_screen.dart';
 import '../../features/dev/pr_lab/pr_lab_screen.dart';
 import '../../features/dev/view/pr_history_demo_screen.dart';
@@ -122,7 +122,7 @@ abstract final class AppRouter {
             // `?exercise=<id>` selects the exercise on open — the goal
             // sheet's completion row (2026-10-20). `?tab=` is accepted but
             // no longer moves anywhere: the viewer draws the sets, the PRs,
-            // the lessons and the bookends at once (2026-10-22).
+            // the notes and the bookends at once (2026-10-22).
             builder: (_, state) => SessionDetailScreen(
               sessionId: state.pathParameters['id']!,
               initialTab: state.uri.queryParameters['tab'],
@@ -137,7 +137,7 @@ abstract final class AppRouter {
       // Top-level, beside /logs, for the same reason: the viewer draws its
       // own bar rather than sitting under the shell's. The bar lights the
       // Friends tab (`navRoute`), and the page is read-only throughout —
-      // no edit, no Restore, no lessons composer.
+      // no edit, no Restore, no notes composer.
       GoRoute(
         path: '/friends/:userId/sessions/:sessionId',
         builder: (_, state) => SessionDetailScreen(
@@ -285,8 +285,8 @@ abstract final class AppRouter {
                   builder: (_, _) => ExperimentalScreen(),
                 ),
                 GoRoute(
-                  path: 'lesson-debug',
-                  builder: (_, _) => const LessonDebugScreen(),
+                  path: 'note-debug',
+                  builder: (_, _) => const ExerciseNoteDebugScreen(),
                 ),
                 GoRoute(
                   path: 'pr-history',

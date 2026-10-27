@@ -253,7 +253,7 @@ class ExerciseRepository {
     final queries = [
       'SELECT COUNT(*) c FROM fact_session_exercise WHERE custom_exercise_id = ?',
       'SELECT COUNT(*) c FROM dim_planned_session_exercise WHERE custom_exercise_id = ?',
-      'SELECT COUNT(*) c FROM dim_lesson WHERE custom_exercise_id = ?',
+      'SELECT COUNT(*) c FROM dim_exercise_note WHERE custom_exercise_id = ?',
       'SELECT COUNT(*) c FROM fact_goal WHERE custom_exercise_id = ?',
     ];
     var total = 0;

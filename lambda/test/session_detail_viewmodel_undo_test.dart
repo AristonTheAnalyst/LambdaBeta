@@ -8,7 +8,7 @@ import 'package:lambda/data/models/session.dart';
 import 'package:lambda/data/models/session_exercise.dart';
 import 'package:lambda/data/models/session_exercise_set.dart';
 import 'package:lambda/data/repositories/exercise_repository.dart';
-import 'package:lambda/data/repositories/lesson_repository.dart';
+import 'package:lambda/data/repositories/exercise_note_repository.dart';
 import 'package:lambda/data/repositories/session_repository.dart';
 import 'package:lambda/features/logs/viewmodel/session_detail_viewmodel.dart';
 import 'support/fake_coach_repository.dart';
@@ -207,7 +207,7 @@ class _FakeExerciseRepo extends Fake implements ExerciseRepository {
   Future<List<CustomVariation>> fetchVariations(String userId) async => [];
 }
 
-class _FakeLessonRepo extends Fake implements LessonRepository {}
+class _FakeExerciseNoteRepo extends Fake implements ExerciseNoteRepository {}
 
 void main() {
   late _FakeSessionRepo repo;
@@ -216,7 +216,7 @@ void main() {
     coachRepo: FakeCoachRepository(),
     sessionRepo: repo,
     exerciseRepo: _FakeExerciseRepo(),
-    lessonRepo: _FakeLessonRepo(),
+    noteRepo: _FakeExerciseNoteRepo(),
     userId: 'u1',
   );
 

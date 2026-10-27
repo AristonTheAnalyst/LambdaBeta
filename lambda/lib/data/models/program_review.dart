@@ -129,7 +129,7 @@ class ProgramReview {
   /// exercise's id: `{"<planned_exercise_id>": "<note>"}`.
   ///
   /// Part of the review's record only — not written to the exercise, not
-  /// pinned as lessons, and not carried into the next review.
+  /// pinned as notes, and not carried into the next review.
   final String? exerciseNotesJson;
 
   /// The frozen record of what the run achieved, written by `closeRun`

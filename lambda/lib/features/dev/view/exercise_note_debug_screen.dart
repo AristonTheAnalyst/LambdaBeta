@@ -7,17 +7,17 @@ import '../../../../core/styles/app_spacing.dart';
 import '../../../../shared/widgets/page_header.dart';
 import '../../../../shared/widgets/scroll_shrink_nav_bar.dart';
 
-/// Raw ground-truth dump of `fact_lesson` plus the pending PowerSync upload
+/// Raw ground-truth dump of `dim_exercise_note` plus the pending PowerSync upload
 /// queue — bypasses every viewmodel/UI layer so we can see exactly how many
-/// lessons the DB actually holds for a user, and whether uploads are stuck.
-class LessonDebugScreen extends StatefulWidget {
-  const LessonDebugScreen({super.key});
+/// notes the DB actually holds for a user, and whether uploads are stuck.
+class ExerciseNoteDebugScreen extends StatefulWidget {
+  const ExerciseNoteDebugScreen({super.key});
 
   @override
-  State<LessonDebugScreen> createState() => _LessonDebugScreenState();
+  State<ExerciseNoteDebugScreen> createState() => _ExerciseNoteDebugScreenState();
 }
 
-class _LessonDebugScreenState extends State<LessonDebugScreen> {
+class _ExerciseNoteDebugScreenState extends State<ExerciseNoteDebugScreen> {
   List<Map<String, dynamic>> _rows = const [];
   List<Map<String, dynamic>> _crud = const [];
   bool _loading = true;
@@ -36,12 +36,12 @@ class _LessonDebugScreenState extends State<LessonDebugScreen> {
     try {
       final rows = await ps.db.getAll(
         '''
-        SELECT l.lesson_id, l.custom_exercise_id, l.lesson_text, l.pinned,
-               l.is_archived, l.lesson_created_date, e.exercise_name
-        FROM dim_lesson l
+        SELECT l.exercise_note_id, l.custom_exercise_id, l.note_text, l.pinned,
+               l.is_archived, l.note_created_date, e.exercise_name
+        FROM dim_exercise_note l
         LEFT JOIN dim_exercise e ON e.custom_exercise_id = l.custom_exercise_id
         WHERE l.user_id = ?
-        ORDER BY l.lesson_created_date DESC
+        ORDER BY l.note_created_date DESC
         ''',
         [_userId],
       );
@@ -69,7 +69,7 @@ class _LessonDebugScreenState extends State<LessonDebugScreen> {
       body: Column(
         children: [
           PageHeader(
-            title: 'Lesson Debug',
+            title: 'ExerciseNote Debug',
             left: GestureDetector(
               onTap: () => Navigator.of(context).pop(),
               child: Icon(
@@ -97,7 +97,7 @@ class _LessonDebugScreenState extends State<LessonDebugScreen> {
                     ),
                     children: [
                       Text(
-                        'dim_lesson: ${_rows.length} row(s) for this user',
+                        'dim_exercise_note: ${_rows.length} row(s) for this user',
                         style: AppFonts.mono(
                           fontSize: 14,
                           color: AppColors.accent,
@@ -179,12 +179,12 @@ class _LessonDebugScreenState extends State<LessonDebugScreen> {
           ),
           const SizedBox(height: 2),
           Text(
-            '${r['lesson_text']}',
+            '${r['note_text']}',
             style: AppFonts.ui(fontSize: 14, color: AppColors.primary),
           ),
           const SizedBox(height: 2),
           Text(
-            'id=${r['lesson_id']}  created=${r['lesson_created_date']}',
+            'id=${r['exercise_note_id']}  created=${r['note_created_date']}',
             style: AppFonts.mono(fontSize: 13, color: AppColors.muted),
           ),
         ],

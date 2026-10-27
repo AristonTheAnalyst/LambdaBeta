@@ -26,7 +26,7 @@ import '../../../shared/widgets/session_exercise_card.dart';
 import '../../../shared/widgets/session_set_row.dart';
 import '../../goals/view/exercise_goals_sheet.dart';
 import '../../goals/view/goal_sheet.dart';
-import '../../session/view/lessons_modal.dart';
+import '../../session/view/exercise_notes_modal.dart';
 import '../../session/view/pr_history_sheet.dart';
 import '../../session/view/session_stats_bar.dart';
 import '../../../shared/widgets/exercise_target_picker.dart';
@@ -86,7 +86,7 @@ Future<bool> confirmEditWhileRunning(BuildContext context) async {
 
 /// Full-screen planned-workout editor that mirrors the active-session UX:
 /// tabbed by exercise, inline editable set grid (PlanSetRow), auto-commit on
-/// blur, Lessons/History per exercise, swipe-to-reveal delete/duplicate.
+/// blur, Notes/History per exercise, swipe-to-reveal delete/duplicate.
 /// Pushed via [program_detail_screen.dart] on create or edit.
 class PlanSessionScreen extends StatefulWidget {
   const PlanSessionScreen({
@@ -792,9 +792,9 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
               Expanded(
                 child: SessionStatsTiles(
                   prCount: exerciseId == null ? 0 : vm.prCountFor(exerciseId),
-                  lessonCount: exerciseId == null
+                  exerciseNoteCount: exerciseId == null
                       ? 0
-                      : vm.lessonCountFor(exerciseId),
+                      : vm.noteCountFor(exerciseId),
                   goalCount: exerciseId == null
                       ? 0
                       : vm.openGoalsFor(exerciseId),
@@ -804,9 +804,9 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
                   onPrTap: exerciseId == null
                       ? null
                       : () => _openPrHistory(exerciseId),
-                  onLessonTap: exerciseId == null
+                  onNoteTap: exerciseId == null
                       ? null
-                      : () => _openLessons(exerciseId),
+                      : () => _openNotes(exerciseId),
                   // The goals door rides the planner too (2026-10-27): what
                   // the exercise is chasing informs what the plan should ask
                   // of it. Inside a review the same door stands.
@@ -870,22 +870,22 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
   }
 
   /// The floor's note: the active exercise's exercise notes, through the
-  /// session's own modal and the editor's own lesson callbacks — so a note
+  /// session's own modal and the editor's own note callbacks — so a note
   /// can be written, pinned and edited while planning, exactly as it can
   /// while logging (2026-10-26). No session id and no start: the shelves are
   /// the exercise's whole story, split by the pass's window when one stands
   /// behind the editor.
-  void _openLessons(String exerciseId) {
+  void _openNotes(String exerciseId) {
     final vm = widget.viewModel;
-    showLessonsModal(
+    showExerciseNotesModal(
       context,
       listenable: vm.state,
-      lessonsFor: vm.lessonsFor,
-      loadLessonsFor: vm.loadLessonsFor,
-      addLesson: vm.addLesson,
-      toggleLessonPin: vm.toggleLessonPin,
-      deleteLesson: vm.deleteLesson,
-      updateLesson: vm.updateLessonText,
+      notesFor: vm.notesFor,
+      loadNotesFor: vm.loadNotesFor,
+      addNote: vm.addNote,
+      toggleNotePin: vm.toggleNotePin,
+      deleteNote: vm.deleteNote,
+      updateNote: vm.updateNoteText,
       exerciseId: exerciseId,
       exerciseName: toProperCase(vm.exerciseDisplayName(exerciseId)),
       sinceLastReviewAt: _reviewSession?.sinceDate,

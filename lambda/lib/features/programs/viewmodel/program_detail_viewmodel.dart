@@ -13,7 +13,7 @@ import '../../../data/models/program_history.dart';
 import '../../../data/models/program_progress.dart';
 import '../../../data/models/program_run.dart';
 import '../../../data/repositories/exercise_repository.dart';
-import '../../../data/repositories/lesson_repository.dart';
+import '../../../data/repositories/exercise_note_repository.dart';
 import '../../../data/repositories/program_history_repository.dart';
 import '../../../data/repositories/program_repository.dart';
 import '../../../data/repositories/planned_session_repository.dart';
@@ -239,7 +239,7 @@ class ProgramDetailViewModel implements WorkoutEditorHost {
     ProgramRepository? repo,
     ProgramRunRepository? runRepo,
     ExerciseRepository? exerciseRepo,
-    LessonRepository? lessonRepo,
+    ExerciseNoteRepository? noteRepo,
     SessionRepository? workoutRepo,
     PlannedSessionRepository? workoutPlanRepo,
     ProgramHistoryRepository? historyRepo,
@@ -268,7 +268,7 @@ class ProgramDetailViewModel implements WorkoutEditorHost {
     editor = WorkoutEditorViewModel(
       host: this,
       exerciseRepo: exerciseRepo,
-      lessonRepo: lessonRepo,
+      noteRepo: noteRepo,
       workoutRepo: workoutRepo,
       workoutPlanRepo: workoutPlanRepo,
       // The override travels with the repo overrides: a caller who had to name

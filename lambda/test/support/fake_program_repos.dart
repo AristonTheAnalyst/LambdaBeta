@@ -14,7 +14,7 @@ import 'package:lambda/data/models/program_progress.dart';
 import 'package:lambda/data/models/program_review.dart';
 import 'package:lambda/data/models/program_run.dart';
 import 'package:lambda/data/repositories/exercise_repository.dart';
-import 'package:lambda/data/repositories/lesson_repository.dart';
+import 'package:lambda/data/repositories/exercise_note_repository.dart';
 import 'package:lambda/data/repositories/planned_session_repository.dart';
 import 'package:lambda/data/repositories/program_history_repository.dart';
 import 'package:lambda/data/repositories/program_repository.dart';
@@ -1156,10 +1156,10 @@ class FakePlannedSessions implements PlannedSessionRepository {
 }
 
 /// The one repository that cannot be default-constructed off-device:
-/// `LessonRepository`'s constructor evaluates the global PowerSync database.
+/// `ExerciseNoteRepository`'s constructor evaluates the global PowerSync database.
 /// Any host test that builds a view model hosting a workout editor must pass
 /// this, or construction throws before a single test statement runs.
-class FakeLessons implements LessonRepository {
+class FakeNotes implements ExerciseNoteRepository {
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

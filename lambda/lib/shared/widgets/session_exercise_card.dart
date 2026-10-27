@@ -15,9 +15,9 @@ import 'lambda_input.dart';
 import 'lambda_readout.dart';
 import 'slide_up_modal.dart';
 
-/// Minimal, VM-free pinned-lesson data for the card's lesson bar.
-class PinnedLessonData {
-  const PinnedLessonData({required this.text, required this.date});
+/// Minimal, VM-free pinned-note data for the card's note bar.
+class PinnedNoteData {
+  const PinnedNoteData({required this.text, required this.date});
 
   final String text;
   final DateTime date;
@@ -27,7 +27,7 @@ class PinnedLessonData {
 /// header names it. "Review Note", not "Exercise Review Note": the card
 /// already carries the exercise's *own* note in the pinned bar above the
 /// sets, and two exercise-note things on one card read as one thing
-/// (2026-10-23, the lesson → exercise-notes rename).
+/// (2026-10-23, the note → exercise-notes rename).
 const String kReviewNoteLabel = 'Review Note';
 
 /// The same box while the record is up: the note shown is the record's, not
@@ -66,12 +66,12 @@ class SessionExerciseCard extends StatefulWidget {
     this.deletedExercises = const [],
     this.onMove,
     this.onAdd,
-    // ── Pinned lesson (sits between the selector and the pills) ──
-    this.pinnedLesson,
-    this.onPinnedLessonTap,
+    // ── Pinned note (sits between the selector and the pills) ──
+    this.pinnedNote,
+    this.onPinnedNoteTap,
     // ── Pills — a null onTap greys the pill ──
-    this.lessonsCount = 0,
-    this.onLessonsTap,
+    this.exerciseNotesCount = 0,
+    this.onExerciseNotesTap,
     this.prCount = 0,
     this.onPrTap,
     // ── Review note — the open review's note for the ACTIVE exercise ──
@@ -117,13 +117,13 @@ class SessionExerciseCard extends StatefulWidget {
   /// Null greys the popover's Add Exercise row.
   final VoidCallback? onAdd;
 
-  final PinnedLessonData? pinnedLesson;
+  final PinnedNoteData? pinnedNote;
 
-  /// Null renders the lesson bar inert (no tap).
-  final VoidCallback? onPinnedLessonTap;
+  /// Null renders the note bar inert (no tap).
+  final VoidCallback? onPinnedNoteTap;
 
-  final int lessonsCount;
-  final VoidCallback? onLessonsTap;
+  final int exerciseNotesCount;
+  final VoidCallback? onExerciseNotesTap;
 
   /// The PRs the session on screen ADDED — never the all-time count. The
   /// pill quotes the same number with a `+` in front ("+3 PRs"), because a
@@ -136,9 +136,9 @@ class SessionExerciseCard extends StatefulWidget {
 
   /// The review's note for the exercise on screen, when there is one.
   ///
-  /// Shown as a footer box under the sets, never in the pinned lesson's slot:
+  /// Shown as a footer box under the sets, never in the pinned note's slot:
   /// a note exists to be re-read WHILE the pass is being made, so hiding it
-  /// behind a tap would defeat it, but a lesson says how to do the lift and a
+  /// behind a tap would defeat it, but a note says how to do the lift and a
   /// review note says how it went — two different things, two places. On the
   /// completed record [onReviewNoteChanged] is null and the box renders the
   /// note as plain text — and only when there is one, unless
@@ -245,7 +245,7 @@ class _SessionExerciseCardState extends State<SessionExerciseCard> {
     final viewed = widget.historySelection ?? _viewingSession;
     final viewingHistory = viewed != null;
 
-    // The card's head — selector, pinned lesson, pills — built once so the
+    // The card's head — selector, pinned note, pills — built once so the
     // boxed and the flat card wear the same one.
     //
     // The pills row is the BOXED card's door row only. The session look has
@@ -266,11 +266,11 @@ class _SessionExerciseCardState extends State<SessionExerciseCard> {
           deleted: widget.deletedExercises,
           planned: widget.planned,
         ),
-        // The pinned lesson sits right under the exercise — stays visible
+        // The pinned note sits right under the exercise — stays visible
         // while viewing history too.
-        if (widget.pinnedLesson != null) ...[
+        if (widget.pinnedNote != null) ...[
           const SizedBox(height: 6),
-          _pinnedLessonBar(widget.pinnedLesson!),
+          _pinnedNoteBar(widget.pinnedNote!),
         ],
         if (!widget.flat) ...[
           const SizedBox(height: 6),
@@ -298,7 +298,7 @@ class _SessionExerciseCardState extends State<SessionExerciseCard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Top card: the exercise selector + pinned lesson + pills, inset
+          // Top card: the exercise selector + pinned note + pills, inset
           // with space around it.
           Container(
             margin: const EdgeInsets.fromLTRB(10, 10, 10, 6),
@@ -331,7 +331,7 @@ class _SessionExerciseCardState extends State<SessionExerciseCard> {
             ),
           ),
           // The review's note on this exercise — a FOOTER, not a header. The
-          // slot under the selector belongs to the pinned lesson (how to do
+          // slot under the selector belongs to the pinned note (how to do
           // the lift); a note about how it went is about the work, and reads
           // after the sets it is about.
           if (_showsReviewNote)
@@ -372,7 +372,7 @@ class _SessionExerciseCardState extends State<SessionExerciseCard> {
             const SizedBox(height: AppSpacing.lg),
             viewingHistory ? _historyDetail(viewed) : _setsGrid(),
             // The review's note on this exercise — a FOOTER, not a header.
-            // The slot under the selector belongs to the pinned lesson (how
+            // The slot under the selector belongs to the pinned note (how
             // to do the lift); a note about how it went is about the work,
             // and reads after the sets it is about.
             if (_showsReviewNote) ...[
@@ -396,12 +396,12 @@ class _SessionExerciseCardState extends State<SessionExerciseCard> {
         Expanded(
           child: CardPillButton(
             icon: Icons.sticky_note_2_outlined,
-            label: widget.lessonsCount > 0
-                ? '${widget.lessonsCount} Notes'
+            label: widget.exerciseNotesCount > 0
+                ? '${widget.exerciseNotesCount} Notes'
                 : 'Notes',
-            active: widget.lessonsCount > 0,
-            enabled: widget.onLessonsTap != null,
-            onTap: widget.onLessonsTap,
+            active: widget.exerciseNotesCount > 0,
+            enabled: widget.onExerciseNotesTap != null,
+            onTap: widget.onExerciseNotesTap,
           ),
         ),
         const SizedBox(width: 6),
@@ -445,16 +445,16 @@ class _SessionExerciseCardState extends State<SessionExerciseCard> {
     );
   }
 
-  /// The pinned lesson bar, right under the exercise — recessed (bg fill)
+  /// The pinned note bar, right under the exercise — recessed (bg fill)
   /// against the header's surfaceHigh container. Just the note glyph and the
-  /// words: the lesson names itself by being a pinned cue, so no eyebrow and
+  /// words: the note names itself by being a pinned cue, so no eyebrow and
   /// no date (2026-10-23 — the bar is a reminder, not a record).
   ///
   /// The bar holds one line; tapping it opens the reader popup with the
   /// complete message, and the popup's `View all exercise notes` is the way
   /// on to the notes sheet (2026-10-23). The glyph is the set row's own —
   /// one note icon everywhere.
-  Widget _pinnedLessonBar(PinnedLessonData lesson) {
+  Widget _pinnedNoteBar(PinnedNoteData note) {
     final bar = Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
       decoration: lambdaBox(ContainerTone.bg, radius: AppRadius.md),
@@ -464,7 +464,7 @@ class _SessionExerciseCardState extends State<SessionExerciseCard> {
           const SizedBox(width: 6),
           Expanded(
             child: Text(
-              lesson.text,
+              note.text,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: AppFonts.ui(
@@ -482,15 +482,15 @@ class _SessionExerciseCardState extends State<SessionExerciseCard> {
   /// Reads the pinned note whole, then — only when that door was chosen —
   /// hands over to the caller's notes sheet.
   Future<void> _openPinnedNote() async {
-    final lesson = widget.pinnedLesson;
-    if (lesson == null) return;
+    final note = widget.pinnedNote;
+    if (note == null) return;
     final viewAll = await showPinnedNotePopup(
       context,
-      text: lesson.text,
-      canViewAll: widget.onPinnedLessonTap != null,
+      text: note.text,
+      canViewAll: widget.onPinnedNoteTap != null,
     );
     if (!mounted || !viewAll) return;
-    widget.onPinnedLessonTap?.call();
+    widget.onPinnedNoteTap?.call();
   }
 
   /// The review's note for this exercise.

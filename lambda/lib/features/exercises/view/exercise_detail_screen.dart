@@ -10,7 +10,7 @@ import '../../../core/styles/app_text_styles.dart';
 import '../../../core/utils/date_range.dart';
 import '../../../core/utils/name_limit.dart';
 import '../../../data/models/session_exercise_set.dart';
-import '../../../data/repositories/lesson_repository.dart';
+import '../../../data/repositories/exercise_note_repository.dart';
 import '../../../data/repositories/pr_view_setting_repository.dart';
 import '../../../shared/widgets/glass_button.dart';
 import '../../../shared/widgets/user_name_text.dart';
@@ -48,7 +48,7 @@ class ExerciseDetailScreen extends StatefulWidget {
 
 class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
   final _viewModel = ExerciseViewModel();
-  final _lessonRepo = LessonRepository();
+  final _noteRepo = ExerciseNoteRepository();
   String? _name;
   List<PastSetRow> _sets = const [];
   bool _loading = true;
@@ -70,8 +70,8 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
   Set<int> _hiddenReps = {};
   Set<String> _hiddenWeights = {};
 
-  /// All-time lesson count for this exercise (knowledge isn't windowed).
-  int _lessonsTotal = 0;
+  /// All-time note count for this exercise (knowledge isn't windowed).
+  int _notesTotal = 0;
 
   String get _userId => Supabase.instance.client.auth.currentUser!.id;
 
@@ -102,7 +102,7 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
         _userId,
         widget.exerciseId,
       );
-      final lessons = await _lessonRepo.fetchLessons(
+      final notes = await _noteRepo.fetchNotes(
         _userId,
         widget.exerciseId,
       );
@@ -111,7 +111,7 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
         _sets = sets;
         _hiddenReps = hidden.hiddenReps;
         _hiddenWeights = hidden.hiddenWeights;
-        _lessonsTotal = lessons.length;
+        _notesTotal = notes.length;
         _loading = false;
         // 'No Variation' is the default ONLY when such sets exist —
         // otherwise default to the first variation that has data.
@@ -582,7 +582,7 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
           prsTotal: prs.length,
           prFreq: activeWeeks == 0 ? null : prs.length / activeWeeks,
           setsPerWeek: activeWeeks == 0 ? null : setsInWindow / activeWeeks,
-          lessonsTotal: _lessonsTotal,
+          notesTotal: _notesTotal,
         ),
         const SizedBox(height: AppSpacing.xs),
         Text(
@@ -637,24 +637,24 @@ class _MetricsCard extends StatelessWidget {
     required this.prsTotal,
     required this.prFreq,
     required this.setsPerWeek,
-    required this.lessonsTotal,
+    required this.notesTotal,
   });
 
   final int prsTotal;
   final double? prFreq;
   final double? setsPerWeek;
-  final int lessonsTotal;
+  final int notesTotal;
 
   // "Notes", not "Exercise Notes": the page is the exercise, so the tile
   // cannot be misread, and the long label does not fit four across
-  // (2026-10-23 — the lesson → exercise-note rename).
+  // (2026-10-23 — the note → exercise-note rename).
   static const _labels = ['PRs Total', 'PRs/Week', 'Sets/Week', 'Notes'];
 
   List<String> get _values => [
     '$prsTotal',
     prFreq == null ? '—' : '${prFreq!.round()}',
     setsPerWeek == null ? '—' : '${setsPerWeek!.round()}',
-    '$lessonsTotal',
+    '$notesTotal',
   ];
 
   @override

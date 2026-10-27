@@ -9,8 +9,8 @@ import '../../core/utils/session_format.dart';
 import '../../features/session/model/pr_engine.dart';
 import 'user_name_text.dart';
 
-/// The PR showcase + Lessons list of a session's reflection — two dedicated
-/// sections (PRS, LESSONS), each with an explicit empty note when the session
+/// The PR showcase + Notes list of a session's reflection — two dedicated
+/// sections (PRS, NOTES), each with an explicit empty note when the session
 /// had none, and one exercise block per exercise that has content. The exact
 /// styling used on the session Reflection page. Shared between the live
 /// Reflection page and the prep page's LAST SESSION card so the two can never
@@ -20,32 +20,32 @@ class ReflectionSummary extends StatelessWidget {
     super.key,
     required this.exerciseIds,
     required this.prsByExercise,
-    required this.lessonsByExercise,
+    required this.notesByExercise,
     required this.exerciseNameFor,
     this.showPrs = true,
-    this.showLessons = true,
+    this.showNotes = true,
   });
 
   /// Exercises in display order (slots for the live session, first-appearance
-  /// order for the prep card). Exercises with no PRs and no lessons are
+  /// order for the prep card). Exercises with no PRs and no notes are
   /// skipped; when none remain, the sections render their empty notes.
   final List<String> exerciseIds;
 
   /// exerciseId → that session's PR events (one per frontier-extending set).
   final Map<String, List<PrEvent>> prsByExercise;
 
-  /// exerciseId → lesson texts.
-  final Map<String, List<String>> lessonsByExercise;
+  /// exerciseId → note texts.
+  final Map<String, List<String>> notesByExercise;
 
   /// Raw display name for an exercise — [toProperCase] is applied here so
   /// both contexts render identically.
   final String Function(String exerciseId) exerciseNameFor;
 
   /// Which sections render — the past-session viewer's Summary tab is
-  /// lessons-only and its PRs tab is PRs-only; the live reflection page and
+  /// notes-only and its PRs tab is PRs-only; the live reflection page and
   /// the prep card keep both.
   final bool showPrs;
-  final bool showLessons;
+  final bool showNotes;
 
   static String _fmt(num n) =>
       n == n.roundToDouble() ? n.toInt().toString() : n.toString();
@@ -55,8 +55,8 @@ class ReflectionSummary extends StatelessWidget {
     final prExercises = exerciseIds
         .where((id) => (prsByExercise[id] ?? const []).isNotEmpty)
         .toList();
-    final lessonExercises = exerciseIds
-        .where((id) => (lessonsByExercise[id] ?? const []).isNotEmpty)
+    final noteExercises = exerciseIds
+        .where((id) => (notesByExercise[id] ?? const []).isNotEmpty)
         .toList();
 
     // Vertical rhythm, all gaps explicit here (content widgets carry only
@@ -68,14 +68,14 @@ class ReflectionSummary extends StatelessWidget {
         const SizedBox(height: AppSpacing.sm),
         ..._sectionContent(prExercises, 'No PRs this session', _prCardsFor),
       ],
-      if (showPrs && showLessons) const SizedBox(height: AppSpacing.xl),
-      if (showLessons) ...[
+      if (showPrs && showNotes) const SizedBox(height: AppSpacing.xl),
+      if (showNotes) ...[
         _sectionLabel(Icons.sticky_note_2_outlined, 'EXERCISE NOTES'),
         const SizedBox(height: AppSpacing.sm),
         ..._sectionContent(
-          lessonExercises,
+          noteExercises,
           'No exercise notes this session',
-          _lessonRowsFor,
+          _noteRowsFor,
         ),
       ],
     ];
@@ -146,8 +146,8 @@ class ReflectionSummary extends StatelessWidget {
     for (final e in prsByExercise[exerciseId] ?? const <PrEvent>[]) _prCard(e),
   ];
 
-  List<Widget> _lessonRowsFor(String exerciseId) => [
-    for (final lesson in lessonsByExercise[exerciseId] ?? const [])
+  List<Widget> _noteRowsFor(String exerciseId) => [
+    for (final note in notesByExercise[exerciseId] ?? const [])
       Padding(
         padding: const EdgeInsets.only(bottom: AppSpacing.sm),
         child: Container(
@@ -164,7 +164,7 @@ class ReflectionSummary extends StatelessWidget {
               const SizedBox(width: AppSpacing.sm),
               Expanded(
                 child: Text(
-                  lesson,
+                  note,
                   style: AppFonts.ui(
                     fontSize: AppTextStyles.sm,
                     color: AppColors.primary,

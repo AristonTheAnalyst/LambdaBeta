@@ -3,12 +3,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lambda/data/cache/past_sets_timeline_cache.dart';
 import 'package:lambda/data/models/custom_variation.dart';
 import 'package:lambda/data/models/exercise_detail.dart';
-import 'package:lambda/data/models/lesson.dart';
+import 'package:lambda/data/models/exercise_note.dart';
 import 'package:lambda/data/models/session.dart';
 import 'package:lambda/data/models/session_exercise.dart';
 import 'package:lambda/data/models/session_exercise_set.dart';
 import 'package:lambda/data/repositories/exercise_repository.dart';
-import 'package:lambda/data/repositories/lesson_repository.dart';
+import 'package:lambda/data/repositories/exercise_note_repository.dart';
 import 'package:lambda/data/repositories/session_repository.dart';
 import 'package:lambda/features/logs/viewmodel/session_detail_viewmodel.dart';
 import 'package:lambda/features/session/model/session_local_state.dart';
@@ -118,9 +118,9 @@ class _FakeExerciseRepo extends Fake implements ExerciseRepository {
   Future<List<CustomVariation>> fetchVariations(String userId) async => [];
 }
 
-class _FakeLessonRepo extends Fake implements LessonRepository {
+class _FakeExerciseNoteRepo extends Fake implements ExerciseNoteRepository {
   @override
-  Future<List<Lesson>> fetchLessons(String userId, String exerciseId) async =>
+  Future<List<ExerciseNote>> fetchNotes(String userId, String exerciseId) async =>
       [];
 }
 
@@ -160,7 +160,7 @@ void main() {
       coachRepo: FakeCoachRepository(),
       sessionRepo: repo,
       exerciseRepo: _FakeExerciseRepo(),
-      lessonRepo: _FakeLessonRepo(),
+      noteRepo: _FakeExerciseNoteRepo(),
       programRepo: FakeProgramRepository(),
       userId: 'u1',
     );
@@ -324,7 +324,7 @@ void main() {
       exerciseRepo: _FakeExerciseRepo(),
       programRepo: FakeProgramRepository(),
       programRunRepo: FakeProgramRunRepository(),
-      lessonRepo: _FakeLessonRepo(),
+      noteRepo: _FakeExerciseNoteRepo(),
       plannedSessionRepo: FakePlannedSessions(),
       waitForFirstSync: () async {},
       userId: 'u1',

@@ -21,11 +21,11 @@ import 'package:lambda/features/session/view/session_stats_bar.dart';
 Future<void> _pumpTiles(
   WidgetTester tester, {
   int prCount = 0,
-  int lessonCount = 0,
+  int exerciseNoteCount = 0,
   int goalCount = 0,
   bool gain = true,
   VoidCallback? onPrTap,
-  VoidCallback? onLessonTap,
+  VoidCallback? onNoteTap,
   VoidCallback? onGoalTap,
 }) async {
   tester.view.physicalSize = const Size(1206, 2622);
@@ -39,11 +39,11 @@ Future<void> _pumpTiles(
             width: 402,
             child: SessionStatsTiles(
               prCount: prCount,
-              lessonCount: lessonCount,
+              exerciseNoteCount: exerciseNoteCount,
               goalCount: goalCount,
               gain: gain,
               onPrTap: onPrTap,
-              onLessonTap: onLessonTap,
+              onNoteTap: onNoteTap,
               onGoalTap: onGoalTap,
             ),
           ),
@@ -74,10 +74,10 @@ void main() {
     await _pumpTiles(
       tester,
       prCount: 12,
-      lessonCount: 3,
+      exerciseNoteCount: 3,
       goalCount: 2,
       onPrTap: () {},
-      onLessonTap: () {},
+      onNoteTap: () {},
       onGoalTap: () {},
     );
 
@@ -91,7 +91,7 @@ void main() {
     );
     expect(
       _inTile(
-        'session-lessons-tile',
+        'session-notes-tile',
         find.byIcon(Icons.sticky_note_2_outlined),
       ),
       findsOneWidget,
@@ -102,7 +102,7 @@ void main() {
     for (final key in const [
       'session-prs-tile',
       'session-goals-button',
-      'session-lessons-tile',
+      'session-notes-tile',
     ]) {
       expect(
         _inTile(key, find.byType(Text)),
@@ -125,7 +125,7 @@ void main() {
     await _pumpTiles(
       tester,
       onPrTap: () {},
-      onLessonTap: () {},
+      onNoteTap: () {},
       onGoalTap: () {},
     );
 
@@ -136,19 +136,19 @@ void main() {
       AppColors.primary.withAlpha(77),
     );
     expect(
-      _edge(tester, 'session-lessons-tile'),
+      _edge(tester, 'session-notes-tile'),
       AppColors.primary.withAlpha(77),
     );
     expect(_ink(tester, 'session-prs-tile'), AppColors.primary);
-    expect(_ink(tester, 'session-lessons-tile'), AppColors.primary);
+    expect(_ink(tester, 'session-notes-tile'), AppColors.primary);
 
     await _pumpTiles(
       tester,
       prCount: 2,
-      lessonCount: 1,
+      exerciseNoteCount: 1,
       goalCount: 3,
       onPrTap: () {},
-      onLessonTap: () {},
+      onNoteTap: () {},
       onGoalTap: () {},
     );
 
@@ -160,11 +160,11 @@ void main() {
       AppColors.accent.withAlpha(77),
     );
     expect(
-      _edge(tester, 'session-lessons-tile'),
+      _edge(tester, 'session-notes-tile'),
       AppColors.accent.withAlpha(77),
     );
     expect(_ink(tester, 'session-goals-button'), AppColors.accent);
-    expect(_ink(tester, 'session-lessons-tile'), AppColors.accent);
+    expect(_ink(tester, 'session-notes-tile'), AppColors.accent);
   });
 
   testWidgets('one lit door does not light its neighbours', (tester) async {
@@ -172,7 +172,7 @@ void main() {
       tester,
       prCount: 3,
       onPrTap: () {},
-      onLessonTap: () {},
+      onNoteTap: () {},
       onGoalTap: () {},
     );
 
@@ -182,19 +182,19 @@ void main() {
       AppColors.primary.withAlpha(77),
     );
     expect(
-      _edge(tester, 'session-lessons-tile'),
+      _edge(tester, 'session-notes-tile'),
       AppColors.primary.withAlpha(77),
     );
   });
 
   testWidgets('every door opens at any count', (tester) async {
     var prTaps = 0;
-    var lessonTaps = 0;
+    var noteTaps = 0;
     var goalTaps = 0;
     await _pumpTiles(
       tester,
       onPrTap: () => prTaps++,
-      onLessonTap: () => lessonTaps++,
+      onNoteTap: () => noteTaps++,
       onGoalTap: () => goalTaps++,
     );
 
@@ -208,9 +208,9 @@ void main() {
     await tester.pump();
     expect(goalTaps, 1);
 
-    await tester.tap(find.byKey(const ValueKey('session-lessons-tile')));
+    await tester.tap(find.byKey(const ValueKey('session-notes-tile')));
     await tester.pump();
-    expect(lessonTaps, 1);
+    expect(noteTaps, 1);
     expect(tester.takeException(), isNull);
   });
 
@@ -236,7 +236,7 @@ void main() {
   testWidgets('the bullseye is drawn only where there is a goal door', (
     tester,
   ) async {
-    await _pumpTiles(tester, onPrTap: () {}, onLessonTap: () {});
+    await _pumpTiles(tester, onPrTap: () {}, onNoteTap: () {});
     expect(find.byKey(const ValueKey('session-goals-button')), findsNothing);
 
     // A friend's or athlete's record passes no goal door: the write behind
@@ -245,7 +245,7 @@ void main() {
       tester,
       goalCount: 4,
       onPrTap: () {},
-      onLessonTap: () {},
+      onNoteTap: () {},
       onGoalTap: () {},
     );
     expect(find.byKey(const ValueKey('session-goals-button')), findsOneWidget);
@@ -264,11 +264,11 @@ void main() {
     await _pumpTiles(
       tester,
       prCount: 12,
-      lessonCount: 3,
+      exerciseNoteCount: 3,
       goalCount: 2,
       gain: false,
       onPrTap: () => prTaps++,
-      onLessonTap: () {},
+      onNoteTap: () {},
       onGoalTap: () {},
     );
 

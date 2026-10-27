@@ -86,8 +86,8 @@ class _PrHistoryDemoScreenState extends State<PrHistoryDemoScreen> {
                 onSelect: (index) => setState(() => _activeIndex = index),
                 onMove: null,
                 onAdd: null,
-                lessonsCount: 0,
-                onLessonsTap: null,
+                exerciseNotesCount: 0,
+                onExerciseNotesTap: null,
                 // What this session added — the pill's "+2 PRs" — while the
                 // feed it opens stays all-time.
                 prCount: demoSessionPrsFor(exercise.id),
@@ -207,8 +207,8 @@ class _DemoStatsBar extends StatelessWidget {
         const SizedBox(width: AppSpacing.sm),
         Expanded(
           child: _tile(
-            key: const ValueKey('demo-lessons-tile'),
-            label: 'LESSONS',
+            key: const ValueKey('demo-notes-tile'),
+            label: 'NOTES',
             value: '0',
             highlighted: false,
           ),

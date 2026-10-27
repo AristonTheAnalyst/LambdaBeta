@@ -797,7 +797,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
                     ),
                     const SizedBox(height: AppSpacing.xl),
                     _Section(
-                      label: 'PR Card & Lesson Row',
+                      label: 'PR Card & ExerciseNote Row',
                       c: c,
                       children: [
                         Padding(
@@ -844,7 +844,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
                                 ),
                               ),
                               const SizedBox(height: AppSpacing.sm),
-                              // Lesson row: surfaceHigh fill + hairline border.
+                              // ExerciseNote row: surfaceHigh fill + hairline border.
                               Container(
                                 padding: const EdgeInsets.all(AppSpacing.sm),
                                 decoration: BoxDecoration(

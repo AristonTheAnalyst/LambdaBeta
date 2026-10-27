@@ -73,14 +73,14 @@ long-term roadmap for features that are on the radar but not yet built.
 - **Logs screen**: Workouts + Sets tabs, filters (exercise / variation / date
   range), pull-to-refresh, planned-workout badge on cards
 - **Past-session viewer**: tabbed exercise layout, read-only view + edit mode,
-  PR row highlighting, Lessons/History, Pre/Post notes buttons
+  PR row highlighting, Notes/History, Pre/Post notes buttons
 - **Gap**: rest-period history and pre/post-feeling are captured but **not
   displayed** in past-session review
 
 ### Configure exercises & variations — ✅ complete
 - Exercise library: create / edit / archive exercises and variations
 - Assign variations to exercises (multi-select), search, archive
-- Per-exercise **Lessons** (pinnable cue cards) and **History** reference
+- Per-exercise **exercise notes** (pinnable cue cards) and **History** reference
 
 ---
 

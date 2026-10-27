@@ -8,7 +8,7 @@ import '../../../data/cache/past_sets_timeline_cache.dart';
 import '../../../data/models/custom_variation.dart';
 import '../../../data/models/exercise_detail.dart';
 import '../../../data/models/goal.dart';
-import '../../../data/models/lesson.dart';
+import '../../../data/models/exercise_note.dart';
 import '../../../data/models/planned_session_exercise_set.dart';
 import '../../../data/models/planned_session.dart';
 import '../../../data/models/program_block.dart';
@@ -20,7 +20,7 @@ import '../../../data/models/session_exercise_set.dart';
 import '../../../core/powersync/database.dart' as ps;
 import '../../../core/utils/name_limit.dart';
 import '../../../data/repositories/exercise_repository.dart';
-import '../../../data/repositories/lesson_repository.dart';
+import '../../../data/repositories/exercise_note_repository.dart';
 import '../../../data/repositories/program_repository.dart';
 import '../../../data/repositories/program_run_repository.dart';
 import '../../../data/repositories/planned_session_repository.dart';
@@ -47,7 +47,7 @@ class SessionViewModel extends ChangeNotifier {
     ExerciseRepository? exerciseRepo,
     ProgramRepository? programRepo,
     ProgramRunRepository? programRunRepo,
-    LessonRepository? lessonRepo,
+    ExerciseNoteRepository? noteRepo,
     PlannedSessionRepository? plannedSessionRepo,
     Future<void> Function()? waitForFirstSync,
     String? userId,
@@ -56,7 +56,7 @@ class SessionViewModel extends ChangeNotifier {
        _exerciseRepo = exerciseRepo ?? ExerciseRepository(),
        _programRepo = programRepo ?? ProgramRepository(),
        _programRunRepo = programRunRepo ?? ProgramRunRepository(),
-       _lessonRepo = lessonRepo ?? LessonRepository(),
+       _noteRepo = noteRepo ?? ExerciseNoteRepository(),
        _plannedSessionRepo = plannedSessionRepo ?? PlannedSessionRepository(),
        // Seam for host tests, which have no live PowerSync database (or
        // Supabase session) to wait on — the defaults are the real ones
@@ -73,9 +73,9 @@ class SessionViewModel extends ChangeNotifier {
   final ExerciseRepository _exerciseRepo;
   final ProgramRepository _programRepo;
   final ProgramRunRepository _programRunRepo;
-  final LessonRepository _lessonRepo;
+  final ExerciseNoteRepository _noteRepo;
   late final SlidePagesController slidePagesController;
-  static final _lessonLog = Logger('lessons');
+  static final _noteLog = Logger('notes');
 
   /// Wizard page indices — the ONLY place page numbers live (the screen's
   /// header and every slide read these; the flow is Home → pre-questionnaire
@@ -483,8 +483,8 @@ class SessionViewModel extends ChangeNotifier {
 
   bool isDraftBoundRow(String setId) => _draftRowIds.containsValue(setId);
 
-  // ── Lessons (persisted — per-exercise, cross-session) ─────────────────────
-  Map<String, List<Lesson>> lessonsByExercise = {};
+  // ── Notes (persisted — per-exercise, cross-session) ─────────────────────
+  Map<String, List<ExerciseNote>> notesByExercise = {};
 
   // ── History / PR baseline (read-only reuse of past-sets timeline) ────────
   List<PastSetRow> _pastSets = [];
@@ -610,7 +610,7 @@ class SessionViewModel extends ChangeNotifier {
   }
 
   // ── Previous-session reflection (prep page card, paged) ────────────────────
-  /// Reflection data of a completed past session — PRs and lessons only —
+  /// Reflection data of a completed past session — PRs and notes only —
   /// rendered on the prep page's pressable LAST SESSION card. The card pages
   /// through completed history: [_reflectionSessionIds] is newest-first and
   /// [_reflectionIndex] selects which session is shown (0 = most recent).
@@ -618,7 +618,7 @@ class SessionViewModel extends ChangeNotifier {
   int _reflectionIndex = 0;
   List<String> reflectionExercises = [];
   Map<String, List<PrEvent>> reflectionPrsByExercise = {};
-  Map<String, List<String>> reflectionLessonsByExercise = {};
+  Map<String, List<String>> reflectionNotesByExercise = {};
   Map<String, String> reflectionExerciseNames = {};
 
   /// The session (fact row) the viewer card currently shows — a completed
@@ -1012,7 +1012,7 @@ class SessionViewModel extends ChangeNotifier {
   /// of available workouts and planned sets is deferred until the workout ends.
   Future<void> refreshProgram() async {
     // Refresh the past-sets timeline (and the latest-session reflection built
-    // from it) on tab return — edits made on other tabs (logs, lessons) must
+    // from it) on tab return — edits made on other tabs (logs, notes) must
     // show up here without a restart.
     await _loadPastSets();
     try {
@@ -1181,7 +1181,7 @@ class SessionViewModel extends ChangeNotifier {
       reflectionSession = null;
       reflectionExercises = [];
       reflectionPrsByExercise = {};
-      reflectionLessonsByExercise = {};
+      reflectionNotesByExercise = {};
       reflectionExerciseNames = {};
       notifyListeners();
       return;
@@ -1284,7 +1284,7 @@ class SessionViewModel extends ChangeNotifier {
       reflectionSession = null;
       reflectionExercises = [];
       reflectionPrsByExercise = {};
-      reflectionLessonsByExercise = {};
+      reflectionNotesByExercise = {};
       reflectionExerciseNames = {};
       notifyListeners();
       return;
@@ -1300,7 +1300,7 @@ class SessionViewModel extends ChangeNotifier {
   Future<void> _computeReflectionFor(String? sessionId) async {
     reflectionExercises = [];
     reflectionPrsByExercise = {};
-    reflectionLessonsByExercise = {};
+    reflectionNotesByExercise = {};
     reflectionExerciseNames = {};
     reflectionSession = null;
 
@@ -1333,7 +1333,7 @@ class SessionViewModel extends ChangeNotifier {
       }
       for (final exerciseId in orderedIds) {
         try {
-          lessonsByExercise[exerciseId] = await _lessonRepo.fetchLessons(
+          notesByExercise[exerciseId] = await _noteRepo.fetchNotes(
             _userId,
             exerciseId,
           );
@@ -1343,7 +1343,7 @@ class SessionViewModel extends ChangeNotifier {
           .where(
             (exerciseId) =>
                 sessionPrs.any((p) => p.exerciseId == exerciseId) ||
-                lessonsThisSession(exerciseId).isNotEmpty,
+                exerciseNotesThisSession(exerciseId).isNotEmpty,
           )
           .toList();
       reflectionExercises = contentIds;
@@ -1357,9 +1357,9 @@ class SessionViewModel extends ChangeNotifier {
               .where((p) => p.exerciseId == exerciseId)
               .toList(),
       };
-      reflectionLessonsByExercise = {
+      reflectionNotesByExercise = {
         for (final exerciseId in contentIds)
-          exerciseId: [for (final l in lessonsThisSession(exerciseId)) l.text],
+          exerciseId: [for (final l in exerciseNotesThisSession(exerciseId)) l.text],
       };
       notifyListeners();
       return;
@@ -1388,12 +1388,12 @@ class SessionViewModel extends ChangeNotifier {
       if (!orderedIds.contains(exerciseId)) orderedIds.add(exerciseId);
     }
 
-    // Lessons are per-exercise and cross-session — fetch them so the preview
-    // is populated without opening the lessons modal first (same pattern as
-    // loadLessonsFor), and cache them for the upcoming session's cards.
+    // Notes are per-exercise and cross-session — fetch them so the preview
+    // is populated without opening the notes modal first (same pattern as
+    // loadNotesFor), and cache them for the upcoming session's cards.
     for (final exerciseId in orderedIds) {
       try {
-        lessonsByExercise[exerciseId] = await _lessonRepo.fetchLessons(
+        notesByExercise[exerciseId] = await _noteRepo.fetchNotes(
           _userId,
           exerciseId,
         );
@@ -1404,7 +1404,7 @@ class SessionViewModel extends ChangeNotifier {
         .where(
           (exerciseId) =>
               sessionPrs.any((p) => p.exerciseId == exerciseId) ||
-              (lessonsByExercise[exerciseId] ?? const []).isNotEmpty,
+              (notesByExercise[exerciseId] ?? const []).isNotEmpty,
         )
         .toList();
     reflectionExercises = contentIds;
@@ -1418,12 +1418,12 @@ class SessionViewModel extends ChangeNotifier {
             .where((p) => p.exerciseId == exerciseId)
             .toList(),
     };
-    reflectionLessonsByExercise = {
+    reflectionNotesByExercise = {
       for (final exerciseId in contentIds)
         exerciseId: [
-          // Session-scoped like the live reflection — only lessons born in
+          // Session-scoped like the live reflection — only notes born in
           // this session count toward its preview.
-          for (final l in lessonsByExercise[exerciseId] ?? const <Lesson>[])
+          for (final l in notesByExercise[exerciseId] ?? const <ExerciseNote>[])
             if (l.sessionId == id) l.text,
         ],
     };
@@ -1497,7 +1497,7 @@ class SessionViewModel extends ChangeNotifier {
   SessionDetailViewModel createRecordPeek() => SessionDetailViewModel(
     sessionRepo: _sessionRepo,
     exerciseRepo: _exerciseRepo,
-    lessonRepo: _lessonRepo,
+    noteRepo: _noteRepo,
     programRepo: _programRepo,
     userId: _userId,
   );
@@ -1895,7 +1895,7 @@ class SessionViewModel extends ChangeNotifier {
       if (seedDrafts && !lastEmpty) {
         _seedDraft(exId);
       }
-      loadLessonsFor(exId);
+      loadNotesFor(exId);
       slots.add(
         SessionExerciseSlot(
           id: _nextSlotId++,
@@ -2167,7 +2167,7 @@ class SessionViewModel extends ChangeNotifier {
       if (se != null) box.value = se.sessionExerciseId;
       addDraftSet(exerciseId);
       _persistExerciseOrder();
-      loadLessonsFor(exerciseId);
+      loadNotesFor(exerciseId);
       activeSlotIndex = exerciseSlots.length - 1;
       notifyListeners();
     }
@@ -2340,7 +2340,7 @@ class SessionViewModel extends ChangeNotifier {
     for (final id in exerciseIds) {
       // Persist an empty set per exercise so the tab survives a hot restart.
       addDraftSet(id);
-      loadLessonsFor(id);
+      loadNotesFor(id);
     }
     _persistExerciseOrder();
     activeSlotIndex = exerciseSlots.length - 1;
@@ -3120,32 +3120,32 @@ class SessionViewModel extends ChangeNotifier {
     await forward();
   }
 
-  // ── Lessons (persisted — per-exercise, cross-session) ─────────────────────
+  // ── Notes (persisted — per-exercise, cross-session) ─────────────────────
 
-  List<Lesson> lessonsFor(String exerciseId) =>
-      lessonsByExercise[exerciseId] ?? const [];
+  List<ExerciseNote> notesFor(String exerciseId) =>
+      notesByExercise[exerciseId] ?? const [];
 
-  /// Lessons created during the CURRENT session only — the session-scoped
-  /// counts (stats bar, exercise-card button, reflection). [lessonsFor]
-  /// remains the full cross-session list for the lessons modal and the
-  /// pinned lesson bar, so past lessons stay visible without inflating
+  /// Notes created during the CURRENT session only — the session-scoped
+  /// counts (stats bar, exercise-card button, reflection). [notesFor]
+  /// remains the full cross-session list for the notes modal and the
+  /// pinned note bar, so past notes stay visible without inflating
   /// this session's numbers.
-  List<Lesson> lessonsThisSession(String exerciseId) =>
-      (lessonsByExercise[exerciseId] ?? const <Lesson>[])
+  List<ExerciseNote> exerciseNotesThisSession(String exerciseId) =>
+      (notesByExercise[exerciseId] ?? const <ExerciseNote>[])
           .where((l) => l.sessionId == currentWorkoutId)
           .toList();
 
-  /// Loads (or refreshes) the persisted lessons for one exercise — called
-  /// whenever an exercise slot is created so the card's lesson preview/count
-  /// is populated without requiring the Lessons modal to be opened first.
-  Future<void> loadLessonsFor(String exerciseId) async {
+  /// Loads (or refreshes) the persisted notes for one exercise — called
+  /// whenever an exercise slot is created so the card's note preview/count
+  /// is populated without requiring the Notes modal to be opened first.
+  Future<void> loadNotesFor(String exerciseId) async {
     try {
-      lessonsByExercise[exerciseId] = await _lessonRepo.fetchLessons(
+      notesByExercise[exerciseId] = await _noteRepo.fetchNotes(
         _userId,
         exerciseId,
       );
-      _lessonLog.info(
-        'loadLessonsFor($exerciseId) → ${lessonsByExercise[exerciseId]!.length}',
+      _noteLog.info(
+        'loadNotesFor($exerciseId) → ${notesByExercise[exerciseId]!.length}',
       );
       notifyListeners();
     } catch (e) {
@@ -3154,65 +3154,65 @@ class SessionViewModel extends ChangeNotifier {
     }
   }
 
-  Future<void> addLesson(String exerciseId, String text) async {
+  Future<void> addNote(String exerciseId, String text) async {
     if (text.trim().isEmpty) return;
     try {
-      await _lessonRepo.createLesson(
+      await _noteRepo.createNote(
         _userId,
         exerciseId,
         text.trim(),
         sessionId: currentWorkoutId,
       );
-      await loadLessonsFor(exerciseId);
+      await loadNotesFor(exerciseId);
     } catch (e) {
       error = e.toString();
       notifyListeners();
     }
   }
 
-  Future<void> toggleLessonPin(String exerciseId, String lessonId) async {
-    final lesson = lessonsByExercise[exerciseId]?.firstWhereOrNull(
-      (l) => l.lessonId == lessonId,
+  Future<void> toggleNotePin(String exerciseId, String exerciseNoteId) async {
+    final note = notesByExercise[exerciseId]?.firstWhereOrNull(
+      (l) => l.exerciseNoteId == exerciseNoteId,
     );
-    if (lesson == null) return;
+    if (note == null) return;
     try {
-      await _lessonRepo.setPinned(
+      await _noteRepo.setPinned(
         _userId,
         exerciseId,
-        lessonId,
-        !lesson.pinned,
+        exerciseNoteId,
+        !note.pinned,
       );
-      await loadLessonsFor(exerciseId);
+      await loadNotesFor(exerciseId);
     } catch (e) {
       error = e.toString();
       notifyListeners();
     }
   }
 
-  Future<void> deleteLesson(String exerciseId, String lessonId) async {
+  Future<void> deleteNote(String exerciseId, String exerciseNoteId) async {
     try {
-      await _lessonRepo.deleteLesson(lessonId);
-      await loadLessonsFor(exerciseId);
+      await _noteRepo.deleteNote(exerciseNoteId);
+      await loadNotesFor(exerciseId);
     } catch (e) {
       error = e.toString();
       notifyListeners();
     }
   }
 
-  Future<void> updateLessonText(
+  Future<void> updateNoteText(
     String exerciseId,
-    String lessonId,
+    String exerciseNoteId,
     String text,
   ) async {
     if (text.trim().isEmpty) return;
     try {
-      await _lessonRepo.updateLesson(
+      await _noteRepo.updateNote(
         _userId,
         exerciseId,
-        lessonId,
+        exerciseNoteId,
         text.trim(),
       );
-      await loadLessonsFor(exerciseId);
+      await loadNotesFor(exerciseId);
     } catch (e) {
       error = e.toString();
       notifyListeners();
@@ -3727,7 +3727,7 @@ class SessionViewModel extends ChangeNotifier {
     _pendingSetWrites.clear();
     undoHistory.clear();
     _cancelSessionStreams();
-    // lessonsByExercise is intentionally NOT cleared — lessons are durable,
+    // notesByExercise is intentionally NOT cleared — notes are durable,
     // cross-session data now, not reset per workout.
     historyEditConfirmed = false;
   }

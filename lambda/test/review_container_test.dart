@@ -2556,7 +2556,7 @@ void main() {
       for (final key in const [
         'session-prs-tile',
         'session-goals-button',
-        'session-lessons-tile',
+        'session-notes-tile',
       ]) {
         expect(
           find.descendant(of: bar, matching: find.byKey(ValueKey(key))),
@@ -2569,7 +2569,7 @@ void main() {
       );
       expect(tiles.onPrTap, isNotNull);
       expect(tiles.onGoalTap, isNotNull);
-      expect(tiles.onLessonTap, isNotNull);
+      expect(tiles.onNoteTap, isNotNull);
       expect(
         tiles.gain,
         isFalse,

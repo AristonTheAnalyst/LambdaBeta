@@ -52,7 +52,7 @@ void main() {
       runRepo: FakeProgramRunRepository(),
       workoutPlanRepo: workouts,
       exerciseRepo: FakeExercises(),
-      lessonRepo: FakeLessons(),
+      noteRepo: FakeNotes(),
       userId: 'u1',
     );
   });

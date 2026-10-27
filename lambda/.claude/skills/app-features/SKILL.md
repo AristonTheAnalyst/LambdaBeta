@@ -15,7 +15,7 @@ v2 redesign and 2026-08-26 amendment):
 `dim_*` = dimensions (reference data). Top-level dims — exercises,
 variations, planned sessions, programs — soft-delete via `date_archived`
 timestamptz (NULL = active, sortable latest-first); their child tables and
-`dim_lesson` keep the boolean `is_archived` (internal lifecycle only).
+`dim_exercise_note` keep the boolean `is_archived` (internal lifecycle only).
 `fact_*` = facts (events).
 "Workout" language is banned in the DB — templates are **planned sessions**,
 logged workouts are **sessions**.
@@ -40,7 +40,7 @@ progression mode lives on the RUN. Full plan of record:
 | **Program blocks** (phases) | `dim_program_block` | Literal |
 | **Program runs** | `fact_program_run` (carries `progression_mode` + `block_id`) | Literal |
 | **Reviews** (a recorded pass over a set of workouts **and goals** — standalone since 2026-10-07) | `fact_program_review` | Literal |
-| **Lessons** | `dim_lesson` | Literal |
+| **Exercise notes** | `dim_exercise_note` | Literal |
 | **Goals** (multi-set rungs 2026-10-26) | `fact_goal` + `fact_goal_target` | Literal |
 | **Friends** (note tiers 2026-10-26) | `dim_friend_code` + `friend_relationship` (carries `nickname`, `share_notes`) | Literal |
 | **Bodyweight** | `fact_bodyweight` | Literal |
@@ -404,13 +404,13 @@ length. Starting a run ends the previous current one.
 **"End program" ends the RUN, not the program.** Runs are history — never
 deleted when the program is archived.
 
-### Lessons — `dim_lesson`
-Per-exercise knowledge/cues (`lesson_text`, `pinned`, `is_archived`).
-Lessons are **exercise-specific** (`custom_exercise_id`) and surface
+### Exercise notes — `dim_exercise_note`
+Per-exercise knowledge/cues (`note_text`, `pinned`, `is_archived`).
+Exercise notes are **exercise-specific** (`custom_exercise_id`) and surface
 **during a session** — the session screen, planner, and past-session viewer
 all show them per exercise. `session_id` (nullable FK → `fact_session`, ON
-DELETE SET NULL) records **which logged session the lesson was created in**;
-`lesson_created_date` covers the when. Planner-created lessons have NULL
+DELETE SET NULL) records **which logged session the note was created in**;
+`note_created_date` covers the when. Planner-created notes have NULL
 session_id (no logged session existed — a template was being edited).
 Reference data, not events — hence a dim despite the legacy `fact_lesson`
 name.
@@ -473,7 +473,7 @@ the friendship immediately and mutually. Two tables carry it:
 The Friends tab (`lib/features/friends/`) shows the user's code, adds by code,
 lists friends, and opens a friend's history in the existing **read-only**
 viewer: `LogsScreen(userId:, readOnly:)` → `SessionDetailScreen(userId:,
-readOnly:, navRoute: '/friends')`, with `showLessonsModal(readOnly:)`.
+readOnly:, navRoute: '/friends')`, with `showExerciseNotesModal(readOnly:)`.
 Completed sessions only; the active session is never synced or shown. PRs and
 goal badges derive per friend from `PastSetsTimelineCache.get(friendId)` — the
 global `PrService` cache is never used on this path. Codes are stable in v1
@@ -482,15 +482,15 @@ global `PrService` cache is never used on this path. Codes are stable in v1
 
 **Note tiers (2026-10-26, #23).** A friendship shares training by default —
 completed sessions, their sets and each set's notes. **Notes about the work**
-— the exercise notes in `dim_lesson` and a session's `pre_notes`/`post_notes`
+— the exercise notes in `dim_exercise_note` and a session's `pre_notes`/`post_notes`
 — are a second tier the owner opens **per friend**, on the caller's own
 directed row (`friend_relationship.share_notes`, default false). The sheet is
 reached from the friend row's third swipe (eye); the first tier is drawn as
 always-on, not as a choice. The friend never sees the flag. Because the gate
 is client-visible only in what ARRIVES, it lives in the `friends_data` stream
-(`dim_lesson` only for sharers; `fact_session` split into two disjoint
+(`dim_exercise_note` only for sharers; `fact_session` split into two disjoint
 queries, notes nulled at the source), with `friend_shares_notes()` as the REST
-half for `dim_lesson` — RLS is row-level and cannot mask a column, so a
+half for `dim_exercise_note` — RLS is row-level and cannot mask a column, so a
 session's note columns stay unreadable only through the stream. Tier 3
 (a friend planning on your behalf) lands with coaching authoring (#24).
 
@@ -570,7 +570,7 @@ slow a client-computed daily-summary table is the fix.
 dim_user ──< dim_exercise
   │         dim_variation (flat library — no link to exercises)
   │
-  ├──< dim_lesson (per-exercise knowledge, session_id attribution)
+  ├──< dim_exercise_note (per-exercise knowledge, session_id attribution)
   ├──< dim_program >──< dim_planned_session_program >── dim_planned_session
   │         │              (join rows carry sequence_order /
   │         │               day_of_week / week_offset)
@@ -624,9 +624,9 @@ hard-deleted (account deletion cascades from auth.users).
 (timestamptz, NULL = active).
 Flat library — no exercise assignment since v2.
 
-### dim_lesson — per-exercise cues (owner ALL, coach SELECT)
-`lesson_id` (PK), `user_id`, `custom_exercise_id`, `lesson_text`, `pinned`,
-`is_archived`, `lesson_created_date`, `session_id` (nullable FK →
+### dim_exercise_note — per-exercise cues (owner ALL, coach SELECT)
+`exercise_note_id` (PK), `user_id`, `custom_exercise_id`, `note_text`, `pinned`,
+`is_archived`, `note_created_date`, `session_id` (nullable FK →
 fact_session, ON DELETE SET NULL — which logged session it was created in).
 
 ### dim_program — program blueprints (owner ALL, coach SELECT)
@@ -770,7 +770,7 @@ RLS). No server-side `id` column: the stream synthesizes
 directed row (`_compositeKeyTables` in `database.dart`); a nickname or a
 privacy tier is a local-first UPDATE on that row. `friend_shares_notes(owner,
 viewer)` (SECURITY DEFINER, the `are_friends()` shape plus the flag) is the
-REST gate on `dim_lesson`'s friend policy; the notes columns on
+REST gate on `dim_exercise_note`'s friend policy; the notes columns on
 `fact_session` cannot be policy-gated (RLS is row-level) and are masked by
 the friends stream instead.
 
@@ -868,7 +868,7 @@ What actually happens to each table's rows.
 | dim_user | auth trigger (`handle_new_user`) | profile screen | never (cascade from auth.users) |
 | dim_exercise | session add-exercise modal, exercise library | rename | **archive** (`date_archived = now()`), or hard-delete when never used; reactivate clears the date |
 | dim_variation | same | rename | same |
-| dim_lesson | session / past-session / planner (with `session_id` where a logged session exists) | pin toggle | **archive** |
+| dim_exercise_note | session / past-session / planner (with `session_id` where a logged session exists) | pin toggle | **archive** |
 | dim_program | REST insert in `createProgram` (authoritative write; deliberately NOT written to local mirror — a local write would queue a CRUD entry that blocks the checkpoint) | name/description (+ `program_updated_date` bump) | **archive** (`date_archived = now()`) + hard-delete its join rows; `hardDeleteProgram` (no-sessions only) hard-deletes in dependent-row order: reviews → goals → links → run unlinks → runs → blocks → program |
 | dim_planned_session | `createPlannedSession` (local INSERT) | name/notes | **archive** (`date_archived = now()`) + archive its groups/sets, hard-delete join rows |
 | dim_planned_session_program | `createProgramLink` (planner creates + links; wizard; copy-into-program) | slots (day_of_week / week_offset / sequence_order) | **hard DELETE** (unlink — template survives standalone) |
@@ -906,12 +906,12 @@ Every table has RLS enabled. Three policy shapes:
    `fact_session` (additionally `end_datetime is not null`),
    `fact_session_exercise` / `fact_session_exercise_set` (additionally their
    parent session is completed), `dim_exercise`, `dim_variation`,
-   `dim_lesson`, `fact_goal`, and (2026-10-26) `fact_goal_target` — a goal
+   `dim_exercise_note`, `fact_goal`, and (2026-10-26) `fact_goal_target` — a goal
    row without its rungs reads as a goal with no target, which is why the
    friends stream sends them and the REST defence matches. `are_friends(a, b)` is SECURITY DEFINER and
    requires **both** directed rows, so a half-pair grants nothing; it avoids
    recursive policy evaluation, and its only exposure is a boolean for a pair
-   of UUIDs. `dim_lesson`'s policy is the one tier-aware exception: it
+   of UUIDs. `dim_exercise_note`'s policy is the one tier-aware exception: it
    requires `friend_shares_notes(user_id, auth.uid())` instead (2026-10-26,
    #23), the same gate the stream applies. The stream is the real privacy
    boundary — these policies are the REST defence, and for `fact_session`'s
@@ -922,7 +922,7 @@ Every table has RLS enabled. Three policy shapes:
 | dim_user | ✅ | ✅ |
 | dim_exercise | ✅ | ✅ |
 | dim_variation | ✅ | ✅ |
-| dim_lesson | ✅ | ✅ |
+| dim_exercise_note | ✅ | ✅ |
 | dim_program | ✅ | ✅ |
 | dim_planned_session | ✅ | ✅ |
 | dim_planned_session_program | ✅ | ✅ |

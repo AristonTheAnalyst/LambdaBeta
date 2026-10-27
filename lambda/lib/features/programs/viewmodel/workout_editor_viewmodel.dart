@@ -10,13 +10,13 @@ import '../../../data/models/custom_variation.dart';
 import '../../../data/models/exercise_detail.dart';
 import '../../../data/models/exercise_usage.dart';
 import '../../../data/models/goal.dart';
-import '../../../data/models/lesson.dart';
+import '../../../data/models/exercise_note.dart';
 import '../../../data/models/planned_session.dart';
 import '../../../data/models/planned_session_exercise.dart';
 import '../../../data/models/planned_session_exercise_set.dart';
 import '../../../data/models/session_exercise_set.dart';
 import '../../../data/repositories/exercise_repository.dart';
-import '../../../data/repositories/lesson_repository.dart';
+import '../../../data/repositories/exercise_note_repository.dart';
 import '../../../data/repositories/planned_session_repository.dart';
 import '../../../data/repositories/planned_session_store.dart';
 import '../../../data/repositories/program_repository.dart';
@@ -95,8 +95,8 @@ class WorkoutEditorState {
     this.allVariations = const [],
     this.newExCreating = false,
     this.newVarCreating = false,
-    // Lessons (per-exercise, cross-session — reuses dim_lesson as-is)
-    this.lessonsByExercise = const {},
+    // Notes (per-exercise, cross-session — reuses dim_exercise_note as-is)
+    this.notesByExercise = const {},
     // History (read-only past-sets, reuses the session's read path as-is)
     this.historyByExercise = const {},
     this.allPrEvents = const [],
@@ -130,7 +130,7 @@ class WorkoutEditorState {
   final bool newExCreating;
   final bool newVarCreating;
 
-  final Map<String, List<Lesson>> lessonsByExercise;
+  final Map<String, List<ExerciseNote>> notesByExercise;
   final Map<String, List<ExerciseHistorySession>> historyByExercise;
 
   /// Every PR the user has ever landed, derived once at the same read that
@@ -182,7 +182,7 @@ class WorkoutEditorState {
     List<CustomVariation>? allVariations,
     bool? newExCreating,
     bool? newVarCreating,
-    Map<String, List<Lesson>>? lessonsByExercise,
+    Map<String, List<ExerciseNote>>? notesByExercise,
     Map<String, List<ExerciseHistorySession>>? historyByExercise,
     List<PrEvent>? allPrEvents,
     List<PastSetRow>? goalTimeline,
@@ -225,7 +225,7 @@ class WorkoutEditorState {
     allVariations: allVariations ?? this.allVariations,
     newExCreating: newExCreating ?? this.newExCreating,
     newVarCreating: newVarCreating ?? this.newVarCreating,
-    lessonsByExercise: lessonsByExercise ?? this.lessonsByExercise,
+    notesByExercise: notesByExercise ?? this.notesByExercise,
     historyByExercise: historyByExercise ?? this.historyByExercise,
     allPrEvents: allPrEvents ?? this.allPrEvents,
     goalTimeline: goalTimeline ?? this.goalTimeline,
@@ -242,21 +242,21 @@ class WorkoutEditorState {
 /// editor only reaches through [WorkoutEditorHost].
 ///
 /// Everything here is one workout: its header, its exercise tabs, its target
-/// rows, and the reference data those need (catalog, variations, lessons,
+/// rows, and the reference data those need (catalog, variations, notes,
 /// history). Nothing here knows what a program's workout list or its runs look
 /// like, which is why [WorkoutEditorHost] can be absent.
 class WorkoutEditorViewModel {
   WorkoutEditorViewModel({
     WorkoutEditorHost? host,
     ExerciseRepository? exerciseRepo,
-    LessonRepository? lessonRepo,
+    ExerciseNoteRepository? noteRepo,
     SessionRepository? workoutRepo,
     PlannedSessionStore? workoutPlanRepo,
     ProgramRepository? programRepo,
     String? userId,
   }) : _host = host,
        _exerciseRepo = exerciseRepo ?? ExerciseRepository(),
-       _lessonRepo = lessonRepo ?? LessonRepository(),
+       _noteRepo = noteRepo ?? ExerciseNoteRepository(),
        _sessionRepo = workoutRepo ?? SessionRepository(),
        _plannedSessionRepo = workoutPlanRepo ?? PlannedSessionRepository(),
        _programRepo = programRepo ?? ProgramRepository(),
@@ -272,7 +272,7 @@ class WorkoutEditorViewModel {
   final WorkoutEditorHost? _host;
 
   final ExerciseRepository _exerciseRepo;
-  final LessonRepository _lessonRepo;
+  final ExerciseNoteRepository _noteRepo;
   final SessionRepository _sessionRepo;
   final PlannedSessionStore _plannedSessionRepo;
   final ProgramRepository _programRepo;
@@ -485,7 +485,7 @@ class WorkoutEditorViewModel {
         activeSlotIndex: 0,
         workoutSetsLoading: false,
       );
-      await loadLessonsForSlots();
+      await loadNotesForSlots();
     } catch (e) {
       state.value = state.value.copyWith(
         workoutSetsLoading: false,
@@ -537,7 +537,7 @@ class WorkoutEditorViewModel {
         activeSlotIndex: 0,
         workoutSetsLoading: false,
       );
-      await loadLessonsForSlots();
+      await loadNotesForSlots();
     } catch (e) {
       state.value = state.value.copyWith(
         workoutSetsLoading: false,
@@ -897,7 +897,7 @@ class WorkoutEditorViewModel {
           activeSlotIndex: slots.length - 1,
           workoutUnsavedChanges: true,
         );
-        loadLessonsFor(exerciseId);
+        loadNotesFor(exerciseId);
       } catch (e) {
         state.value = state.value.copyWith(error: friendlyError(e));
       }
@@ -1861,7 +1861,7 @@ class WorkoutEditorViewModel {
     }
   }
 
-  // ── Lessons (per-exercise, cross-session — same dim_lesson data session uses) ──
+  // ── Notes (per-exercise, cross-session — same dim_exercise_note data session uses) ──
 
   /// All active variations, most recently used first — the set-row picker
   /// order. Variations are a flat library (shared across ALL of a user's
@@ -1882,89 +1882,89 @@ class WorkoutEditorViewModel {
     return CustomVariation.sortByLastUsed(state.value.allVariations, last);
   }
 
-  List<Lesson> lessonsFor(String exerciseId) =>
-      state.value.lessonsByExercise[exerciseId] ?? const [];
+  List<ExerciseNote> notesFor(String exerciseId) =>
+      state.value.notesByExercise[exerciseId] ?? const [];
 
-  Future<void> loadLessonsFor(String exerciseId) async {
+  Future<void> loadNotesFor(String exerciseId) async {
     try {
-      final lessons = await _lessonRepo.fetchLessons(_userId, exerciseId);
-      final map = Map<String, List<Lesson>>.from(state.value.lessonsByExercise);
-      map[exerciseId] = lessons;
-      state.value = state.value.copyWith(lessonsByExercise: map);
+      final notes = await _noteRepo.fetchNotes(_userId, exerciseId);
+      final map = Map<String, List<ExerciseNote>>.from(state.value.notesByExercise);
+      map[exerciseId] = notes;
+      state.value = state.value.copyWith(notesByExercise: map);
     } catch (e) {
       state.value = state.value.copyWith(error: friendlyError(e));
     }
   }
 
-  /// One batch lessons read for the open workout's exercise slots — the
+  /// One batch notes read for the open workout's exercise slots — the
   /// per-slot loop's replacement on open (2026-10-13).
-  Future<void> loadLessonsForSlots() async {
+  Future<void> loadNotesForSlots() async {
     final ids = [
       for (final slot in state.value.workoutExerciseSlots) slot.exerciseId,
     ];
     if (ids.isEmpty) return;
     try {
-      final byExercise = await _lessonRepo.fetchLessonsForExercises(
+      final byExercise = await _noteRepo.fetchNotesForExercises(
         _userId,
         ids,
       );
-      state.value = state.value.copyWith(lessonsByExercise: byExercise);
+      state.value = state.value.copyWith(notesByExercise: byExercise);
     } catch (e) {
       state.value = state.value.copyWith(error: friendlyError(e));
     }
   }
 
-  Future<void> addLesson(String exerciseId, String text) async {
+  Future<void> addNote(String exerciseId, String text) async {
     if (text.trim().isEmpty) return;
     try {
-      await _lessonRepo.createLesson(_userId, exerciseId, text.trim());
-      await loadLessonsFor(exerciseId);
+      await _noteRepo.createNote(_userId, exerciseId, text.trim());
+      await loadNotesFor(exerciseId);
     } catch (e) {
       state.value = state.value.copyWith(error: friendlyError(e));
     }
   }
 
-  Future<void> toggleLessonPin(String exerciseId, String lessonId) async {
-    final lesson = lessonsFor(
+  Future<void> toggleNotePin(String exerciseId, String exerciseNoteId) async {
+    final note = notesFor(
       exerciseId,
-    ).firstWhereOrNull((l) => l.lessonId == lessonId);
-    if (lesson == null) return;
+    ).firstWhereOrNull((l) => l.exerciseNoteId == exerciseNoteId);
+    if (note == null) return;
     try {
-      await _lessonRepo.setPinned(
+      await _noteRepo.setPinned(
         _userId,
         exerciseId,
-        lessonId,
-        !lesson.pinned,
+        exerciseNoteId,
+        !note.pinned,
       );
-      await loadLessonsFor(exerciseId);
+      await loadNotesFor(exerciseId);
     } catch (e) {
       state.value = state.value.copyWith(error: friendlyError(e));
     }
   }
 
-  Future<void> deleteLesson(String exerciseId, String lessonId) async {
+  Future<void> deleteNote(String exerciseId, String exerciseNoteId) async {
     try {
-      await _lessonRepo.deleteLesson(lessonId);
-      await loadLessonsFor(exerciseId);
+      await _noteRepo.deleteNote(exerciseNoteId);
+      await loadNotesFor(exerciseId);
     } catch (e) {
       state.value = state.value.copyWith(error: friendlyError(e));
     }
   }
 
-  Future<void> updateLessonText(
+  Future<void> updateNoteText(
     String exerciseId,
-    String lessonId,
+    String exerciseNoteId,
     String text,
   ) async {
     if (text.trim().isEmpty) return;
     try {
-      await _lessonRepo.updateLesson(
+      await _noteRepo.updateNote(
         _userId,
         exerciseId,
-        lessonId,
+        exerciseNoteId,
         text.trim(),
       );
-      await loadLessonsFor(exerciseId);
+      await loadNotesFor(exerciseId);
     } catch (e) {
       state.value = state.value.copyWith(error: friendlyError(e));
     }
@@ -1991,7 +1991,7 @@ class WorkoutEditorViewModel {
 
   /// The exercise's notes shelf, all of it — the planner's counterpart of the
   /// session floor's session-scoped gain (2026-10-26).
-  int lessonCountFor(String exerciseId) => lessonsFor(exerciseId).length;
+  int noteCountFor(String exerciseId) => notesFor(exerciseId).length;
 
   Future<void> loadHistoryIfNeeded() async {
     if (state.value.pastSetsLoaded) return;

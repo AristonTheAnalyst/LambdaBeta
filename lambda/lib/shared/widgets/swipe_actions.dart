@@ -64,7 +64,7 @@ const double _maxCircle = 40;
 /// Two rules came over with the circle (2026-10-22, the PR Lab):
 ///
 /// * **One drawer at a time, app-wide.** Opening a drawer closes whichever
-///   was open — the lessons sheet's rows and the set rows share the rule.
+///   was open — the notes sheet's rows and the set rows share the rule.
 /// * **A tap anywhere else puts the row back.** While a drawer is open, any
 ///   tap on the screen that is not on its action circles closes it — another
 ///   row, a field inside the open row, the page around them. The test is a

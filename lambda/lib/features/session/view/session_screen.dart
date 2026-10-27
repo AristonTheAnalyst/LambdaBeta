@@ -1144,7 +1144,7 @@ class _FeelingForm extends StatelessWidget {
 /// The session viewer shared by the prep page (PREVIOUS SESSION) and the
 /// reflection page (THIS SESSION). Card 1 — all-sessions picker, pager
 /// chevrons, planned source — taps through to the past-session viewer
-/// (disabled for the still-active session); card 2 holds the PRS/LESSONS
+/// (disabled for the still-active session); card 2 holds the PRS/NOTES
 /// reflection; card 3 shows the session's pre/post bookends. Chevrons page
 /// left = older, right = newer without leaving the page.
 class _LastSessionCard extends StatelessWidget {
@@ -1234,21 +1234,21 @@ class _LastSessionCard extends StatelessWidget {
           ),
         ),
         const SizedBox(height: AppSpacing.md),
-        // Card 2: the PRS and LESSONS sections — a separate container; the
+        // Card 2: the PRS and 'NOTES' sections — a separate container; the
         // sections carry their own empty notes.
         AppCard(
           padding: const EdgeInsets.all(AppSpacing.md),
           child: ReflectionSummary(
             exerciseIds: vm.reflectionExercises,
             prsByExercise: vm.reflectionPrsByExercise,
-            lessonsByExercise: vm.reflectionLessonsByExercise,
+            notesByExercise: vm.reflectionNotesByExercise,
             exerciseNameFor: (id) => vm.reflectionExerciseNames[id] ?? '',
           ),
         ),
         if (session != null) ...[
           const SizedBox(height: AppSpacing.md),
           // Card 3: the session's bookends — pre and post ratings and notes,
-          // shown after the PRS/LESSONS reflection. Always rendered, with the
+          // shown after the PRS/NOTES reflection. Always rendered, with the
           // same explicit empty note as the reflection sections ("No
           // pre/post-workout notes") so a sparse session still reads complete.
           AppCard(
@@ -1760,7 +1760,7 @@ class _TrainingPageState extends State<_TrainingPage> {
   }
 
   /// Active: the exercise card fills the screen; the session stats bar
-  /// (PRS/LESSONS) sticks to the very bottom. The pinned lesson lives in
+  /// (PRS/NOTES) sticks to the very bottom. The pinned note lives in
   /// the exercise card, right under the exercise.
   Widget _buildActive(BuildContext context) {
     final exerciseMode = vm.dateBarMode == SessionDateMode.exercise;
@@ -2419,7 +2419,7 @@ Future<String?> _inertSubmitVariation(
 // ── Page 3: Summary ──────────────────────────────────────────────────────────
 
 /// The THIS SESSION recap shown before finishing — the shared viewer card
-/// (PRS/LESSONS + PRE-WORKOUT bookend; no POST bookend for the still-active
+/// (PRS/NOTES + PRE-WORKOUT bookend; no POST bookend for the still-active
 /// session). The Finish Session action is the header's right button.
 class _SummaryPage extends StatelessWidget {
   const _SummaryPage({required this.vm});

@@ -7,12 +7,12 @@ import 'package:lambda/data/cache/past_sets_timeline_cache.dart';
 import 'package:lambda/data/models/custom_exercise.dart';
 import 'package:lambda/data/models/custom_variation.dart';
 import 'package:lambda/data/models/exercise_detail.dart';
-import 'package:lambda/data/models/lesson.dart';
+import 'package:lambda/data/models/exercise_note.dart';
 import 'package:lambda/data/models/session.dart';
 import 'package:lambda/data/models/session_exercise.dart';
 import 'package:lambda/data/models/session_exercise_set.dart';
 import 'package:lambda/data/repositories/exercise_repository.dart';
-import 'package:lambda/data/repositories/lesson_repository.dart';
+import 'package:lambda/data/repositories/exercise_note_repository.dart';
 import 'package:lambda/data/repositories/session_repository.dart';
 import 'package:lambda/features/logs/view/session_detail_screen.dart';
 import 'package:lambda/features/logs/viewmodel/session_detail_viewmodel.dart';
@@ -30,7 +30,7 @@ import 'support/fake_coach_repository.dart';
 ///
 /// The PRs | Details | Reflection toggle is gone: the sets are the page, the
 /// PRs live behind the trophy tile, the bookends behind the ratings pencil,
-/// and the lessons behind the book. The page reads like the live session —
+/// and the notes behind the book. The page reads like the live session —
 /// the flat exercise card on the 22pt gutter, and the live session's own
 /// floor: the date bar, undo/redo with the historic trash, the pencil and
 /// the two tiles.
@@ -152,13 +152,13 @@ class _FakeExerciseRepo extends Fake implements ExerciseRepository {
   Future<List<CustomVariation>> fetchVariations(String userId) async => [];
 }
 
-class _FakeLessonRepo extends Fake implements LessonRepository {
+class _FakeExerciseNoteRepo extends Fake implements ExerciseNoteRepository {
   @override
-  Future<List<Lesson>> fetchLessons(String userId, String exerciseId) async => [
+  Future<List<ExerciseNote>> fetchNotes(String userId, String exerciseId) async => [
     // One born in THIS session, one from an older one: only the first
     // counts toward this session's number.
-    Lesson(
-      lessonId: 'l1',
+    ExerciseNote(
+      exerciseNoteId: 'l1',
       userId: userId,
       exerciseId: exerciseId,
       text: 'Elbows tucked',
@@ -166,8 +166,8 @@ class _FakeLessonRepo extends Fake implements LessonRepository {
       createdDate: DateTime(2026, 10, 20),
       sessionId: 'w1',
     ),
-    Lesson(
-      lessonId: 'l2',
+    ExerciseNote(
+      exerciseNoteId: 'l2',
       userId: userId,
       exerciseId: exerciseId,
       text: 'Old cue',
@@ -177,8 +177,8 @@ class _FakeLessonRepo extends Fake implements LessonRepository {
     ),
     // Written after w1 (the record read first): the third shelf —
     // "previously" would misdate it (2026-10-23).
-    Lesson(
-      lessonId: 'l3',
+    ExerciseNote(
+      exerciseNoteId: 'l3',
       userId: userId,
       exerciseId: exerciseId,
       text: 'Later cue',
@@ -226,7 +226,7 @@ void main() {
       coachRepo: FakeCoachRepository(),
       sessionRepo: repo,
       exerciseRepo: _FakeExerciseRepo(),
-      lessonRepo: _FakeLessonRepo(),
+      noteRepo: _FakeExerciseNoteRepo(),
       userId: 'u1',
     );
     await vm.load(sessionId);
@@ -323,9 +323,9 @@ void main() {
       findsOneWidget,
     );
     expect(find.byKey(const ValueKey('session-prs-tile')), findsOneWidget);
-    expect(find.byKey(const ValueKey('session-lessons-tile')), findsOneWidget);
+    expect(find.byKey(const ValueKey('session-notes-tile')), findsOneWidget);
 
-    // Lesson counting is session-scoped: the older cue is readable in the
+    // ExerciseNote counting is session-scoped: the older cue is readable in the
     // modal but does not inflate this session's number. The count rides the
     // reading even though it is no longer drawn (2026-10-27).
     expect(
@@ -843,14 +843,14 @@ void main() {
     );
   });
 
-  testWidgets('the book groups the lessons by the record on screen — and '
+  testWidgets('the book groups the notes by the record on screen — and '
       'walking the bar moves the group', (tester) async {
     final vm = await pumpViewer(tester, sessionId: 'w1');
-    await tester.tap(find.byKey(const ValueKey('session-lessons-tile')));
+    await tester.tap(find.byKey(const ValueKey('session-notes-tile')));
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const ValueKey('lessons-sheet')), findsOneWidget);
-    // Newest first (2026-10-23): the lesson written after w1 leads, then the
+    expect(find.byKey(const ValueKey('notes-sheet')), findsOneWidget);
+    // Newest first (2026-10-23): the note written after w1 leads, then the
     // record's own shelf, headed by its date (a record being read is not
     // "this session" to the reader), then everything older.
     expect(find.text('AFTER'), findsOneWidget);
@@ -865,13 +865,13 @@ void main() {
     expect(
       tester.getTopLeft(find.text('Later cue')).dy,
       greaterThan(after),
-      reason: 'a lesson written after w1 sits above the record',
+      reason: 'a note written after w1 sits above the record',
     );
     expect(tester.getTopLeft(find.text('Later cue')).dy, lessThan(middle));
     expect(
       tester.getTopLeft(find.text('Elbows tucked')).dy,
       greaterThan(middle),
-      reason: 'w1\'s own lesson sits on its dated shelf',
+      reason: 'w1\'s own note sits on its dated shelf',
     );
     expect(
       tester.getTopLeft(find.text('Elbows tucked')).dy,
@@ -879,18 +879,18 @@ void main() {
     );
     expect(tester.getTopLeft(find.text('Old cue')).dy, greaterThan(previously));
     Navigator.of(
-      tester.element(find.byKey(const ValueKey('lessons-sheet'))),
+      tester.element(find.byKey(const ValueKey('notes-sheet'))),
       rootNavigator: true,
     ).pop();
     await tester.pumpAndSettle();
 
     // Walk one record older: the shelf moves with the bar — w0's own cue
-    // lands under its own date, and both later lessons rise into the group
+    // lands under its own date, and both later notes rise into the group
     // above it. The door follows the date on the bar, not the route that
     // opened the page.
     await vm.walkTo('w0');
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('session-lessons-tile')));
+    await tester.tap(find.byKey(const ValueKey('session-notes-tile')));
     await tester.pumpAndSettle();
     expect(find.text('19 OCT 2026'), findsOneWidget);
     expect(find.text('PREVIOUSLY'), findsNothing);
@@ -909,14 +909,14 @@ void main() {
     expect(
       tester.getTopLeft(find.text('Old cue')).dy,
       greaterThan(walkedMiddle),
-      reason: 'w0\'s own lesson now sits on its dated shelf',
+      reason: 'w0\'s own note now sits on its dated shelf',
     );
   });
 
   // ── A friend's record (2026-10-23) ───────────────────────────────────────
   // The page is the Training view read-only already; a friend's record also
   // goes without the two write doors view mode still holds: the Restore
-  // button and the lessons composer.
+  // button and the notes composer.
 
   testWidgets('a friend\'s record draws no Restore under a deleted exercise — '
       'it is not theirs to restore', (tester) async {
@@ -935,10 +935,10 @@ void main() {
   testWidgets('a friend\'s exercise notes open read-only — the shelves draw, '
       'the composer and drawer do not', (tester) async {
     await pumpViewer(tester, readOnly: true);
-    await tester.tap(find.byKey(const ValueKey('session-lessons-tile')));
+    await tester.tap(find.byKey(const ValueKey('session-notes-tile')));
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const ValueKey('lessons-sheet')), findsOneWidget);
+    expect(find.byKey(const ValueKey('notes-sheet')), findsOneWidget);
     expect(find.text('Elbows tucked'), findsOneWidget);
     expect(
       find.bySemanticsLabel('Add exercise note'),
@@ -947,7 +947,7 @@ void main() {
     );
     expect(
       find.descendant(
-        of: find.byKey(const ValueKey('lessons-sheet')),
+        of: find.byKey(const ValueKey('notes-sheet')),
         matching: find.byType(SwipeActions),
       ),
       findsNothing,
@@ -959,7 +959,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(
       find.descendant(
-        of: find.byKey(const ValueKey('lessons-sheet')),
+        of: find.byKey(const ValueKey('notes-sheet')),
         matching: find.byType(TextField),
       ),
       findsNothing,

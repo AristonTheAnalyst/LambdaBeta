@@ -1,6 +1,6 @@
-class Lesson {
-  const Lesson({
-    required this.lessonId,
+class ExerciseNote {
+  const ExerciseNote({
+    required this.exerciseNoteId,
     required this.userId,
     required this.exerciseId,
     required this.text,
@@ -9,34 +9,34 @@ class Lesson {
     this.sessionId,
   });
 
-  final String lessonId;
+  final String exerciseNoteId;
   final String userId;
   final String exerciseId;
   final String text;
   final bool pinned;
   final DateTime createdDate;
 
-  /// The logged session this lesson was created in (null when created
+  /// The logged session this note was created in (null when created
   /// while planning a session template).
   final String? sessionId;
 
-  factory Lesson.fromMap(Map<String, dynamic> map) => Lesson(
-    lessonId: map['lesson_id'] as String,
+  factory ExerciseNote.fromMap(Map<String, dynamic> map) => ExerciseNote(
+    exerciseNoteId: map['exercise_note_id'] as String,
     userId: map['user_id'] as String,
     exerciseId: map['custom_exercise_id'] as String,
-    text: map['lesson_text'] as String,
+    text: map['note_text'] as String,
     pinned: _toBool(map['pinned']),
-    createdDate: DateTime.parse(map['lesson_created_date'] as String),
+    createdDate: DateTime.parse(map['note_created_date'] as String),
     sessionId: map['session_id'] as String?,
   );
 
   Map<String, dynamic> toMap() => {
-    'lesson_id': lessonId,
+    'exercise_note_id': exerciseNoteId,
     'user_id': userId,
     'custom_exercise_id': exerciseId,
-    'lesson_text': text,
+    'note_text': text,
     'pinned': pinned,
-    'lesson_created_date': createdDate.toIso8601String(),
+    'note_created_date': createdDate.toIso8601String(),
     'session_id': sessionId,
   };
 

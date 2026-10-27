@@ -4,12 +4,12 @@ import 'package:lambda/data/cache/past_sets_timeline_cache.dart';
 import 'package:lambda/data/models/custom_variation.dart';
 import 'package:lambda/data/models/exercise_detail.dart';
 import 'package:lambda/data/models/goal.dart';
-import 'package:lambda/data/models/lesson.dart';
+import 'package:lambda/data/models/exercise_note.dart';
 import 'package:lambda/data/models/session.dart';
 import 'package:lambda/data/models/session_exercise.dart';
 import 'package:lambda/data/models/session_exercise_set.dart';
 import 'package:lambda/data/repositories/exercise_repository.dart';
-import 'package:lambda/data/repositories/lesson_repository.dart';
+import 'package:lambda/data/repositories/exercise_note_repository.dart';
 import 'package:lambda/data/repositories/program_history_repository.dart';
 import 'package:lambda/data/repositories/program_repository.dart';
 import 'package:lambda/data/repositories/session_repository.dart';
@@ -169,7 +169,7 @@ void main() {
       coachRepo: FakeCoachRepository(),
       sessionRepo: repo,
       exerciseRepo: _FakeExerciseRepo(),
-      lessonRepo: FakeLessonRepository(),
+      noteRepo: FakeExerciseNoteRepository(),
       programRepo: programs ?? _FakeProgramRepo(),
       historyRepo: history ?? _FakeHistoryRepo(const {}),
       userId: 'u1',
@@ -497,9 +497,9 @@ class _FakeHistoryRepo extends Fake implements ProgramHistoryRepository {
   }
 }
 
-class FakeLessonRepository extends Fake implements LessonRepository {
+class FakeExerciseNoteRepository extends Fake implements ExerciseNoteRepository {
   @override
-  Future<List<Lesson>> fetchLessons(String userId, String exerciseId) async =>
+  Future<List<ExerciseNote>> fetchNotes(String userId, String exerciseId) async =>
       [];
 }
 

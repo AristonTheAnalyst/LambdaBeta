@@ -6,7 +6,7 @@ import 'package:lambda/data/models/planned_session.dart';
 import 'package:lambda/data/models/planned_session_exercise.dart';
 import 'package:lambda/data/models/planned_session_exercise_set.dart';
 import 'package:lambda/data/repositories/exercise_repository.dart';
-import 'package:lambda/data/repositories/lesson_repository.dart';
+import 'package:lambda/data/repositories/exercise_note_repository.dart';
 import 'package:lambda/data/repositories/planned_session_repository.dart';
 import 'package:lambda/data/repositories/session_repository.dart';
 import 'package:lambda/features/programs/viewmodel/workout_editor_viewmodel.dart';
@@ -186,14 +186,14 @@ class _FakeExerciseRepo extends Fake implements ExerciseRepository {
   Future<List<CustomVariation>> fetchVariations(String userId) async => [];
 }
 
-class _FakeLessonRepo extends Fake implements LessonRepository {}
+class _FakeExerciseNoteRepo extends Fake implements ExerciseNoteRepository {}
 
 void main() {
   late _FakePlanRepo repo;
 
   WorkoutEditorViewModel buildVm() => WorkoutEditorViewModel(
     exerciseRepo: _FakeExerciseRepo(),
-    lessonRepo: _FakeLessonRepo(),
+    noteRepo: _FakeExerciseNoteRepo(),
     workoutRepo: FakeSessionRepo(),
     workoutPlanRepo: repo,
     userId: 'u1',

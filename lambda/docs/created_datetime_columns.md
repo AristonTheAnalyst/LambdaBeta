@@ -8,7 +8,7 @@ and deliberately skips the rest. Full audit below.
 New columns are named `created_datetime` (matching `fact_session`). Existing
 creation columns keep their legacy names — no renames, churn without value:
 
-`dim_user.user_date_created`, `dim_lesson.lesson_created_date`,
+`dim_user.user_date_created`, `dim_exercise_note.note_created_date`,
 `dim_program.program_created_date`, `dim_planned_session.created_date`,
 `fact_session.created_datetime`, `fact_program_run.started_date`,
 `fact_goal.goal_created_date`, `fact_bodyweight.created_date`,
@@ -21,7 +21,7 @@ creation columns keep their legacy names — no renames, churn without value:
 | `dim_exercise` | **ADD** | Library ordering for never-used items (usage recency is null for them); "added X ago"; creation date survives archive→reactivate cycles |
 | `dim_variation` | **ADD** | Same as exercises; also the flat-library picker's fallback ordering |
 | `dim_user` | covered | `user_date_created` via auth trigger |
-| `dim_lesson` | covered | `lesson_created_date` |
+| `dim_exercise_note` | covered | `note_created_date` |
 | `dim_program` | covered | `program_created_date` (+ `program_updated_date`) |
 | `dim_planned_session` | covered | `created_date` |
 | `dim_planned_session_program` | **skip** | Pure link row; nothing displays link-creation time; slots are the content |

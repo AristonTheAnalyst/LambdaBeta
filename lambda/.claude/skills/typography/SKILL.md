@@ -40,7 +40,7 @@ is size, weight, family and rhythm of the letters themselves.
 | `xs` | 12 | **the label floor** — mono micro-labels, badges, dates, eyebrow strings, counters, gaps ("34 days prior") |
 | `caption` | 13 | a quiet caption that still carries information: a sheet's eyebrow, an all-time count |
 | `sm` | 14 | buttons, PR lines, dense row text, empty states |
-| `body` | 15 | **the workhorse** — lesson bodies, prose, the lead line of an entry |
+| `body` | 15 | **the workhorse** — exercise-note bodies, prose, the lead line of an entry |
 | `md` | 16 | input text, list rows, modal body |
 | `lg` | 18 | titles inside a sheet or card, page titles |
 | `xl` | 22 | display headings (sparingly) |
@@ -90,8 +90,8 @@ Weight carries hierarchy **after** size; on the same size, one step of weight
 
 ## 6. Line height
 
-- Multi-line prose sets `height: 1.3–1.4` — lesson bodies, notes, descriptions.
-  The reference is the lab Lessons sheet: `AppTextStyles.body`, `height: 1.35`.
+- Multi-line prose sets `height: 1.3–1.4` — exercise-note bodies, notes, descriptions.
+  The reference is the exercise-notes sheet: `AppTextStyles.body`, `height: 1.35`.
 - Single-line labels, values, dates and badges set **no** height — the default
   is correct and a height on a one-line row only distorts its box.
 - A wrapped `Text` inside a shared `Row` needs a bound (`Expanded` /

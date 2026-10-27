@@ -5,7 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:lambda/core/styles/app_fonts.dart';
 import 'package:lambda/data/models/program.dart';
 import 'package:lambda/data/models/program_block.dart';
-import 'package:lambda/data/repositories/lesson_repository.dart';
+import 'package:lambda/data/repositories/exercise_note_repository.dart';
 import 'package:lambda/data/repositories/program_repository.dart';
 import 'package:lambda/features/programs/view/program_block_editor_screen.dart';
 import 'package:lambda/features/programs/viewmodel/program_detail_viewmodel.dart';
@@ -56,7 +56,7 @@ void main() {
     required ProgramBlock block,
     required _FakePrograms repo,
   }) async {
-    final vm = ProgramDetailViewModel(repo: repo, lessonRepo: _FakeLessons());
+    final vm = ProgramDetailViewModel(repo: repo, noteRepo: _FakeNotes());
     vm.state.value = ProgramDetailState(
       program: Program(
         programId: 'p1',
@@ -362,9 +362,9 @@ class _FakePrograms implements ProgramRepository {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
-/// Only here because `LessonRepository`'s constructor evaluates the global
+/// Only here because `ExerciseNoteRepository`'s constructor evaluates the global
 /// `ps.db` — the one repository that cannot be default-constructed off-device.
-class _FakeLessons implements LessonRepository {
+class _FakeNotes implements ExerciseNoteRepository {
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

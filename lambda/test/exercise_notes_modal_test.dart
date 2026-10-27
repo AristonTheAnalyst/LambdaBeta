@@ -1,90 +1,90 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:lambda/data/models/lesson.dart';
-import 'package:lambda/data/repositories/lesson_repository.dart';
-import 'package:lambda/features/session/view/lessons_modal.dart';
+import 'package:lambda/data/models/exercise_note.dart';
+import 'package:lambda/data/repositories/exercise_note_repository.dart';
+import 'package:lambda/features/session/view/exercise_notes_modal.dart';
 import 'package:lambda/shared/widgets/swipe_actions.dart';
 
 import 'support/readable_text.dart';
 
-/// In-memory fake of [LessonRepository] so the modal can be driven in a widget
+/// In-memory fake of [ExerciseNoteRepository] so the modal can be driven in a widget
 /// test without PowerSync. Tracks the same invariants the real repo enforces
 /// (exclusive pin per exercise, soft-delete via is_active).
-class FakeLessonRepo implements LessonRepository {
-  final List<Lesson> lessons = [];
+class FakeExerciseNoteRepo implements ExerciseNoteRepository {
+  final List<ExerciseNote> notes = [];
   int _calls = 0;
 
   @override
-  Future<List<Lesson>> fetchLessons(String userId, String exerciseId) async =>
-      List.of(lessons);
+  Future<List<ExerciseNote>> fetchNotes(String userId, String exerciseId) async =>
+      List.of(notes);
 
   @override
-  Future<Map<String, List<Lesson>>> fetchLessonsForExercises(
+  Future<Map<String, List<ExerciseNote>>> fetchNotesForExercises(
     String userId,
     List<String> exerciseIds,
   ) async => {};
 
   @override
-  Future<Lesson> createLesson(
+  Future<ExerciseNote> createNote(
     String userId,
     String exerciseId,
     String text, {
     String? sessionId,
   }) async {
-    final lesson = Lesson(
-      lessonId: 'l${++_calls}',
+    final note = ExerciseNote(
+      exerciseNoteId: 'l${++_calls}',
       userId: userId,
       exerciseId: exerciseId,
       text: text,
       pinned: false,
       createdDate: DateTime(2026, 1, _calls),
     );
-    lessons.add(lesson);
-    return lesson;
+    notes.add(note);
+    return note;
   }
 
   @override
   Future<void> setPinned(
     String userId,
     String exerciseId,
-    String lessonId,
+    String exerciseNoteId,
     bool pinned,
   ) async {
     if (pinned) {
-      for (var i = 0; i < lessons.length; i++) {
-        if (lessons[i].exerciseId == exerciseId) {
-          lessons[i] = _with(lessons[i], pinned: false);
+      for (var i = 0; i < notes.length; i++) {
+        if (notes[i].exerciseId == exerciseId) {
+          notes[i] = _with(notes[i], pinned: false);
         }
       }
     }
-    for (var i = 0; i < lessons.length; i++) {
-      if (lessons[i].lessonId == lessonId) {
-        lessons[i] = _with(lessons[i], pinned: pinned);
+    for (var i = 0; i < notes.length; i++) {
+      if (notes[i].exerciseNoteId == exerciseNoteId) {
+        notes[i] = _with(notes[i], pinned: pinned);
       }
     }
   }
 
   @override
-  Future<void> deleteLesson(String lessonId) async {
-    lessons.removeWhere((l) => l.lessonId == lessonId);
+  Future<void> deleteNote(String exerciseNoteId) async {
+    notes.removeWhere((l) => l.exerciseNoteId == exerciseNoteId);
   }
 
   @override
-  Future<void> updateLesson(
+  Future<void> updateNote(
     String userId,
     String exerciseId,
-    String lessonId,
+    String exerciseNoteId,
     String text,
   ) async {
-    for (var i = 0; i < lessons.length; i++) {
-      if (lessons[i].lessonId == lessonId) {
-        lessons[i] = _with(lessons[i], text: text);
+    for (var i = 0; i < notes.length; i++) {
+      if (notes[i].exerciseNoteId == exerciseNoteId) {
+        notes[i] = _with(notes[i], text: text);
       }
     }
   }
 
-  Lesson _with(Lesson l, {bool? pinned, String? text}) => Lesson(
-    lessonId: l.lessonId,
+  ExerciseNote _with(ExerciseNote l, {bool? pinned, String? text}) => ExerciseNote(
+    exerciseNoteId: l.exerciseNoteId,
     userId: l.userId,
     exerciseId: l.exerciseId,
     text: text ?? l.text,
@@ -102,12 +102,12 @@ bool _hasSemanticsLabel(WidgetTester tester, String label) => tester
     .any((s) => s.properties.label == label);
 
 void main() {
-  final repo = FakeLessonRepo();
+  final repo = FakeExerciseNoteRepo();
   final listenable = ValueNotifier(0);
   final exerciseId = 'ex1';
 
-  Future<void> addLesson(String text) async {
-    await repo.createLesson('u1', exerciseId, text);
+  Future<void> addNote(String text) async {
+    await repo.createNote('u1', exerciseId, text);
     listenable.value++;
   }
 
@@ -122,29 +122,29 @@ void main() {
         builder: (context) => Center(
           child: ElevatedButton(
             child: const Text('open'),
-            onPressed: () => showLessonsModal(
+            onPressed: () => showExerciseNotesModal(
               context,
               listenable: listenable,
-              lessonsFor: (_) => List.of(repo.lessons),
-              loadLessonsFor: (_) async {},
-              addLesson: (_, text) => addLesson(text),
-              toggleLessonPin: (_, lessonId) async {
+              notesFor: (_) => List.of(repo.notes),
+              loadNotesFor: (_) async {},
+              addNote: (_, text) => addNote(text),
+              toggleNotePin: (_, exerciseNoteId) async {
                 await repo.setPinned(
                   'u1',
                   exerciseId,
-                  lessonId,
-                  !repo.lessons
-                      .firstWhere((l) => l.lessonId == lessonId)
+                  exerciseNoteId,
+                  !repo.notes
+                      .firstWhere((l) => l.exerciseNoteId == exerciseNoteId)
                       .pinned,
                 );
                 listenable.value++;
               },
-              deleteLesson: (_, lessonId) async {
-                await repo.deleteLesson(lessonId);
+              deleteNote: (_, exerciseNoteId) async {
+                await repo.deleteNote(exerciseNoteId);
                 listenable.value++;
               },
-              updateLesson: (_, lessonId, text) async {
-                await repo.updateLesson('u1', exerciseId, lessonId, text);
+              updateNote: (_, exerciseNoteId, text) async {
+                await repo.updateNote('u1', exerciseId, exerciseNoteId, text);
                 listenable.value++;
               },
               exerciseId: exerciseId,
@@ -160,12 +160,12 @@ void main() {
     ),
   );
 
-  testWidgets('pin clears other pins but never deletes the lesson', (
+  testWidgets('pin clears other pins but never deletes the note', (
     tester,
   ) async {
-    await addLesson('lesson one');
-    await addLesson('lesson two');
-    expect(repo.lessons.length, 2, reason: 'both lessons should be added');
+    await addNote('note one');
+    await addNote('note two');
+    expect(repo.notes.length, 2, reason: 'both notes should be added');
 
     await tester.pumpWidget(buildModal());
     await tester.pumpAndSettle();
@@ -173,90 +173,90 @@ void main() {
     await tester.tap(find.byType(ElevatedButton));
     await tester.pumpAndSettle();
 
-    // The modal shows both lessons.
-    expect(find.text('lesson one'), findsOneWidget);
-    expect(find.text('lesson two'), findsOneWidget);
+    // The modal shows both notes.
+    expect(find.text('note one'), findsOneWidget);
+    expect(find.text('note two'), findsOneWidget);
 
-    // Pin "lesson two" via the pin button inside its row, regardless of the
+    // Pin "note two" via the pin button inside its row, regardless of the
     // modal's sort order.
     expect(find.byIcon(Icons.push_pin), findsNWidgets(2));
     final twoRow = find
-        .ancestor(of: find.text('lesson two'), matching: find.byType(Row))
+        .ancestor(of: find.text('note two'), matching: find.byType(Row))
         .first;
     await tester.tap(
       find.descendant(of: twoRow, matching: find.byIcon(Icons.push_pin)),
     );
     await tester.pumpAndSettle();
 
-    // Exclusive pin: lesson two pinned, lesson one unpinned — NOT deleted.
-    final one = repo.lessons.firstWhere((l) => l.text == 'lesson one');
-    final two = repo.lessons.firstWhere((l) => l.text == 'lesson two');
+    // Exclusive pin: note two pinned, note one unpinned — NOT deleted.
+    final one = repo.notes.firstWhere((l) => l.text == 'note one');
+    final two = repo.notes.firstWhere((l) => l.text == 'note two');
     expect(
       one.pinned,
       isFalse,
       reason:
           'pinning another must not delete/unpin-affect the first except clearing its pin',
     );
-    expect(two.pinned, isTrue, reason: 'pinned lesson should be pinned');
+    expect(two.pinned, isTrue, reason: 'pinned note should be pinned');
     expect(
-      repo.lessons.length,
+      repo.notes.length,
       2,
-      reason: 'pinning must never delete a lesson',
+      reason: 'pinning must never delete a note',
     );
   });
 
   testWidgets(
-    'tapping a lesson opens the inline editor and saves the new text',
+    'tapping a note opens the inline editor and saves the new text',
     (tester) async {
-      repo.lessons.clear(); // isolate from the pin test's lessons
-      await addLesson('lesson one');
+      repo.notes.clear(); // isolate from the pin test's notes
+      await addNote('note one');
       await tester.pumpWidget(buildModal());
       await tester.pumpAndSettle();
 
       await tester.tap(find.byType(ElevatedButton));
       await tester.pumpAndSettle();
-      expect(find.text('lesson one'), findsOneWidget);
+      expect(find.text('note one'), findsOneWidget);
 
-      // Tap the lesson text → inline editor prefilled with the current text.
-      await tester.tap(find.text('lesson one'));
+      // Tap the note text → inline editor prefilled with the current text.
+      await tester.tap(find.text('note one'));
       await tester.pumpAndSettle();
       expect(find.byType(TextField), findsOneWidget);
       expect(
-        find.text('lesson one'),
+        find.text('note one'),
         findsOneWidget,
-        reason: 'editor should be prefilled with the lesson text',
+        reason: 'editor should be prefilled with the note text',
       );
 
       // Save an edit → the row shows the new text, no stale copy remains.
-      await tester.enterText(find.byType(TextField), 'lesson one (edited)');
+      await tester.enterText(find.byType(TextField), 'note one (edited)');
       // Save's enabled state is derived from the text, so the frame a real
       // keystroke would paint has to happen before the tap lands.
       await tester.pump();
       await tester.tap(find.text('Save'));
       await tester.pumpAndSettle();
 
-      expect(repo.lessons.single.text, 'lesson one (edited)');
-      expect(find.text('lesson one (edited)'), findsOneWidget);
-      expect(find.text('lesson one'), findsNothing);
+      expect(repo.notes.single.text, 'note one (edited)');
+      expect(find.text('note one (edited)'), findsOneWidget);
+      expect(find.text('note one'), findsNothing);
     },
   );
 
-  testWidgets('Save stays inert until the lesson text differs', (tester) async {
-    repo.lessons.clear();
-    await addLesson('lesson one');
+  testWidgets('Save stays inert until the note text differs', (tester) async {
+    repo.notes.clear();
+    await addNote('note one');
     await tester.pumpWidget(buildModal());
     await tester.pumpAndSettle();
 
     await tester.tap(find.byType(ElevatedButton));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('lesson one'));
+    await tester.tap(find.text('note one'));
     await tester.pumpAndSettle();
 
     // Untouched → Save has nothing to write, so tapping it does nothing and
     // the editor stays open.
     await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
-    expect(repo.lessons.single.text, 'lesson one');
+    expect(repo.notes.single.text, 'note one');
     expect(
       find.byType(TextField),
       findsOneWidget,
@@ -264,27 +264,27 @@ void main() {
     );
 
     // Retyping the same words is still not a change.
-    await tester.enterText(find.byType(TextField), 'lesson one');
+    await tester.enterText(find.byType(TextField), 'note one');
     await tester.pump();
     await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
-    expect(repo.lessons.single.text, 'lesson one');
+    expect(repo.notes.single.text, 'note one');
 
     // A real difference writes.
-    await tester.enterText(find.byType(TextField), 'lesson two');
+    await tester.enterText(find.byType(TextField), 'note two');
     await tester.pump();
     await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
-    expect(repo.lessons.single.text, 'lesson two');
+    expect(repo.notes.single.text, 'note two');
   });
 
   testWidgets('a past session reads newest first — after it, its own date, '
       'then previously', (tester) async {
-    repo.lessons
+    repo.notes
       ..clear()
       ..addAll([
-        Lesson(
-          lessonId: 'l-old',
+        ExerciseNote(
+          exerciseNoteId: 'l-old',
           userId: 'u1',
           exerciseId: exerciseId,
           text: 'Old cue',
@@ -292,8 +292,8 @@ void main() {
           createdDate: DateTime(2026, 10, 18),
           sessionId: 'prev',
         ),
-        Lesson(
-          lessonId: 'l-here',
+        ExerciseNote(
+          exerciseNoteId: 'l-here',
           userId: 'u1',
           exerciseId: exerciseId,
           text: 'Elbows tucked',
@@ -303,8 +303,8 @@ void main() {
         ),
         // Written two days after the record on the desk: not "previously"
         // (2026-10-23).
-        Lesson(
-          lessonId: 'l-later',
+        ExerciseNote(
+          exerciseNoteId: 'l-later',
           userId: 'u1',
           exerciseId: exerciseId,
           text: 'Later cue',
@@ -341,7 +341,7 @@ void main() {
     expect(
       tester.getTopLeft(find.text('Later cue')).dy,
       greaterThan(after),
-      reason: 'a lesson written after the record read is not "previously"',
+      reason: 'a note written after the record read is not "previously"',
     );
     expect(tester.getTopLeft(find.text('Later cue')).dy, lessThan(middle));
     expect(
@@ -356,23 +356,23 @@ void main() {
   });
 
   // ── Since last review (2026-10-26) ───────────────────────────────────────
-  // A checkpoint behind the record splits the after-group: the lessons
+  // A checkpoint behind the record splits the after-group: the notes
   // written since the last pass lead the sheet, and the ones written after
   // the session but no later than it keep `AFTER`.
   testWidgets('a review checkpoint splits the after-group', (tester) async {
-    repo.lessons
+    repo.notes
       ..clear()
       ..addAll([
-        Lesson(
-          lessonId: 'l-old',
+        ExerciseNote(
+          exerciseNoteId: 'l-old',
           userId: 'u1',
           exerciseId: exerciseId,
           text: 'Old cue',
           pinned: false,
           createdDate: DateTime(2026, 10, 18),
         ),
-        Lesson(
-          lessonId: 'l-here',
+        ExerciseNote(
+          exerciseNoteId: 'l-here',
           userId: 'u1',
           exerciseId: exerciseId,
           text: 'Elbows tucked',
@@ -381,8 +381,8 @@ void main() {
           sessionId: 'w1',
         ),
         // After the record on the desk, before the last review closed.
-        Lesson(
-          lessonId: 'l-after',
+        ExerciseNote(
+          exerciseNoteId: 'l-after',
           userId: 'u1',
           exerciseId: exerciseId,
           text: 'Cue before the pass',
@@ -390,8 +390,8 @@ void main() {
           createdDate: DateTime(2026, 10, 21),
         ),
         // After the last review closed — the pass's own window.
-        Lesson(
-          lessonId: 'l-since',
+        ExerciseNote(
+          exerciseNoteId: 'l-since',
           userId: 'u1',
           exerciseId: exerciseId,
           text: 'Cue since the pass',
@@ -438,11 +438,11 @@ void main() {
   });
 
   testWidgets('without a checkpoint the three shelves stand', (tester) async {
-    repo.lessons
+    repo.notes
       ..clear()
       ..addAll([
-        Lesson(
-          lessonId: 'l-here',
+        ExerciseNote(
+          exerciseNoteId: 'l-here',
           userId: 'u1',
           exerciseId: exerciseId,
           text: 'Elbows tucked',
@@ -450,8 +450,8 @@ void main() {
           createdDate: DateTime(2026, 10, 20, 12),
           sessionId: 'w1',
         ),
-        Lesson(
-          lessonId: 'l-since',
+        ExerciseNote(
+          exerciseNoteId: 'l-since',
           userId: 'u1',
           exerciseId: exerciseId,
           text: 'Cue since the pass',
@@ -480,19 +480,19 @@ void main() {
   // — the pass still leads, and what came at or before it is `PREVIOUSLY`.
   testWidgets('with no session on the desk the checkpoint splits the whole '
       'shelf', (tester) async {
-    repo.lessons
+    repo.notes
       ..clear()
       ..addAll([
-        Lesson(
-          lessonId: 'l-old',
+        ExerciseNote(
+          exerciseNoteId: 'l-old',
           userId: 'u1',
           exerciseId: exerciseId,
           text: 'Cue before the pass',
           pinned: false,
           createdDate: DateTime(2026, 10, 18),
         ),
-        Lesson(
-          lessonId: 'l-since',
+        ExerciseNote(
+          exerciseNoteId: 'l-since',
           userId: 'u1',
           exerciseId: exerciseId,
           text: 'Cue since the pass',
@@ -539,7 +539,7 @@ void main() {
   });
 
   testWidgets('the modal draws readable ink and type', (tester) async {
-    await addLesson('lesson one');
+    await addNote('note one');
     await tester.pumpWidget(buildModal());
     await tester.pumpAndSettle();
     await tester.tap(find.byType(ElevatedButton));
@@ -554,19 +554,19 @@ void main() {
   testWidgets('read-only: the shelves draw, the write affordances do not', (
     tester,
   ) async {
-    repo.lessons
+    repo.notes
       ..clear()
       ..addAll([
-        Lesson(
-          lessonId: 'l-pin',
+        ExerciseNote(
+          exerciseNoteId: 'l-pin',
           userId: 'u1',
           exerciseId: exerciseId,
           text: 'Pinned cue',
           pinned: true,
           createdDate: DateTime(2026, 10, 20),
         ),
-        Lesson(
-          lessonId: 'l-plain',
+        ExerciseNote(
+          exerciseNoteId: 'l-plain',
           userId: 'u1',
           exerciseId: exerciseId,
           text: 'Plain cue',
@@ -614,22 +614,22 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(
-      repo.lessons.firstWhere((l) => l.text == 'Plain cue').pinned,
+      repo.notes.firstWhere((l) => l.text == 'Plain cue').pinned,
       isFalse,
       reason: 'a friend\'s note cannot be pinned',
     );
 
     // And nothing wrote.
-    expect(repo.lessons.length, 2);
+    expect(repo.notes.length, 2);
     expect(
-      repo.lessons.firstWhere((l) => l.text == 'Plain cue').pinned,
+      repo.notes.firstWhere((l) => l.text == 'Plain cue').pinned,
       isFalse,
     );
   });
 
   testWidgets('read-only empty state does not point at an Add that is not '
       'there', (tester) async {
-    repo.lessons.clear();
+    repo.notes.clear();
     await tester.pumpWidget(buildModal(readOnly: true));
     await tester.pumpAndSettle();
     await tester.tap(find.byType(ElevatedButton));

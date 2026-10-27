@@ -28,9 +28,9 @@ void main() {
     // real PowerSync database, which is not there.
     workoutPlanRepo: FakePlannedSessions(),
     exerciseRepo: FakeExercises(),
-    // Host tests cannot default-construct LessonRepository — see
-    // FakeLessons.
-    lessonRepo: FakeLessons(),
+    // Host tests cannot default-construct ExerciseNoteRepository — see
+    // FakeNotes.
+    noteRepo: FakeNotes(),
     userId: 'u1',
   );
 

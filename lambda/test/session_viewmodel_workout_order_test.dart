@@ -8,7 +8,7 @@ import 'package:lambda/data/models/program_progress.dart';
 import 'package:lambda/data/models/session.dart';
 import 'package:lambda/data/models/session_exercise_set.dart';
 import 'package:lambda/data/repositories/exercise_repository.dart';
-import 'package:lambda/data/repositories/lesson_repository.dart';
+import 'package:lambda/data/repositories/exercise_note_repository.dart';
 import 'package:lambda/data/repositories/planned_session_repository.dart';
 import 'package:lambda/data/repositories/program_repository.dart';
 import 'package:lambda/data/repositories/program_run_repository.dart';
@@ -55,7 +55,7 @@ void main() {
     exerciseRepo: _EmptyExerciseRepo(),
     programRepo: _FakeProgramRepository(),
     programRunRepo: _NoRunProgramRepository(),
-    lessonRepo: _FakeLessonRepository(),
+    noteRepo: _FakeExerciseNoteRepository(),
     plannedSessionRepo: _FakePlannedSessionRepository(),
     waitForFirstSync: () async {},
     userId: 'u1',
@@ -187,7 +187,7 @@ class _NoRunProgramRepository extends Fake implements ProgramRunRepository {
   Future<ProgramProgress?> getProgress(String userId) async => null;
 }
 
-class _FakeLessonRepository extends Fake implements LessonRepository {}
+class _FakeExerciseNoteRepository extends Fake implements ExerciseNoteRepository {}
 
 class _FakePlannedSessionRepository extends Fake
     implements PlannedSessionRepository {

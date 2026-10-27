@@ -36,7 +36,7 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('PRS:'), findsOneWidget);
-    expect(find.text('LESSONS:'), findsOneWidget);
+    expect(find.text('NOTES:'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

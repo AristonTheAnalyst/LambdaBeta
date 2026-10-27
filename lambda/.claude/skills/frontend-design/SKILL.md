@@ -315,7 +315,7 @@ program, block, goal, review title — draws through **`UserNameText`**: one
 line, `TextOverflow.ellipsis`, `tooltip: true` where the name is the thing
 being *chosen*, and an `Expanded`/`Flexible` around it whenever it shares a
 `Row` (an ellipsis cannot engage without a bound; `overflow` alone with no
-`maxLines` never engages at all). Notes, lesson bodies and goal descriptions
+`maxLines` never engages at all). Notes, exercise-note bodies and goal descriptions
 are prose: they wrap and stay unbounded.
 
 Names are stopped at the field, in this order — all four, because each one

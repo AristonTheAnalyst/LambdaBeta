@@ -115,8 +115,8 @@ class SessionRepository {
   /// derived on read so there is nothing else to clean up. Children go
   /// first and the parent last — `fact_session_exercise.session_id` is a
   /// NO ACTION FK on the server, and the upload queue replays these in the
-  /// order they were written. `dim_lesson.session_id` is ON DELETE SET
-  /// NULL, so lessons logged during the session survive it.
+  /// order they were written. `dim_exercise_note.session_id` is ON DELETE SET
+  /// NULL, so notes logged during the session survive it.
   Future<void> deleteSession(String sessionId) async {
     _invalidateTimeline();
     await ps.db.execute(

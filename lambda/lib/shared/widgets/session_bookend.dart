@@ -11,7 +11,7 @@ import 'lambda_readout.dart';
 /// the same wording/styling as the live form: [question] above the rating
 /// and [notesLabel] above the notes. Rating and notes always render: an
 /// unrated session shows empty squares, and empty notes show [emptyNotes]
-/// in the reflection sections' empty-note style. Notes sit in a lesson-row
+/// in the reflection sections' empty-note style. Notes sit in a note-row
 /// container and scroll inside it when long.
 ///
 /// Shared between the prep page's LAST SESSION card (read-only) and the
