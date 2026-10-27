@@ -211,6 +211,13 @@ void main() {
     expect(find.bySemanticsLabel('Stop editing ratings'), findsOneWidget);
     expect(pencilIcon().color, AppColors.accent);
 
+    // The text keeps the field's size in both modes — the toggle must not
+    // resize the box's words (2026-10-28).
+    final editSize = tester
+        .widget<TextField>(_inPre(find.byType(TextField)))
+        .style!
+        .fontSize;
+
     // Editable for real: a star tap and a keystroke reach the caller. Two
     // stars are lit, so the first empty one is the third.
     await tester.tap(_inPre(find.byIcon(Icons.star_border_rounded)).at(0));
@@ -231,6 +238,13 @@ void main() {
     expect(find.byType(LambdaReadout), findsOneWidget);
     expect(find.text('No post-workout notes'), findsOneWidget);
     expect(_inPre(find.text('Slept well')), findsOneWidget);
+    expect(
+      tester.widget<Text>(_inPre(find.text('Slept well'))).style!.fontSize,
+      editSize,
+      reason:
+          'the read-out and the field draw at one size — the toggle '
+          'never resizes the text',
+    );
     expect(
       find.text('Felt strong'),
       findsNothing,

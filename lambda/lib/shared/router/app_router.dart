@@ -16,6 +16,7 @@ import '../../features/dev/view/lesson_debug_screen.dart';
 import '../../features/dev/view/nav_bar_demo_screen.dart';
 import '../../features/dev/pr_lab/pr_lab_screen.dart';
 import '../../features/dev/view/pr_history_demo_screen.dart';
+import '../../features/dev/view/visual_pairings_screen.dart';
 import '../../features/exercises/view/exercise_hub_screen.dart';
 import '../../features/exercises/view/exercise_detail_screen.dart';
 import '../../features/exercises/view/guide_screen.dart';
@@ -292,6 +293,10 @@ abstract final class AppRouter {
                   builder: (_, _) => const PrHistoryDemoScreen(),
                 ),
                 GoRoute(path: 'pr-lab', builder: (_, _) => const PrLabScreen()),
+                GoRoute(
+                  path: 'visual-pairings',
+                  builder: (_, _) => const VisualPairingsScreen(),
+                ),
               ],
             ),
         ],

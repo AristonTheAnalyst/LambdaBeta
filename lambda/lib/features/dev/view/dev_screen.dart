@@ -83,6 +83,13 @@ class DevScreen extends StatelessWidget {
                     subtitle: 'Layout sandbox — isolated copies, nothing leaks',
                     onTap: () => context.push('/dev/pr-lab'),
                   ),
+                  const SizedBox(height: AppSpacing.sm),
+                  _NavCard(
+                    icon: Icons.compare_arrows,
+                    label: 'Visual Pairings',
+                    subtitle: 'Read vs edit treatments for boxes and stars',
+                    onTap: () => context.push('/dev/visual-pairings'),
+                  ),
                   const SizedBox(height: AppSpacing.xl),
                   AppCard(
                     child: Column(

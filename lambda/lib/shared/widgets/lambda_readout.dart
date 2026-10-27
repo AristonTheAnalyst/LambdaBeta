@@ -28,6 +28,7 @@ class LambdaReadout extends StatelessWidget {
     this.label,
     required this.value,
     this.placeholder,
+    this.textSize = AppTextStyles.sm,
   });
 
   /// Same slot and styling as [LambdaInput.label]; null for a box the
@@ -40,6 +41,12 @@ class LambdaReadout extends StatelessWidget {
   /// [LambdaInput]'s own placeholder: readable, but one step down from a
   /// real note. Null leaves a blank box blank.
   final String? placeholder;
+
+  /// The value's size. The ladder's `sm` by default; a box that flips into a
+  /// [LambdaInput] passes `md` so the pair's toggle never resizes the text
+  /// (the input writes at `md`), leaving size out of the read/edit signal
+  /// (2026-10-28).
+  final double textSize;
 
   @override
   Widget build(BuildContext context) {
@@ -70,7 +77,7 @@ class LambdaReadout extends StatelessWidget {
               child: Text(
                 isBlank ? (placeholder ?? value) : value,
                 style: AppFonts.ui(
-                  fontSize: AppTextStyles.sm,
+                  fontSize: textSize,
                   color: isBlank && placeholder != null
                       ? AppColors.inkSecondary
                       : AppColors.primary,

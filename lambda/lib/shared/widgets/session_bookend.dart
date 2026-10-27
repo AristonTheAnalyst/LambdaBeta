@@ -123,7 +123,10 @@ class _SessionBookendState extends State<SessionBookend> {
             onChanged: widget.onNotesChanged,
           )
         else if (widget.notes != null)
-          LambdaReadout(value: widget.notes!)
+          // Read at the field's own size, not the readout's default: the
+          // sheet's mode toggle flips this box between the two widgets, and
+          // the text must not resize as it does (2026-10-28).
+          LambdaReadout(value: widget.notes!, textSize: AppTextStyles.md)
         else
           Text(
             widget.emptyNotes,

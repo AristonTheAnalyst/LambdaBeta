@@ -286,6 +286,18 @@ sticky-note icon) — the note indicator, not a color.
     per-field callback fires on pointer down (the field takes focus on
     pointer up), so it blinks the keyboard when the user moves between
     adjacent cells.
+  - **A read/edit pair keeps one size (2026-10-28).** Where a readout
+    flips into a field **in place** — the ratings sheet's pencil toggle,
+    `SessionBookend`'s notes — the readout passes `textSize:
+    AppTextStyles.md` so the pair draws its words at the field's own
+    size; a toggle that resizes the text is not a state change, it is a
+    jitter. Everywhere else the readout keeps its default `sm`.
+  - **Read vs edit is an open study (2026-10-28).** The two modes today
+    differ only by the box swap (and, in the ratings sheet, the pencil's
+    tint) — the stars do not move at all. Three candidate rules (Today ·
+    Frame · Hollow — one border in both modes, only the fill moving) draw
+    side by side under **Dev → Visual Pairings** (`/dev/visual-pairings`);
+    nothing is wired, and no sweeping change lands until one is picked.
 
 ### User-created names (2026-10-20)
 
