@@ -547,7 +547,7 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
                                     ),
                                   ),
                                 ),
-                              ] else if (state.activeSlot != null)
+                              ] else if (state.activeSlot != null) ...[
                                 _PlanExerciseCard(
                                   viewModel: widget.viewModel,
                                   slot: state.activeSlot!,
@@ -556,6 +556,28 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
                                   originalNotes:
                                       _original?.beforeNotes ?? const {},
                                 ),
+                                // The way back for a group the pass removed
+                                // (2026-10-28): the card keeps it red, and
+                                // this puts it — and every set under it —
+                                // back in place. The live session's own
+                                // Restore, under the same card. Not while
+                                // Compare is up: the record is not the plan.
+                                if (original == null &&
+                                    _reviewSession != null &&
+                                    state.activeSlot!.deleted)
+                                  Padding(
+                                    padding: const EdgeInsets.only(
+                                      top: AppSpacing.md,
+                                    ),
+                                    child: GlassButton(
+                                      label: 'Restore',
+                                      onPressed: () => widget.viewModel
+                                          .restorePlannedExerciseGroup(
+                                            state.activeSlotIndex,
+                                          ),
+                                    ),
+                                  ),
+                              ],
                             ],
                           ),
                         ),
@@ -683,8 +705,11 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
   /// * the date bar is [SessionDateBar.plan] — a template is planned *for*
   ///   sessions, so its phrase reads `PLAN` and both chevrons are greyed;
   /// * the star is a session's ratings, and a plan has no session: greyed;
-  /// * the trash restores deleted sets, and the planner deletes groups
-  ///   outright (undo is the way back): greyed.
+  /// * outside a pass the trash is spent: the planner hides archived groups,
+  ///   and undo is the way back. **Inside a pass it is a door** (2026-10-28):
+  ///   the card keeps a removal red with its note, so the trash lists the
+  ///   pass's own removals and opens one for reading — and the Restore
+  ///   button under the card puts it back, exactly like the live session.
   ///
   /// The tiles are the live doors. A plan is *informed* by what the exercise
   /// has done — every PR it ever landed, every goal it still stands, every
@@ -703,6 +728,23 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
     final vm = widget.viewModel;
     final exerciseId = state.activeSlot?.exerciseId;
     final locked = original != null;
+    final review = _reviewSession;
+    // The pass's own removals: the card still holds them, so the trash can
+    // list them by name and open one for reading. Outside a pass the list is
+    // empty and the slot stays spent.
+    final deletedSlots = [
+      if (review != null)
+        for (var i = 0; i < state.workoutExerciseSlots.length; i++)
+          if (state.workoutExerciseSlots[i].deleted)
+            (
+              index: i,
+              name: toProperCase(
+                vm.exerciseDisplayName(
+                  state.workoutExerciseSlots[i].exerciseId,
+                ),
+              ),
+            ),
+    ];
     return Container(
       key: const ValueKey('plan-session-bar'),
       // The session floor's insets — the bottom one included: the page sits
@@ -729,10 +771,14 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
                 canRedo: vm.canRedo && !locked,
                 onUndo: vm.undo,
                 onRedo: vm.redo,
-                // The trash keeps its slot and stays spent: a planner's
-                // deletion is a group, and undo is its way back.
-                deletedExercises: const [],
-                onPickDeletedExercise: (_) {},
+                // Inside a pass the trash lists the pass's removals and a
+                // row opens one for reading; outside it, the slot is spent
+                // (a planner's deletion is a group, and undo is its way
+                // back) — 2026-10-28.
+                deletedExercises: [for (final d in deletedSlots) d.name],
+                onPickDeletedExercise: review == null
+                    ? (_) {}
+                    : (i) => vm.tapTab(deletedSlots[i].index),
               ),
               const SizedBox(width: AppSpacing.sm),
               BarIconButton(

@@ -262,9 +262,13 @@ unique functions or viewing experiences depending on the context."*
    than omitted: `SessionDateBar.plan()` draws the bar's furniture — a
    lone `PLAN` phrase in `inkSecondary` (no state, no date, the phrase
    inert), both chevrons greyed, no radios; the undo/redo pair stands
-   with its trash slot spent (a planner deletes a group outright, and
-   undo is its way back); the star stands greyed (a plan has no session
-   ratings); and `SessionStatsTiles(gain: false)` draws the active
+   with its trash slot **spent outside a pass** (archived groups are
+   hidden there, and undo is the way back) and **live inside one**
+   (2026-10-28): the card keeps a group the pass removed red, so the
+   trash lists the pass's own removals, a row opens one for reading, and
+   a **Restore** button under the card un-archives it and every set under
+   it — the live session's view-then-restore flow, over the pass's staged
+   store; the star stands greyed (a plan has no session ratings); and `SessionStatsTiles(gain: false)` draws the active
    exercise's whole PR feed, goals and notes shelf — the counts behind
    the doors are the whole shelves, and the doors are still doors
    (2026-10-27): the trophy opens `showPrHistorySheet`, the bullseye

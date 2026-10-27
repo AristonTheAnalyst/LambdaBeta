@@ -1080,6 +1080,91 @@ class WorkoutEditorViewModel {
     await forward();
   }
 
+  /// Puts back a group this pass removed (2026-10-28): the floor's trash
+  /// lists the pass's own removals, a row opens one for reading on the card
+  /// it already stands on, and this is the Restore button under it — the live
+  /// session's view-then-restore flow, over the pass's staged store.
+  ///
+  /// The archived rows keep their ids, values and order columns, so restoring
+  /// is the removal's inverse: un-archive the group and every set under it,
+  /// then re-read. Recorded on the undo stack because the live session's
+  /// Restore is undoable too — the inverse archives the group again.
+  Future<void> restorePlannedExerciseGroup(int index) async {
+    final s = state.value;
+    final workout = s.editingWorkout;
+    if (workout == null ||
+        index < 0 ||
+        index >= s.workoutExerciseSlots.length) {
+      return;
+    }
+    final slot = s.workoutExerciseSlots[index];
+    final plannedExerciseId = slot.plannedExerciseId;
+    if (plannedExerciseId == null || !slot.deleted) return;
+
+    // The rows are still in state: inside a review the reads bring archived
+    // groups (and their sets) back, hidden at open only when they predate
+    // the pass.
+    final capturedExercise = s.workoutPlannedExercises
+        .where((e) => e.plannedExerciseId == plannedExerciseId)
+        .firstOrNull;
+    final capturedSets = [
+      for (final ps in s.workoutPlannedSessionExerciseSets)
+        if (ps.plannedExerciseId == plannedExerciseId) ps,
+    ];
+
+    Future<void> forward() async {
+      final wid = state.value.editingWorkout?.sessionId;
+      if (wid == null) return;
+      if (capturedExercise != null) {
+        await _plannedSessionRepo.restorePlannedExercise(
+          plannedExerciseId,
+          exerciseOrder: capturedExercise.exerciseOrder,
+        );
+      }
+      for (final pset in capturedSets) {
+        await _plannedSessionRepo.restorePlannedSet(
+          pset.plannedSetId,
+          setNumber: pset.setNumber,
+        );
+      }
+      final exercises = await _readGroups(wid);
+      final plannedSets = await _readSets(wid);
+      state.value = state.value.copyWith(
+        workoutPlannedExercises: exercises,
+        workoutExerciseSlots: _slotsFromExercises(exercises),
+        workoutPlannedSessionExerciseSets: plannedSets,
+        workoutUnsavedChanges: true,
+      );
+    }
+
+    _recordUndo(
+      UndoAction(
+        inverse: () async {
+          final cur = state.value;
+          final idx = cur.workoutExerciseSlots.indexWhere(
+            (sl) => sl.plannedExerciseId == plannedExerciseId,
+          );
+          if (idx == -1) return;
+          _suppressHistory = true;
+          try {
+            await removePlannedExerciseGroup(idx);
+          } finally {
+            _suppressHistory = false;
+          }
+        },
+        replay: () async {
+          _suppressHistory = true;
+          try {
+            await forward();
+          } finally {
+            _suppressHistory = false;
+          }
+        },
+      ),
+    );
+    await forward();
+  }
+
   Future<void> tapTab(int index) async {
     // A draft row keeps its variation and notes in the row until it commits
     // (so a keystroke can't materialize one mid-typing), and only the active

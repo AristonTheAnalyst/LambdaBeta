@@ -419,11 +419,13 @@ void main() {
   // 48pt squares, the tiles — the three session surfaces stand on one recipe.
   // What a plan cannot do it draws spent rather than omitting, the session
   // floors' own rule for a null callback: a template has no place in time (the
-  // bar reads a lone PLAN, both chevrons spent), no session ratings (the star
-  // spent), and no deleted sets to restore (the trash spent). The tiles are
-  // the floor's one live door — the active exercise's whole PR feed and notes
-  // shelf. The custom SETS · EXERCISES pill is gone with the custom floor it
-  // belonged to, and the card is the session's flat one.
+  // bar reads a lone PLAN, both chevrons spent) and no session ratings (the
+  // star spent). Outside a pass the trash is spent too — archived groups are
+  // hidden and undo is the way back; inside one it lists the pass's removals
+  // and supports a Restore (2026-10-28). The tiles are the floor's one live
+  // door — the active exercise's whole PR feed and notes shelf. The custom
+  // SETS · EXERCISES pill is gone with the custom floor it belonged to, and
+  // the card is the session's flat one.
   group('the planner\'s floor', () {
     setUp(() => reviewSessionNotifier.value = null);
     tearDown(() => reviewSessionNotifier.value = null);
@@ -834,6 +836,82 @@ void main() {
         reason:
             'the note beside the removed exercise is the screen\'s whole '
             'reason for keeping it — the box has to take the words',
+      );
+    });
+
+    testWidgets('the floor\'s trash lists the pass\'s removal, and Restore '
+        'puts it back with its sets', (tester) async {
+      planned.sets.add(
+        PlannedSessionExerciseSet(
+          plannedSetId: 'pset-bench-1',
+          plannedExerciseId: benchGroupId,
+          plannedSessionId: sessionId,
+          userId: userId,
+          setNumber: 1,
+          exerciseId: benchPressId,
+          targetWeight: '60',
+          targetReps: '10',
+        ),
+      );
+      await pumpEditorInReview(tester);
+      await vm.removePlannedExerciseGroup(1);
+      await tester.pumpAndSettle();
+
+      // The trash is a door inside a pass now (2026-10-28), and its menu
+      // names the group the pass removed.
+      await tester.tap(find.byIcon(Icons.restore_from_trash));
+      await tester.pumpAndSettle();
+      final row = tester.widget<DeletedExerciseRow>(
+        find.byType(DeletedExerciseRow),
+      );
+      expect(row.name, 'Bench Press');
+
+      // A row opens it for reading: the card's tab follows, red as it is.
+      await tester.tap(find.byType(DeletedExerciseRow));
+      await tester.pumpAndSettle();
+      expect(vm.state.value.activeSlotIndex, 1);
+      expect(vm.state.value.activeSlot?.deleted, isTrue);
+
+      // The menu is a list to work down, not a question — it stays open
+      // after a pick, and its barrier takes the tap that leaves it.
+      await tester.tapAt(const Offset(220, 300));
+      await tester.pumpAndSettle();
+
+      // The way back sits under the card: the live session's own Restore.
+      await tester.tap(find.text('Restore'));
+      await tester.pumpAndSettle();
+
+      expect(
+        tester
+            .widget<SessionExerciseCard>(find.byType(SessionExerciseCard))
+            .deletedExercises,
+        [false, false],
+        reason: 'the card stops drawing the group as removed',
+      );
+      expect(
+        planned.exercises
+            .firstWhere((e) => e.plannedExerciseId == benchGroupId)
+            .isArchived,
+        isFalse,
+        reason: 'the group is un-archived in place, not copied back',
+      );
+      expect(
+        planned.sets
+            .firstWhere((s) => s.plannedSetId == 'pset-bench-1')
+            .isArchived,
+        isFalse,
+        reason: 'every set under it comes back with it',
+      );
+      expect(
+        find.text('Restore'),
+        findsNothing,
+        reason: 'the slot is no longer removed, so there is nothing to put '
+            'back',
+      );
+      expect(
+        find.byType(DeletedExerciseRow),
+        findsNothing,
+        reason: 'and the trash emptied itself',
       );
     });
 
