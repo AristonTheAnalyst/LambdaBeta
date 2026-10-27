@@ -576,8 +576,12 @@ class _ReviewRouteState extends State<ReviewRoute> {
   /// land on it. A read that fails leaves the maps empty rather than blocking
   /// the editor — the bar shows no note, and re-taking it writes through the
   /// repository's own fresh read, so nothing is lost but the display.
+  ///
+  /// Through [_history], the route's own store, like every other read the
+  /// ceremony makes: a host test injects one, and a fresh repository here
+  /// would step around the seam.
   void _seedNotes() {
-    ProgramHistoryRepository().fetchReview(widget.session.reviewId).then((row) {
+    _history.fetchReview(widget.session.reviewId).then((row) {
       if (!mounted || row == null) return;
       // Compared by id, not identity: the session is replaced as the pass
       // advances ([ReviewSession.copyWith]), so the object that started this
@@ -662,9 +666,12 @@ class _ReviewRouteState extends State<ReviewRoute> {
     }
     final cards = _cards!;
     // Every workout in the set is gone — deleted between the pass being
-    // started and being opened. Only then is there nothing to walk; a partial
-    // drop is noted on the landing instead.
-    if (cards.isEmpty) return _missing(live);
+    // started and being opened — and there was a set to lose. An EMPTY scope
+    // is a different state: a pass begun from the Reviews tab starts here and
+    // grows from its own add tiles (2026-10-27), so the landing is exactly
+    // what it should show. Only then is there nothing to walk; a partial drop
+    // is noted on the landing instead.
+    if (cards.isEmpty && live.sessionIds.isNotEmpty) return _missing(live);
     return _ReviewLanding(
       session: live,
       cards: cards,
@@ -900,6 +907,22 @@ class _ReviewRouteState extends State<ReviewRoute> {
   /// need — but they are asked about once, because the tick is the explicit
   /// "finished with this one" and silence would let it pass for one.
   Future<void> _finishPass(ReviewSession session, {String? label}) async {
+    // A pass may be begun empty and grow on its landing (2026-10-27), but it
+    // cannot END empty: a review covers workouts, and a record of none is a
+    // checkpoint of nothing. The rule lives at the finish because the same
+    // landings add goals first — the scope grows in any order, the close does
+    // not.
+    if (session.sessionIds.isEmpty) {
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Add a workout before finishing — a review has to cover at least '
+            'one.',
+          ),
+        ),
+      );
+      return;
+    }
     final done = session.reviewedCount;
     final total = session.sessionIds.length;
     if (done < total) {
@@ -1213,21 +1236,21 @@ enum _LandingTab {
 
 class _ReviewLandingState extends State<_ReviewLanding> {
   /// Which half of the pass is showing. Workouts first: the walking happens
-  /// there, and a pass cannot have none.
+  /// there, and a pass begun empty opens on the list it has to fill first.
   int _tab = 0;
 
   @override
   Widget build(BuildContext context) {
     final session = widget.session;
-    // A pass with no goals gets no second tab — not an empty one: the strip
-    // is the claim that there is something under it.
+    // Goals is always a pass's second tab (2026-10-27): a pass begins with no
+    // scope, so the tab has to exist before its first goal does — a strip that
+    // appeared only once a goal was picked could never be used to pick one.
+    // A record keeps the old rule (only when it has goals): nothing can be
+    // added to a record, and its Summary tab is what follows Workouts then.
     final goals = widget.goals;
-    // The Summary tab is the record's: what the pass produced, read once it
-    // is over. An open pass has no such promise to make, and a legacy
-    // program review with no goals reads Workouts | Summary.
     final tabs = <_LandingTab>[
       _LandingTab.workouts,
-      if (goals.isNotEmpty) _LandingTab.goals,
+      if (!widget.readOnly || goals.isNotEmpty) _LandingTab.goals,
       if (widget.readOnly) _LandingTab.summary,
     ];
     final tab = tabs[_tab.clamp(0, tabs.length - 1)];

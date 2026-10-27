@@ -573,10 +573,14 @@ class ProgramHistoryRepository {
   /// "propose a change" path they were born under; the document on them is
   /// [ReviewStage]'s, not [ProgramContent]'s.
   ///
-  /// [sessionIds] is the SCOPE — the workouts the pass covers, ticked in the
-  /// picker. A review of nothing is not a review: an empty set would store no
-  /// scope and resolve to the whole program, silently claiming a look nobody
-  /// took, so it is refused here rather than written.
+  /// [sessionIds] is the SCOPE — the workouts the pass covers. A **standalone**
+  /// pass may begin empty (2026-10-27): its + opens the pass itself, and the
+  /// landing it lands on is where the set is built, so the row has to exist
+  /// before it covers anything. A **program** review still refuses an empty
+  /// set: it stores no scope there, and a scoped row that stores nothing
+  /// resolves to the whole program — a look nobody took, silently recorded as
+  /// a checkpoint. (A pass begun empty cannot be finished until it covers a
+  /// workout; that gate lives with the finish.)
   ///
   /// A null [programId] is a **standalone** review — workouts picked from
   /// anywhere, no program in the picture. [goalIds] is the other half of the
@@ -594,9 +598,10 @@ class ProgramHistoryRepository {
     String? notes,
     DateTime? scheduledFor,
   }) async {
-    if (sessionIds.isEmpty) {
+    if (sessionIds.isEmpty && programId != null) {
       throw ArgumentError(
-        'A review covers at least one workout: sessionIds cannot be empty',
+        'A program review covers at least one workout: sessionIds cannot be '
+        'empty',
       );
     }
     _assertTitleFits(title);
@@ -909,31 +914,95 @@ class ProgramHistoryRepository {
   /// stored order, and a set re-ticked into a different order would open in a
   /// sequence nobody chose.
   ///
-  /// Guarded on `completed_date IS NULL`, like [markWorkoutReviewed]: a finished
-  /// review's scope is part of what was recorded, so a late edit cannot rewrite
-  /// it. An empty [sessionIds] is refused for the reason [scheduleReview]
-  /// refuses one — a review contains workouts, and a row covering none is not a
-  /// review.
+  /// Empty is legal here — a pass begins with no scope and this is how it
+  /// grows (2026-10-27); "a review covers at least one workout" is a rule of
+  /// the finish, not of every edit. A completed row is refused, like
+  /// [markWorkoutReviewed]: a finished review's scope is part of what was
+  /// recorded, so a late edit cannot rewrite it.
+  ///
+  /// A workout or goal added mid-pass is merged into the **baseline** as it is
+  /// added: "as found" is the row as it stood when the pass first covered it,
+  /// so Compare has a "before" for a workout the pass picked up halfway
+  /// instead of reading everything the pass does to it as a change. Entries
+  /// the baseline already holds are never rewritten — the first look is the
+  /// look — and only a standalone pass grows: a program review's baseline IS
+  /// the program, not a set that can gain members.
   Future<void> setReviewScope(
     String reviewId, {
     required List<String> sessionIds,
     required List<String> goalIds,
   }) async {
-    if (sessionIds.isEmpty) {
-      throw ArgumentError(
-        'A review covers at least one workout: sessionIds cannot be empty',
+    final review = await fetchReview(reviewId);
+    if (review == null || review.isCompleted) return;
+
+    final addedSessions = [
+      for (final id in sessionIds)
+        if (!(review.storedSessionIds ?? const []).contains(id)) id,
+    ];
+    final addedGoals = [
+      for (final id in goalIds)
+        if (!(review.storedGoalIds ?? const []).contains(id)) id,
+    ];
+
+    final baseline = review.baseline;
+    String? baselineContent;
+    String? baselineHash;
+    if (review.isStandalone &&
+        baseline != null &&
+        (addedSessions.isNotEmpty || addedGoals.isNotEmpty)) {
+      final additions = await buildContentForSessions(
+        userId: review.userId,
+        sessionIds: addedSessions,
+        goalIds: addedGoals,
       );
+      final merged = _mergeIntoBaseline(baseline, additions);
+      baselineContent = merged.encode();
+      baselineHash = merged.contentHash;
     }
+
     await ps.safeExec(
       '''
       UPDATE fact_program_review
-      SET session_ids_json = ?, goal_ids_json = ?
+      SET session_ids_json = ?, goal_ids_json = ?,
+          baseline_content = COALESCE(?, baseline_content),
+          baseline_hash = COALESCE(?, baseline_hash)
       WHERE review_id = ? AND completed_date IS NULL
       ''',
       [
         jsonEncode(sessionIds),
         goalIds.isEmpty ? null : jsonEncode(goalIds),
+        baselineContent,
+        baselineHash,
         reviewId,
+      ],
+    );
+  }
+
+  /// [found] with the entries of [added] appended, keyed by id: what the pass
+  /// found first is what "as found" keeps, and nothing the baseline already
+  /// holds is rewritten by a later addition.
+  static ProgramContent _mergeIntoBaseline(
+    ProgramContent found,
+    ProgramContent added,
+  ) {
+    final sessionIds = {for (final s in found.sessions) s.sessionId};
+    final goalIds = {for (final g in found.goals) g.goalId};
+    final blockIds = {for (final b in found.blocks) b.blockId};
+    return ProgramContent(
+      blocks: [
+        ...found.blocks,
+        for (final b in added.blocks)
+          if (!blockIds.contains(b.blockId)) b,
+      ],
+      sessions: [
+        ...found.sessions,
+        for (final s in added.sessions)
+          if (!sessionIds.contains(s.sessionId)) s,
+      ],
+      goals: [
+        ...found.goals,
+        for (final g in added.goals)
+          if (!goalIds.contains(g.goalId)) g,
       ],
     );
   }
@@ -1128,6 +1197,19 @@ class ProgramHistoryRepository {
         [now.toIso8601String(), outcome, notes, reviewId],
       );
       return (await fetchReview(reviewId)) ?? review;
+    }
+
+    // A pass must cover something to become a record (2026-10-27). It BEGINS
+    // empty now — its landing builds the scope — so this is where the
+    // "at least one workout" rail lives: finishing an empty one would write a
+    // checkpoint of nothing, and the landing would open on a record with no
+    // cards. Dismissal is above it: "not now" is always allowed out.
+    if (review.isStandalone && (review.storedSessionIds ?? const []).isEmpty) {
+      throw ArgumentError.value(
+        reviewId,
+        'reviewId',
+        'A review covers at least one workout: add one before finishing',
+      );
     }
 
     // The snapshot is of the rows as the PASS left them: live where the pass

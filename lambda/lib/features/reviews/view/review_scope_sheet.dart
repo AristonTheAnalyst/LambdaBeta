@@ -18,9 +18,10 @@ import 'review_picker_rows.dart';
 ///
 /// The sheet shows that half and only that half: one tile, one job. The other
 /// half is untouched by the visit — the write hands it back exactly as the
-/// pass held it, order and all. (Noted when the split landed, 2026-10-08: the
-/// goals tile lives on the goals list, which only exists once a pass has
-/// goals, so a pass with none still has no way in to add its first.)
+/// pass held it, order and all. Both tiles are reachable from the first frame
+/// since 2026-10-27: an open pass always carries its Goals tab, so a pass with
+/// none has a way in to add its first (before that, the goals tile lived on a
+/// list that only existed once the pass already had goals).
 enum ReviewScopeSection { workouts, goals }
 
 /// What the sheet leaves behind: the pass's scope as it now stands, in the
@@ -38,9 +39,9 @@ class ReviewScopeEdit {
 /// Edits what an **open** pass covers: tick a workout or a goal to add it to
 /// the review, untick one to take it out.
 ///
-/// The same tick-row interaction as the selection screen, on the same rows, for
-/// the same reason: building the set is one gesture whether it is being built
-/// for the first time or changed halfway through. Every tick writes through to
+/// One tick-row interaction, on the same rows, for the same reason: building
+/// the set is one gesture whether it is being built for the first time or
+/// changed halfway through. Every tick writes through to
 /// the row as it is made — the scope is what the pass *is*, and an edit that
 /// lived only in a sheet would go with it — and the sheet stays open, so the
 /// set is edited in one visit rather than one visit per tick.

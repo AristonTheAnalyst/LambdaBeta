@@ -250,19 +250,13 @@ class ReviewsViewModel {
   ReviewsViewModel({
     ProgramHistoryRepository? historyRepository,
     PlannedSessionRepository? plannedRepository,
-    ProgramRepository? programRepository,
-    ExerciseRepository? exerciseRepository,
     String? userId,
   }) : _historyRepo = historyRepository ?? ProgramHistoryRepository(),
        _plannedRepo = plannedRepository ?? PlannedSessionRepository(),
-       _programRepo = programRepository ?? ProgramRepository(),
-       _exerciseRepo = exerciseRepository ?? ExerciseRepository(),
        _userIdOverride = userId;
 
   final ProgramHistoryRepository _historyRepo;
   final PlannedSessionRepository _plannedRepo;
-  final ProgramRepository _programRepo;
-  final ExerciseRepository _exerciseRepo;
   final String? _userIdOverride;
 
   final state = ValueNotifier(const ReviewsState());
@@ -342,25 +336,17 @@ class ReviewsViewModel {
     }
   }
 
-  /// Everything the picker can offer, in its recency order.
-  Future<List<ReviewableWorkout>> reviewableWorkouts() =>
-      fetchReviewableWorkouts(userId: _userId, plannedRepository: _plannedRepo);
-
-  /// The goals half of the picker, in library order.
-  Future<List<ReviewableGoal>> reviewableGoals() => fetchReviewableGoals(
-    userId: _userId,
-    programRepository: _programRepo,
-    exerciseRepository: _exerciseRepo,
-  );
-
   /// Starts a standalone review **now**: writes the row, records "as found",
   /// and returns what the ceremony needs to open on it.
+  ///
+  /// The pass begins with an empty scope (2026-10-27): its landing is where
+  /// the workouts and goals are picked, so nothing is handed in here but the
+  /// name. A workout added there amends the baseline as it lands
+  /// ([ProgramHistoryRepository.setReviewScope]).
   ///
   /// The row is written before the ceremony opens, because the pass's whole job
   /// is to end in a snapshot on it: a review that existed only in the UI until
   /// Finish would lose everything the user did if the app died mid-pass.
-  /// [goalIds] travels with the set — a review contains workouts **and** goals,
-  /// and both are stored at the start so a resume opens the same pass.
   ///
   /// Null when the write failed; the state carries the error.
   Future<StartedReview?> startReview({

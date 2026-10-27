@@ -339,7 +339,11 @@ void main() {
       kReviewKindReview,
       reason: 'no proposal ⇒ the plain flavour',
     );
-    expect(review.hasProposal, isFalse);
+    expect(
+      review.stage,
+      isNull,
+      reason: 'a fresh row has staged nothing — proposed_content stays NULL',
+    );
     expect(review.isOpen, isTrue);
     expect(review.isDue(DateTime.now()), isTrue);
 

@@ -38,8 +38,6 @@ void main() {
 
   late FakeProgramHistoryRepository history;
   late FakePlannedSessions planned;
-  late FakeProgramRepository programs;
-  late FakeExercises exercises;
   late ReviewsViewModel vm;
 
   ProgramReview review({
@@ -60,14 +58,10 @@ void main() {
   setUp(() {
     history = FakeProgramHistoryRepository();
     planned = FakePlannedSessions();
-    programs = FakeProgramRepository();
-    exercises = FakeExercises();
     vm = ReviewsViewModel(
       userId: 'u1',
       historyRepository: history,
       plannedRepository: planned,
-      programRepository: programs,
-      exerciseRepository: exercises,
     );
   });
 

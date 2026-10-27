@@ -1986,6 +1986,115 @@ void main() {
     });
   });
 
+  // ── A pass begun empty ────────────────────────────────────────────────────
+  //
+  // The + on the Reviews tab asks for a name and nothing else (2026-10-27):
+  // the landing is where the scope is built, so a pass opens covering no
+  // workout and grows from its own add tiles. The two rules that make that
+  // landing work are pinned here — it must not be mistaken for the "workouts
+  // are gone" state, and the finish must not close an empty pass.
+  group('a pass begun empty', () {
+    late FakePlannedSessions planned;
+    late FakeProgramRepository programs;
+    late FakeExercises exercises;
+    late FakeProgramHistoryRepository history;
+
+    setUp(() {
+      planned = FakePlannedSessions();
+      programs = FakeProgramRepository();
+      exercises = FakeExercises();
+      history = FakeProgramHistoryRepository();
+    });
+
+    /// The Reviews tab's own route: a live pass (not a record), opened over a
+    /// base page with nothing yet in its scope.
+    Future<Future<bool?>> pumpEmptyPass(
+      WidgetTester tester, {
+      List<String> goalIds = const [],
+    }) async {
+      late BuildContext root;
+      await tester.pumpWidget(
+        ReviewScope(
+          child: MaterialApp(
+            home: Builder(
+              builder: (context) {
+                root = context;
+                return const Scaffold(body: Text('base page'));
+              },
+            ),
+          ),
+        ),
+      );
+      final result = Navigator.of(root, rootNavigator: true).push<bool>(
+        MaterialPageRoute(
+          settings: const RouteSettings(name: kReviewRouteName),
+          builder: (_) => ReviewRoute(
+            session: ReviewSession(
+              reviewId: 'rev1',
+              programId: null,
+              sessionIds: const [],
+              goalIds: goalIds,
+              title: 'End of block',
+            ),
+            userId: 'u1',
+            plannedRepository: planned,
+            programRepository: programs,
+            exerciseRepository: exercises,
+            historyRepository: history,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      return result;
+    }
+
+    testWidgets('opens on the landing — both tabs, the add tiles waiting', (
+      tester,
+    ) async {
+      await pumpEmptyPass(tester);
+
+      // The "set is gone" page is for a set that WAS. An empty scope is the
+      // state a pass starts in, and the landing is what a start must show.
+      expect(
+        find.text('The workouts in this review are no longer available.'),
+        findsNothing,
+      );
+      expect(find.text('End of block'), findsOneWidget);
+      // Goals is the second tab from the first frame: a strip that appeared
+      // only once a goal was picked could never be used to pick one.
+      expect(find.text('Workouts'), findsOneWidget);
+      expect(find.text('Goals'), findsOneWidget);
+      // Both halves are addable — each tile is the way into its half of the
+      // scope sheet.
+      expect(find.text('Add workouts to review'), findsOneWidget);
+      await tester.tap(find.text('Goals'));
+      await tester.pumpAndSettle();
+      expect(find.text('Add goals to review'), findsOneWidget);
+    });
+
+    testWidgets('cannot be finished until it covers a workout — said where '
+        'the finish was asked for', (tester) async {
+      final result = await pumpEmptyPass(tester);
+      bool? finished;
+      result.then((value) => finished = value);
+
+      await tester.tap(find.text('Finish'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text(
+          'Add a workout before finishing — a review has to cover at least '
+          'one.',
+        ),
+        findsOneWidget,
+      );
+      // The route is still up: the finish was refused, not half-done. The
+      // repository's own rail backs this up for a caller that skips the bar.
+      expect(finished, isNull);
+      expect(find.text('base page'), findsNothing);
+    });
+  });
+
   // ── The record ────────────────────────────────────────────────────────────
   //
   // A completed review opened from the list is the landing its pass had, read

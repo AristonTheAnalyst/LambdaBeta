@@ -143,6 +143,134 @@ void main() {
     },
   );
 
+  test('a pass begins empty and grows on its landing — the baseline takes on '
+      'what it first covered', () async {
+    // The Reviews tab's + asks for a name and nothing else (2026-10-27): the
+    // pass opens with no scope, and its landing's add tiles build one through
+    // `setReviewScope`. The first look at each addition is what "as found"
+    // keeps, so Compare has a "before" for a workout the pass picked up
+    // halfway instead of reading everything the pass does to it as a change.
+    final push = await planned.createPlannedSession(userId, name: 'Push');
+    final bench = await planned.createPlannedExercise(
+      userId,
+      push.sessionId,
+      exerciseId: 'ex-bench',
+      exerciseOrder: 1,
+    );
+    final first = await planned.createPlannedSet(
+      userId,
+      bench.plannedExerciseId,
+      plannedSessionId: push.sessionId,
+      setNumber: 1,
+      targetWeight: '70',
+      targetReps: '5',
+    );
+    await _insertGoal(db, userId, programId, goalId: 'g1', text: 'Sleep');
+
+    final review = await history.beginReview(
+      userId: userId,
+      sessionIds: const [],
+      title: 'End of block',
+    );
+    // Begun empty, stored empty, and the baseline is of nothing yet.
+    expect(review.storedSessionIds, isNull);
+    expect(review.baseline!.sessions, isEmpty);
+    expect(review.baseline!.goals, isEmpty);
+
+    // Goals first — the landing's other tile. The scope grows in any order,
+    // so an empty workout set is legal on the write that adds the first goal.
+    await history.setReviewScope(
+      review.reviewId,
+      sessionIds: const [],
+      goalIds: ['g1'],
+    );
+    var read = (await history.fetchReview(review.reviewId))!;
+    expect(read.storedSessionIds, isNull);
+    expect(read.storedGoalIds, ['g1']);
+    expect(read.baseline!.goals.single.goalId, 'g1');
+    expect(
+      read.baseline!.sessions,
+      isEmpty,
+      reason: 'the goal was covered alone; the baseline gained only it',
+    );
+
+    // Then the workout, the goal riding along untouched.
+    await history.setReviewScope(
+      review.reviewId,
+      sessionIds: [push.sessionId],
+      goalIds: ['g1'],
+    );
+    // And the pass edits what it found.
+    await planned.updatePlannedSet(first.plannedSetId, targetWeight: '75');
+
+    read = (await history.fetchReview(review.reviewId))!;
+    expect(read.sessionsIn(const []), [push.sessionId]);
+    expect(read.baseline!.sessions.single.sessionId, push.sessionId);
+    expect(
+      read.baseline!.sessions.single.exercises.single.sets.single.targetWeight,
+      '70',
+      reason:
+          'the baseline froze the workout as the pass found it, and a later '
+          'edit never rewrites the first look',
+    );
+    expect(
+      read.baseline!.goals.single.goalId,
+      'g1',
+      reason: 'a goal already covered is not duplicated by the next growth',
+    );
+
+    final done = await history.completeReview(
+      review.reviewId,
+      userId: userId,
+      outcome: kOutcomeReviewed,
+    );
+    expect(done.snapshot!.sessions.single.sessionId, push.sessionId);
+    expect(
+      done.snapshot!.sessions.single.exercises.single.sets.single.targetWeight,
+      '75',
+      reason: 'the snapshot is of what the pass left, not of what it found',
+    );
+    expect(done.snapshot!.goals.single.goalId, 'g1');
+  });
+
+  test('an empty pass cannot be finished, and a program review cannot even '
+      'begin empty', () async {
+    // The "at least one workout" rail lives at the finish now that a pass can
+    // start without a scope: a record of nothing is a checkpoint of nothing.
+    final review = await history.beginReview(
+      userId: userId,
+      sessionIds: const [],
+      title: 'Empty',
+    );
+
+    await expectLater(
+      history.completeReview(
+        review.reviewId,
+        userId: userId,
+        outcome: kOutcomeReviewed,
+      ),
+      throwsArgumentError,
+    );
+    final stillOpen = (await history.fetchReview(review.reviewId))!;
+    expect(
+      stillOpen.completedDate,
+      isNull,
+      reason: 'the refusal writes nothing — the pass is still open',
+    );
+    expect(stillOpen.snapshot, isNull);
+
+    // A program review stores no scope of its own, so an empty one resolves
+    // to the WHOLE program — a look nobody took, recorded as a checkpoint.
+    await expectLater(
+      history.beginReview(
+        userId: userId,
+        programId: programId,
+        sessionIds: const [],
+      ),
+      throwsArgumentError,
+    );
+  });
+
   test('the user-wide read returns both kinds, and the program read neither '
       'of the other', () async {
     final push = await planned.createPlannedSession(userId, name: 'Push');

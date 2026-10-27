@@ -157,8 +157,13 @@ run), `kind` (`review` | `close`), `title`, `notes`, `scheduled_for`,
 `session_ids_json`, `goal_ids_json`, `reviewed_sessions_json`, `created_date`.
 
 **Scope** — `session_ids_json`: the ordered JSON array of the planned-session
-ids the pass covers (ticked in the picker; an empty set is refused
-client-side — a review always has ≥1 workout, because goals cannot be walked).
+ids the pass covers. A **standalone** pass may begin **empty** (2026-10-27):
+its `+` opens the pass and its landing builds the scope, so an empty set on an
+open standalone row is a pass in progress, not a broken one. A **program**
+review still refuses one (`scheduleReview` — it stores no scope there, and an
+empty set would resolve to the whole program), and so does the **finish**:
+`completeReview` throws for an empty standalone pass, because a review always
+has ≥1 workout — goals cannot be walked.
 `goal_ids_json`: the ordered goal ids, at any scope — a column rather than a
 join table precisely because a goal's scope (program, block, run, or none)
 has no bearing on whether it can be examined. `reviewed_sessions_json` is
@@ -176,12 +181,18 @@ the panel both read. A standalone pass over {A,B} and a program pass over
 write neither legacy column (both null was always legal), so an old build
 reads one as a "program" review — the acceptable old behavior.
 
-- **Starting one (2026-10-07)**: the **Reviews tab in the Library**
-  (`lib/features/reviews/`) is the only start surface for now — `+` → name
-  sheet → selection screen (workouts by recency, goals in library order, both
-  offering everything the user has whatever program it hangs off) → Start
-  review. The program panel's Review button and the run-finished review
-  creation are retired from the UI with their plumbing kept.
+- **Starting one (2026-10-07; composer cut 2026-10-27)**: the **Reviews tab in
+  the Library** (`lib/features/reviews/`) is the only start surface for now —
+  `+` → name sheet → Start, and the pass opens **empty** on its own landing,
+  where the scope is built. The create-review selection screen is gone: a
+  scope picked before the pass exists could never be amended from the page
+  the pass is walked on. Its add tiles open `showReviewScopeSheet` itself —
+  the tick rows the deleted screen drew (workouts by recency, goals in
+  library order, both offering everything the user has whatever program it
+  hangs off) — and the write is `setReviewScope`: whole-list, open rows only,
+  any order, empty legal. The program panel's Review button and the
+  run-finished review creation are retired from the UI with their plumbing
+  kept.
 - **Cancelling one (2026-10-11)**: an open pass swipes left on its IN PROGRESS
   card in the Reviews list (`SwipeActions`, danger) → confirm dialog
   (`confirmCancelReview`, "Keep reviewing" / "Cancel review") → `deleteReview`
@@ -198,13 +209,22 @@ reads one as a "program" review — the acceptable old behavior.
 - **Beginning**: `beginReview` = the INSERT plus the "as found" baseline,
   captured from the live rows at the moment the pass starts and idempotent
   by construction (the UPDATE only lands where the baseline is NULL, so a
-  resume can never move a live baseline). `scheduleReview` alone is the
-  calendar path: a review dated in the future must not freeze today's plan.
+  resume can never move a live baseline). A workout or goal added on the
+  landing later is merged into that baseline by `setReviewScope` as it is
+  added (2026-10-27): each addition is frozen at the moment the pass first
+  covers it — so Compare has a "before" for it — and an entry the baseline
+  already holds is never rewritten, because the first look is the look.
+  `scheduleReview` alone is the calendar path: a review dated in the future
+  must not freeze today's plan.
 - **The pass** opens on a landing (`_ReviewLanding`) — **Workouts | Goals**
   tabs under the header: one card per covered workout on the first, tick +
   date once Done, one per picked goal on the second (tap → read-only view).
-  A pass with no goals gets no strip at all rather than an empty second tab —
-  the strip is the claim that there is something under it. A workout card
+  An **open** pass always carries both tabs (2026-10-27): it begins with no
+  scope, and a strip that appeared only once a goal was picked could never be
+  used to pick one — each list ends in its own add tile ("Add workouts to
+  review" / "Add goals to review") that opens the scope sheet. A **record**
+  keeps the old rule — no goals, no Goals tab — because nothing can be added
+  to it and Summary is what follows Workouts then. A workout card
   pushes the real editor (edit mode) writing through the pass's **staged
   store** (`StagedPlannedSessions`, 2026-10-27) — nothing reaches
   `dim_planned_session` until Finish, and the landing card and Compare read

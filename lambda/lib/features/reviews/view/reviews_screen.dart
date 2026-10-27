@@ -19,7 +19,6 @@ import '../../programs/viewmodel/program_history_viewmodel.dart'
 import '../viewmodel/reviews_viewmodel.dart';
 import 'review_dialogs.dart';
 import 'review_name_sheet.dart';
-import 'review_selection_screen.dart';
 
 /// The reviews library: every pass the user has, open ones pinned first, and
 /// the + that starts a new one.
@@ -110,7 +109,14 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
     SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
   );
 
-  /// + → name it → pick what to review → start, and open the ceremony on it.
+  /// + → name it → open the pass, and open the ceremony on it.
+  ///
+  /// The pass begins **empty** (2026-10-27): its landing is where the scope is
+  /// built, so the first page a pass shows is the page it is walked from, with
+  /// its add tiles waiting. The scope sheet — reached from those tiles — is the
+  /// same tick rows the old selection screen drew, opened where their write
+  /// lands, and it edits a pass that already exists instead of being the only
+  /// way to build one.
   ///
   /// The row is written before the ceremony opens — the pass's whole job is to
   /// end in a snapshot on it — and the ceremony is opened by route, so
@@ -121,49 +127,20 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
     if (name == null || !mounted) return;
 
     setState(() => _busy = true);
-    final List<ReviewableWorkout> workouts;
-    final List<ReviewableGoal> goals;
-    try {
-      workouts = await _vm.reviewableWorkouts();
-      goals = await _vm.reviewableGoals();
-    } catch (_) {
-      if (mounted) {
-        setState(() => _busy = false);
-        _snack('Could not load your workouts.');
-      }
-      return;
-    }
-    if (!mounted) return;
-    setState(() => _busy = false);
-
-    final selection = await Navigator.of(context, rootNavigator: true)
-        .push<ReviewSelection>(
-          MaterialPageRoute(
-            builder: (_) => ReviewSelectionScreen(
-              name: name,
-              workouts: workouts,
-              goals: goals,
-            ),
-          ),
-        );
-    if (selection == null || !mounted) return;
-
     final started = await _vm.startReview(
-      sessionIds: selection.sessionIds,
-      goalIds: selection.goalIds,
+      sessionIds: const [],
+      goalIds: const [],
       title: name,
     );
     if (!mounted) return;
+    setState(() => _busy = false);
     if (started == null) {
       _snack('Could not start the review.');
       return;
     }
     await _openCeremony(
       started,
-      // The stored ids, read back off the written row — with the picker's own
-      // answer as the fallback, so a read that came back thin cannot drop the
-      // goals half of the pass.
-      goalIds: started.review.storedGoalIds ?? selection.goalIds,
+      goalIds: started.review.storedGoalIds ?? const [],
     );
   }
 

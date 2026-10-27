@@ -59,8 +59,6 @@ void main() {
     userId: 'u1',
     historyRepository: history,
     plannedRepository: planned,
-    programRepository: programs,
-    exerciseRepository: exercises,
   );
 
   setUp(() {
@@ -212,6 +210,37 @@ void main() {
   });
 
   test(
+    'a pass begins empty — its landing is where the scope is built',
+    () async {
+      // The + asks for a name and nothing else (2026-10-27): the row is written
+      // with an empty scope, and the landing's add tiles fill it in through
+      // `setReviewScope`. A start that refused the empty set would make the
+      // landing unreachable, which is the whole point of the change.
+      final vm = build();
+
+      final started = await vm.startReview(
+        sessionIds: const [],
+        goalIds: const [],
+        title: 'End of block 1',
+      );
+
+      final call = history.beginCalls.single;
+      expect(call.programId, isNull);
+      expect(call.sessionIds, isEmpty);
+      expect(call.goalIds, isEmpty);
+      expect(call.title, 'End of block 1');
+      expect(started!.sessionIds, isEmpty);
+      // The row stores the empty array, and an empty array reads back as "no
+      // set" — the same null every caller `?? const []`s.
+      expect(started.review.storedSessionIds ?? const [], isEmpty);
+      // The open card it reloads into names the pass by its title, not by
+      // workouts it does not cover yet.
+      expect(vm.state.value.open.single.label, 'End of block 1');
+      expect(vm.state.value.open.single.total, 0);
+    },
+  );
+
+  test(
     'a failed start reports the error rather than a half-open pass',
     () async {
       history.failBegin = true;
@@ -266,7 +295,10 @@ void main() {
       ),
     ];
 
-    final rows = await build().reviewableWorkouts();
+    final rows = await fetchReviewableWorkouts(
+      userId: 'u1',
+      plannedRepository: planned,
+    );
 
     // The loader's order is the answer's order — the picker never re-sorts —
     // and each row states the loader's count in the one wording the picker
@@ -312,7 +344,10 @@ void main() {
       ),
     ];
 
-    final rows = await build().reviewableWorkouts();
+    final rows = await fetchReviewableWorkouts(
+      userId: 'u1',
+      plannedRepository: planned,
+    );
 
     expect(rows[0].sinceReviewLabel, '12 days since last review');
     expect(rows[1].sinceReviewLabel, 'Last review today');
@@ -345,7 +380,11 @@ void main() {
       ),
     };
 
-    final goals = await build().reviewableGoals();
+    final goals = await fetchReviewableGoals(
+      userId: 'u1',
+      programRepository: programs,
+      exerciseRepository: exercises,
+    );
 
     expect(goals.single.goalId, 'g1');
     expect(goals.single.exerciseName, 'Bench Press');
