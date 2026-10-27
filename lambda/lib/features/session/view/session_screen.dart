@@ -18,6 +18,7 @@ import '../../../shared/widgets/bar_icon_button.dart';
 import '../../../shared/widgets/confirm_delete_session_dialog.dart';
 import '../../../shared/widgets/dropdown_select.dart';
 import '../../../shared/widgets/feeling_rating.dart';
+import '../../../shared/widgets/floating_bar.dart';
 import '../../../shared/widgets/glass_button.dart';
 import '../../../shared/widgets/header_icon_button.dart';
 import '../../../shared/widgets/keyboard_floor_layout.dart';
@@ -64,6 +65,29 @@ bool browseOnSessionTabRetap({required bool live, required int page}) =>
     (page == SessionViewModel.kTrainingPage ||
         page == SessionViewModel.kSummaryPage);
 
+/// The storey the shell floats above its nav bar: the another-device notice
+/// while it is showing (2026-10-27). Null whenever there is no notice — the
+/// wizard is the only writer.
+///
+/// The notice belongs to the branch's floor rather than to any one page, so
+/// the wizard hands it to the shell instead of drawing it in its own column:
+/// a strip in the page's flow pushed the wizard's pages down while the nav
+/// bar stayed floating over them, and the two disagreed about where the floor
+/// was. The shell puts whatever this holds into
+/// [ScrollShrinkNavBar.aboveBar], which also makes every page clear it
+/// through [ScrollShrinkNavBar.contentInset] for free.
+final ValueNotifier<Widget?> sessionAboveBarNotice = ValueNotifier(null);
+
+/// Whether the another-device notice belongs on the wizard's [page]
+/// (2026-10-27): only the screens **before** the live one — Home and the
+/// pre-questionnaire. A live session's own pages (Training, Summary, the
+/// post-questionnaire) never carry it: the notice is a door to start from,
+/// and a strip over the sets being logged is exactly the unsightliness this
+/// moved to fix.
+@visibleForTesting
+bool showsForeignSessionNotice({required bool hasForeign, required int page}) =>
+    hasForeign && page <= SessionViewModel.kPreQuestionnairePage;
+
 class SessionScreen extends StatefulWidget {
   const SessionScreen({super.key});
 
@@ -104,6 +128,51 @@ class _SessionScreenState extends State<SessionScreen>
   /// is the title. Written by [_TrainingPage], read here in the header.
   final ValueNotifier<String?> _peekTitle = ValueNotifier(null);
 
+  /// Whether something is pushed over the wizard — the another-device preview.
+  /// The notice hides while it is: the preview's own Switch bar is the door,
+  /// and two doors to the same session stacked on one floor would read as two
+  /// different offers.
+  bool _wizardCovered = false;
+
+  /// Recomputes what the shell floats above its nav bar (2026-10-27): the
+  /// another-device notice on the screens before the live one, nothing
+  /// anywhere else. Driven by the VM (the foreign list) and the pager (the
+  /// wizard step), so a page change or a session ending elsewhere moves the
+  /// storey with the page — never a rebuild of the wizard itself.
+  void _syncAboveBarNotice() {
+    final show =
+        showsForeignSessionNotice(
+          hasForeign: _vm.foreignActiveSessions.isNotEmpty,
+          page: _vm.slidePagesController.currentPage,
+        ) &&
+        !_wizardCovered;
+    // Only the show/hide edge is written: a widget of the same shape would
+    // rebuild the shell for nothing, and the notice watches the VM itself for
+    // the words and the buttons.
+    if (show && sessionAboveBarNotice.value == null) {
+      sessionAboveBarNotice.value = _ForeignSessionNotice(
+        vm: _vm,
+        onPreview: _openForeignPreview,
+      );
+    } else if (!show && sessionAboveBarNotice.value != null) {
+      sessionAboveBarNotice.value = null;
+    }
+  }
+
+  /// Opens the another-device session read-only (2026-10-15). The push is
+  /// this screen's — the tab branch's navigator — because the notice does not
+  /// own one: it floats in the shell, above the branch, where the nearest
+  /// navigator is the root's, and a root push would hide the shell's bar
+  /// under the preview instead of floating over it, leaving the Switch band
+  /// to clear nothing (2026-10-27).
+  void _openForeignPreview(Session foreign) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ForeignSessionPreviewScreen(session: foreign, vm: _vm),
+      ),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -141,6 +210,18 @@ class _SessionScreenState extends State<SessionScreen>
     // The shell's tab bar lives outside this screen, so a re-tap of the
     // Session tab arrives as a signal rather than a callback (2026-10-23).
     AppRouter.sessionTabReselected.addListener(_onSessionTabReselected);
+    // The notice is a shell storey (2026-10-27): the shell cannot read this
+    // screen's VM, so the two feeds it follows are watched here and only the
+    // notifier is written — no setState, and the wizard itself stays
+    // rebuild-free (2026-10-13).
+    _vm.addListener(_syncAboveBarNotice);
+    _vm.slidePagesController.addListener(_syncAboveBarNotice);
+    // First paint is deferred: the shell is building this screen, and writing
+    // a notifier its ancestor listens to mid-build would mark it dirty inside
+    // its own build.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _syncAboveBarNotice();
+    });
     // No whole-screen listener: rebuilds are scoped to the widgets that read
     // the VM (per-page ListenableBuilders below) instead of one setState over
     // the entire wizard per notify (2026-10-13).
@@ -156,7 +237,18 @@ class _SessionScreenState extends State<SessionScreen>
   }
 
   @override
+  void didPushNext() {
+    // Something covers the wizard — the another-device preview. Its own
+    // Switch bar is the offer now; the notice steps aside (2026-10-27).
+    _wizardCovered = true;
+    _syncAboveBarNotice();
+  }
+
+  @override
   void didPopNext() {
+    // Back on the wizard: the storey returns if it still applies (2026-10-27).
+    _wizardCovered = false;
+    _syncAboveBarNotice();
     // A refresh, not a new browse: the Home list reloads itself on the same
     // pop (LogsScreen is a route-observer subscriber too), so the only thing
     // a version bump could add here is a remount — and with it the loss of
@@ -168,6 +260,11 @@ class _SessionScreenState extends State<SessionScreen>
   void dispose() {
     AppRouter.routeObserver.unsubscribe(this);
     AppRouter.sessionTabReselected.removeListener(_onSessionTabReselected);
+    _vm.removeListener(_syncAboveBarNotice);
+    _vm.slidePagesController.removeListener(_syncAboveBarNotice);
+    // The shell outlives this screen; a notice left behind would float over
+    // whichever branch is showing next (2026-10-27).
+    sessionAboveBarNotice.value = null;
     WidgetsBinding.instance.removeObserver(this);
     if (ps.onSignOutReset == _resetCachedVmOnSignOut) {
       ps.onSignOutReset = null;
@@ -655,13 +752,11 @@ class _SessionScreenState extends State<SessionScreen>
                             ),
                           ),
                         ),
-                      // The another-device notice (2026-10-15): a live session
-                      // this device did not start. Nothing syncs on its own —
-                      // Switch trades this device's session (asking
-                      // cancel-or-complete when it has one), Stay keeps things
-                      // as they are.
-                      if (_vm.foreignActiveSessions.isNotEmpty)
-                        _ForeignSessionNotice(vm: _vm),
+                      // The another-device notice is NOT drawn here
+                      // (2026-10-27): it floats above the nav bar as a shell
+                      // storey ([sessionAboveBarNotice]), so the wizard's
+                      // pages keep their full height and clear it through the
+                      // same content inset that clears the bar.
                       Expanded(
                         // Key keeps the SlidePages element stable across rebuilds —
                         // otherwise the PageView is recreated and its page position
@@ -701,92 +796,101 @@ class _SessionScreenState extends State<SessionScreen>
   }
 }
 
-/// The another-device notice (2026-10-15) — a strip above the wizard's pages
-/// while a live session started on ANOTHER device exists. It never acts on
-/// its own: **Switch** makes that session this device's (asking first what
-/// becomes of this device's own in-progress session, when there is one), and
-/// **Stay** dismisses every foreign session it is showing, for the rest of
-/// the run.
+/// The another-device notice (2026-10-15) — a floating message above the nav
+/// bar while a live session started on ANOTHER device exists (2026-10-27; a
+/// strip in the page's flow until then). It never acts on its own: **Preview**
+/// opens the session read-only, and **Stay** dismisses every foreign session
+/// it is showing, for the rest of the run.
+///
+/// The shell draws it from [sessionAboveBarNotice], outside the wizard's
+/// build, so the widget watches the VM itself — a Stay, a switch or a foreign
+/// session ending elsewhere re-words it in place. The open is the wizard's
+/// ([onPreview]): the shell's own context sits above the tab branch's
+/// navigator, and the preview has to land inside it, under the floating bar
+/// rather than over it.
 class _ForeignSessionNotice extends StatelessWidget {
-  const _ForeignSessionNotice({required this.vm});
+  const _ForeignSessionNotice({required this.vm, required this.onPreview});
 
   final SessionViewModel vm;
 
-  /// Preview first, decide after (2026-10-15): the notice's button opens the
-  /// session READ-ONLY — the viewer's own mode — and the Switch lives inside
-  /// the preview's bar, where the user has just seen what they are taking.
-  void _preview(BuildContext context, Session foreign) {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => ForeignSessionPreviewScreen(session: foreign, vm: vm),
-      ),
-    );
-  }
+  /// Opens the session read-only, in the wizard's navigator.
+  final ValueChanged<Session> onPreview;
 
   @override
   Widget build(BuildContext context) {
-    // The newest is the one a Switch takes; extra ones only change the
-    // wording.
-    final foreign = [...vm.foreignActiveSessions]
-      ..sort((a, b) => b.createdDatetime.compareTo(a.createdDatetime));
-    final latest = foreign.first;
-    final started = DateFormat.jm().format(latest.createdDatetime.toLocal());
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.lg,
-        AppSpacing.sm,
-        AppSpacing.lg,
-        AppSpacing.sm,
-      ),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceHigh,
-        border: Border(bottom: BorderSide(color: AppColors.border, width: 0.5)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            foreign.length > 1
-                ? 'Sessions are live on other devices — the newest started $started.'
-                : 'A session is live on another device — started $started.',
-            style: AppFonts.ui(
-              fontSize: AppTextStyles.sm,
-              fontWeight: FontWeight.w600,
-              color: AppColors.primary,
+    return ListenableBuilder(
+      listenable: vm,
+      builder: (context, _) {
+        // The newest is the one a Switch takes; extra ones only change the
+        // wording.
+        final foreign = [...vm.foreignActiveSessions]
+          ..sort((a, b) => b.createdDatetime.compareTo(a.createdDatetime));
+        if (foreign.isEmpty) return const SizedBox.shrink();
+        final latest = foreign.first;
+        final started = DateFormat.jm().format(
+          latest.createdDatetime.toLocal(),
+        );
+        // The nav bar's own container, one storey up: the floor reads as one
+        // surface whatever is standing on it (2026-10-27).
+        return FloatingGlass(
+          radius: FloatingBar.cornerRadius,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.lg,
+              AppSpacing.md,
+              AppSpacing.lg,
+              AppSpacing.md,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  foreign.length > 1
+                      ? 'Sessions are live on other devices — the newest '
+                            'started $started.'
+                      : 'A session is live on another device — started '
+                            '$started.',
+                  style: AppFonts.ui(
+                    fontSize: AppTextStyles.sm,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.primary,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Nothing syncs on its own — preview it, then switch if you '
+                  'want it here.',
+                  style: AppFonts.ui(
+                    fontSize: AppTextStyles.xs,
+                    color: AppColors.inkSecondary,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                Row(
+                  children: [
+                    GlassButton(
+                      label: 'Preview',
+                      compact: true,
+                      onPressed: () => onPreview(latest),
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    GlassButton(
+                      label: 'Stay',
+                      compact: true,
+                      onPressed: () {
+                        for (final s in foreign) {
+                          vm.dismissForeignSession(s.sessionId);
+                        }
+                      },
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 2),
-          Text(
-            'Nothing syncs on its own — preview it, then switch if you want '
-            'it here.',
-            style: AppFonts.ui(
-              fontSize: AppTextStyles.xs,
-              color: AppColors.inkSecondary,
-            ),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          Row(
-            children: [
-              GlassButton(
-                label: 'Preview',
-                compact: true,
-                onPressed: () => _preview(context, latest),
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              GlassButton(
-                label: 'Stay',
-                compact: true,
-                onPressed: () {
-                  for (final s in foreign) {
-                    vm.dismissForeignSession(s.sessionId);
-                  }
-                },
-              ),
-            ],
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 }

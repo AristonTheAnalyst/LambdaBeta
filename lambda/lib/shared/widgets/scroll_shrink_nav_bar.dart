@@ -74,9 +74,13 @@ class ScrollShrinkNavBar extends StatefulWidget {
   /// The page body. Painted under the bar, which is what the blur samples.
   final Widget child;
 
-  /// A second bar floating above the nav bar — the editor's counts, which
-  /// stand on the same floor. Only the nav bar shrinks with the scroll; what
-  /// is stacked above it stays put.
+  /// A second bar floating above the nav bar — the editor's counts, or the
+  /// another-device notice the session wizard publishes through
+  /// [sessionAboveBarNotice] (2026-10-27). It stands on the same floor and
+  /// only the nav bar shrinks with the scroll; what is stacked above it stays
+  /// put. Its height is measured rather than assumed: a bar is a bar's fixed
+  /// height, a notice is as tall as its words, and either way
+  /// [contentInset] makes room for all of it.
   final Widget? aboveBar;
 
   /// Bar height at full size. The geometry lives on [FloatingBar] — the app's

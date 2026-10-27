@@ -9,6 +9,7 @@ import '../../../data/models/session.dart';
 import '../../../shared/widgets/glass_button.dart';
 import '../../../shared/widgets/header_icon_button.dart';
 import '../../../shared/widgets/page_header.dart';
+import '../../../shared/widgets/scroll_shrink_nav_bar.dart';
 import '../../logs/view/session_detail_screen.dart';
 import '../../logs/viewmodel/session_detail_viewmodel.dart';
 import '../viewmodel/session_viewmodel.dart';
@@ -24,6 +25,13 @@ import '../viewmodel/session_viewmodel.dart';
 /// A session that ends on the other device while it is being read answers
 /// Switch with "it has ended" on the bar instead of switching — the row it
 /// would adopt is no longer live.
+///
+/// The screen is a storey stack (2026-10-27): the viewer's own floor — date
+/// selector, then the action row — then this screen's Switch band, then the
+/// shell's floating nav bar. The band is what clears the bar
+/// ([ScrollShrinkNavBar.contentInset]); the floor above it spends only its
+/// own row's air, so the three stack at the floor's rhythm instead of the
+/// Switch button landing under the bar.
 class ForeignSessionPreviewScreen extends StatefulWidget {
   const ForeignSessionPreviewScreen({
     super.key,
@@ -167,16 +175,28 @@ class _ForeignSessionPreviewScreenState
                 ),
               )
             else
-              // The shared viewer, view mode — looking is not writing.
+              // The shared viewer, view mode — looking is not writing. The
+              // floor keeps only its own row's air (2026-10-27): the Switch
+              // band below stands between it and the nav bar, and the band is
+              // what clears the bar — the floor reserving it too would seat
+              // the band under it.
               Expanded(
-                child: SessionDetailView(viewModel: _detail, state: state),
+                child: SessionDetailView(
+                  viewModel: _detail,
+                  state: state,
+                  floorBottomInset: AppSpacing.sm,
+                ),
               ),
             Container(
-              padding: const EdgeInsets.fromLTRB(
+              padding: EdgeInsets.fromLTRB(
                 AppSpacing.lg,
                 AppSpacing.sm,
                 AppSpacing.lg,
-                AppSpacing.md,
+                // Clear the shell's floating bar (2026-10-27) — the band is
+                // the last thing above it now, so the inset that used to sit
+                // under the viewer's floor sits here instead. Its 16 of air
+                // is the gap that reads between the band and the bar.
+                ScrollShrinkNavBar.contentInset(context),
               ),
               decoration: BoxDecoration(
                 color: AppColors.bg,

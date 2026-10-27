@@ -426,22 +426,32 @@ class _TabShell extends StatelessWidget {
       resizeToAvoidBottomInset: shellResizesForKeyboard(
         _topLocation(currentRoute),
       ),
-      body: ScrollShrinkNavBar(
-        currentIndex: _tabIndexFor(currentRoute),
-        onTap: (i) {
-          final tab = _tabs[i];
-          // A tap on the tab whose page is already on screen is the PAGE's
-          // own business, not a navigation — `go` there would change
-          // nothing. The Session wizard answers it by showing the browse
-          // without ending the live session (2026-10-23).
-          if (tab.route == '/session' &&
-              _topLocation(currentRoute) == '/session') {
-            AppRouter.sessionTabReselected.value++;
-          }
-          GoRouter.of(context).go(tab.route);
-        },
-        items: [for (final tab in _tabs) tab.item],
-        child: child,
+      // A storey floating above the bar (2026-10-27): the another-device
+      // notice, which the Session wizard publishes through
+      // [sessionAboveBarNotice] because this shell cannot see its VM. The
+      // slot is why the notice is one: whatever stands there also counts in
+      // [ScrollShrinkNavBar.contentInset], so every page clears it with the
+      // bar.
+      body: ValueListenableBuilder<Widget?>(
+        valueListenable: sessionAboveBarNotice,
+        builder: (context, aboveBar, _) => ScrollShrinkNavBar(
+          currentIndex: _tabIndexFor(currentRoute),
+          onTap: (i) {
+            final tab = _tabs[i];
+            // A tap on the tab whose page is already on screen is the PAGE's
+            // own business, not a navigation — `go` there would change
+            // nothing. The Session wizard answers it by showing the browse
+            // without ending the live session (2026-10-23).
+            if (tab.route == '/session' &&
+                _topLocation(currentRoute) == '/session') {
+              AppRouter.sessionTabReselected.value++;
+            }
+            GoRouter.of(context).go(tab.route);
+          },
+          items: [for (final tab in _tabs) tab.item],
+          aboveBar: aboveBar,
+          child: child,
+        ),
       ),
     );
   }

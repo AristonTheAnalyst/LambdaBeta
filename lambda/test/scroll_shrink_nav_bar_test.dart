@@ -293,4 +293,95 @@ void main() {
       ScrollShrinkNavBar.expandedHeight + AppSpacing.sm + AppSpacing.lg,
     );
   });
+
+  /// A storey above the bar is not necessarily a bar (2026-10-27): the
+  /// another-device notice is as tall as its words, and the page below has to
+  /// clear all of it, not a bar's assumed 56.
+  testWidgets('a storey above the bar is measured, not assumed', (
+    tester,
+  ) async {
+    double? under;
+    const aboveHeight = 132.0;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ScrollShrinkNavBar(
+            currentIndex: 0,
+            onTap: (_) {},
+            items: items,
+            aboveBar: const SizedBox(height: aboveHeight),
+            child: Builder(
+              builder: (context) {
+                under = ScrollShrinkNavBar.contentInset(context);
+                return const SizedBox.shrink();
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+    // The storey's size exists only once it is laid out — the frame after
+    // carries it into the page's inset.
+    await tester.pump();
+
+    expect(
+      under,
+      ScrollShrinkNavBar.expandedHeight +
+          aboveHeight +
+          ScrollShrinkNavBar.floatGap * 2 +
+          AppSpacing.lg,
+    );
+  });
+
+  testWidgets('the inset follows a storey that re-words itself taller', (
+    tester,
+  ) async {
+    double? under;
+    final height = ValueNotifier<double>(80);
+    addTearDown(height.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ScrollShrinkNavBar(
+            currentIndex: 0,
+            onTap: (_) {},
+            items: items,
+            // Only the storey rebuilds — the overlay around it does not, so
+            // the change can only be caught by its own layout notification.
+            aboveBar: ValueListenableBuilder<double>(
+              valueListenable: height,
+              builder: (context, h, _) => SizedBox(height: h),
+            ),
+            child: Builder(
+              builder: (context) {
+                under = ScrollShrinkNavBar.contentInset(context);
+                return const SizedBox.shrink();
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      under,
+      ScrollShrinkNavBar.expandedHeight +
+          80 +
+          ScrollShrinkNavBar.floatGap * 2 +
+          AppSpacing.lg,
+    );
+
+    height.value = 130;
+    await tester.pumpAndSettle();
+    expect(
+      under,
+      ScrollShrinkNavBar.expandedHeight +
+          130 +
+          ScrollShrinkNavBar.floatGap * 2 +
+          AppSpacing.lg,
+      reason: 'the page below is told as soon as the storey grows',
+    );
+  });
 }

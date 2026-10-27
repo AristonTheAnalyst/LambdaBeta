@@ -347,6 +347,7 @@ class SessionDetailView extends StatelessWidget {
     this.canCoach = false,
     this.onWalkOlder,
     this.onWalkNewer,
+    this.floorBottomInset,
   });
 
   final SessionDetailViewModel viewModel;
@@ -367,6 +368,14 @@ class SessionDetailView extends StatelessWidget {
   /// embeds (the another-device preview) omit them, and the arrows stay
   /// spent.
   final VoidCallback? onWalkOlder;
+
+  /// The floor's own bottom padding — what it leaves for whatever floats
+  /// under it. Null reads [ScrollShrinkNavBar.contentInset], the shell's bar
+  /// the page sits over. The another-device preview passes [AppSpacing.sm]
+  /// (2026-10-27): its Switch band stands directly under the floor and is
+  /// what clears the bar, so the floor keeps only the row's own air and the
+  /// bar's clearance is spent once, by the band.
+  final double? floorBottomInset;
   final VoidCallback? onWalkNewer;
 
   /// No surface is named any more — the viewer draws them all at once.
@@ -459,13 +468,14 @@ class SessionDetailView extends StatelessWidget {
       key: const ValueKey('session-detail-bar'),
       // The live floor's own insets, the bottom one included: the page sits
       // under the floating bar, so the action row ends where the live one
-      // does. `contentInset` answers zero where no bar floats (the
-      // another-device preview holds its own action bar instead).
+      // does. A caller whose own band clears the bar passes
+      // [floorBottomInset] and reserves nothing here (2026-10-27) — the
+      // another-device preview's Switch band stands below this floor.
       padding: EdgeInsets.fromLTRB(
         AppSpacing.lg,
         AppSpacing.sm,
         AppSpacing.lg,
-        ScrollShrinkNavBar.contentInset(context),
+        floorBottomInset ?? ScrollShrinkNavBar.contentInset(context),
       ),
       decoration: BoxDecoration(
         color: AppColors.bg,

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/intl.dart';
+import 'package:lambda/core/styles/app_spacing.dart';
 import 'package:lambda/core/utils/device_id.dart';
 import 'package:lambda/data/cache/past_sets_timeline_cache.dart';
 import 'package:lambda/data/models/custom_exercise.dart';
@@ -16,6 +17,7 @@ import 'package:lambda/data/repositories/session_repository.dart';
 import 'package:lambda/features/logs/view/session_detail_screen.dart';
 import 'package:lambda/features/logs/viewmodel/session_detail_viewmodel.dart';
 import 'package:lambda/shared/widgets/dropdown_select.dart';
+import 'package:lambda/shared/widgets/floating_bar.dart';
 import 'package:lambda/shared/widgets/lambda_input.dart';
 import 'package:lambda/shared/widgets/segmented_control.dart';
 import 'package:lambda/shared/widgets/session_chevron_button.dart';
@@ -213,6 +215,8 @@ void main() {
     VoidCallback? onWalkOlder,
     VoidCallback? onWalkNewer,
     bool readOnly = false,
+    double? floorBottomInset,
+    bool underBar = false,
   }) async {
     tester.view.physicalSize = const Size(1206, 2622);
     tester.view.devicePixelRatio = 3;
@@ -236,15 +240,25 @@ void main() {
           resizeToAvoidBottomInset: false,
           body: ValueListenableBuilder<SessionDetailState>(
             valueListenable: vm.state,
-            builder: (context, state, _) => state.isLoading
-                ? const SizedBox.shrink()
-                : SessionDetailView(
-                    viewModel: vm,
-                    state: state,
-                    readOnly: readOnly,
-                    onWalkOlder: onWalkOlder,
-                    onWalkNewer: onWalkNewer,
-                  ),
+            builder: (context, state, _) {
+              if (state.isLoading) return const SizedBox.shrink();
+              final view = SessionDetailView(
+                viewModel: vm,
+                state: state,
+                readOnly: readOnly,
+                onWalkOlder: onWalkOlder,
+                onWalkNewer: onWalkNewer,
+                floorBottomInset: floorBottomInset,
+              );
+              // The shell's floor, for the tests that read the bar's
+              // clearance: the viewer's own floor answers contentInset only
+              // where something floats over it.
+              if (!underBar) return view;
+              return FloatingBarOverlay(
+                bar: const SizedBox(height: FloatingBar.barHeight),
+                child: view,
+              );
+            },
           ),
         ),
       ),
@@ -342,7 +356,10 @@ void main() {
     // header control) wears the same chevron.
     final row = find.byKey(const ValueKey('session-set-row-history-set-1'));
     expect(
-      find.descendant(of: row, matching: find.byIcon(Icons.keyboard_arrow_down)),
+      find.descendant(
+        of: row,
+        matching: find.byIcon(Icons.keyboard_arrow_down),
+      ),
       findsNothing,
       reason:
           'the variation cell is plain text — a chevron on a record '
@@ -890,6 +907,43 @@ void main() {
         matching: find.byType(TextField),
       ),
       findsNothing,
+    );
+  });
+
+  // ── The floor's own clearance (2026-10-27) ───────────────────────────────
+  // The viewer's floor is the live one: under the shell's floating bar it
+  // reserves the bar's height below its action row. The another-device
+  // preview is the one page whose own band, not the floor, clears the bar —
+  // it hands the floor a small pad instead, so the bar's clearance is spent
+  // once and the Switch button lands above the bar rather than under it.
+
+  EdgeInsets floorPadding(WidgetTester tester) =>
+      tester
+              .widget<Container>(
+                find.byKey(const ValueKey('session-detail-bar')),
+              )
+              .padding
+          as EdgeInsets;
+
+  testWidgets('the floor clears the shell\'s floating bar by default', (
+    tester,
+  ) async {
+    await pumpViewer(tester, underBar: true);
+    expect(
+      floorPadding(tester).bottom,
+      FloatingBar.barHeight + FloatingBar.floatGap + AppSpacing.lg,
+      reason: 'the bar\'s height, its gap and the page\'s own air',
+    );
+  });
+
+  testWidgets('a caller whose own band clears the bar keeps only its air', (
+    tester,
+  ) async {
+    await pumpViewer(tester, underBar: true, floorBottomInset: AppSpacing.sm);
+    expect(
+      floorPadding(tester).bottom,
+      AppSpacing.sm,
+      reason: 'the preview\'s Switch band spends the clearance, not the floor',
     );
   });
 }
