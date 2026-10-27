@@ -2756,7 +2756,7 @@ void main() {
     });
 
     testWidgets('the sides\' disagreement reads off the end — a green plus '
-        'for what the review added, a red removed card for what it dropped', (
+        'for what the review added, a red minus for what it dropped', (
       tester,
     ) async {
       seed();
@@ -2830,8 +2830,9 @@ void main() {
       );
 
       // The removed group is a real card on this side, not only a marked
-      // name: it keeps the start's frozen sets, drawn in the danger chrome
-      // the open pass gives a group removed during it.
+      // name: it keeps the start's frozen sets, drawn as the ordinary card
+      // they were — the red minus IS the removal (2026-10-27), not a repaint
+      // of the containers and rows the way the open pass draws one.
       await tester.tap(find.text('Curl'));
       await tester.pumpAndSettle();
       expect(find.text('40'), findsOneWidget);
@@ -2839,14 +2840,14 @@ void main() {
       expect(
         tester
             .widget<SessionExerciseCard>(find.byType(SessionExerciseCard))
-            .deletedExercises
-            .last,
-        isTrue,
-        reason: 'a removed group reads red wherever its name is drawn',
+            .deletedExercises,
+        everyElement(isFalse),
+        reason: 'the removal is the mark, not the chrome',
       );
       expect(
         tester.widget<SessionSetRow>(find.byType(SessionSetRow)).deleted,
-        isTrue,
+        isFalse,
+        reason: 'its sets read as the sets it had, plain',
       );
 
       // Flipping to the start shows the same group unmarked: the start is
@@ -3112,8 +3113,8 @@ void main() {
         'claiming it was recorded empty', (tester) async {
       seed();
       // The start held the group and the end holds nothing: the pass removed
-      // it. The record says so — a removed card, red — instead of reading as
-      // a workout that was always empty (2026-10-27).
+      // it. The record says so — the card it had, wearing a red minus —
+      // instead of reading as a workout that was always empty (2026-10-27).
       history.reviews = [completedRow(withExercises: false)];
       await pumpRecord(tester, subject: recordSession());
 
@@ -3130,12 +3131,13 @@ void main() {
         tester
             .widget<SessionExerciseCard>(find.byType(SessionExerciseCard))
             .deletedExercises,
-        [isTrue],
+        everyElement(isFalse),
+        reason: 'the removed group draws as the card it was',
       );
       expect(
         tester.widget<SessionSetRow>(find.byType(SessionSetRow)).deleted,
-        isTrue,
-        reason: 'the removed group keeps the sets it had, read as gone',
+        isFalse,
+        reason: 'and keeps the sets it had, read plain',
       );
     });
 

@@ -288,10 +288,12 @@ reads one as a "program" review — the acceptable old behavior.
   end** (2026-10-27): an exercise the end holds and its start does not wears
   a green **plus** (the pass added it), and a group the start held and the
   end does not — which the finish's snapshot drops, so the end has no row of
-  its own to mark — is drawn as a **removed card** from the start's frozen
-  copy: red selector name (`deletedExercises`), red inert frozen sets
-  (`recordSetRow(deleted: true)`), its pass note where one was left, at its
-  old plan position after any kept group sharing the slot. The start is the
+  its own to mark — is drawn as a card from the start's frozen copy that
+  wears only the red `ExerciseMark.removed`: the ordinary selector name and
+  its plain frozen sets, its pass note where one was left, at its old plan
+  position after any kept group sharing the slot. On a record the removal
+  is the mark, never a repaint — the open pass's red card stays the open
+  pass's (2026-10-27). The start is the
   baseline the pass found and wears no marks at all, and on the current plan
   the reference is the newest end, so its plus says what has changed since
   the last record.
@@ -300,7 +302,7 @@ reads one as a "program" review — the acceptable old behavior.
   membership test over `plannedExerciseId` plus the removal set so the marks
   can never disagree across the eye. Names both sides hold stay bare, and a
   version with no reference — a review that kept one document, a plan no
-  review has recorded — marks nothing and draws no removed card.
+  review has recorded — marks nothing and draws no removed group.
   The bar is handed the row's `ReviewSession` (`reviewChrome(session:,
   readOnly: true, loadComparison:)`), never publishing one, so Compare and
   Changes read those same documents through the injected comparison — a

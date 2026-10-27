@@ -115,8 +115,9 @@ class RecordWorkoutState {
   /// The exercises the pass removed: held by its start, gone from its end
   /// (2026-10-27). The finish's snapshot drops the removed group, so the end
   /// has no row to mark — the group is drawn from the start's frozen copy
-  /// instead, red, exactly as the open pass draws a group removed during it.
-  /// Empty wherever there is no start to read a removal off.
+  /// instead, as the ordinary card it had, wearing only the red minus the
+  /// added group wears green. Empty wherever there is no start to read a
+  /// removal off.
   List<ContentExercise> get removedExercises {
     final start = startPair?.session;
     if (start == null || shown == null) return const [];
@@ -130,7 +131,7 @@ class RecordWorkoutState {
   }
 
   /// The planned-exercise ids the card draws as removed on the version on
-  /// screen — the set the screen marks, colours and labels red.
+  /// screen — the set the screen marks with the red minus.
   Set<String> get removedIds => {
     for (final exercise in removedExercises) exercise.plannedExerciseId,
   };
