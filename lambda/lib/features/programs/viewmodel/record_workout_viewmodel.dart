@@ -1,7 +1,15 @@
 import 'package:flutter/foundation.dart';
 
+import '../../../data/cache/past_sets_timeline_cache.dart';
+import '../../../data/models/goal.dart';
+import '../../../data/models/lesson.dart';
 import '../../../data/models/program_content.dart';
+import '../../../data/models/session_exercise_set.dart';
+import '../../../data/repositories/lesson_repository.dart';
 import '../../../data/repositories/program_history_repository.dart';
+import '../../../data/repositories/program_repository.dart';
+import '../../session/model/pr_engine.dart';
+import '../model/program_achievements.dart';
 
 /// One workout's story while it is being read: which frozen version is on
 /// screen, and which exercise of it.
@@ -11,11 +19,24 @@ import '../../../data/repositories/program_history_repository.dart';
 /// instead of spinning (2026-10-26). The page owns the marks, the notes and
 /// the diff; this owns the *which*: the version on screen, the pair the eye
 /// flips across, and the version the marks are read against.
+///
+/// The state also carries the library context a record's floor reads
+/// (2026-10-27): the timeline PRs are derived from, the goals it measures and
+/// the exercise notes it shelves. A record is a read, so the context is read
+/// live — a PR landed today is still a fact about the exercise the version
+/// names — while the version itself stays frozen. All of it is empty until
+/// [RecordWorkoutViewModel.loadContext] answers, and every getter treats the
+/// empty case as the answer it is.
 class RecordWorkoutState {
   const RecordWorkoutState({
     this.versions = const [],
     this.index = -1,
     this.active = 0,
+    this.goalTimeline = const [],
+    this.allPrEvents = const [],
+    this.goals = const [],
+    this.lessonsByExercise = const {},
+    this.goalSetIds = const {},
   });
 
   /// The workout's versions, newest first: the current plan when the workout
@@ -32,6 +53,24 @@ class RecordWorkoutState {
   /// mostly hold — and clamped where the next version is shorter.
   final int active;
 
+  /// The user's whole timeline, oldest first — what the goals are measured
+  /// against, the same list the session floors derive their `G` badges from
+  /// (2026-10-27). Empty until the context read lands.
+  final List<PastSetRow> goalTimeline;
+
+  /// Every PR the user ever landed, oldest first — the trophy's whole shelf.
+  final List<PrEvent> allPrEvents;
+
+  /// Every goal the user owns, any scope. The bullseye filters by exercise.
+  final List<Goal> goals;
+
+  /// Exercise notes by exercise id — the note tile's shelf.
+  final Map<String, List<Lesson>> lessonsByExercise;
+
+  /// The set ids that met a goal — a PR on one of them draws green in the PR
+  /// History sheet, the session floors' rule (2026-10-26).
+  final Set<String> goalSetIds;
+
   WorkoutVersion? get version =>
       index < 0 || index >= versions.length ? null : versions[index];
 
@@ -42,6 +81,23 @@ class RecordWorkoutState {
   bool get isStart => version?.isStart ?? false;
 
   bool get isCurrent => version?.isCurrent ?? false;
+
+  /// The version's exercises in the order the plan itself keeps — the same
+  /// sort every session surface draws by, so the card and the floor always
+  /// agree about which one is active.
+  List<ContentExercise> get exercises {
+    final list = [...?shown?.exercises];
+    list.sort((a, b) => a.exerciseOrder.compareTo(b.exerciseOrder));
+    return list;
+  }
+
+  /// The exercise on the card, clamped when a step lands on a shorter
+  /// version — never past the end, and null on a version with none.
+  ContentExercise? get activeExercise {
+    final list = exercises;
+    if (list.isEmpty) return null;
+    return list[active.clamp(0, list.length - 1)];
+  }
 
   /// There is a version older than the one on screen.
   bool get canStepOlder => hasRecord && index < versions.length - 1;
@@ -95,6 +151,23 @@ class RecordWorkoutState {
 
   /// The review's note for the workout as a whole, under the same rule.
   String? get workoutNote => version?.workoutNote;
+
+  RecordWorkoutState copyWith({
+    List<PastSetRow>? goalTimeline,
+    List<PrEvent>? allPrEvents,
+    List<Goal>? goals,
+    Map<String, List<Lesson>>? lessonsByExercise,
+    Set<String>? goalSetIds,
+  }) => RecordWorkoutState(
+    versions: versions,
+    index: index,
+    active: active,
+    goalTimeline: goalTimeline ?? this.goalTimeline,
+    allPrEvents: allPrEvents ?? this.allPrEvents,
+    goals: goals ?? this.goals,
+    lessonsByExercise: lessonsByExercise ?? this.lessonsByExercise,
+    goalSetIds: goalSetIds ?? this.goalSetIds,
+  );
 }
 
 /// Owns the walk over one workout's versions (2026-10-26).
@@ -103,11 +176,26 @@ class RecordWorkoutState {
 /// synchronous: [stepOlder] / [stepNewer] move along the stack and [flip]
 /// jumps to the other side of the review on screen — the eye — with no reads
 /// in between and no spinner to show.
+///
+/// The floor's doors, though, are live reads (2026-10-27): [loadContext]
+/// brings the timeline, the PR feed, the goals and the exercise notes in once,
+/// after the page has already drawn, and the doors answer from them exactly as
+/// the planner's and the session floors' do. A failed read leaves its shelf
+/// empty — a door that cannot answer is quiet, never a blocker.
 class RecordWorkoutViewModel extends ValueNotifier<RecordWorkoutState> {
   RecordWorkoutViewModel({
     List<WorkoutVersion> versions = const [],
     int initialIndex = 0,
-  }) : super(
+    String? userId,
+    Future<List<PastSetRow>> Function(String userId)? timelineLoader,
+    LessonRepository? lessonRepository,
+    ProgramRepository? programRepository,
+  }) : _userId = userId,
+       _timelineLoader =
+           timelineLoader ?? ((id) => PastSetsTimelineCache.instance.get(id)),
+       _lessonRepoOverride = lessonRepository,
+       _programRepoOverride = programRepository,
+       super(
          RecordWorkoutState(
            versions: List<WorkoutVersion>.unmodifiable(versions),
            index: initialIndex >= 0 && initialIndex < versions.length
@@ -115,6 +203,92 @@ class RecordWorkoutViewModel extends ValueNotifier<RecordWorkoutState> {
                : -1,
          ),
        );
+
+  final String? _userId;
+  final Future<List<PastSetRow>> Function(String userId) _timelineLoader;
+  final LessonRepository? _lessonRepoOverride;
+  final ProgramRepository? _programRepoOverride;
+
+  // Built on first use, not in the constructor: the repositories open the
+  // database as they are made, and a record with no user (a host test) must
+  // be constructible without one (2026-10-27).
+  late final LessonRepository _lessonRepo =
+      _lessonRepoOverride ?? LessonRepository();
+  late final ProgramRepository _programRepo =
+      _programRepoOverride ?? ProgramRepository();
+
+  bool _contextLoaded = false;
+  bool _contextLoading = false;
+  bool _disposed = false;
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
+  }
+
+  /// The floor's shelves, read once (2026-10-27): the timeline (through the
+  /// shared cache — the first reader pays the query), the goal list, the
+  /// lessons for every exercise any version holds. Each read is swallowed on
+  /// failure: a record must draw whatever answered.
+  Future<void> loadContext() async {
+    final userId = _userId;
+    if (userId == null || _contextLoaded || _contextLoading) return;
+    _contextLoading = true;
+
+    var timeline = const <PastSetRow>[];
+    try {
+      timeline = await _timelineLoader(userId);
+    } catch (_) {
+      // The shelves are extras on a record; an unanswered read is quiet.
+    }
+    // Oldest first — the order the goal engine and the PR feed walk in. The
+    // cache's `asc` copy is the same sort; sorting here keeps the loader
+    // seam a plain list.
+    final asc = [...timeline]
+      ..sort((a, b) {
+        final d = a.sessionCreatedDate.compareTo(b.sessionCreatedDate);
+        return d != 0 ? d : a.setNumber.compareTo(b.setNumber);
+      });
+
+    var goals = const <Goal>[];
+    try {
+      goals = [
+        for (final option in await _programRepo.fetchGoalOptions(userId))
+          option.goal,
+      ];
+    } catch (_) {
+      // The bullseye reads 0; the other doors still answer.
+    }
+
+    final exerciseIds = <String>{
+      for (final version in value.versions)
+        for (final exercise in version.session?.exercises ?? const [])
+          if (exercise.exerciseId != null) exercise.exerciseId!,
+    };
+    var lessons = const <String, List<Lesson>>{};
+    if (exerciseIds.isNotEmpty) {
+      try {
+        lessons = await _lessonRepo.fetchLessonsForExercises(
+          userId,
+          exerciseIds.toList(),
+        );
+      } catch (_) {
+        // The note tile reads 0; its sheet still opens on an empty shelf.
+      }
+    }
+
+    _contextLoading = false;
+    _contextLoaded = true;
+    if (_disposed) return;
+    value = value.copyWith(
+      goalTimeline: asc,
+      allPrEvents: prEvents(asc),
+      goals: goals,
+      lessonsByExercise: lessons,
+      goalSetIds: goalAchievingSetIds(goals: goals, sets: asc),
+    );
+  }
 
   /// Older — one step down the stack, toward the workout's first record. No
   /// move at the oldest end.
@@ -148,6 +322,11 @@ class RecordWorkoutViewModel extends ValueNotifier<RecordWorkoutState> {
       versions: value.versions,
       index: value.index,
       active: index,
+      goalTimeline: value.goalTimeline,
+      allPrEvents: value.allPrEvents,
+      goals: value.goals,
+      lessonsByExercise: value.lessonsByExercise,
+      goalSetIds: value.goalSetIds,
     );
   }
 
@@ -156,6 +335,63 @@ class RecordWorkoutViewModel extends ValueNotifier<RecordWorkoutState> {
       versions: value.versions,
       index: index,
       active: value.active,
+      goalTimeline: value.goalTimeline,
+      allPrEvents: value.allPrEvents,
+      goals: value.goals,
+      lessonsByExercise: value.lessonsByExercise,
+      goalSetIds: value.goalSetIds,
     );
+  }
+
+  // ── The floor's shelves (2026-10-27) ─────────────────────────────────────
+
+  /// Every PR [exerciseId] ever landed — all its variations, oldest first —
+  /// the trophy's feed, the same one the planner and the session floors open.
+  List<PrEvent> prHistoryFor(String exerciseId) => [
+    for (final event in value.allPrEvents)
+      if (event.exerciseId == exerciseId) event,
+  ];
+
+  /// How many PRs the exercise ever landed — what lights the trophy.
+  int prCountFor(String exerciseId) =>
+      value.allPrEvents.where((e) => e.exerciseId == exerciseId).length;
+
+  List<Lesson> lessonsFor(String exerciseId) =>
+      value.lessonsByExercise[exerciseId] ?? const [];
+
+  int lessonCountFor(String exerciseId) => lessonsFor(exerciseId).length;
+
+  /// The exercise's notes, re-read on demand — the notes modal's own loading
+  /// path, the same shape the editor and the session VMs give it.
+  Future<void> loadLessonsFor(String exerciseId) async {
+    final userId = _userId;
+    if (userId == null) return;
+    try {
+      final lessons = await _lessonRepo.fetchLessons(userId, exerciseId);
+      if (_disposed) return;
+      final map = Map<String, List<Lesson>>.from(value.lessonsByExercise);
+      map[exerciseId] = lessons;
+      value = value.copyWith(lessonsByExercise: map);
+    } catch (_) {
+      // The shelf keeps what it had.
+    }
+  }
+
+  List<Goal> goalsForExercise(String exerciseId) => [
+    for (final goal in value.goals)
+      if (goal.exerciseId == exerciseId) goal,
+  ];
+
+  /// How many of the exercise's goals still stand — what lights the bullseye.
+  /// Ownership is [goalCompletionSet]'s call, the same rule the goals sheet
+  /// and the `G` badge use, over the record's timeline.
+  int openGoalsFor(String exerciseId) {
+    var open = 0;
+    for (final goal in goalsForExercise(exerciseId)) {
+      if (goalCompletionSet(goal: goal, sets: value.goalTimeline) == null) {
+        open++;
+      }
+    }
+    return open;
   }
 }

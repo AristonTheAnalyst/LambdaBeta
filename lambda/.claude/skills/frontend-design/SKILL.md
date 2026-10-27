@@ -243,7 +243,8 @@ sticky-note icon) — the note indicator, not a color.
   around the furniture; a deleted exercise reads off its red selector name
   and red rows. Freestyle is completely flat. The planner is a session
   surface too since 2026-10-26 (it plans with the same card, floor and
-  gutter); only the review-record editors keep the boxed `AppCard`
+  gutter), and a completed review's record joined them on 2026-10-27;
+  only the pass's own workout editor keeps the boxed `AppCard`
   (`session-ux-consistency` §7, rule 9).
 - Dense inner containers (rows, chips, inputs): `surfaceHigh` fill +
   `border` hairline + `AppRadius.md` (8).

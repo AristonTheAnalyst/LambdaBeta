@@ -837,6 +837,9 @@ class _ReviewRouteState extends State<ReviewRoute> {
           initialIndex: initialIndex,
           exerciseNames: names,
           variationNames: variationNames,
+          // The floor's doors read the user's own shelves (2026-10-27): the
+          // PRs, goals and exercise notes the version names.
+          userId: _userId,
         ),
       ),
     );

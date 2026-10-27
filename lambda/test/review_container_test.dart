@@ -17,6 +17,8 @@ import 'package:lambda/data/models/program_review.dart';
 import 'package:lambda/features/programs/view/content_diff_sheet.dart';
 import 'package:lambda/features/programs/view/record_workout_screen.dart';
 import 'package:lambda/features/programs/view/review_container.dart';
+import 'package:lambda/features/session/view/session_stats_bar.dart';
+import 'package:lambda/shared/widgets/bar_icon_button.dart';
 import 'package:lambda/shared/widgets/container_styles.dart';
 import 'package:lambda/shared/widgets/exercise_selector.dart';
 import 'package:lambda/shared/widgets/floating_bar.dart';
@@ -28,6 +30,7 @@ import 'package:lambda/shared/widgets/session_chevron_button.dart';
 import 'package:lambda/shared/widgets/session_exercise_card.dart';
 import 'package:lambda/shared/widgets/session_set_row.dart';
 import 'package:lambda/shared/widgets/swipe_actions.dart';
+import 'package:lambda/shared/widgets/undo_redo_buttons.dart';
 
 import 'support/fake_program_repos.dart';
 
@@ -2392,6 +2395,84 @@ void main() {
         find.byType(ScrollShrinkNavBar),
         findsNothing,
         reason: 'the app tab bar under a record workout reads as "you left"',
+      );
+    });
+
+    testWidgets('a record wears the pass editor\'s whole floor — the version '
+        'bar, the spent actions row and the doors', (tester) async {
+      seed();
+      history.reviews = [completedRow()];
+      await pumpRecord(tester, subject: recordSession());
+
+      await tester.tap(find.text('Push Day'));
+      await tester.pumpAndSettle();
+
+      final bar = find.byKey(const ValueKey('record-workout-bar'));
+      expect(bar, findsOneWidget);
+      // The version walker stands INSIDE the floor, in the date bar's
+      // furniture — the pass editor's reading, not a floating caption
+      // (2026-10-27).
+      expect(
+        find.descendant(
+          of: bar,
+          matching: find.byKey(const ValueKey('record-version-bar')),
+        ),
+        findsOneWidget,
+      );
+
+      // The actions row is the planner's, spent where a record cannot act.
+      final undo = tester.widget<UndoRedoButtons>(
+        find.descendant(of: bar, matching: find.byType(UndoRedoButtons)),
+      );
+      expect(undo.canUndo, isFalse);
+      expect(undo.canRedo, isFalse);
+      final star = tester.widget<BarIconButton>(
+        find.descendant(
+          of: bar,
+          matching: find.byKey(const ValueKey('record-ratings-button')),
+        ),
+      );
+      expect(
+        star.enabled,
+        isFalse,
+        reason: 'a version never had a feeling to rate',
+      );
+
+      // The three doors are drawn — trophy, bullseye, notes — and none is
+      // dead: a count of 0 still opens the exercise's whole story.
+      for (final key in const [
+        'session-prs-tile',
+        'session-goals-button',
+        'session-lessons-tile',
+      ]) {
+        expect(
+          find.descendant(of: bar, matching: find.byKey(ValueKey(key))),
+          findsOneWidget,
+          reason: '$key is a door on every session floor',
+        );
+      }
+      final tiles = tester.widget<SessionStatsTiles>(
+        find.descendant(of: bar, matching: find.byType(SessionStatsTiles)),
+      );
+      expect(tiles.onPrTap, isNotNull);
+      expect(tiles.onGoalTap, isNotNull);
+      expect(tiles.onLessonTap, isNotNull);
+      expect(
+        tiles.gain,
+        isFalse,
+        reason: 'a record gained nothing — the counts are the whole shelves',
+      );
+
+      // The bar at the bottom is the review's, unchanged.
+      expect(find.byType(ReviewBar), findsOneWidget);
+
+      // And the card is the session card, not the boxed editor card: the
+      // doors moved to the floor, so the pill row is gone.
+      expect(
+        tester
+            .widget<SessionExerciseCard>(find.byType(SessionExerciseCard))
+            .flat,
+        isTrue,
       );
     });
 

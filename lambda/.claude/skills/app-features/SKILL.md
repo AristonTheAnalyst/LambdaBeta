@@ -262,14 +262,21 @@ reads one as a "program" review — the acceptable old behavior.
   the pass left) and start (`baseline_content`, what it found), newest first,
   read once by `fetchWorkoutVersions` (which walks the user's completed
   reviews and narrows each document to this workout — never the live plan,
-  which keeps being edited). A **walker** — a `FloatingBar` storey above the
-  review's bar, `SessionChevronButton`s either side — steps the stack older
+  which keeps being edited). The record wears the pass editor's
+  whole floor (2026-10-27): a **walker** in the session date bar's ghost-box
+  furniture (`Container` + `SessionChevronButton`s + a mono caption) above
+  the planner's spent actions row and live `SessionStatsTiles(gain: false)`
+  doors, all under the review's own bar — so a completed review is read on
+  the page an open one is edited on. The walker steps the stack older
   left, newer right, both ends spent and never absent, and names the version
   on screen `START OF REVIEW - 1 Oct 2026` / `END OF REVIEW - 9 Oct 2026` /
   a lone `CURRENT PLAN`; a step is a repaint, never a read, so there is no
   spinner to wait through. `RecordWorkoutViewModel`
   (`ValueNotifier<RecordWorkoutState>`) owns which version is on screen, the
-  sibling pair the eye flips across, and the reference the marks read.
+  sibling pair the eye flips across, the reference the marks read, and the
+  floor's shelves — timeline PRs, open goals and exercise notes, read once
+  after the page opens through `loadContext` (a failed read leaves its door
+  quiet).
   The **eye** is the jump between the two sides of the review on screen —
   offered only where both sides hold the workout (a jump onto "the workout
   was not there" would read as data gone missing), and never on the current

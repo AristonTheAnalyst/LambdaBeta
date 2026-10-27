@@ -1,10 +1,17 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lambda/data/models/goal.dart';
+import 'package:lambda/data/models/lesson.dart';
 import 'package:lambda/data/models/program_content.dart';
 import 'package:lambda/data/models/program_review.dart';
+import 'package:lambda/data/models/session_exercise_set.dart';
+import 'package:lambda/data/repositories/lesson_repository.dart';
 import 'package:lambda/data/repositories/program_history_repository.dart';
+import 'package:lambda/data/repositories/program_repository.dart';
 import 'package:lambda/features/programs/viewmodel/record_workout_viewmodel.dart';
+
+import 'support/fake_program_repos.dart';
 
 /// One workout's story is every frozen version of it (2026-10-26): the
 /// current plan, then each completed review's end (its snapshot) and start
@@ -409,4 +416,277 @@ void main() {
       expect(vm.value.active, 1);
     });
   });
+
+  // The record's floor is the session floor (2026-10-27): the same star, the
+  // same trophy, bullseye and notes doors. They read live library context,
+  // though the version on screen stays frozen — a PR landed today is still a
+  // fact about the exercise the version names. These tests are what those
+  // doors answer from, with the reads handed in.
+  group('the floor\'s shelves', () {
+    PastSetRow pastSet({
+      required String id,
+      double weight = 100,
+      int reps = 5,
+      DateTime? date,
+      String exerciseId = 'e1',
+    }) => PastSetRow(
+      sessionExerciseSetId: id,
+      sessionExerciseId: 'se-$id',
+      sessionId: 'session-$id',
+      userId: 'u1',
+      exerciseId: exerciseId,
+      setNumber: 1,
+      weight: weight,
+      reps: [reps],
+      sessionCreatedDate: date ?? DateTime(2026, 10, 1),
+    );
+
+    Goal goalOf({
+      required String id,
+      num weight = 100,
+      int reps = 5,
+      String exerciseId = 'e1',
+    }) => Goal(
+      goalId: id,
+      userId: 'u1',
+      exerciseId: exerciseId,
+      targetWeight: weight,
+      targetReps: reps,
+    );
+
+    Lesson lessonOf(String id) => Lesson(
+      lessonId: id,
+      userId: 'u1',
+      exerciseId: 'e1',
+      text: 'Elbows tucked',
+      pinned: false,
+      createdDate: DateTime(2026, 10, 1),
+    );
+
+    List<WorkoutVersion> stack() => [
+      WorkoutVersion(
+        sessionId: 's1',
+        side: WorkoutVersionSide.current,
+        session: sessionOf('90'),
+      ),
+    ];
+
+    test(
+      'the doors answer from the timeline, the goals and the notes',
+      () async {
+        final vm = RecordWorkoutViewModel(
+          versions: stack(),
+          initialIndex: 0,
+          userId: 'u1',
+          timelineLoader: (_) async => [
+            // Handed newest first on purpose: the shelf sorts its own copy.
+            pastSet(id: 'b', weight: 110, reps: 3, date: DateTime(2026, 9, 2)),
+            pastSet(id: 'a', weight: 100, reps: 5, date: DateTime(2026, 9, 1)),
+          ],
+          lessonRepository: _Lessons(
+            byExercise: {
+              'e1': [lessonOf('l1'), lessonOf('l2')],
+            },
+          ),
+          programRepository: FakeProgramRepository(
+            goals: [
+              goalOf(id: 'g-met', weight: 100, reps: 5),
+              goalOf(id: 'g-open', weight: 120, reps: 5),
+            ],
+          ),
+        );
+
+        expect(vm.prCountFor('e1'), 0, reason: 'quiet until the read lands');
+
+        await vm.loadContext();
+
+        expect(vm.prCountFor('e1'), 2);
+        expect(
+          [for (final e in vm.prHistoryFor('e1')) e.sessionExerciseSetId],
+          ['a', 'b'],
+          reason: 'oldest first — the trophy\'s shelf order on every floor',
+        );
+        expect(vm.lessonCountFor('e1'), 2);
+        expect(vm.goalsForExercise('e1'), hasLength(2));
+        expect(
+          vm.openGoalsFor('e1'),
+          1,
+          reason: 'the 100 × 5 goal was met by the first set',
+        );
+        expect(vm.value.goalSetIds, {'a'});
+        expect(vm.value.goalTimeline.first.sessionExerciseSetId, 'a');
+      },
+    );
+
+    test(
+      'a failed read leaves its shelf quiet — a door is never a blocker',
+      () async {
+        final vm = RecordWorkoutViewModel(
+          versions: stack(),
+          initialIndex: 0,
+          userId: 'u1',
+          timelineLoader: (_) async => throw StateError('offline'),
+          lessonRepository: _Lessons(throwOnBatch: true),
+          programRepository: _OfflineGoals(),
+        );
+
+        await vm.loadContext();
+
+        expect(vm.prCountFor('e1'), 0);
+        expect(vm.lessonCountFor('e1'), 0);
+        expect(vm.openGoalsFor('e1'), 0);
+        expect(vm.value.goalSetIds, isEmpty);
+        // The version itself is untouched: the shelves are extras on a record.
+        expect(vm.value.isCurrent, isTrue);
+        expect(vm.value.exercises, hasLength(1));
+      },
+    );
+
+    test(
+      'the shelves are read once — a step or a flip never re-queries',
+      () async {
+        var reads = 0;
+        final vm = RecordWorkoutViewModel(
+          versions: stack(),
+          initialIndex: 0,
+          userId: 'u1',
+          timelineLoader: (_) async {
+            reads++;
+            return [pastSet(id: 'a')];
+          },
+          lessonRepository: _Lessons(),
+          programRepository: FakeProgramRepository(),
+        );
+
+        await vm.loadContext();
+        await vm.loadContext();
+        vm.stepOlder();
+        vm.selectExercise(3);
+
+        expect(reads, 1);
+        expect(vm.value.goalTimeline, hasLength(1));
+      },
+    );
+
+    test('without a user there is nothing to read — and no repository is '
+        'built', () async {
+      // A host test builds this VM with no account; the repositories open the
+      // database as they are made, so touching one here would throw.
+      final vm = RecordWorkoutViewModel(versions: stack(), initialIndex: 0);
+
+      await vm.loadContext();
+      await vm.loadLessonsFor('e1');
+
+      expect(vm.value.allPrEvents, isEmpty);
+      expect(vm.lessonCountFor('e1'), 0);
+    });
+
+    test('the note tile\'s shelf re-reads on demand', () async {
+      final lessons = _Lessons();
+      final vm = RecordWorkoutViewModel(
+        versions: stack(),
+        initialIndex: 0,
+        userId: 'u1',
+        timelineLoader: (_) async => const [],
+        lessonRepository: lessons,
+        programRepository: FakeProgramRepository(),
+      );
+
+      await vm.loadContext();
+      expect(vm.lessonCountFor('e1'), 0);
+
+      lessons.byExercise = {
+        'e1': [lessonOf('l1')],
+      };
+      await vm.loadLessonsFor('e1');
+
+      expect(vm.lessonCountFor('e1'), 1);
+      expect(vm.lessonsFor('e1').single.lessonId, 'l1');
+    });
+  });
+
+  group('the card and the floor agree', () {
+    test('exercises read in plan order, and the active one clamps', () {
+      final session = ContentSession(
+        sessionId: 's1',
+        userId: 'u1',
+        name: 'Push Day',
+        exercises: [
+          ContentExercise(
+            plannedExerciseId: 'pe2',
+            plannedSessionId: 's1',
+            userId: 'u1',
+            exerciseId: 'e2',
+            exerciseOrder: 2,
+            sets: const [],
+          ),
+          ContentExercise(
+            plannedExerciseId: 'pe1',
+            plannedSessionId: 's1',
+            userId: 'u1',
+            exerciseId: 'e1',
+            exerciseOrder: 1,
+            sets: const [],
+          ),
+        ],
+      );
+      final vm = RecordWorkoutViewModel(
+        versions: [
+          WorkoutVersion(
+            sessionId: 's1',
+            side: WorkoutVersionSide.current,
+            session: session,
+          ),
+        ],
+        initialIndex: 0,
+      );
+
+      expect([for (final e in vm.value.exercises) e.exerciseId], ['e1', 'e2']);
+      expect(vm.value.activeExercise!.exerciseId, 'e1');
+
+      vm.selectExercise(5);
+      expect(
+        vm.value.activeExercise!.exerciseId,
+        'e2',
+        reason: 'a shorter version must never land the card nowhere',
+      );
+    });
+  });
+}
+
+/// The lesson shelves, handed in — what the note door reads and re-reads.
+class _Lessons implements LessonRepository {
+  _Lessons({this.byExercise = const {}, this.throwOnBatch = false});
+
+  Map<String, List<Lesson>> byExercise;
+  bool throwOnBatch;
+
+  @override
+  Future<Map<String, List<Lesson>>> fetchLessonsForExercises(
+    String userId,
+    List<String> exerciseIds,
+  ) async {
+    if (throwOnBatch) throw StateError('offline');
+    return {
+      for (final id in exerciseIds)
+        if (byExercise[id] != null) id: byExercise[id]!,
+    };
+  }
+
+  @override
+  Future<List<Lesson>> fetchLessons(String userId, String exerciseId) async =>
+      byExercise[exerciseId] ?? const [];
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+/// A goal read that never answers — the door that cannot answer stays quiet.
+class _OfflineGoals implements ProgramRepository {
+  @override
+  Future<List<({Goal goal, String? programName, String? blockName})>>
+  fetchGoalOptions(String userId) async => throw StateError('offline');
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
