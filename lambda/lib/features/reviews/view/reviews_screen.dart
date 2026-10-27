@@ -205,6 +205,10 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
         title: started.review.title,
         sinceDate: started.sinceDate,
         achievements: started.achievements,
+        // The edits the pass had staged when it was left: a resume must open
+        // on what the pass has done, not on the plan it hasn't written yet
+        // (2026-10-27).
+        stage: started.review.stage,
       ),
     );
     if (mounted) await _vm.load();

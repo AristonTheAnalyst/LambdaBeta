@@ -14,9 +14,12 @@ import '../models/program_history.dart';
 import '../models/program_progress.dart';
 import '../models/program_review.dart';
 import '../models/program_run.dart';
+import '../models/review_stage.dart';
 import 'planned_session_repository.dart';
+import 'planned_session_store.dart';
 import 'program_repository.dart';
 import 'program_run_repository.dart';
+import 'staged_planned_sessions.dart';
 
 const _uuid = Uuid();
 
@@ -245,9 +248,15 @@ class ProgramHistoryRepository {
   /// 'order' runs walk and the order `reorderWorkouts` writes. A position in
   /// the returned list IS the workout's place in the program, which is what
   /// makes the diff's move detection mean anything.
+  ///
+  /// [store] is the rows to read when the caller has edits the plan has not
+  /// taken yet — a review pass finishing reads its own staged rows through it,
+  /// which is how the snapshot records what the pass left rather than what the
+  /// plan held before it (2026-10-27). Null reads the live rows.
   Future<ProgramContent> buildContent({
     required String userId,
     required String programId,
+    PlannedSessionStore? store,
   }) async {
     final links = await _plannedRepo.fetchProgramLinks(programId);
     final sessions = await _plannedRepo.fetchPlannedSessions(
@@ -273,15 +282,19 @@ class ProgramHistoryRepository {
           );
 
     final snapshot = <ContentSession>[];
+    final reader = store ?? _plannedRepo;
     for (final link in ordered) {
-      final session = sessionById[link.plannedSessionId]!;
+      var session = sessionById[link.plannedSessionId]!;
+      // The pass may have renamed (or noted) the workout it is reviewing.
+      if (store != null) {
+        session =
+            await store.fetchPlannedSessionById(session.sessionId) ?? session;
+      }
 
       // Both reads are already scoped to active rows and ordered by
       // exercise_order / set_number, so grouping preserves that order.
-      final exercises = await _plannedRepo.fetchPlannedExercises(
-        session.sessionId,
-      );
-      final sets = await _plannedRepo.fetchPlannedSets(session.sessionId);
+      final exercises = await reader.fetchPlannedExercises(session.sessionId);
+      final sets = await reader.fetchPlannedSets(session.sessionId);
       final setsByExercise = <String, List<PlannedSessionExerciseSet>>{};
       for (final set in sets) {
         setsByExercise.putIfAbsent(set.plannedExerciseId, () => []).add(set);
@@ -393,6 +406,7 @@ class ProgramHistoryRepository {
     required String userId,
     required List<String> sessionIds,
     List<String> goalIds = const [],
+    PlannedSessionStore? store,
   }) async {
     final links = await _plannedRepo.fetchLinksForSessions(sessionIds);
     final linkBySession = <String, PlannedSessionProgram>{};
@@ -401,15 +415,18 @@ class ProgramHistoryRepository {
     }
 
     final sessions = <ContentSession>[];
+    final reader = store ?? _plannedRepo;
     for (final id in sessionIds) {
-      final session = await _plannedRepo.fetchPlannedSessionById(id);
+      final session = store == null
+          ? await _plannedRepo.fetchPlannedSessionById(id)
+          : await store.fetchPlannedSessionById(id);
       if (session == null) continue;
       final link = linkBySession[id];
 
       // Both reads are already scoped to active rows and ordered by
       // exercise_order / set_number, so grouping preserves that order.
-      final exercises = await _plannedRepo.fetchPlannedExercises(id);
-      final sets = await _plannedRepo.fetchPlannedSets(id);
+      final exercises = await reader.fetchPlannedExercises(id);
+      final sets = await reader.fetchPlannedSets(id);
       final setsByExercise = <String, List<PlannedSessionExerciseSet>>{};
       for (final set in sets) {
         setsByExercise.putIfAbsent(set.plannedExerciseId, () => []).add(set);
@@ -549,9 +566,12 @@ class ProgramHistoryRepository {
 
   /// Creates a review — always a [kReviewKindReview].
   ///
-  /// `proposed_content` rows still read back ([ProgramReview.fromMap] keeps the
-  /// columns), but nothing writes them any more: reviewing IS editing, so a
-  /// "proposed change" was a second way to describe the same act.
+  /// `proposed_content`/`proposed_hash` are the pass's **staged workouts**
+  /// (2026-10-27): the editor writes the workouts into the review's own row
+  /// while the pass runs ([saveProposal]) and the plan only moves when the
+  /// pass finishes ([completeReview]). The columns are named for the retired
+  /// "propose a change" path they were born under; the document on them is
+  /// [ReviewStage]'s, not [ProgramContent]'s.
   ///
   /// [sessionIds] is the SCOPE — the workouts the pass covers, ticked in the
   /// picker. A review of nothing is not a review: an empty set would store no
@@ -1027,18 +1047,54 @@ class ProgramHistoryRepository {
     );
   }
 
-  /// Completes a review, writing the snapshot it is a checkpoint of onto the
-  /// row.
+  /// Stages [stage] on [reviewId]'s row — the working copy of every workout
+  /// the pass has edited so far (2026-10-27).
   ///
-  /// The snapshot write and the completion UPDATE share ONE transaction: a
-  /// review marked complete with no snapshot behind it, or a snapshot no
-  /// review claims, are both worse than the operation failing outright.
+  /// Only an OPEN row takes it: a completed review is a record, and a late
+  /// persist landing after the finish must not reopen a question the pass
+  /// already answered. An empty stage clears the columns.
+  Future<void> saveProposal(String reviewId, ReviewStage stage) async {
+    if (stage.isEmpty) {
+      await ps.safeExec(
+        '''
+        UPDATE fact_program_review
+        SET proposed_content = NULL, proposed_hash = NULL
+        WHERE review_id = ? AND completed_date IS NULL
+        ''',
+        [reviewId],
+      );
+      return;
+    }
+    await ps.safeExec(
+      '''
+      UPDATE fact_program_review
+      SET proposed_content = ?, proposed_hash = ?
+      WHERE review_id = ? AND completed_date IS NULL
+      ''',
+      [stage.encode(), stage.contentHash, reviewId],
+    );
+  }
+
+  /// Completes a review, applying the pass's staged workouts and writing the
+  /// snapshot it is a checkpoint of onto the row.
   ///
-  /// A [kOutcomeDismissed] review is "not now", not a checkpoint, so it takes
-  /// the completion UPDATE alone — no snapshot, no content build. It is also
-  /// excluded from the achievements window ([checkpointFor]); otherwise
-  /// dismissing a prompt would silently swallow everything achieved since the
-  /// last real review.
+  /// A pass no longer edits the plan as it goes (2026-10-27): its changes are
+  /// staged on the row ([saveProposal]) and this is the one moment they land —
+  /// the staged rows are written into the dims, the snapshot is taken of what
+  /// they produced, and the completion stamp is written, all in ONE
+  /// transaction. A review marked complete with half its edits applied, or a
+  /// snapshot no review claims, are both worse than the operation failing
+  /// outright.
+  ///
+  /// [stage] is the finishing route's live workbook, which is ahead of the
+  /// last persisted document by at most one queued write. Null reads the
+  /// document off the row, which is what a completion from anywhere else does.
+  ///
+  /// A [kOutcomeDismissed] review is "not now", not a checkpoint, so its
+  /// staged edits are DROPPED rather than applied — it takes the completion
+  /// UPDATE alone, clearing the proposal with it. It is also excluded from the
+  /// achievements window ([checkpointFor]); otherwise dismissing a prompt would
+  /// silently swallow everything achieved since the last real review.
   ///
   /// Idempotent: a review that is already completed is returned unchanged, so
   /// a double-tap cannot re-snapshot a program the user has since edited.
@@ -1047,6 +1103,7 @@ class ProgramHistoryRepository {
     required String userId,
     required String outcome,
     String? notes,
+    ReviewStage? stage,
   }) async {
     if (!kReviewOutcomes.contains(outcome)) {
       throw ArgumentError.value(outcome, 'outcome', 'Unknown review outcome');
@@ -1058,12 +1115,14 @@ class ProgramHistoryRepository {
     if (review.isCompleted) return review;
 
     final now = DateTime.now().toUtc();
+    final pass = stage ?? review.stage;
 
     if (outcome == kOutcomeDismissed) {
       await ps.safeExec(
         '''
         UPDATE fact_program_review
-        SET completed_date = ?, outcome = ?, notes = COALESCE(?, notes)
+        SET completed_date = ?, outcome = ?, notes = COALESCE(?, notes),
+            proposed_content = NULL, proposed_hash = NULL
         WHERE review_id = ? AND completed_date IS NULL
         ''',
         [now.toIso8601String(), outcome, notes, reviewId],
@@ -1071,30 +1130,44 @@ class ProgramHistoryRepository {
       return (await fetchReview(reviewId)) ?? review;
     }
 
-    // The snapshot is of the LIVE rows. Reviewing IS editing: the user
-    // changes the plan through the normal editor, and finishing records what
-    // that produced — the review row never writes back to the rows it
-    // describes. Which rows "live" means follows the pass's own scope: the
-    // whole program for a program review, the stored set and picked goals for
-    // a standalone one.
+    // The snapshot is of the rows as the PASS left them: live where the pass
+    // changed nothing, staged where it did. Which rows that means follows the
+    // pass's own scope: the whole program for a program review, the stored set
+    // and picked goals for a standalone one.
     //
     // Built BEFORE the transaction opens — querying from inside a
     // `writeTransaction` callback contends with the write lock that
     // transaction holds (see the note on `ProgramRepository.duplicateProgram`).
+    final stageRows = (pass == null || pass.isEmpty)
+        ? null
+        : StagedPlannedSessions(
+            reviewId: reviewId,
+            userId: userId,
+            stage: pass,
+          );
     final content = review.isStandalone
         ? await buildContentForSessions(
             userId: userId,
             sessionIds: review.storedSessionIds ?? const [],
             goalIds: review.storedGoalIds ?? const [],
+            store: stageRows,
           )
-        : await buildContent(userId: userId, programId: review.programId!);
+        : await buildContent(
+            userId: userId,
+            programId: review.programId!,
+            store: stageRows,
+          );
 
     await ps.safeWriteTransaction((tx) async {
+      if (pass != null && pass.isNotEmpty) {
+        await _applyStage(tx, pass);
+      }
       await tx.execute(
         '''
         UPDATE fact_program_review
         SET completed_date = ?, outcome = ?, notes = COALESCE(?, notes),
-            snapshot_content = ?, snapshot_hash = ?
+            snapshot_content = ?, snapshot_hash = ?,
+            proposed_content = NULL, proposed_hash = NULL
         WHERE review_id = ? AND completed_date IS NULL
         ''',
         [
@@ -1108,6 +1181,81 @@ class ProgramHistoryRepository {
       );
     });
     return (await fetchReview(reviewId)) ?? review;
+  }
+
+  /// Writes a pass's staged workouts onto the dim rows — row for row, archived
+  /// flags included, so a group the pass removed lands removed.
+  ///
+  /// `INSERT OR REPLACE` keyed on the logical id (the mirror's `id` is that
+  /// same value, and the staged rows kept their ids): every row the workout
+  /// already had is rewritten, the rows the pass added arrive, and nothing is
+  /// deleted — an archived row stays on disk, exactly as the planner's own
+  /// deletes write it.
+  Future<void> _applyStage(dynamic tx, ReviewStage stage) async {
+    for (final workout in stage.workouts.values) {
+      await tx.execute(
+        '''
+        UPDATE dim_planned_session
+        SET name = ?, notes = ?, date_archived = ?
+        WHERE session_id = ?
+        ''',
+        [
+          workout.session['name'],
+          workout.session['notes'],
+          workout.session['date_archived'],
+          workout.sessionId,
+        ],
+      );
+      for (final row in workout.exercises.values) {
+        await tx.execute(
+          '''
+          INSERT OR REPLACE INTO dim_planned_session_exercise
+            (id, planned_exercise_id, planned_session_id, user_id,
+             custom_exercise_id, exercise_order, is_archived)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+          ''',
+          [
+            row['planned_exercise_id'],
+            row['planned_exercise_id'],
+            row['planned_session_id'],
+            row['user_id'],
+            row['custom_exercise_id'],
+            (row['exercise_order'] as num?)?.toInt() ?? 0,
+            _flag(row['is_archived']),
+          ],
+        );
+      }
+      for (final row in workout.sets.values) {
+        await tx.execute(
+          '''
+          INSERT OR REPLACE INTO dim_planned_session_exercise_set
+            (id, planned_set_id, planned_exercise_id, user_id,
+             custom_variation_id, set_number, target_weight, target_reps,
+             target_notes, is_archived)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ''',
+          [
+            row['planned_set_id'],
+            row['planned_set_id'],
+            row['planned_exercise_id'],
+            row['user_id'],
+            row['custom_variation_id'],
+            (row['set_number'] as num?)?.toInt() ?? 1,
+            row['target_weight'],
+            row['target_reps'],
+            row['target_notes'],
+            _flag(row['is_archived']),
+          ],
+        );
+      }
+    }
+  }
+
+  /// A staged boolean as the mirror stores it.
+  static int _flag(Object? value) {
+    if (value is bool) return value ? 1 : 0;
+    if (value is int) return value == 0 ? 0 : 1;
+    return 0;
   }
 
   // ── Achievements ─────────────────────────────────────────────────────────

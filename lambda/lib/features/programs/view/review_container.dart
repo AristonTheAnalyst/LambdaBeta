@@ -14,11 +14,13 @@ import '../../../data/models/goal.dart';
 import '../../../data/models/planned_session.dart';
 import '../../../data/models/program_content.dart';
 import '../../../data/models/program_review.dart';
+import '../../../data/models/review_stage.dart';
 import '../../../data/repositories/exercise_repository.dart';
 import '../../../data/repositories/planned_session_repository.dart';
 import '../../../data/repositories/program_history_repository.dart';
 import '../../../data/repositories/program_repository.dart';
 import '../../../data/repositories/session_repository.dart';
+import '../../../data/repositories/staged_planned_sessions.dart';
 import '../../../shared/router/app_router.dart';
 import '../../../shared/widgets/app_card.dart';
 import '../../../shared/widgets/container_styles.dart';
@@ -135,7 +137,7 @@ Future<void> saveReviewWorkoutNote({
 /// landing and the notes sheet need, carried forward by [copyWith] as the pass
 /// advances.
 class ReviewSession {
-  const ReviewSession({
+  ReviewSession({
     required this.reviewId,
     required this.programId,
     required this.sessionIds,
@@ -146,7 +148,8 @@ class ReviewSession {
     this.title,
     this.sinceDate,
     this.achievements,
-  });
+    ReviewStage? stage,
+  }) : stage = stage ?? ReviewStage();
 
   final String reviewId;
 
@@ -196,6 +199,13 @@ class ReviewSession {
   /// Null for a standalone pass, which has no program to derive against.
   final ProgramAchievements? achievements;
 
+  /// The workouts this pass has edited so far — its working copy, kept on the
+  /// review row and applied only when the pass finishes (2026-10-27). One
+  /// mutable document, shared by every copy of this session: the route's
+  /// staged store writes it, and the landing, the comparison and the finish
+  /// all read the same instance.
+  final ReviewStage stage;
+
   /// True while the landing is the page under the bar.
   bool get isOverview => activeSessionId == null;
 
@@ -243,6 +253,7 @@ class ReviewSession {
       title: title,
       sinceDate: sinceDate,
       achievements: achievements,
+      stage: stage,
     );
   }
 }
@@ -409,12 +420,39 @@ class _ReviewRouteState extends State<ReviewRoute> {
   /// PowerSync database through its lesson repository — which is also what
   /// lets a host test render a record with no database under it.
   WorkoutEditorViewModel? _editor;
-  WorkoutEditorViewModel get _editorFor => _editor ??= WorkoutEditorViewModel();
+  WorkoutEditorViewModel get _editorFor =>
+      _editor ??= WorkoutEditorViewModel(workoutPlanRepo: _staged);
 
   late final _planned = widget.plannedRepository ?? PlannedSessionRepository();
   late final _programs = widget.programRepository ?? ProgramRepository();
   late final _exercises = widget.exerciseRepository ?? ExerciseRepository();
   late final _history = widget.historyRepository ?? ProgramHistoryRepository();
+
+  /// The pass's staged store — what the editor writes through for the length
+  /// of the ceremony, so nothing it does lands on the plan until the pass
+  /// finishes (2026-10-27). Built on the first open, not with the route: a
+  /// record never writes, and building it evaluates the signed-in user.
+  StagedPlannedSessions? _stagedCache;
+  StagedPlannedSessions? get _staged => widget.readOnly
+      ? null
+      : _stagedCache ??= StagedPlannedSessions(
+          reviewId: widget.session.reviewId,
+          userId: _userId,
+          stage: widget.session.stage,
+          delegate: _planned,
+          variationNames: () => _exercises.fetchVariationNameMap(_userId),
+          persist: (stage) =>
+              _history.saveProposal(widget.session.reviewId, stage),
+        );
+
+  /// Waits for the editor's staged writes and their persist. A failure only
+  /// costs durability across a restart — the stage in memory is what the
+  /// finish applies — so it is not the landing's business to report one.
+  Future<void> _flushStage() async {
+    try {
+      await _stagedCache?.flush();
+    } catch (_) {}
+  }
 
   /// The set as the landing shows it, resolved from the live rows — null
   /// until the read lands, so a card never shows a workout the read has not
@@ -471,9 +509,15 @@ class _ReviewRouteState extends State<ReviewRoute> {
   /// read for it.
   Future<void> _loadCards() async {
     final ids = _session.sessionIds;
+    final stage = _session.stage;
     final cards = <_ReviewCard>[];
     for (final id in ids) {
-      final workout = await _planned.fetchPlannedSessionById(id);
+      // A workout the pass has edited reads from the stage — the card names
+      // what the pass left, not what the plan still holds.
+      final staged = stage.workout(id);
+      final workout = staged != null
+          ? staged.model
+          : await _planned.fetchPlannedSessionById(id);
       if (workout == null) continue;
       cards.add(_ReviewCard(workout: workout));
     }
@@ -753,8 +797,12 @@ class _ReviewRouteState extends State<ReviewRoute> {
       ),
     );
     if (!mounted) return;
+    // Settle the editor's queued staged writes before the landing reads.
+    await _flushStage();
+    if (!mounted) return;
     // The editor may have renamed (or deleted) the workout it was opened on —
-    // the landing reads the live rows, so it re-resolves the set now.
+    // the landing reads the stage (or, untouched, the live rows) and
+    // re-resolves the set now.
     _loadCards();
   }
 
@@ -870,11 +918,16 @@ class _ReviewRouteState extends State<ReviewRoute> {
     if (notes == null || !mounted) return;
 
     try {
-      await ProgramHistoryRepository().completeReview(
+      // Every staged write must be on the row before the finish reads it: the
+      // pass completes on the stage as it stands, not as the last persist
+      // caught it.
+      await _staged?.flush();
+      await _history.completeReview(
         session.reviewId,
         userId: _currentUserId(),
         outcome: kOutcomeReviewed,
         notes: notes.isEmpty ? null : notes,
+        stage: session.stage,
       );
       if (!mounted) return;
       // Unwind only — `ReviewRoute`'s dispose clears the notifier once the
@@ -1908,11 +1961,12 @@ class ReviewComparison {
 
 /// Gathers everything a comparison taken mid-review needs.
 ///
-/// The "after" side is built live because the pass IS the editing: what the
-/// review has changed is exactly the difference between the plan as last
-/// reviewed (or as found) and the plan as it stands. Live means the pass's own
-/// scope — the whole program for a program review, the picked set and goals
-/// for a standalone one.
+/// The "after" side is built through the pass's STAGE because the pass is the
+/// editing (2026-10-27): what the review has changed is exactly the difference
+/// between the plan as last reviewed (or as found) and the workouts as the
+/// pass has left them — rows the pass never touched still read live, through
+/// the same store. The scope is the pass's own — the whole program for a
+/// program review, the picked set and goals for a standalone one.
 ///
 /// Compare is a per-workout verb — it runs from inside one workout — so both
 /// documents are narrowed to [ReviewSession.activeSessionId]: the "before"
@@ -1934,13 +1988,25 @@ Future<ReviewComparison> loadReviewComparison(
       ? null
       : await history.comparisonBase(review, sessionId: workoutId);
   final programId = session.programId;
+  final staged = session.stage.isEmpty
+      ? null
+      : StagedPlannedSessions(
+          reviewId: session.reviewId,
+          userId: userId,
+          stage: session.stage,
+        );
   final live = programId == null
       ? await history.buildContentForSessions(
           userId: userId,
           sessionIds: session.sessionIds,
           goalIds: session.goalIds,
+          store: staged,
         )
-      : await history.buildContent(userId: userId, programId: programId);
+      : await history.buildContent(
+          userId: userId,
+          programId: programId,
+          store: staged,
+        );
   final library = ExerciseRepository();
   final names = await library.fetchExerciseNameMap(userId);
   final variations = await library.fetchVariationNameMap(userId);

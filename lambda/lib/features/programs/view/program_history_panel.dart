@@ -119,6 +119,8 @@ class _ProgramHistoryPanelState extends State<ProgramHistoryPanel>
         title: started.review.title,
         sinceDate: started.sinceDate,
         achievements: started.achievements,
+        // The edits the pass had staged when it was left (2026-10-27).
+        stage: started.review.stage,
       ),
     );
     // Only a finish cut a snapshot; backing out left the review open, and the

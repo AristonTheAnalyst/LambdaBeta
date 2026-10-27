@@ -18,6 +18,7 @@ import '../../../data/models/session_exercise_set.dart';
 import '../../../data/repositories/exercise_repository.dart';
 import '../../../data/repositories/lesson_repository.dart';
 import '../../../data/repositories/planned_session_repository.dart';
+import '../../../data/repositories/planned_session_store.dart';
 import '../../../data/repositories/program_repository.dart';
 import '../../../data/repositories/session_repository.dart';
 import '../../../shared/widgets/exercise_target_picker.dart';
@@ -250,7 +251,7 @@ class WorkoutEditorViewModel {
     ExerciseRepository? exerciseRepo,
     LessonRepository? lessonRepo,
     SessionRepository? workoutRepo,
-    PlannedSessionRepository? workoutPlanRepo,
+    PlannedSessionStore? workoutPlanRepo,
     ProgramRepository? programRepo,
     String? userId,
   }) : _host = host,
@@ -273,7 +274,7 @@ class WorkoutEditorViewModel {
   final ExerciseRepository _exerciseRepo;
   final LessonRepository _lessonRepo;
   final SessionRepository _sessionRepo;
-  final PlannedSessionRepository _plannedSessionRepo;
+  final PlannedSessionStore _plannedSessionRepo;
   final ProgramRepository _programRepo;
 
   /// The owner of everything this editor writes, when the caller knows it.

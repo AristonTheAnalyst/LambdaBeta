@@ -9,13 +9,20 @@ import '../models/planned_session_exercise.dart';
 import '../models/planned_session_exercise_set.dart';
 import '../models/planned_session_program.dart';
 
+import 'planned_session_store.dart';
+
 const _uuid = Uuid();
 
 /// Owns planned sessions (session templates — standalone or program-attached
 /// via the join table) and their exercise groups + planned sets. Dimensions
 /// are soft-deleted via is_archived so logged history that references them
 /// never dangles; join-table rows hard-delete (nothing references them).
-class PlannedSessionRepository {
+///
+/// The workout editor talks to it through [PlannedSessionStore] — this class
+/// is that store, writing every call straight to the live rows. Inside a
+/// review pass the editor is handed `StagedPlannedSessions` instead, and
+/// nothing it does lands until the pass finishes (2026-10-27).
+class PlannedSessionRepository implements PlannedSessionStore {
   /// Refuses a workout name the field would have stopped at.
   ///
   /// The screens cap the field (`LambdaInput.maxLength`), so this can only
@@ -78,6 +85,26 @@ class PlannedSessionRepository {
       throw LambdaException('A session named "$name" already exists.');
     }
   }
+
+  // ── The review stage's reads (2026-10-27) ─────────────────────────────────
+
+  /// The name a workout row currently holds, or null when the row is gone.
+  /// The staged store checks it so the grandfather rule judges the row the
+  /// PLAN holds, not the pass's copy of it.
+  Future<String?> storedPlannedName(String sessionId) => _storedName(sessionId);
+
+  /// Refuses [name] when another active workout of [userId] holds it — the
+  /// staged store's half of the rename check, so a rename inside a pass fails
+  /// at the field exactly where a rename outside one does.
+  Future<void> assertSessionNameAvailable(
+    String userId,
+    String name, {
+    String? excludeSessionId,
+  }) => _assertSessionNameUnique(
+    userId,
+    name,
+    excludeSessionId: excludeSessionId,
+  );
 
   /// The standalone branch of [fetchPlannedSessions] reads its recency from
   /// here: the most recent `fact_session.created_datetime` per template, any
@@ -281,6 +308,7 @@ class PlannedSessionRepository {
   /// database level, so two offline devices can still independently create
   /// (or rename to) the same string and the server accepts a cosmetic
   /// duplicate after sync. Records are keyed by UUID, never by name.
+  @override
   Future<PlannedSession> createPlannedSession(
     String userId, {
     String? name,
@@ -313,6 +341,7 @@ class PlannedSessionRepository {
     );
   }
 
+  @override
   Future<void> updatePlannedSession(
     String sessionId, {
     String? name,
@@ -349,6 +378,7 @@ class PlannedSessionRepository {
 
   /// Soft-deletes a planned session, its exercise groups and sets
   /// (is_archived = 1), and hard-deletes its program links.
+  @override
   Future<void> deletePlannedSession(String sessionId) async {
     await ps.db.execute(
       '''
@@ -438,6 +468,7 @@ class PlannedSessionRepository {
   /// One template by id — used to restore a session's planned context from
   /// its persisted `planned_session_id` (the template may be standalone or
   /// program-attached; both live in the same table).
+  @override
   Future<PlannedSession?> fetchPlannedSessionById(String sessionId) async {
     final rows = await ps.db.getAll(
       'SELECT * FROM dim_planned_session WHERE session_id = ? AND date_archived IS NULL',
@@ -455,6 +486,7 @@ class PlannedSessionRepository {
   /// read that SHOWS a workout hides them; the one caller that asks for them
   /// is the review editor, where a removal made during the pass must stay on
   /// the card so its note can explain it (2026-10-26).
+  @override
   Future<List<PlannedSessionExercise>> fetchPlannedExercises(
     String plannedSessionId, {
     bool includeArchived = false,
@@ -473,6 +505,7 @@ class PlannedSessionRepository {
     return rows.map((r) => PlannedSessionExercise.fromMap(r)).toList();
   }
 
+  @override
   Future<PlannedSessionExercise> createPlannedExercise(
     String userId,
     String plannedSessionId, {
@@ -499,6 +532,7 @@ class PlannedSessionRepository {
   }
 
   /// Archives an exercise group and its sets.
+  @override
   Future<void> deletePlannedExercise(String plannedExerciseId) async {
     await ps.db.execute(
       'UPDATE dim_planned_session_exercise_set SET is_archived = 1 WHERE planned_exercise_id = ?',
@@ -514,6 +548,7 @@ class PlannedSessionRepository {
   /// captured order — the restore half of the planner's soft-delete inverses
   /// (2026-10-13; the discard pass's raw-SQL precedent, as a repo method so
   /// host tests can fake it).
+  @override
   Future<void> restorePlannedExercise(
     String plannedExerciseId, {
     required int exerciseOrder,
@@ -526,6 +561,7 @@ class PlannedSessionRepository {
 
   /// The undo of [deletePlannedSet]: un-archives the row with its captured
   /// number (2026-10-13).
+  @override
   Future<void> restorePlannedSet(
     String plannedSetId, {
     required int setNumber,
@@ -543,6 +579,7 @@ class PlannedSessionRepository {
   ///
   /// [includeArchived] also brings back the rows a removal flagged — the
   /// review editor's read (2026-10-26), same as [fetchPlannedExercises].
+  @override
   Future<List<PlannedSessionExerciseSet>> fetchPlannedSets(
     String plannedSessionId, {
     bool includeArchived = false,
@@ -568,6 +605,7 @@ class PlannedSessionRepository {
     return rows.map((r) => PlannedSessionExerciseSet.fromMap(r)).toList();
   }
 
+  @override
   Future<PlannedSessionExerciseSet> createPlannedSet(
     String userId,
     String plannedExerciseId, {
@@ -614,6 +652,7 @@ class PlannedSessionRepository {
     );
   }
 
+  @override
   Future<void> updatePlannedSet(
     String plannedSetId, {
     String? targetWeight,
@@ -655,6 +694,7 @@ class PlannedSessionRepository {
   }
 
   /// Soft-deletes a planned set.
+  @override
   Future<void> deletePlannedSet(String plannedSetId) async {
     await ps.db.execute(
       'UPDATE dim_planned_session_exercise_set SET is_archived = 1 WHERE planned_set_id = ?',
@@ -717,6 +757,7 @@ class PlannedSessionRepository {
   /// preview). Stored numbers that are already sequential — the steady
   /// state — read identically, and the writing variant still repairs
   /// genuinely broken numbering on save (2026-10-13).
+  @override
   Future<List<PlannedSessionExerciseSet>> readNormalizedPlannedSession(
     String plannedSessionId, {
     bool includeArchived = false,
@@ -1160,6 +1201,7 @@ class PlannedSessionRepository {
   /// out a strict 1..N per group, because [fetchNormalizedPlannedSets]
   /// renumbers by appearance on every open — a tie would let it reorder the
   /// group behind the user's back.
+  @override
   Future<void> renumberPlannedSets(List<String> orderedSetIds) async {
     for (var i = 0; i < orderedSetIds.length; i++) {
       await ps.db.execute(
@@ -1194,6 +1236,7 @@ class PlannedSessionRepository {
   /// Renumbers every exercise group's order so each (old order → new index)
   /// entry in [orderToIndex] lands at index+1. Two-phase (shift to
   /// negatives, then assign) so intermediate collisions can't occur.
+  @override
   Future<void> renumberExerciseOrders(
     String plannedSessionId,
     List<(int, int)> orderToIndex,
@@ -1258,6 +1301,7 @@ class PlannedSessionRepository {
     return rows.map((r) => PlannedSessionProgram.fromMap(r)).toList();
   }
 
+  @override
   Future<PlannedSessionProgram> createProgramLink(
     String userId, {
     required String programId,

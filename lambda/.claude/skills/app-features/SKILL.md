@@ -187,11 +187,14 @@ reads one as a "program" review — the acceptable old behavior.
   (`confirmCancelReview`, "Keep reviewing" / "Cancel review") → `deleteReview`
   hard-deletes the row, guarded `completed_date IS NULL` so a pass completed
   on another device is not deleted out from under its record. The drawer only
-  reveals; the dialog decides. Ticks, notes, baseline and snapshot are columns
-  on that one row — nothing else goes with it — and cancelling a *scheduled*
-  pass also removes its `kDueReview` item from `fetchDueItems` (that row is
-  otherwise only dismissable by completing). A completed card has no drawer:
-  a record is not something a list takes back.
+  reveals; the dialog decides. Ticks, notes, baseline, snapshot and the
+  pass's **stage** — the edits it has made to workouts, kept on
+  `proposed_content` (2026-10-27) — are columns on that one row: nothing
+  else goes with it, so a cancel is a true discard and every workout stays
+  exactly as found. Cancelling a *scheduled* pass also removes its
+  `kDueReview` item from `fetchDueItems` (that row is otherwise only
+  dismissable by completing). A completed card has no drawer: a record is
+  not something a list takes back.
 - **Beginning**: `beginReview` = the INSERT plus the "as found" baseline,
   captured from the live rows at the moment the pass starts and idempotent
   by construction (the UPDATE only lands where the baseline is NULL, so a
@@ -202,7 +205,10 @@ reads one as a "program" review — the acceptable old behavior.
   date once Done, one per picked goal on the second (tap → read-only view).
   A pass with no goals gets no strip at all rather than an empty second tab —
   the strip is the claim that there is something under it. A workout card
-  pushes the real editor (edit mode) with
+  pushes the real editor (edit mode) writing through the pass's **staged
+  store** (`StagedPlannedSessions`, 2026-10-27) — nothing reaches
+  `dim_planned_session` until Finish, and the landing card and Compare read
+  the stage — with
   `ReviewBar` below it in the same `FloatingBar` container: **Note** /
   **Compare** / **Done** inside a workout, **In Review · N of M** / **Finish**
   on the landing (Finish is a review-level decision, so it lives where the
@@ -231,15 +237,19 @@ reads one as a "program" review — the acceptable old behavior.
   marks go with the flip: a pass at rest is bare (2026-10-12). The glyph is a
   plus or minus **inside a filled disc** (`Icons.add_circle`/`remove_circle`):
   a bare stroke at 14px read as a hyphen against the name it was about.
-- **Finishing** (`completeReview`) writes a `ProgramContent` into
-  `snapshot_content`/`snapshot_hash` and stamps `completed_date` + `outcome`
-  in one transaction. The snapshot is the **whole program** for a program
-  review and the **stored set + picked goals** for a standalone one
+- **Finishing** (`completeReview`) applies the pass's stage to the live rows
+  row-for-row, builds the snapshot through that same staged store and writes
+  it into
+  `snapshot_content`/`snapshot_hash`, then stamps `completed_date` + `outcome`
+  and clears `proposed_content`/`proposed_hash` — one transaction
+  (2026-10-27). The snapshot is the **whole program** for a program review
+  and the **stored set + picked goals** for a standalone one
   (`buildContentForSessions`); every read-back narrows it (`contentInScope`,
   which keeps an explicitly picked goal even when its block holds no reviewed
   workout). Finish asks once when work is left unticked ("N of M reviewed —
-  finish anyway?"). `kOutcomeDismissed` completes without a snapshot ("not
-  now"; excluded from the achievements window).
+  finish anyway?"). `kOutcomeDismissed` completes without a snapshot and
+  drops the stage unapplied ("not now"; excluded from the achievements
+  window).
 - **Reading a completed one (2026-10-11)**: tapping a COMPLETED card in the
   Reviews list calls `openCompletedReview` → `ReviewRoute(readOnly: true)`
   pushed under `kReviewRouteNameRecord` (deliberately NOT `kReviewRouteName`,
@@ -343,12 +353,17 @@ reads one as a "program" review — the acceptable old behavior.
   answers with **Continue / Change length / End run** directly — so Continue
   no longer clears the prompt (nothing writes the review that satisfied it).
   Nothing ends a run by itself.
-- `proposed_content`/`proposed_hash` are **dormant** — the proposal path was
-  deleted 2026-10-06; nothing writes or reads them.
+- `proposed_content`/`proposed_hash` carry the open pass's **stage** since
+  2026-10-27: the `ReviewStage` document of every workout the pass has
+  edited (whole workout — group and set maps included), written by
+  `saveProposal` after each staged write and cleared when the pass
+  finishes (applied) or is dismissed (dropped). The columns were born for the
+  proposal path deleted 2026-10-06; the document on them is no longer a
+  `ProgramContent`.
 - Reviews are hard-deleted only with `hardDeleteProgram` (they pin runs via
   a NO ACTION `program_run_id`, so they go before runs do) — and by
   `deleteReview` for a cancelled open pass (the `completed_date IS NULL`
-  guard keeps it to passes, never records).
+  guard keeps it to passes, never records; the stage goes with the row).
 
 ### Program runs — `fact_program_run`
 The commitment: "I'm doing this program for X." Columns: `program_id` (NO
@@ -682,8 +697,11 @@ standalone one — reads narrow by the resolved set), `baseline_content` /
 NULL), `exercise_notes_json` (keyed by `planned_exercise_id`),
 `workout_notes_json` (keyed by `planned_session_id` — the workout-level
 sibling), `achievements_json` (run close), `created_date`.
-`proposed_content` / `proposed_hash` are dormant (proposal path deleted
-2026-10-06). Indexed on (user_id, created_date desc) since 2026-10-07 — the
+`proposed_content` / `proposed_hash` hold the open pass's **stage** (since
+2026-10-27 — a `ReviewStage` document of the workouts it has edited, applied
+row-for-row by `completeReview` and cleared then; dropped unapplied on a
+dismissed completion; the retired proposal path left the names behind, not
+the meaning). Indexed on (user_id, created_date desc) since 2026-10-07 — the
 user-wide list the standalone Reviews tab reads.
 
 ### fact_goal — goals (owner ALL, coach SELECT, friend SELECT)
@@ -841,7 +859,7 @@ What actually happens to each table's rows.
 | fact_session_exercise_set | `insertSet` | `updateSet`, `reorderSets` | **hard DELETE** |
 | fact_program_run | REST insert in `startProgramRun` (ends previous is_current first — required by the partial unique index; takes progressionMode) | `updateRunConfig` (mode + duration), `pauseCurrentRun`/`resumeRun` (is_current) | never in the UI (history); hard-deleted only with `hardDeleteProgram` |
 | dim_program_block | `createProgramBlock` (block editor) | `updateBlock`, `reorderBlocks` (block_order) | **archive** (`date_archived = now()`), `reactivateBlock` clears it; hard-deleted only with `hardDeleteProgram` |
-| fact_program_review | `beginReview` (row + "as found" baseline, one move; `program_id` null = standalone) or `scheduleReview` (row only — a dated review must not freeze today's plan) | `captureBaseline` (idempotent — only where NULL), `markWorkoutReviewed` / `unmarkWorkoutReviewed` (tick map, read-modify-write, guarded on open), `setExerciseNote` / `setWorkoutNote` (write-through, read-modify-write of the JSON), `completeReview` (snapshot + completed_date + outcome, one transaction), `closeRun` (kind = 'close'), `deleteReview` (hard delete, guarded `completed_date IS NULL` — the Reviews list's cancel), `deleteCompletedReview` (hard delete, guarded `completed_date IS NOT NULL` — deleting a record, 2026-10-19) | never in the UI (history); hard-deleted with `hardDeleteProgram` — and before runs, which they pin via NO ACTION — by `deleteReview` when an open pass is cancelled, and by `deleteCompletedReview` when a record is deleted |
+| fact_program_review | `beginReview` (row + "as found" baseline, one move; `program_id` null = standalone) or `scheduleReview` (row only — a dated review must not freeze today's plan) | `captureBaseline` (idempotent — only where NULL), `saveProposal` (the pass's staged workouts → `proposed_content`, open rows only), `markWorkoutReviewed` / `unmarkWorkoutReviewed` (tick map, read-modify-write, guarded on open), `setExerciseNote` / `setWorkoutNote` (write-through, read-modify-write of the JSON), `completeReview` (stage applied row-for-row + snapshot + completed_date + outcome, one transaction), `closeRun` (kind = 'close'), `deleteReview` (hard delete, guarded `completed_date IS NULL` — the Reviews list's cancel), `deleteCompletedReview` (hard delete, guarded `completed_date IS NOT NULL` — deleting a record, 2026-10-19) | never in the UI (history); hard-deleted with `hardDeleteProgram` — and before runs, which they pin via NO ACTION — by `deleteReview` when an open pass is cancelled, and by `deleteCompletedReview` when a record is deleted |
 | fact_goal | run-start prompt, `createGoal` | `achieved_date` set/revoked, `updateGoal` | **hard DELETE** |
 | fact_goal_target | `createGoal` / `updateGoal` write the rung list (delete-then-insert in one transaction); a single-set goal writes none | — (rewritten wholesale with the goal) | **hard DELETE** with its goal (client-mirrored cascade), `deleteGoal` and `hardDeleteProgram` |
 | fact_bodyweight | profile weight logging | — | hard delete (rarely used) |
