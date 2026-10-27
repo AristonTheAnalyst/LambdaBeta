@@ -233,9 +233,10 @@ void main() {
     await tester.pumpAndSettle();
     expect(toggles, [true, false]);
     expect(find.byType(LambdaInput), findsNothing);
-    // The pre notes are a readout again; the post ones are empty, so they
-    // state the absence instead of drawing a box.
-    expect(find.byType(LambdaReadout), findsOneWidget);
+    // The pre notes are a readout again, and the empty post ones stay a
+    // hollow box too: the read side never drops to a bare line, so flipping
+    // the mode can never resize the section (2026-10-28).
+    expect(find.byType(LambdaReadout), findsNWidgets(2));
     expect(find.text('No post-workout notes'), findsOneWidget);
     expect(_inPre(find.text('Slept well')), findsOneWidget);
     expect(
@@ -263,6 +264,41 @@ void main() {
       preTaps.length,
       before,
       reason: 'read mode never writes — the stars are inert',
+    );
+  });
+
+  testWidgets('the pencil moves the fill, not the box or its words', (
+    tester,
+  ) async {
+    await _pumpSheet(
+      tester,
+      editing: false,
+      editToggles: [],
+      preNotes: 'Felt good.',
+    );
+
+    // A short note under the wizard's three-line prompt: the field reserves
+    // the hint's height even with a value in it, so the hollow box has to
+    // reserve it too or the sheet jumps when the pencil is tapped.
+    final readBox = tester.getRect(_inPre(find.byType(LambdaReadout)));
+    final readText = tester.getRect(_inPre(find.text('Felt good.')));
+
+    await tester.tap(_editButton());
+    await tester.pumpAndSettle();
+
+    final fieldBox = tester.getRect(_inPre(find.byType(LambdaInput)));
+    final fieldText = tester.getRect(_inPre(find.byType(EditableText)));
+
+    expect(readBox.size, fieldBox.size, reason: 'one box, only the fill moves');
+    expect(
+      readText.left - readBox.left,
+      fieldText.left - fieldBox.left,
+      reason: 'the words keep the field\'s own inset',
+    );
+    expect(
+      readText.top - readBox.top,
+      fieldText.top - fieldBox.top,
+      reason: 'the words keep the field\'s own line',
     );
   });
 }

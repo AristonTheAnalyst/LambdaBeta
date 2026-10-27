@@ -333,6 +333,10 @@ class _SessionRatingsSheetState extends State<_SessionRatingsSheet> {
         // The editable field's placeholder is the wizard's own prompt;
         // the read-only line states that there is nothing written yet.
         emptyNotes: editable ? placeholder : emptyNotes,
+        // The edit hint is the same in both modes; the read box reserves
+        // its height so the pencil's toggle never resizes the section
+        // (2026-10-28).
+        fieldHint: placeholder,
         onFeelingChanged: onFeelingChanged,
         onNotesChanged: onNotesChanged,
       ),

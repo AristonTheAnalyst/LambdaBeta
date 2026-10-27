@@ -162,6 +162,12 @@ class _NotesModalContentState extends State<_NotesModalContent> {
                   value: widget.initialValue,
                   minLines: 2,
                   maxLines: 5,
+                  // The field below reserves its prompt's height even when
+                  // the note is short; the read box does the same so the
+                  // sheet's two states are one box (2026-10-28).
+                  fieldHint:
+                      widget.plannedNote ??
+                      'Form cues, how it felt, adjustments…',
                 )
             else
               LambdaInput(

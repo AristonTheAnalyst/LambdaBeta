@@ -21,7 +21,11 @@ import 'package:lambda/shared/widgets/lambda_readout.dart';
 void main() {
   String lines(int n) => List.generate(n, (i) => 'Note line $i').join('\n');
 
-  Future<void> pumpPair(WidgetTester tester, int lineCount) async {
+  Future<void> pumpPair(
+    WidgetTester tester,
+    int lineCount, {
+    String? hint,
+  }) async {
     final controller = TextEditingController(text: lines(lineCount));
     addTearDown(controller.dispose);
     await tester.pumpWidget(
@@ -37,9 +41,13 @@ void main() {
                     controller: controller,
                     minLines: 2,
                     maxLines: 6,
+                    placeholder: hint,
                     onChanged: (_) {},
                   ),
-                  LambdaReadout(value: lines(lineCount)),
+                  LambdaReadout(
+                    value: lines(lineCount),
+                    fieldHint: hint,
+                  ),
                 ],
               ),
             ),
@@ -64,6 +72,41 @@ void main() {
       );
     });
   }
+
+  // The ratings sheet's own case: the field's hint is the wizard's prompt
+  // (three lines), the note is one. A field reserves the hint's height even
+  // with a value in it (`InputDecorator.maintainHintSize`), so the hollow
+  // box must reserve it too or the pencil's toggle resizes the section.
+  const wizardHint = 'Sleep and eat well?\nHydrated?\nGoals today?';
+  for (final n in [1, 2, 4]) {
+    testWidgets('a $n-line note under a three-line hint stays level', (
+      tester,
+    ) async {
+      await pumpPair(tester, n, hint: wizardHint);
+      expect(
+        tester.getSize(find.byType(LambdaReadout)).height,
+        tester.getSize(find.byType(LambdaInput)).height,
+        reason: 'the field reserves its hint; the hollow box must too',
+      );
+    });
+  }
+
+  // The field seats its input at the decoration's 16 plus the outline
+  // border's 4pt gap — the hollow box puts the words in the same place.
+  testWidgets('the words sit where the field puts them', (tester) async {
+    await pumpPair(tester, 1);
+    final fieldBox = tester.getRect(find.byType(LambdaInput));
+    final fieldText = tester.getRect(find.byType(EditableText));
+    final readBox = tester.getRect(find.byType(LambdaReadout));
+    final readText = tester.getRect(
+      find.descendant(
+        of: find.byType(LambdaReadout),
+        matching: find.text(lines(1)),
+      ),
+    );
+    expect(readText.left - readBox.left, fieldText.left - fieldBox.left);
+    expect(readText.top - readBox.top, fieldText.top - fieldBox.top);
+  });
 
   testWidgets('the readout is hollow: transparent fill, the field edge', (
     tester,

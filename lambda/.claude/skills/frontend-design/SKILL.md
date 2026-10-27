@@ -267,13 +267,17 @@ sticky-note icon) — the note indicator, not a color.
   sm text, optional magnifier, optional trailing control). Every read-only
   text box — text shown, not written — is `LambdaReadout` — **the field it
   stands in for with the fill taken out** (2026-10-28, the C · Hollow rule):
-  the same label slot, then the field's own box — 16×14 padding, `border`
-  hairline at radius 8, md primary text at the field's weight, two lines at
-  rest and six before the note scrolls inside (a readout standing in for a
-  field with different numbers passes its `minLines` / `maxLines`, so the
-  pair is one height) — with a transparent fill. Never hand-roll an
-  `InputDecoration`, never park a block of text in a bare `Text`, and never
-  style a read-only box as a disabled field.
+  the same label slot, then the field's own box — the outline border's
+  content inset (**20 × 14**: the decoration's 16 plus the outline's 4pt
+  gap, where `InputDecorator` seats the input), `border` hairline at radius
+  8, md primary text at the field's weight, two lines at rest and six before
+  the note scrolls inside — with a transparent fill. The box also reserves
+  the field's hint height: an `InputDecorator` keeps `maintainHintSize` on
+  even with a value in it, so a pair passes the field's `minLines` /
+  `maxLines` **and** its placeholder (`fieldHint`) or a short note sits in
+  a shorter box than its own field. Never hand-roll an `InputDecoration`,
+  never park a block of text in a bare `Text`, and never style a read-only
+  box as a disabled field.
   - **The ground rule (2026-10-08):** a box's fill is always one tier
     above what it stands on — `surface` on the page ground (the reference
     look), `surfaceHigh` on a `surface` ground (a card, a default modal

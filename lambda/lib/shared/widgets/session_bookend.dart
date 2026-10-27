@@ -30,6 +30,7 @@ class SessionBookend extends StatefulWidget {
     required this.notesLabel,
     this.onFeelingChanged,
     this.onNotesChanged,
+    this.fieldHint,
   });
 
   final String label;
@@ -40,6 +41,13 @@ class SessionBookend extends StatefulWidget {
   final String notesLabel;
   final void Function(int n)? onFeelingChanged;
   final void Function(String v)? onNotesChanged;
+
+  /// The placeholder the editable field draws when the read side shows a
+  /// different sentence — the ratings sheet's wizard prompt in edit, its
+  /// "no notes" line in read (2026-10-28). The hollow read box reserves this
+  /// text's height too, exactly as a field reserves its hint's, so the mode
+  /// toggle never changes the box's height. Null means [emptyNotes] is both.
+  final String? fieldHint;
 
   @override
   State<SessionBookend> createState() => _SessionBookendState();
@@ -72,6 +80,9 @@ class _SessionBookendState extends State<SessionBookend> {
   @override
   Widget build(BuildContext context) {
     final editable = widget.onNotesChanged != null;
+    // One hint in both modes: the field draws it while editing, and the
+    // hollow read box reserves its height so the swap moves only the fill.
+    final hint = widget.fieldHint ?? widget.emptyNotes;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -116,7 +127,7 @@ class _SessionBookendState extends State<SessionBookend> {
           LambdaInput(
             controller: _notesCtrl,
             focusNode: _notesFocus,
-            placeholder: widget.emptyNotes,
+            placeholder: hint,
             minLines: 2,
             maxLines: 6,
             // The editable bookend lives on surface grounds (the viewer's
@@ -124,17 +135,16 @@ class _SessionBookendState extends State<SessionBookend> {
             elevated: true,
             onChanged: widget.onNotesChanged,
           )
-        else if (widget.notes != null)
-          // The very field above, hollowed: same box, same words, no fill —
-          // the toggle moves the fill and nothing else (2026-10-28).
-          LambdaReadout(value: widget.notes!)
         else
-          Text(
-            widget.emptyNotes,
-            style: AppFonts.ui(
-              fontSize: AppTextStyles.xs,
-              color: AppColors.inkSecondary,
-            ),
+          // The very field above, hollowed: same box, same words, same
+          // reserved hint height, no fill — the toggle moves the fill and
+          // nothing else (2026-10-28). An unwritten note draws [emptyNotes]
+          // in the same box rather than dropping to a bare line, because a
+          // box that disappears is the loudest move of all.
+          LambdaReadout(
+            value: widget.notes ?? '',
+            placeholder: widget.emptyNotes,
+            fieldHint: hint,
           ),
       ],
     );
