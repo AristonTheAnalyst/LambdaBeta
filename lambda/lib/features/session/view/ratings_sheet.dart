@@ -23,6 +23,16 @@ import '../../../shared/widgets/slide_up_modal.dart';
 /// The star callback carries the tapped number, not the resulting value — the
 /// caller's setter owns the toggle rule (tap the selected star to clear), so
 /// the sheet and the wizard pages can never disagree about it.
+///
+/// A surface whose read/edit is a MODE — the past-session viewer — passes
+/// [onEditingChanged] and the sheet grows its own pencil, in the close
+/// button's container just left of it (2026-10-27): the toggle drives the
+/// caller's mode (the viewer's `startEditing`/`cancelEditing`), wears the
+/// accent while editing and primary glass while reading, and the draft
+/// callbacks are handed in for both modes — the sheet gates them on its own
+/// [_SessionRatingsSheetState._editing], so flipping in place is instant.
+/// Where there is no mode to switch (the live session is always editable; a
+/// friend's record never is) the pencil is simply absent.
 Future<void> showSessionRatingsSheet(
   BuildContext context, {
   int? preFeeling,
@@ -34,6 +44,8 @@ Future<void> showSessionRatingsSheet(
   ValueChanged<String>? onPreNotesChanged,
   void Function(int n)? onPostFeelingChanged,
   ValueChanged<String>? onPostNotesChanged,
+  bool editing = true,
+  ValueChanged<bool>? onEditingChanged,
 }) {
   return showLambdaModal(
     context,
@@ -49,6 +61,8 @@ Future<void> showSessionRatingsSheet(
       onPreNotesChanged: onPreNotesChanged,
       onPostFeelingChanged: onPostFeelingChanged,
       onPostNotesChanged: onPostNotesChanged,
+      editing: editing,
+      onEditingChanged: onEditingChanged,
     ),
   );
 }
@@ -64,6 +78,8 @@ class _SessionRatingsSheet extends StatefulWidget {
     required this.onPreNotesChanged,
     required this.onPostFeelingChanged,
     required this.onPostNotesChanged,
+    required this.editing,
+    required this.onEditingChanged,
   });
 
   final int? preFeeling;
@@ -75,6 +91,13 @@ class _SessionRatingsSheet extends StatefulWidget {
   final ValueChanged<String>? onPreNotesChanged;
   final void Function(int n)? onPostFeelingChanged;
   final ValueChanged<String>? onPostNotesChanged;
+
+  /// The mode the sheet opened in, and the caller's way of moving it. The
+  /// callbacks above are handed in for BOTH modes; [editing] only says where
+  /// to start, and whether the pencil exists at all (a null
+  /// [onEditingChanged] means the surface has one mode and draws no pencil).
+  final bool editing;
+  final ValueChanged<bool>? onEditingChanged;
 
   @override
   State<_SessionRatingsSheet> createState() => _SessionRatingsSheetState();
@@ -89,8 +112,32 @@ class _SessionRatingsSheetState extends State<_SessionRatingsSheet> {
   late String _preNotes = widget.preNotes;
   late String _postNotes = widget.postNotes;
 
+  /// The sheet's own read of the mode, seeded at open. Local, not read back
+  /// off the caller, so the pencil flips the sections the moment it is
+  /// tapped: the caller's mode moves behind the sheet and the sheet is not
+  /// rebuilt by it (the values it opened with are the mode's values, and no
+  /// stored answer can change while a modal sheet is up).
+  late bool _editing = widget.editing;
+
   /// The shared toggle rule: tapping the selected star clears the rating.
   int? _toggled(int? current, int n) => current == n ? null : n;
+
+  void _toggleEditing() {
+    final next = !_editing;
+    setState(() {
+      _editing = next;
+      // The sheet shows the mode it opened in: leaving a mode discards what
+      // was typed in it (the caller's cancel does, and a re-entered edit
+      // reseeds its drafts from the record), so the values snap back to the
+      // ones the sheet opened with rather than lingering as a read-only copy
+      // of edits that were just dropped.
+      _preFeeling = widget.preFeeling;
+      _postFeeling = widget.postFeeling;
+      _preNotes = widget.preNotes;
+      _postNotes = widget.postNotes;
+    });
+    widget.onEditingChanged!(next);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -143,6 +190,25 @@ class _SessionRatingsSheetState extends State<_SessionRatingsSheet> {
                       ],
                     ),
                   ),
+                  // The mode's own control, in the close button's container
+                  // (2026-10-27): the viewer's edit glyph — the same
+                  // `edit_outlined` its header pencil wears — accent glass
+                  // while editing, primary glass while reading. Absent where
+                  // the surface has no mode to switch.
+                  if (widget.onEditingChanged != null) ...[
+                    GlassButton(
+                      key: const ValueKey('session-ratings-edit'),
+                      label: '',
+                      icon: Icons.edit_outlined,
+                      semanticsLabel: _editing
+                          ? 'Stop editing ratings'
+                          : 'Edit ratings',
+                      compact: true,
+                      color: _editing ? AppColors.accent : null,
+                      onPressed: _toggleEditing,
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                  ],
                   GlassButton(
                     key: const ValueKey('session-ratings-close'),
                     label: '',
@@ -169,18 +235,21 @@ class _SessionRatingsSheetState extends State<_SessionRatingsSheet> {
                         emptyNotes: 'No pre-workout notes',
                         feeling: _preFeeling,
                         notes: _preNotes,
-                        onFeelingChanged: widget.onPreFeelingChanged == null
+                        // The pencil's mode gates the draft callbacks: a
+                        // surface that can edit hands them in for both
+                        // modes, and the sheet only lets them through while
+                        // it is editing.
+                        onFeelingChanged:
+                            widget.onPreFeelingChanged == null || !_editing
                             ? null
                             : (n) {
                                 setState(
-                                  () => _preFeeling = _toggled(
-                                    _preFeeling,
-                                    n,
-                                  ),
+                                  () => _preFeeling = _toggled(_preFeeling, n),
                                 );
                                 widget.onPreFeelingChanged!(n);
                               },
-                        onNotesChanged: widget.onPreNotesChanged == null
+                        onNotesChanged:
+                            widget.onPreNotesChanged == null || !_editing
                             ? null
                             : (v) {
                                 setState(() => _preNotes = v);
@@ -192,25 +261,24 @@ class _SessionRatingsSheetState extends State<_SessionRatingsSheet> {
                         key: const ValueKey('session-ratings-post'),
                         label: 'POST-WORKOUT',
                         question: 'How well did you do this session',
-                        notesLabel:
-                            'What could have made this session better',
+                        notesLabel: 'What could have made this session better',
                         placeholder:
                             'How did it go?\nStrong sets?\nAnything to fix?',
                         emptyNotes: 'No post-workout notes',
                         feeling: _postFeeling,
                         notes: _postNotes,
-                        onFeelingChanged: widget.onPostFeelingChanged == null
+                        onFeelingChanged:
+                            widget.onPostFeelingChanged == null || !_editing
                             ? null
                             : (n) {
                                 setState(
-                                  () => _postFeeling = _toggled(
-                                    _postFeeling,
-                                    n,
-                                  ),
+                                  () =>
+                                      _postFeeling = _toggled(_postFeeling, n),
                                 );
                                 widget.onPostFeelingChanged!(n);
                               },
-                        onNotesChanged: widget.onPostNotesChanged == null
+                        onNotesChanged:
+                            widget.onPostNotesChanged == null || !_editing
                             ? null
                             : (v) {
                                 setState(() => _postNotes = v);

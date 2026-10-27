@@ -246,6 +246,9 @@ void main() {
                 viewModel: vm,
                 state: state,
                 readOnly: readOnly,
+                // The route carries the read/edit mode; a friend's record
+                // does not (2026-10-27).
+                canEdit: !readOnly,
                 onWalkOlder: onWalkOlder,
                 onWalkNewer: onWalkNewer,
                 floorBottomInset: floorBottomInset,
@@ -457,6 +460,59 @@ void main() {
       vm.state.value.isEditing,
       isFalse,
       reason: 'Done leaves edit mode once the write lands',
+    );
+  });
+
+  testWidgets('the sheet\'s own pencil flips the page\'s mode from a read '
+      'record (2026-10-27)', (tester) async {
+    final vm = await pumpViewer(tester);
+    expect(vm.state.value.isEditing, isFalse);
+
+    await tester.tap(
+      find.byKey(const ValueKey('session-detail-ratings-button')),
+    );
+    await tester.pumpAndSettle();
+
+    // Reading: no fields, and the pencil waiting in the sheet's own X
+    // container.
+    expect(find.byType(LambdaInput), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('session-ratings-edit')));
+    await tester.pumpAndSettle();
+
+    // The sheet's pencil drives the SAME mode the header glyph does.
+    expect(vm.state.value.isEditing, isTrue);
+    expect(find.byType(LambdaInput), findsNWidgets(2));
+
+    // Typed answers land in the drafts the header's Done will persist.
+    await tester.enterText(
+      find.descendant(
+        of: find.byKey(const ValueKey('session-ratings-pre')),
+        matching: find.byType(TextField),
+      ),
+      'Through the sheet',
+    );
+    expect(vm.state.value.preNotesDraft, 'Through the sheet');
+
+    // Flipped back inside the sheet: the page's mode leaves with it.
+    await tester.tap(find.byKey(const ValueKey('session-ratings-edit')));
+    await tester.pumpAndSettle();
+    expect(vm.state.value.isEditing, isFalse);
+    expect(find.byType(LambdaInput), findsNothing);
+
+    // A friend's record has no mode to switch — its sheet draws no pencil.
+    // (The sheet closes first: pumpViewer re-updates the same MaterialApp
+    // element, and a modal route would ride that update into the new mount.)
+    await tester.tap(find.byKey(const ValueKey('session-ratings-close')));
+    await tester.pumpAndSettle();
+    await pumpViewer(tester, readOnly: true);
+    await tester.tap(
+      find.byKey(const ValueKey('session-detail-ratings-button')),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('session-ratings-edit')),
+      findsNothing,
+      reason: 'somebody else\'s record is read, never edited',
     );
   });
 

@@ -306,6 +306,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
                         state: state,
                         initialTab: widget.initialTab,
                         readOnly: widget.readOnly,
+                        canEdit: !widget.readOnly,
                         canCoach: widget.canCoach,
                         onWalkOlder: _walkOlder,
                         onWalkNewer: _walkNewer,
@@ -344,6 +345,7 @@ class SessionDetailView extends StatelessWidget {
     required this.state,
     this.initialTab,
     this.readOnly = false,
+    this.canEdit = false,
     this.canCoach = false,
     this.onWalkOlder,
     this.onWalkNewer,
@@ -357,6 +359,14 @@ class SessionDetailView extends StatelessWidget {
   /// lessons modal opens without its composer — no write affordance exists on
   /// the page.
   final bool readOnly;
+
+  /// The page carries a read/edit MODE to switch (2026-10-27): only the
+  /// /logs route does, because only it draws the header's Edit/Done glyph.
+  /// The live page's history peek and the another-device preview are
+  /// read-only by construction (they never enter edit mode), so their
+  /// ratings sheet carries no pencil and no draft callbacks — the frame,
+  /// not [readOnly], is what says whether a mode exists.
+  final bool canEdit;
 
   /// The coach reading their athlete's record (2026-10-26, #24): the
   /// feedback card gains its write door. A coach still never edits the sets,
@@ -654,20 +664,31 @@ class SessionDetailView extends StatelessWidget {
   /// The same four answers the live pencil sheet edits. View mode reads the
   /// stored session; edit mode reads (and writes) the drafts, which the
   /// header's Done persists in one `updateSessionNotes` write.
+  ///
+  /// The sheet carries its own mode pencil since 2026-10-27, just left of its
+  /// X, so the drafts are handed in for BOTH modes (the sheet gates them on
+  /// the mode it shows) and the pencil drives the page's one mode — the same
+  /// `startEditing`/`cancelEditing` the header glyph does. Only a surface
+  /// with a mode ([canEdit], the /logs route) gets either; the peek and the
+  /// preview read, and a friend's record has no mode at all.
   void _openRatings(BuildContext context) {
     final session = state.session;
     if (session == null) return;
     final editing = state.isEditing;
     showSessionRatingsSheet(
       context,
+      editing: editing,
       preFeeling: editing ? state.preFeelingDraft : session.preFeeling,
       preNotes: editing ? state.preNotesDraft : (session.preNotes ?? ''),
       postFeeling: editing ? state.postFeelingDraft : session.feeling,
       postNotes: editing ? state.postNotesDraft : (session.postNotes ?? ''),
-      onPreFeelingChanged: editing ? viewModel.setPreFeelingDraft : null,
-      onPreNotesChanged: editing ? viewModel.setPreNotesDraft : null,
-      onPostFeelingChanged: editing ? viewModel.setPostFeelingDraft : null,
-      onPostNotesChanged: editing ? viewModel.setPostNotesDraft : null,
+      onPreFeelingChanged: canEdit ? viewModel.setPreFeelingDraft : null,
+      onPreNotesChanged: canEdit ? viewModel.setPreNotesDraft : null,
+      onPostFeelingChanged: canEdit ? viewModel.setPostFeelingDraft : null,
+      onPostNotesChanged: canEdit ? viewModel.setPostNotesDraft : null,
+      onEditingChanged: canEdit
+          ? (on) => on ? viewModel.startEditing() : viewModel.cancelEditing()
+          : null,
     );
   }
 
