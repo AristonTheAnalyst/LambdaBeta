@@ -69,8 +69,11 @@ Use `withAlpha(26)`/`withAlpha(77)` or `withValues(alpha: …)` on tokens.
 Do NOT invent new alpha combinations.
 
 1. **Glass** — `color.withAlpha(26)` fill + `color.withAlpha(77)` border.
-   Buttons (GlassButton default), the selected feeling square, the active
-   exercise pill, and the set-row note button. `primary` by default.
+   Buttons (GlassButton default), the active exercise pill, and the set-row
+   note button. `primary` by default. **Its hollow half** —
+   `glassBox(color, filled: false)`, the same `77` rim with the tint taken
+   out — is a control that only reads (the star pill's read mode, 2026-10-28):
+   one edge in both modes, the fill is the state.
 2. **Chip** — `color.withValues(alpha: 0.1)` fill + `0.3` border.
    Pill buttons (Notes/History), program chips, wizard badges. `accent`
    normally, any semantic color is fine.
@@ -262,12 +265,15 @@ sticky-note icon) — the note indicator, not a color.
   padding, md primary text, `inkSecondary` hint, accent focus. A dense search box
   is `LambdaSearchField`: the same chrome at toolbar scale (12×10 padding,
   sm text, optional magnifier, optional trailing control). Every read-only
-  text box — text shown, not written — is `LambdaReadout` — the
-  past-session viewer's display is the reference: the same label slot and
-  style, then a `ghost` container (12 padding, sm primary text, min 64 /
-  max 120 with inner scroll). Never hand-roll an `InputDecoration`, never
-  park a block of text in a bare `Text`, and never style a read-only box
-  as a disabled field.
+  text box — text shown, not written — is `LambdaReadout` — **the field it
+  stands in for with the fill taken out** (2026-10-28, the C · Hollow rule):
+  the same label slot, then the field's own box — 16×14 padding, `border`
+  hairline at radius 8, md primary text at the field's weight, two lines at
+  rest and six before the note scrolls inside (a readout standing in for a
+  field with different numbers passes its `minLines` / `maxLines`, so the
+  pair is one height) — with a transparent fill. Never hand-roll an
+  `InputDecoration`, never park a block of text in a bare `Text`, and never
+  style a read-only box as a disabled field.
   - **The ground rule (2026-10-08):** a box's fill is always one tier
     above what it stands on — `surface` on the page ground (the reference
     look), `surfaceHigh` on a `surface` ground (a card, a default modal
@@ -286,18 +292,17 @@ sticky-note icon) — the note indicator, not a color.
     per-field callback fires on pointer down (the field takes focus on
     pointer up), so it blinks the keyboard when the user moves between
     adjacent cells.
-  - **A read/edit pair keeps one size (2026-10-28).** Where a readout
-    flips into a field **in place** — the ratings sheet's pencil toggle,
-    `SessionBookend`'s notes — the readout passes `textSize:
-    AppTextStyles.md` so the pair draws its words at the field's own
-    size; a toggle that resizes the text is not a state change, it is a
-    jitter. Everywhere else the readout keeps its default `sm`.
-  - **Read vs edit is an open study (2026-10-28).** The two modes today
-    differ only by the box swap (and, in the ratings sheet, the pencil's
-    tint) — the stars do not move at all. Three candidate rules (Today ·
-    Frame · Hollow — one border in both modes, only the fill moving) draw
-    side by side under **Dev → Visual Pairings** (`/dev/visual-pairings`);
-    nothing is wired, and no sweeping change lands until one is picked.
+  - **Read vs edit is one box (2026-10-28).** The study under Dev → Visual
+    Pairings (`/dev/visual-pairings`) picked **C · Hollow** and it shipped
+    the same day: a control's mode is its **fill** — filled = it takes
+    input, hollow = it only reads — and the edge never moves. `LambdaReadout`
+    is `LambdaInput` hollowed (one geometry, so a toggle moves no words, not
+    even the size), and `FeelingRating` wears the rule as one pill —
+    `glassBox(primary, radius: 999)` while interactive,
+    `glassBox(..., filled: false)` while read-only. `framed: false` is only
+    the 14px pre/post stars inside a log card: the row is a glance, not a
+    control. Because the readout is always the field's shape, a read/edit
+    pair passes the field's `minLines` / `maxLines`, never a type size.
 
 ### User-created names (2026-10-20)
 

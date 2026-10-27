@@ -35,9 +35,11 @@ import '../../../shared/widgets/segmented_control.dart';
 /// an option — a mode told by tone reads as disabled, and hierarchy in this
 /// app comes from size and weight, never opacity.
 ///
-/// Nothing here is wired to the app; picking one means moving the winning
-/// rule into the shared widgets (`LambdaReadout` / `LambdaInput` /
-/// `FeelingRating`) once, so every surface speaks it.
+/// **C · Hollow shipped 2026-10-28.** The winning rule moved into the shared
+/// widgets (`LambdaReadout` / `LambdaInput` / `FeelingRating`) once, so every
+/// surface speaks it — including the "Today" card below, which draws the
+/// production widgets and therefore now reads as C. The page stays as the
+/// study's record, with A · Frame kept as the road not taken.
 class VisualPairingsScreen extends StatelessWidget {
   const VisualPairingsScreen({super.key});
 
@@ -65,12 +67,12 @@ class VisualPairingsScreen extends StatelessWidget {
                   const SizedBox(height: AppSpacing.lg),
                   _PairingCard(
                     key: const ValueKey('pairing-today'),
-                    title: 'Today',
+                    title: 'Today (now C · Hollow)',
                     rule:
-                        'The production widgets as they stand, the size jump '
-                        'fixed. The box swaps from readout to field, the '
-                        'stars do not move, and nothing else says which mode '
-                        'is up — which is why this study exists.',
+                        'The production widgets as they stand. Since the sweep '
+                        'they draw C · Hollow too, so this card and the C card '
+                        'below now agree — kept as the pair that shows what '
+                        'shipping the rule changed.',
                     sample: _todaySample,
                   ),
                   const SizedBox(height: AppSpacing.lg),
@@ -252,10 +254,7 @@ Widget _todaySample(_PairMode mode, TextEditingController notes) {
     stars: FeelingRating(value: 4, onChanged: editing ? (_) {} : null),
     box: editing
         ? _input(notes)
-        : LambdaReadout(
-            value: VisualPairingsScreen._note,
-            textSize: AppTextStyles.md,
-          ),
+        : LambdaReadout(value: VisualPairingsScreen._note),
   );
 }
 
@@ -385,7 +384,9 @@ class _IntroCard extends StatelessWidget {
             'Every card draws the same PRE-WORKOUT section under one rule. '
             'Flip READ | EDIT and watch what moves — the cue has to be the '
             'same everywhere it appears, because the ratings sheet, the '
-            'viewer and the planner all flip between these two states.',
+            'viewer and the planner all flip between these two states. '
+            'C · Hollow won and shipped on 2026-10-28; the comparison stays '
+            'as the record of why.',
             style: AppFonts.ui(
               fontSize: AppTextStyles.sm,
               color: AppColors.inkSecondary,
@@ -427,11 +428,12 @@ class _FootnoteCard extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.sm),
           Text(
-            'Say the letter (or a mix — one rule for boxes, another for the '
-            'stars is fine). The winner moves into the shared widgets once: '
-            'LambdaReadout and LambdaInput for the boxes, FeelingRating for '
-            'the stars, so every surface speaks it without a per-screen '
-            'change. Nothing on this page is wired to the app.',
+            'Picked: C · Hollow, shipped 2026-10-28. LambdaReadout is the '
+            'field with its fill taken out, and FeelingRating\'s pill fills '
+            'only while it takes a tap — one rule in the shared widgets, so '
+            'every surface speaks it without a per-screen change. The rule '
+            'is documented in frontend-design §6; this page is kept as the '
+            'record of the decision.',
             style: AppFonts.ui(
               fontSize: AppTextStyles.sm,
               color: AppColors.inkSecondary,

@@ -95,7 +95,9 @@ class _SessionBookendState extends State<SessionBookend> {
         ),
         const SizedBox(height: AppSpacing.sm),
         // Full-size squares — the usual rating size, centered like the
-        // prep page's THIS SESSION input. Tappable only in edit mode.
+        // prep page's THIS SESSION input. Tappable only in edit mode; the
+        // pill is filled in edit and hollow in read (2026-10-28), so the
+        // mode reads off one fill, exactly like the notes box below it.
         FeelingRating(
           value: widget.feeling,
           onChanged: widget.onFeelingChanged,
@@ -123,10 +125,9 @@ class _SessionBookendState extends State<SessionBookend> {
             onChanged: widget.onNotesChanged,
           )
         else if (widget.notes != null)
-          // Read at the field's own size, not the readout's default: the
-          // sheet's mode toggle flips this box between the two widgets, and
-          // the text must not resize as it does (2026-10-28).
-          LambdaReadout(value: widget.notes!, textSize: AppTextStyles.md)
+          // The very field above, hollowed: same box, same words, no fill —
+          // the toggle moves the fill and nothing else (2026-10-28).
+          LambdaReadout(value: widget.notes!)
         else
           Text(
             widget.emptyNotes,

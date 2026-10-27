@@ -618,8 +618,17 @@ class _GalleryScreenState extends State<GalleryScreen> {
                                 ),
                               ),
                               const SizedBox(height: AppSpacing.md),
-                              // Read-only — fills cumulatively up to the value.
+                              // Read-only — fills cumulatively up to the value;
+                              // the pill is hollow (C · Hollow, 2026-10-28).
                               FeelingRating(value: 4),
+                              const SizedBox(height: AppSpacing.md),
+                              // The glance: inline summary stars take no pill.
+                              FeelingRating(
+                                value: 3,
+                                size: 14,
+                                spacing: 3,
+                                framed: false,
+                              ),
                             ],
                           ),
                         ),

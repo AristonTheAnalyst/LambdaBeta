@@ -528,6 +528,11 @@ class _SessionExerciseCardState extends State<SessionExerciseCard> {
       label: widget.reviewNoteLabel,
       value: widget.reviewNote?.trim() ?? '',
       placeholder: widget.reviewNoteEmptyText,
+      // The review field above is 1 × unbounded (`_ReviewNoteField`), so the
+      // record's box is too — one note, one height, whichever mode draws it
+      // (2026-10-28).
+      minLines: 1,
+      maxLines: null,
     );
   }
 

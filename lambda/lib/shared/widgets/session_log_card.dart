@@ -177,14 +177,26 @@ class SessionLogCard extends StatelessWidget {
               Expanded(
                 child: _gridCell(
                   'PRE',
-                  FeelingRating(value: s.preFeeling, size: 14, spacing: 3),
+                  // A glance, not a control — no pill (2026-10-28).
+                  FeelingRating(
+                    value: s.preFeeling,
+                    size: 14,
+                    spacing: 3,
+                    framed: false,
+                  ),
                 ),
               ),
               Container(width: 1, color: AppColors.border),
               Expanded(
                 child: _gridCell(
                   'POST',
-                  FeelingRating(value: s.feeling, size: 14, spacing: 3),
+                  // A glance, not a control — no pill (2026-10-28).
+                  FeelingRating(
+                    value: s.feeling,
+                    size: 14,
+                    spacing: 3,
+                    framed: false,
+                  ),
                 ),
               ),
             ],

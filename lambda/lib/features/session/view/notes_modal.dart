@@ -156,7 +156,13 @@ class _NotesModalContentState extends State<_NotesModalContent> {
                   ),
                 )
               else
-                LambdaReadout(value: widget.initialValue)
+                // The field's own sizing (2 × 5 below), so read and edit
+                // are the same box with the fill moved (2026-10-28).
+                LambdaReadout(
+                  value: widget.initialValue,
+                  minLines: 2,
+                  maxLines: 5,
+                )
             else
               LambdaInput(
                 controller: _ctrl,

@@ -113,12 +113,20 @@ BoxDecoration successBox({double radius = AppRadius.md}) => BoxDecoration(
 /// The glass recipe — translucent tint + soft hairline in [color]
 /// (GlassButton's chrome, for pressables that aren't buttons: chips,
 /// pills, arrows, trigger boxes). The one place those two alphas live.
-BoxDecoration glassBox(Color color, {double radius = AppRadius.md}) =>
-    BoxDecoration(
-      color: color.withAlpha(26),
-      borderRadius: BorderRadius.circular(radius),
-      border: Border.all(color: color.withAlpha(77)),
-    );
+///
+/// `filled: false` is the recipe's hollow half (2026-10-28, the read/edit
+/// rule): the same rim with the tint taken out, so a control that only reads
+/// wears the chrome it would take a tap with — one border in both modes,
+/// the fill is the only thing the state moves.
+BoxDecoration glassBox(
+  Color color, {
+  double radius = AppRadius.md,
+  bool filled = true,
+}) => BoxDecoration(
+  color: filled ? color.withAlpha(26) : Colors.transparent,
+  borderRadius: BorderRadius.circular(radius),
+  border: Border.all(color: color.withAlpha(77)),
+);
 
 /// A tappable container with baked-in chrome — the replacement for ad-hoc
 /// `Container(decoration: ...)` chrome everywhere.
