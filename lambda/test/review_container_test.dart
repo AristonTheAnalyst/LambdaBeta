@@ -2755,8 +2755,8 @@ void main() {
       expect(find.byIcon(kCompareGlyph), findsOneWidget);
     });
 
-    testWidgets('the sides\' disagreement rides on the names — a green plus '
-        'for what the review added, a red minus for what it dropped', (
+    testWidgets('the sides\' disagreement reads off the end — a green plus '
+        'for what the review added, a red removed card for what it dropped', (
       tester,
     ) async {
       seed();
@@ -2793,10 +2793,11 @@ void main() {
         return icon;
       }
 
-      // The side it opens on is the record's own, and it holds the exercise
-      // the baseline never had. The mark is the eye's reading of the OTHER
-      // side, so it is asked for through the list — the field holds only the
-      // open exercise.
+      // The side it opens on is the record's own. Its marks are the eye's
+      // reading of the OTHER side: what the baseline lacked is what the pass
+      // ADDED, and what it held and the end does not is what the pass
+      // REMOVED — drawn here, on the end, from the start's frozen copy,
+      // because the snapshot drops the removed group (2026-10-27).
       await tester.tap(find.byKey(const ValueKey('exercise-selector-field')));
       await tester.pumpAndSettle();
 
@@ -2811,24 +2812,11 @@ void main() {
         reason: 'and a plus is green, the review\'s own word for more',
       );
       expect(
-        markOf('Bench Press'),
-        isNull,
-        reason: 'both sides hold it: an edit neither made is not a mark',
-      );
-      // Back through the field, so the popover is not what is being read next.
-      await tester.tap(find.byKey(const ValueKey('exercise-selector-field')));
-      await tester.pumpAndSettle();
-
-      await tester.tap(find.byIcon(kCompareGlyph));
-      await tester.pumpAndSettle();
-
-      await tester.tap(find.byKey(const ValueKey('exercise-selector-field')));
-      await tester.pumpAndSettle();
-
-      expect(
         markOf('Curl')?.icon,
         ExerciseMark.removed.icon,
-        reason: 'the baseline held what the record does not — dropped since it',
+        reason:
+            'the baseline held what the end does not — the pass removed it, '
+            'and the end is where the removal happened',
       );
       expect(
         markOf('Curl')?.color,
@@ -2836,13 +2824,54 @@ void main() {
         reason: 'and a minus is red, the review\'s own word for gone',
       );
       expect(
-        find.text('Row'),
-        findsNothing,
-        reason:
-            'the added exercise is not on this side at all, so it wears '
-            'nothing here — one membership test, two readings',
+        markOf('Bench Press'),
+        isNull,
+        reason: 'both sides hold it: an edit neither made is not a mark',
       );
-      expect(markOf('Bench Press'), isNull);
+
+      // The removed group is a real card on this side, not only a marked
+      // name: it keeps the start's frozen sets, drawn in the danger chrome
+      // the open pass gives a group removed during it.
+      await tester.tap(find.text('Curl'));
+      await tester.pumpAndSettle();
+      expect(find.text('40'), findsOneWidget);
+      expect(find.text('10'), findsOneWidget);
+      expect(
+        tester
+            .widget<SessionExerciseCard>(find.byType(SessionExerciseCard))
+            .deletedExercises
+            .last,
+        isTrue,
+        reason: 'a removed group reads red wherever its name is drawn',
+      );
+      expect(
+        tester.widget<SessionSetRow>(find.byType(SessionSetRow)).deleted,
+        isTrue,
+      );
+
+      // Flipping to the start shows the same group unmarked: the start is
+      // what the pass found, and nothing has been removed from it yet. The
+      // pair's marks both live on the end (2026-10-27).
+      await tester.tap(find.byIcon(kCompareGlyph));
+      await tester.pumpAndSettle();
+
+      expect(find.text('START OF REVIEW -'), findsOneWidget);
+      expect(
+        markOf('Curl'),
+        isNull,
+        reason: 'the start is the baseline — it wears no marks at all',
+      );
+      expect(
+        tester
+            .widget<SessionExerciseCard>(find.byType(SessionExerciseCard))
+            .deletedExercises,
+        everyElement(isFalse),
+        reason: 'and nothing on it is drawn as removed',
+      );
+      expect(
+        tester.widget<SessionSetRow>(find.byType(SessionSetRow)).deleted,
+        isFalse,
+      );
     });
 
     testWidgets('a record with one side has nothing to read the names '
@@ -3065,7 +3094,9 @@ void main() {
       tester,
     ) async {
       seed();
-      history.reviews = [completedRow(withExercises: false)];
+      history.reviews = [
+        completedRow(withExercises: false, withBeforeExercises: false),
+      ];
       await pumpRecord(tester, subject: recordSession());
 
       await tester.tap(find.text('Push Day'));
@@ -3074,6 +3105,37 @@ void main() {
       expect(
         find.text('This review recorded no exercises for this workout.'),
         findsOneWidget,
+      );
+    });
+
+    testWidgets('a workout the pass emptied draws its removals rather than '
+        'claiming it was recorded empty', (tester) async {
+      seed();
+      // The start held the group and the end holds nothing: the pass removed
+      // it. The record says so — a removed card, red — instead of reading as
+      // a workout that was always empty (2026-10-27).
+      history.reviews = [completedRow(withExercises: false)];
+      await pumpRecord(tester, subject: recordSession());
+
+      await tester.tap(find.text('Push Day'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('This review recorded no exercises for this workout.'),
+        findsNothing,
+      );
+      expect(find.byType(SessionExerciseCard), findsOneWidget);
+      expect(find.text('Bench Press'), findsOneWidget);
+      expect(
+        tester
+            .widget<SessionExerciseCard>(find.byType(SessionExerciseCard))
+            .deletedExercises,
+        [isTrue],
+      );
+      expect(
+        tester.widget<SessionSetRow>(find.byType(SessionSetRow)).deleted,
+        isTrue,
+        reason: 'the removed group keeps the sets it had, read as gone',
       );
     });
 

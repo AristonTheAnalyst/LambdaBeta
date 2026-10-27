@@ -84,12 +84,56 @@ class RecordWorkoutState {
 
   /// The version's exercises in the order the plan itself keeps — the same
   /// sort every session surface draws by, so the card and the floor always
-  /// agree about which one is active.
+  /// agree about which one is active — **plus the pass's removals** on an
+  /// end, which have no row of their own in the snapshot (2026-10-27).
   List<ContentExercise> get exercises {
-    final list = [...?shown?.exercises];
-    list.sort((a, b) => a.exerciseOrder.compareTo(b.exerciseOrder));
-    return list;
+    final entries =
+        [
+          for (final exercise in shown?.exercises ?? const <ContentExercise>[])
+            (exercise, 0),
+          for (final exercise in removedExercises) (exercise, 1),
+        ]..sort((a, b) {
+          final byOrder = a.$1.exerciseOrder.compareTo(b.$1.exerciseOrder);
+          // A removed group shares its old slot with a kept one: it stands after
+          // it, so "this was here and is gone" reads below what stayed.
+          return byOrder != 0 ? byOrder : a.$2.compareTo(b.$2);
+        });
+    return [for (final entry in entries) entry.$1];
   }
+
+  /// The review's own start, when the version on screen is its end and that
+  /// start holds the workout — the only place a removed group survives. Null
+  /// on a start (nothing has been removed yet), on a review that kept only
+  /// one document, and on the current plan (no review holds it).
+  WorkoutVersion? get startPair {
+    final current = version;
+    if (current == null || current.side != WorkoutVersionSide.end) return null;
+    final pair = sibling;
+    return pair != null && pair.session != null ? pair : null;
+  }
+
+  /// The exercises the pass removed: held by its start, gone from its end
+  /// (2026-10-27). The finish's snapshot drops the removed group, so the end
+  /// has no row to mark — the group is drawn from the start's frozen copy
+  /// instead, red, exactly as the open pass draws a group removed during it.
+  /// Empty wherever there is no start to read a removal off.
+  List<ContentExercise> get removedExercises {
+    final start = startPair?.session;
+    if (start == null || shown == null) return const [];
+    final kept = {
+      for (final exercise in shown!.exercises) exercise.plannedExerciseId,
+    };
+    return [
+      for (final exercise in start.exercises)
+        if (!kept.contains(exercise.plannedExerciseId)) exercise,
+    ];
+  }
+
+  /// The planned-exercise ids the card draws as removed on the version on
+  /// screen — the set the screen marks, colours and labels red.
+  Set<String> get removedIds => {
+    for (final exercise in removedExercises) exercise.plannedExerciseId,
+  };
 
   /// The exercise on the card, clamped when a step lands on a shorter
   /// version — never past the end, and null on a version with none.

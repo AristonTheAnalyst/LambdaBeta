@@ -284,18 +284,23 @@ reads one as a "program" review — the acceptable old behavior.
   review version (`kReviewAfterLabel` / `kReviewBeforeLabel`, green rim and
   words at rest turning accent as the eye turns, through the label's usual
   rise) and reads `Current Plan` over the plan (`ReviewBar.recordLabel`).
-  **The names carry the versions' disagreement**: on a review version the
-  reference is its own review's other side — an exercise the side on screen
-  holds and the other does not wears a green **plus** (absent from the start,
-  so the review added it) or a red **minus** (in the start and not on screen,
-  so it dropped it) — and on the current plan the reference is the newest
-  end, so the marks say what has changed since the last record.
+  **The names carry the versions' disagreement, and both marks live on the
+  end** (2026-10-27): an exercise the end holds and its start does not wears
+  a green **plus** (the pass added it), and a group the start held and the
+  end does not — which the finish's snapshot drops, so the end has no row of
+  its own to mark — is drawn as a **removed card** from the start's frozen
+  copy: red selector name (`deletedExercises`), red inert frozen sets
+  (`recordSetRow(deleted: true)`), its pass note where one was left, at its
+  old plan position after any kept group sharing the slot. The start is the
+  baseline the pass found and wears no marks at all, and on the current plan
+  the reference is the newest end, so its plus says what has changed since
+  the last record.
   `ExerciseMark` rides on the shared selector (each glyph a plus or minus
   inside a filled disc), in the field and in every popover row, one
-  membership test over `plannedExerciseId` with two readings so the marks can
-  never disagree across the eye. Names both sides hold stay bare, and a
+  membership test over `plannedExerciseId` plus the removal set so the marks
+  can never disagree across the eye. Names both sides hold stay bare, and a
   version with no reference — a review that kept one document, a plan no
-  review has recorded — marks nothing.
+  review has recorded — marks nothing and draws no removed card.
   The bar is handed the row's `ReviewSession` (`reviewChrome(session:,
   readOnly: true, loadComparison:)`), never publishing one, so Compare and
   Changes read those same documents through the injected comparison — a

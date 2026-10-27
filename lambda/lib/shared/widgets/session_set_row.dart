@@ -44,10 +44,15 @@ enum SetRowMode {
 ///
 /// The variation lists are the **caller's**, because they are the library's: a
 /// record stores an id, and the label drawn here comes from the live names.
+///
+/// [deleted] draws the row on a group the pass removed (2026-10-27) — the
+/// record's removed card reads its frozen sets in the planner's own danger
+/// chrome, the same recipe a group removed during a pass wears.
 SessionSetRow recordSetRow({
   required ContentSet set,
   required int index,
   required String exerciseId,
+  bool deleted = false,
   required Map<String, String> variationNames,
   required List<DropdownOption<String?>> variationOptions,
   required List<({String id, String name})> allVariations,
@@ -66,6 +71,7 @@ SessionSetRow recordSetRow({
   initialNotes: set.targetNotes,
   hasNotes: set.targetNotes?.isNotEmpty ?? false,
   readOnly: true,
+  deleted: deleted,
   onCommit: (isDraft, values, {bool immediate = false}) async {},
   onVariationChanged: (_) {},
   onNotesSave: (_) {},

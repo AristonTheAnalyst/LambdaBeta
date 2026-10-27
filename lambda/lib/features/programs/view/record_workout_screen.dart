@@ -439,25 +439,33 @@ class _RecordWorkoutScreenState extends State<RecordWorkoutScreen> {
 
   /// The mark one exercise of the version on screen wears, read off
   /// [RecordWorkoutState.markReference] — the other side of its review, or
-  /// on the current plan the newest end. An exercise missing from an end (or
-  /// a current) version is one the pass ADDED — green plus; missing from a
-  /// start version is one it REMOVED — red minus.
+  /// on the current plan the newest end. A removed group wears the red minus
+  /// wherever it is drawn: on the end it is drawn from the start's copy,
+  /// because the snapshot dropped it (2026-10-27). An exercise missing from
+  /// an end (or a current) version is one the pass ADDED — green plus. The
+  /// start is the baseline: it is what was found, so it wears no marks at all
+  /// — the pair's marks both live on the end, where the change happened.
   ///
-  /// One membership test with two readings, so the marks can never disagree
-  /// across the eye: the same exercise wears the plus from one side and the
-  /// minus from the other, and an exercise both sides hold stays bare. No
-  /// reference at all (a review that kept one document, a plan no review has
-  /// recorded) means nothing to read against, and every name stays bare.
-  ExerciseMark? _mark(ContentExercise exercise) {
+  /// One membership test with one extra reading, so the marks can never
+  /// disagree across the eye: an exercise the end gained wears the plus
+  /// there and is simply absent from the start, and one the pass removed
+  /// wears the minus on the end's card. No reference at all (a review that
+  /// kept one document, a plan no review has recorded) means nothing to read
+  /// against, and every name stays bare.
+  ExerciseMark? _mark(ContentExercise exercise, Set<String> removedIds) {
     final state = _vm.value;
     final version = state.version;
+    if (version == null) return null;
+    if (removedIds.contains(exercise.plannedExerciseId)) {
+      return ExerciseMark.removed;
+    }
+    if (version.isStart) return null;
     final reference = state.markReference?.session;
-    if (version == null || reference == null) return null;
+    if (reference == null) return null;
     final known = reference.exercises.any(
       (e) => e.plannedExerciseId == exercise.plannedExerciseId,
     );
-    if (known) return null;
-    return version.isStart ? ExerciseMark.removed : ExerciseMark.added;
+    return known ? null : ExerciseMark.added;
   }
 
   /// The two sides the bar's Compare and Changes both read.
@@ -503,11 +511,18 @@ class _RecordWorkoutScreenState extends State<RecordWorkoutScreen> {
   /// step with the other three. The session look is the pass editor's own
   /// (2026-10-27): flat, no box, no pill row — the record's doors are on the
   /// floor, where the pass keeps its own.
+  ///
+  /// A group the pass removed keeps a card of its own here (2026-10-27): the
+  /// end's snapshot dropped it, so it is drawn from the start's frozen copy —
+  /// red name, red inert rows — the way the open pass holds a group removed
+  /// during it on the card.
   Widget _card(List<ContentExercise> exercises, int active) {
     final exercise = exercises[active];
+    final removedIds = _vm.value.removedIds;
     final sets = [...exercise.sets]
       ..sort((a, b) => a.setNumber.compareTo(b.setNumber));
     final notes = _vm.value.exerciseNotes;
+    final deleted = removedIds.contains(exercise.plannedExerciseId);
 
     return SessionExerciseCard(
       flat: true,
@@ -520,7 +535,12 @@ class _RecordWorkoutScreenState extends State<RecordWorkoutScreen> {
       // What the two sides disagree about, on the name it is about: the eye
       // flips the values AND the marks, because the marks are the sides'
       // difference read from whichever one is on screen.
-      exerciseMarks: [for (final e in exercises) _mark(e)],
+      exerciseMarks: [for (final e in exercises) _mark(e, removedIds)],
+      // A removed group reads red wherever its name is drawn, the planner's
+      // reading inside an open pass — one flag per name, parallel to them.
+      deletedExercises: [
+        for (final e in exercises) removedIds.contains(e.plannedExerciseId),
+      ],
       activeIndex: active,
       onSelect: _vm.selectExercise,
       // Reordering and adding are writing; the record is neither. Reorder
@@ -528,7 +548,8 @@ class _RecordWorkoutScreenState extends State<RecordWorkoutScreen> {
       onMove: null,
       onAdd: null,
       rows: [
-        for (var i = 0; i < sets.length; i++) _recordRow(exercise, sets[i], i),
+        for (var i = 0; i < sets.length; i++)
+          _recordRow(exercise, sets[i], i, deleted: deleted),
       ],
       // Nothing to add to on a record, and no height to hold for a flip:
       // the button is simply not drawn.
@@ -550,22 +571,31 @@ class _RecordWorkoutScreenState extends State<RecordWorkoutScreen> {
   /// resolved names: a read-only row never opens the picker, but it does read
   /// its own label off them, and a record naming a variation is exactly what
   /// they are for.
-  Widget _recordRow(ContentExercise exercise, ContentSet set, int index) =>
-      recordSetRow(
-        set: set,
-        index: index,
-        exerciseId: exercise.exerciseId ?? '',
-        variationNames: widget.variationNames,
-        variationOptions: [
-          const DropdownOption<String?>(label: 'No Variation', value: null),
-          for (final entry in widget.variationNames.entries)
-            DropdownOption<String?>(label: entry.value, value: entry.key),
-        ],
-        allVariations: [
-          for (final entry in widget.variationNames.entries)
-            (id: entry.key, name: entry.value),
-        ],
-      );
+  ///
+  /// [deleted] draws the row on a group the pass removed: the danger chrome
+  /// the planner gives a group removed during a pass, so the group's frozen
+  /// sets read as what it HAD, not what it kept.
+  Widget _recordRow(
+    ContentExercise exercise,
+    ContentSet set,
+    int index, {
+    bool deleted = false,
+  }) => recordSetRow(
+    set: set,
+    index: index,
+    exerciseId: exercise.exerciseId ?? '',
+    deleted: deleted,
+    variationNames: widget.variationNames,
+    variationOptions: [
+      const DropdownOption<String?>(label: 'No Variation', value: null),
+      for (final entry in widget.variationNames.entries)
+        DropdownOption<String?>(label: entry.value, value: entry.key),
+    ],
+    allVariations: [
+      for (final entry in widget.variationNames.entries)
+        (id: entry.key, name: entry.value),
+    ],
+  );
 }
 
 /// The walker on a record's floor: which version of the workout is on screen,

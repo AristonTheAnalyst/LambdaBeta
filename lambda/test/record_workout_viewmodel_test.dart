@@ -605,6 +605,133 @@ void main() {
     });
   });
 
+  // The finish's snapshot drops the group a pass removed, so the end has no
+  // row of its own to mark (2026-10-27). The record draws it from the start's
+  // frozen copy instead — red, with the sets it had — so the end says what is
+  // gone while the start stays the plain baseline it was found as.
+  group('the pass\'s removals', () {
+    ContentExercise exerciseOf(String id, int order) => ContentExercise(
+      plannedExerciseId: 'pe-$id',
+      plannedSessionId: 's1',
+      userId: 'u1',
+      exerciseId: id,
+      exerciseOrder: order,
+      sets: [
+        ContentSet(
+          plannedSetId: 'ps-$id',
+          plannedExerciseId: 'pe-$id',
+          plannedSessionId: 's1',
+          userId: 'u1',
+          setNumber: 1,
+          targetWeight: '50',
+          targetReps: '10',
+        ),
+      ],
+    );
+
+    ContentSession side({required bool holdsKept}) => ContentSession(
+      sessionId: 's1',
+      userId: 'u1',
+      name: 'Push Day',
+      exercises: [exerciseOf('e1', 0), if (holdsKept) exerciseOf('e2', 1)],
+    );
+
+    ProgramContent doc({required bool holdsKept}) =>
+        ProgramContent(sessions: [side(holdsKept: holdsKept)]);
+
+    List<WorkoutVersion> stack({bool baselineHoldsWorkout = true}) =>
+        assembleWorkoutVersions([
+          reviewOf(
+            id: 'r1',
+            started: DateTime(2026, 10, 1),
+            completed: DateTime(2026, 10, 2),
+            baseline: baselineHoldsWorkout
+                ? doc(holdsKept: true)
+                : docOf('0', holdsWorkout: false),
+            snapshot: doc(holdsKept: false),
+          ),
+        ], 's1');
+
+    test('an end draws the group its start held and it does not, from the '
+        'start\'s own copy', () {
+      final vm = RecordWorkoutViewModel(versions: stack(), initialIndex: 0);
+      final state = vm.value;
+
+      expect(state.isStart, isFalse);
+      expect(state.removedIds, {'pe-e2'});
+      expect(
+        [for (final e in state.exercises) e.exerciseId],
+        ['e1', 'e2'],
+        reason: 'the removed group keeps its plan place on the card',
+      );
+      // It carries the sets it had when the pass found it — what makes the
+      // removal a fact with a shape, not just a name wearing a minus.
+      expect(state.exercises.last.sets.single.targetWeight, '50');
+      expect(state.exercises.last.sets.single.targetReps, '10');
+    });
+
+    test('a start has no removals to draw — it is what was found', () {
+      final vm = RecordWorkoutViewModel(versions: stack(), initialIndex: 1);
+
+      expect(vm.value.isStart, isTrue);
+      expect(vm.value.removedIds, isEmpty);
+      expect(
+        [for (final e in vm.value.exercises) e.exerciseId],
+        ['e1', 'e2'],
+        reason: 'the group is simply there, as the baseline had it',
+      );
+    });
+
+    test('a review that kept only its end has nothing to read a removal '
+        'from', () {
+      final legacy = reviewOf(
+        id: 'r1',
+        started: DateTime(2026, 10, 1),
+        completed: DateTime(2026, 10, 2),
+        snapshot: doc(holdsKept: false),
+      );
+      final vm = RecordWorkoutViewModel(
+        versions: assembleWorkoutVersions([legacy], 's1'),
+        initialIndex: 0,
+      );
+
+      expect(vm.value.removedIds, isEmpty);
+      expect(
+        [for (final e in vm.value.exercises) e.exerciseId],
+        ['e1'],
+        reason: 'with no start, the end is all the truth there is',
+      );
+    });
+
+    test('a start that never held the workout knows no removals', () {
+      final vm = RecordWorkoutViewModel(
+        versions: stack(baselineHoldsWorkout: false),
+        initialIndex: 0,
+      );
+
+      expect(vm.value.isStart, isFalse);
+      expect(vm.value.removedIds, isEmpty);
+    });
+
+    test('the current plan draws no removals — no review holds it', () {
+      final vm = RecordWorkoutViewModel(
+        versions: [
+          WorkoutVersion(
+            sessionId: 's1',
+            side: WorkoutVersionSide.current,
+            session: side(holdsKept: false),
+          ),
+          ...stack(),
+        ],
+        initialIndex: 0,
+      );
+
+      expect(vm.value.isCurrent, isTrue);
+      expect(vm.value.removedIds, isEmpty);
+      expect([for (final e in vm.value.exercises) e.exerciseId], ['e1']);
+    });
+  });
+
   group('the card and the floor agree', () {
     test('exercises read in plan order, and the active one clamps', () {
       final session = ContentSession(
