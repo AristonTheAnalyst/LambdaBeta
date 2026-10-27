@@ -2199,7 +2199,10 @@ class _ReviewBarState extends State<ReviewBar> {
     final onFinish = widget.onFinish;
     // The pass's count, from the whole pass when the bar knows it. The landing
     // hands in workouts-plus-goals; every other bar counts the workouts its own
-    // session holds, because that is all it is over.
+    // session holds, because that is all it is over. A pass that covers nothing
+    // yet — it begins empty and its landing builds the scope (2026-10-27) — has
+    // nothing to count, so its label stays the plain 'In Review' rather than
+    // opening on '0 of 0'.
     final overviewProgress = widget.overviewProgress;
     final passDone = overviewProgress?.done ?? session.reviewedCount;
     final passTotal = overviewProgress?.total ?? session.sessionIds.length;
@@ -2240,7 +2243,7 @@ class _ReviewBarState extends State<ReviewBar> {
         ? kReviewCompleteLabel
         : widget.comparing
         ? 'Previously'
-        : session.isOverview
+        : session.isOverview && passTotal > 0
         ? 'In Review · $passDone of $passTotal'
         : 'In Review';
     // The bar's own radius, not the button's default: a tighter corner sitting

@@ -2064,6 +2064,10 @@ void main() {
       // only once a goal was picked could never be used to pick one.
       expect(find.text('Workouts'), findsOneWidget);
       expect(find.text('Goals'), findsOneWidget);
+      // Nothing to count yet, so the bar says the plain words rather than
+      // "In Review · 0 of 0".
+      expect(find.text('In Review'), findsOneWidget);
+      expect(find.textContaining('0 of 0'), findsNothing);
       // Both halves are addable — each tile is the way into its half of the
       // scope sheet.
       expect(find.text('Add workouts to review'), findsOneWidget);
