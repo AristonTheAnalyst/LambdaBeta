@@ -574,11 +574,12 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
 
   Widget _editableHeader(bool unsaved, bool noExercises) {
     final topPadding = MediaQuery.of(context).padding.top;
-    // Inside a review the header keeps no Delete: the trash deletes the
-    // planned workout, which is not what a pass is doing — taking a workout
-    // OUT of a review is the landing's swipe. The pass's own verbs (the
-    // workout's note among them) are on its bar, at the floor.
-    final review = _reviewSession;
+    // One trailing control, ever (2026-10-28): the Save check, and only while
+    // there is something to save. The Delete glyph is gone — a workout is
+    // deleted by the swipe in its list, and a second delete door in the bar
+    // crowded the title (the check plus a 40pt delete box reached inside the
+    // 88 band the name centres in). Taking a workout OUT of a review is the
+    // landing's swipe; a pass never deletes the plan.
     return Container(
       padding: EdgeInsets.only(top: topPadding),
       decoration: BoxDecoration(
@@ -652,9 +653,9 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
                 children: [
                   // Undo/redo live on the floor in both modes (2026-10-26):
                   // the editor wears the session floor now, and the header
-                  // keeps only the verbs that belong to the workout's
-                  // identity.
-                  if (unsaved && !noExercises) ...[
+                  // keeps only the verb that belongs to the workout's
+                  // identity — Save, while there is anything unsaved.
+                  if (unsaved && !noExercises)
                     GlassButton(
                       label: '',
                       icon: Icons.check,
@@ -662,15 +663,6 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
                       color: AppColors.success,
                       compact: true,
                       onPressed: () => widget.viewModel.saveWorkout(),
-                    ),
-                    if (review == null) const SizedBox(width: AppSpacing.xs),
-                  ],
-                  if (review == null)
-                    HeaderIconButton(
-                      icon: Icons.delete_outline,
-                      semanticsLabel: 'Delete workout',
-                      color: AppColors.danger,
-                      onPressed: _confirmDelete,
                     ),
                 ],
               ),
@@ -902,54 +894,6 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
             },
             child: Text(
               'Remove',
-              style: AppFonts.ui(
-                color: AppColors.danger,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _confirmDelete() {
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        title: Text(
-          'Delete Session',
-          style: AppFonts.ui(
-            fontWeight: FontWeight.w800,
-            color: AppColors.danger,
-          ),
-        ),
-        content: Text(
-          'Remove this planned workout and its sets?',
-          style: AppFonts.ui(color: AppColors.inkSecondary, height: 1.4),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text(
-              'Cancel',
-              style: AppFonts.ui(color: AppColors.inkSecondary),
-            ),
-          ),
-          TextButton(
-            onPressed: () async {
-              Navigator.of(ctx).pop();
-              // Await the delete BEFORE popping the editor — the library
-              // reloads on return, and an un-awaited delete races that
-              // reload (the deleted workout would still be listed).
-              await widget.viewModel.deletePlannedSession();
-              if (mounted) {
-                Navigator.of(context, rootNavigator: true).pop();
-              }
-            },
-            child: Text(
-              'Delete',
               style: AppFonts.ui(
                 color: AppColors.danger,
                 fontWeight: FontWeight.w600,

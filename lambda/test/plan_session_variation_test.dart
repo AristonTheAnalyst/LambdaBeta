@@ -288,11 +288,12 @@ void main() {
   //
   // A pass's three per-workout verbs are on its bar — the note among them,
   // beside Compare and Done, because all three are about the workout the pass
-  // has open. The header keeps no Note and, inside a review, no Delete either:
-  // the trash deletes the planned workout, which is not what a pass is doing,
-  // and taking a workout OUT of a review is the landing's swipe. It rides the
-  // same harness as the tests above because the planner screen IS the review's
-  // editor; only the ambient session differs.
+  // has open. The header keeps no Note, and no Delete at all since
+  // 2026-10-28: a workout is deleted by the swipe in its library list, and
+  // taking one OUT of a review is the landing's swipe — the bar's second
+  // trailing box crowded the name it centres. It rides the same harness as
+  // the tests above because the planner screen IS the review's editor; only
+  // the ambient session differs.
   group('the workout\'s note', () {
     /// The bar's note glyph. Since the one-note-glyph sweep (2026-10-23) the
     /// card's Notes pill, its pinned-note bar and the set rows' swipe drawers
@@ -314,11 +315,17 @@ void main() {
       reviewWorkoutNotesNotifier.value = const {};
     });
 
-    testWidgets('outside a review the header keeps Delete, and the workout\'s '
-        'note has no door', (tester) async {
+    testWidgets('outside a review the header carries no Delete, and the '
+        'workout\'s note has no door', (tester) async {
       await pumpEditor(tester);
 
-      expect(find.byIcon(Icons.delete_outline), findsOneWidget);
+      expect(
+        find.byIcon(Icons.delete_outline),
+        findsNothing,
+        reason:
+            'the library\'s swipe deletes a workout; a second door in the '
+            'header crowded the title (2026-10-28)',
+      );
       // The workout's note door lives on the review bar, and there is no bar
       // to hold one. Since the planner wears the session floor (2026-10-26)
       // the floor's note tile also wears the glyph — that one opens the

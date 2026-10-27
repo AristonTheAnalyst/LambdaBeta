@@ -53,7 +53,13 @@ is the backstop there, never the plan.)
    and workout name `TextField`s) scrolls instead of ellipsizing, so the
    field's `maxLength` is the only thing holding it in the slot. The planner's
    hand-rolled header band is `left: 88, right: 88` for the same reason and
-   gets the same 20.
+   gets the same 20. **That band fits one trailing control, no more
+   (2026-10-28):** the workout editor's Save is a single compact 40pt box at
+   `right: 16`, leaving the name 32pt of clearance; a second trailing box
+   (a delete glyph the swipe in the workout list already answers) reached
+   inside the band and crowded a grandfathered long name. Delete is a list
+   action, not a header verb — a header that wants a second trailing control
+   owes the title a wider band, measured and stated, not an overlap.
 5. **One line, nothing else.** A header has no subtitle, badge count or
    second row. If the information is worth more than 20 characters, it is
    body content.
