@@ -18,6 +18,7 @@ import '../../../../shared/widgets/lambda_search_field.dart';
 import '../../../../shared/widgets/page_header.dart';
 import '../../../../shared/widgets/scroll_shrink_nav_bar.dart';
 import '../../../shared/widgets/coach_created_mark.dart';
+import '../../../shared/widgets/name_history_sheet.dart';
 import '../viewmodel/workout_editor_viewmodel.dart';
 import 'plan_session_screen.dart';
 
@@ -141,6 +142,26 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
       ),
     );
     await _load();
+  }
+
+  /// The owner's rename history for this workout (2026-10-29); restoring a
+  /// name is a normal rename, which records itself.
+  Future<void> _openNameHistory(PlannedSession w) async {
+    await showNameHistorySheet(
+      context,
+      userId: _userId,
+      entityType: 'workout',
+      entityId: w.sessionId,
+      currentName: w.name,
+      onRestore: (name) async {
+        await _repo.updatePlannedSession(
+          w.sessionId,
+          name: name,
+          userId: _userId,
+        );
+        await _load();
+      },
+    );
   }
 
   Future<void> _duplicate(PlannedSession w) async {
@@ -412,6 +433,16 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
                                   if (widget.readOnly) return card;
                                   return SwipeActions(
                                     actions: [
+                                      // The owner's rename history
+                                      // (2026-10-29); a coach's device never
+                                      // receives it.
+                                      if (widget.userId == null)
+                                        SwipeAction(
+                                          icon: Icons.history,
+                                          color: AppColors.primary,
+                                          foreground: AppColors.bg,
+                                          onTap: () => _openNameHistory(w),
+                                        ),
                                       SwipeAction(
                                         icon: Icons.copy_rounded,
                                         color: AppColors.accent,

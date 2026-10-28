@@ -11,10 +11,12 @@ import '../../../core/utils/date_range.dart';
 import '../../../core/utils/name_limit.dart';
 import '../../../data/models/session_exercise_set.dart';
 import '../../../data/repositories/exercise_note_repository.dart';
+import '../../../data/repositories/exercise_repository.dart';
 import '../../../data/repositories/pr_view_setting_repository.dart';
 import '../../../shared/widgets/glass_button.dart';
 import '../../../shared/widgets/user_name_text.dart';
 import '../../../shared/widgets/lambda_input.dart';
+import '../../../shared/widgets/name_history_sheet.dart';
 import '../../../shared/widgets/name_limit_counter.dart';
 import '../../../shared/widgets/header_icon_button.dart';
 import '../../../shared/widgets/page_header.dart';
@@ -244,6 +246,24 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
     );
   }
 
+  /// The owner's rename history for this exercise (2026-10-29); restoring a
+  /// name is a normal rename, which records itself.
+  Future<void> _openNameHistory() async {
+    await showNameHistorySheet(
+      context,
+      userId: _userId,
+      entityType: 'exercise',
+      entityId: widget.exerciseId,
+      currentName: _name ?? '',
+      onRestore: (name) async {
+        await ExerciseRepository().updateExercise(widget.exerciseId, name);
+        if (!mounted) return;
+        setState(() => _name = name);
+        await _load();
+      },
+    );
+  }
+
   // ── Edit menu (rename / delete) ───────────────────────────────────────────
 
   Future<void> _openEditMenu() async {
@@ -299,6 +319,36 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
                 ),
               ),
             ),
+            // The owner's own history (2026-10-29) — a coach's device never
+            // receives it, so the row is the owner's alone.
+            if (widget.userId == null)
+              InkWell(
+                onTap: () => Navigator.of(ctx).pop('history'),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.lg,
+                    vertical: AppSpacing.md,
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.history,
+                        size: 18,
+                        color: AppColors.primary,
+                      ),
+                      const SizedBox(width: AppSpacing.sm),
+                      Text(
+                        'Name history',
+                        style: AppFonts.ui(
+                          fontSize: AppTextStyles.md,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             if (widget.canDelete)
               InkWell(
                 onTap: () => Navigator.of(ctx).pop('delete'),
@@ -333,6 +383,7 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
       ),
     );
     if (action == 'rename') await _rename();
+    if (action == 'history') await _openNameHistory();
     if (action == 'delete') await _archive();
   }
 
