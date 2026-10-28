@@ -134,7 +134,8 @@ carry the athlete's `user_id`), so no extra athlete-side stream is needed.
   the caller has `coaching_granted_at`.
 - **Coach INSERT** on the whole writable tree (sessions and children, library
   dims and children, notes, goals and targets): `is_coach_of(user_id) AND
-  created_by_user_id = auth.uid()`. The acting owner is `user_id`; the author
+  created_by_user_id = auth.uid()::text` (the column is text). The acting
+  owner is `user_id`; the author
   is the coach. Every row the coach writes carries both, children included.
 - **Coach UPDATE** on the same tables: `using (is_coach_of(user_id))` with the
   same check. A `BEFORE UPDATE` trigger (`lock_row_identity`) refuses any

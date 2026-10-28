@@ -151,7 +151,7 @@ begin
     execute format(
       'create policy %I on public.%I for insert to authenticated '
       'with check (public.is_coach_of(user_id) '
-      'and created_by_user_id = auth.uid())',
+      'and created_by_user_id = auth.uid()::text)',
       t || ' coach insert', t);
 
     execute format('drop policy if exists %I on public.%I',
