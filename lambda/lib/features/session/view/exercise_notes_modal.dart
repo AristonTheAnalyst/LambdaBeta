@@ -6,6 +6,7 @@ import '../../../core/styles/app_radius.dart';
 import '../../../core/styles/app_spacing.dart';
 import '../../../core/styles/app_text_styles.dart';
 import '../../../data/models/exercise_note.dart';
+import '../../../shared/widgets/coach_created_mark.dart';
 import '../../../shared/widgets/glass_button.dart';
 import '../../../shared/widgets/user_name_text.dart';
 import '../../../shared/widgets/container_styles.dart';
@@ -563,6 +564,13 @@ class _NoteRowState extends State<_NoteRow> {
             color: AppColors.inkSecondary,
           ),
         ),
+        if (note.createdByUserId != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: CoachCreatedMark(
+              createdByUserId: note.createdByUserId,
+            ),
+          ),
       ],
     );
     return Row(

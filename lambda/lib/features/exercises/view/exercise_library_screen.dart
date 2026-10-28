@@ -7,6 +7,7 @@ import '../../../../core/styles/app_spacing.dart';
 import '../../../../core/styles/app_text_styles.dart';
 import '../../../../shared/widgets/app_card.dart';
 import '../../../../shared/widgets/archived_sheet.dart';
+import '../../../../shared/widgets/coach_created_mark.dart';
 import '../../../../shared/widgets/container_styles.dart';
 import '../../../../core/utils/name_limit.dart';
 import '../../../../core/utils/session_format.dart';
@@ -514,6 +515,10 @@ class _ExercisesPanel extends StatelessWidget {
                                       color: AppColors.inkSecondary,
                                     ),
                                   ),
+                                if (ex.createdByUserId != null)
+                                  CoachCreatedMark(
+                                    createdByUserId: ex.createdByUserId,
+                                  ),
                               ],
                             ),
                           ),
@@ -683,6 +688,10 @@ class _VariationsPanel extends StatelessWidget {
                                       fontSize: AppTextStyles.xs,
                                       color: AppColors.inkSecondary,
                                     ),
+                                  ),
+                                if (v.createdByUserId != null)
+                                  CoachCreatedMark(
+                                    createdByUserId: v.createdByUserId,
                                   ),
                               ],
                             ),

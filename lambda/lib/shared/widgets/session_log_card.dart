@@ -6,6 +6,7 @@ import '../../core/styles/app_radius.dart';
 import '../../core/styles/app_spacing.dart';
 import '../../core/styles/app_text_styles.dart';
 import '../../core/utils/session_format.dart';
+import 'coach_created_mark.dart';
 import '../../data/models/session.dart';
 import '../../data/models/session_exercise_set.dart';
 import './container_styles.dart';
@@ -68,6 +69,10 @@ class SessionLogCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             _identityGrid(s),
+            if (s.createdByUserId != null) ...[
+              const SizedBox(height: AppSpacing.xs),
+              CoachCreatedMark(createdByUserId: s.createdByUserId),
+            ],
             if (workout.sets.isNotEmpty) ...[
               const SizedBox(height: AppSpacing.md),
               Column(
