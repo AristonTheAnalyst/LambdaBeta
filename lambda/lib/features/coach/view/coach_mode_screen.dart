@@ -198,7 +198,10 @@ class _CoachModeScreenState extends State<CoachModeScreen> {
               _libraryVisited
                   ? ExerciseHubScreen(
                       userId: widget.athleteId,
-                      readOnly: true,
+                      // Phase 3: the coach creates and edits as her; delete
+                      // stays off (2026-10-28). Reviews are still phase 4.
+                      readOnly: false,
+                      canDelete: false,
                       showReviews: false,
                     )
                   : const SizedBox.shrink(),

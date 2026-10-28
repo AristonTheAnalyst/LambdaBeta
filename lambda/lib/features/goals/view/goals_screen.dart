@@ -16,6 +16,7 @@ import '../../../shared/widgets/date_range_selector.dart';
 import '../../../shared/widgets/exercise_target_picker.dart';
 import '../../../shared/widgets/glass_button.dart';
 import '../../../shared/widgets/lambda_search_field.dart';
+import '../../../shared/widgets/coach_created_mark.dart';
 import '../../../shared/widgets/page_header.dart';
 import '../../../shared/widgets/scroll_shrink_nav_bar.dart';
 import '../../../shared/widgets/section_divider.dart';
@@ -183,6 +184,7 @@ class GoalsScreen extends StatefulWidget {
     this.openWorkout,
     this.userId,
     this.readOnly = false,
+    this.canDelete = true,
   });
 
   final bool showHeader;
@@ -195,6 +197,11 @@ class GoalsScreen extends StatefulWidget {
   /// not open the focused sheet — that sheet has an Edit path, so coach mode
   /// leaves it unspent. Expanding, sorting and filtering stay live.
   final bool readOnly;
+
+  /// Whether a goal's swipe offers Delete. Coach mode keeps [readOnly] false
+  /// — goals are created and edited as the athlete — and withholds only the
+  /// delete (2026-10-28).
+  final bool canDelete;
 
   /// The view model to render, when a caller already has one.
   ///
@@ -846,15 +853,27 @@ class _GoalsScreenState extends State<GoalsScreen> {
       onTap: widget.readOnly ? null : () => _open(goal),
       // The section headers name the exercise and variation, so the card
       // itself leads with the target (2026-10-19).
-      child: GoalRow(
-        // The one reading covers both shapes: a single-set goal's pair and a
-        // multi-set goal's rungs (2026-10-26).
-        target: goalRequirementsValue(goal.requirements),
-        targetDate: goal.targetDate,
-        outcome: state.outcomes[goal.goalId],
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          GoalRow(
+            // The one reading covers both shapes: a single-set goal's pair
+            // and a multi-set goal's rungs (2026-10-26).
+            target: goalRequirementsValue(goal.requirements),
+            targetDate: goal.targetDate,
+            outcome: state.outcomes[goal.goalId],
+          ),
+          if (goal.createdByUserId != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: CoachCreatedMark(
+                createdByUserId: goal.createdByUserId,
+              ),
+            ),
+        ],
       ),
     );
-    if (widget.readOnly) return row;
+    if (widget.readOnly || !widget.canDelete) return row;
     return SwipeActions(
       // Keyed by goal, so a delete never hands an open drawer's state to the
       // row that slides up into its place.

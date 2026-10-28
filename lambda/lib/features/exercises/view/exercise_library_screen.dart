@@ -51,6 +51,7 @@ class ExerciseLibraryScreen extends StatefulWidget {
     this.viewModel,
     this.userId,
     this.readOnly = false,
+    this.canDelete = true,
   });
 
   /// Whose library to read. Null = the signed-in user (the normal mount); a
@@ -60,6 +61,10 @@ class ExerciseLibraryScreen extends StatefulWidget {
   /// Browse only (2026-10-28): no +, no archived sheet, and the rows do not
   /// open their editors — coach mode reads, it never writes.
   final bool readOnly;
+
+  /// Whether the edit sheet offers Delete. Coach mode creates and renames as
+  /// the athlete but never removes (2026-10-28).
+  final bool canDelete;
 
   /// When embedded in a hub tab, render one panel only — the hub owns the
   /// header and its own tab bar, so the nested header/tabs are hidden.
@@ -215,7 +220,7 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
       child: _EditVariationModal(
         controller: _editVarController,
         viewModel: _viewModel,
-        onDelete: _confirmDeleteVariation,
+        onDelete: widget.canDelete ? _confirmDeleteVariation : null,
       ),
     );
   }
@@ -989,7 +994,8 @@ class _EditVariationModal extends StatelessWidget {
 
   final TextEditingController controller;
   final ExerciseViewModel viewModel;
-  final void Function(String id, String name) onDelete;
+  /// Null in coach mode: the sheet edits the name and offers no delete.
+  final void Function(String id, String name)? onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -1014,17 +1020,18 @@ class _EditVariationModal extends StatelessWidget {
                         ),
                       ),
                     ),
-                    GlassButton(
-                      label: '',
-                      icon: Icons.delete_outline,
-                      semanticsLabel: 'Delete variation',
-                      color: AppColors.danger,
-                      compact: true,
-                      onPressed: () => onDelete(
-                        state.editVariation!.variationId,
-                        state.editVarName,
+                    if (onDelete != null)
+                      GlassButton(
+                        label: '',
+                        icon: Icons.delete_outline,
+                        semanticsLabel: 'Delete variation',
+                        color: AppColors.danger,
+                        compact: true,
+                        onPressed: () => onDelete!(
+                          state.editVariation!.variationId,
+                          state.editVarName,
+                        ),
                       ),
-                    ),
                   ],
                 ),
                 const SizedBox(height: AppSpacing.md),

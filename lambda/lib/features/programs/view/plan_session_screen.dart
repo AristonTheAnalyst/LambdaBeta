@@ -90,6 +90,7 @@ Future<bool> confirmEditWhileRunning(BuildContext context) async {
 /// Pushed via [program_detail_screen.dart] on create or edit.
 class PlanSessionScreen extends StatefulWidget {
   const PlanSessionScreen({
+    this.canDelete = true,
     super.key,
     required this.viewModel,
     this.workout,
@@ -101,6 +102,11 @@ class PlanSessionScreen extends StatefulWidget {
 
   final WorkoutEditorViewModel viewModel;
   final PlannedSession? workout; // null = new workout
+
+  /// Whether the editor offers removal. Coach mode sets it false
+  /// (2026-10-28): plan on the athlete's behalf, never prune her library. The
+  /// VM refuses too; this hides the doors.
+  final bool canDelete;
 
   /// When true, a new workout is a standalone workout (no program).
   final bool standalone;
@@ -552,6 +558,7 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
                                   viewModel: widget.viewModel,
                                   slot: state.activeSlot!,
                                   onAddExercise: _showAddExercise,
+                                  canDelete: widget.canDelete,
                                   original: original,
                                   originalNotes:
                                       _original?.beforeNotes ?? const {},
@@ -886,6 +893,7 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
       toggleNotePin: vm.toggleNotePin,
       deleteNote: vm.deleteNote,
       updateNote: vm.updateNoteText,
+      canDelete: widget.canDelete,
       exerciseId: exerciseId,
       exerciseName: toProperCase(vm.exerciseDisplayName(exerciseId)),
       sinceLastReviewAt: _reviewSession?.sinceDate,
@@ -971,12 +979,14 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
         (slot) => slot.exerciseId == id,
       ),
       onAdd: vm.addPlannedExerciseGroup,
-      onRemoveRequest: (id) async {
-        final i = vm.state.value.workoutExerciseSlots.indexWhere(
-          (slot) => slot.exerciseId == id,
-        );
-        if (i >= 0) _confirmRemoveExercise(i);
-      },
+      onRemoveRequest: widget.canDelete
+          ? (id) async {
+              final i = vm.state.value.workoutExerciseSlots.indexWhere(
+                (slot) => slot.exerciseId == id,
+              );
+              if (i >= 0) _confirmRemoveExercise(i);
+            }
+          : null,
       onCreate: vm.submitNewExercise,
       isCreating: () => vm.state.value.newExCreating,
     );
@@ -998,6 +1008,7 @@ class _PlanExerciseCard extends StatelessWidget {
     required this.viewModel,
     required this.slot,
     required this.onAddExercise,
+    this.canDelete = true,
     this.original,
     this.originalNotes = const {},
   });
@@ -1005,6 +1016,10 @@ class _PlanExerciseCard extends StatelessWidget {
   final WorkoutEditorViewModel viewModel;
   final PlanExerciseSlot slot;
   final VoidCallback onAddExercise;
+
+  /// Coach mode keeps the card editable and withholds its removal doors
+  /// (2026-10-28).
+  final bool canDelete;
 
   /// The open workout as the record holds it, while Compare is up — the same
   /// workout drawn through this same card, with the record's rows in place of
@@ -1116,6 +1131,7 @@ class _PlanExerciseCard extends StatelessWidget {
             // A removed group stays on screen for its rows: red, inert, and
             // outside the drag list (2026-10-26).
             deleted: slot.deleted,
+            canDelete: canDelete,
             dragIndex: slot.deleted ? null : i,
             onRegisterCommit: vm.registerCommitHandle,
             onUnregisterCommit: vm.unregisterCommitHandle,
@@ -1167,6 +1183,7 @@ class _PlanExerciseCard extends StatelessWidget {
             initialRepsText: '',
             initialVariationId: null,
             hasNotes: false,
+            canDelete: canDelete,
             // Registered like a real row's: a draft's variation and notes live
             // in the row until it commits, and the commit that saves them is
             // whatever destroys or flushes the row — the exercise switch above

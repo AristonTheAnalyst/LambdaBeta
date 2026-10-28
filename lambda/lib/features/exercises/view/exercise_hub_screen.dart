@@ -26,6 +26,7 @@ class ExerciseHubScreen extends StatefulWidget {
     super.key,
     this.userId,
     this.readOnly = false,
+    this.canDelete = true,
     this.showReviews = true,
   });
 
@@ -39,6 +40,11 @@ class ExerciseHubScreen extends StatefulWidget {
   /// archive and delete affordances, and the taps that would open an editor
   /// are spent. Coach mode's mount, never the app's own Library.
   final bool readOnly;
+
+  /// Whether the tabs offer deletion. Coach mode passes false while keeping
+  /// [readOnly] false, so the athlete's library can be created in and edited
+  /// but never pruned (2026-10-28).
+  final bool canDelete;
 
   /// Whether the Reviews tab is there. A pass is the library owner's own
   /// work, so a hub scoped to someone else's library drops it (2026-10-28).
@@ -132,17 +138,20 @@ class _ExerciseHubScreenState extends State<ExerciseHubScreen> {
       panel: activeTab <= 1 ? activeTab : 0,
       userId: widget.userId,
       readOnly: widget.readOnly,
+      canDelete: widget.canDelete,
     ),
     WorkoutLibraryScreen(
       showHeader: false,
       userId: widget.userId,
       readOnly: widget.readOnly,
+      canDelete: widget.canDelete,
     ),
     if (widget.showReviews) const ReviewsScreen(showHeader: false),
     GoalsScreen(
       showHeader: false,
       userId: widget.userId,
       readOnly: widget.readOnly,
+      canDelete: widget.canDelete,
     ),
   ];
 

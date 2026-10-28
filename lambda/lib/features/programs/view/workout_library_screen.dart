@@ -17,6 +17,7 @@ import '../../../../shared/widgets/glass_button.dart';
 import '../../../../shared/widgets/lambda_search_field.dart';
 import '../../../../shared/widgets/page_header.dart';
 import '../../../../shared/widgets/scroll_shrink_nav_bar.dart';
+import '../../../shared/widgets/coach_created_mark.dart';
 import '../viewmodel/workout_editor_viewmodel.dart';
 import 'plan_session_screen.dart';
 
@@ -27,6 +28,7 @@ class WorkoutLibraryScreen extends StatefulWidget {
     this.showHeader = true,
     this.userId,
     this.readOnly = false,
+    this.canDelete = true,
   });
 
   /// When embedded in a tab (Exercises hub), render content only — the hub
@@ -42,6 +44,10 @@ class WorkoutLibraryScreen extends StatefulWidget {
   /// a card that does not open the editor — coach mode reads, it never
   /// writes.
   final bool readOnly;
+
+  /// Whether a workout's swipe offers Delete. Coach mode creates, edits and
+  /// duplicates as the athlete and never removes (2026-10-28).
+  final bool canDelete;
 
   @override
   State<WorkoutLibraryScreen> createState() => _WorkoutLibraryScreenState();
@@ -104,10 +110,16 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
   }
 
   Future<void> _create() async {
-    final vm = WorkoutEditorViewModel();
+    // The editor writes as the library's owner — the athlete in coach mode
+    // (2026-10-28); the server stamps the author.
+    final vm = WorkoutEditorViewModel(userId: widget.userId, canDelete: widget.canDelete);
     await Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(
-        builder: (_) => PlanSessionScreen(viewModel: vm, standalone: true),
+        builder: (_) => PlanSessionScreen(
+          viewModel: vm,
+          standalone: true,
+          canDelete: widget.canDelete,
+        ),
       ),
     );
     vm.dispose();
@@ -115,11 +127,14 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
   }
 
   Future<void> _edit(PlannedSession w) async {
-    final vm = WorkoutEditorViewModel();
+    final vm = WorkoutEditorViewModel(userId: widget.userId, canDelete: widget.canDelete);
     await Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(
-        builder: (_) =>
-            PlanSessionScreen(viewModel: vm, standaloneWorkoutId: w.sessionId),
+        builder: (_) => PlanSessionScreen(
+          viewModel: vm,
+          standaloneWorkoutId: w.sessionId,
+          canDelete: widget.canDelete,
+        ),
       ),
     );
     vm.dispose();
@@ -243,6 +258,10 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
+              if (w.createdByUserId != null) ...[
+                const SizedBox(height: 2),
+                CoachCreatedMark(createdByUserId: w.createdByUserId),
+              ],
             ],
           ),
         ),
@@ -381,8 +400,9 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
                                 itemBuilder: (context, i) {
                                   final w = _filtered[i];
                                   final card = _card(w);
-                                  // Coach mode browses only (2026-10-28): the
-                                  // duplicate/delete drawer is not drawn.
+                                  // Coach mode edits and duplicates as the
+                                  // athlete and never deletes (2026-10-28):
+                                  // the drawer keeps its copy, loses its trash.
                                   if (widget.readOnly) return card;
                                   return SwipeActions(
                                     actions: [
@@ -392,12 +412,13 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
                                         foreground: AppColors.accentText,
                                         onTap: () => _duplicate(w),
                                       ),
-                                      SwipeAction(
-                                        icon: Icons.delete_outline,
-                                        color: AppColors.danger,
-                                        foreground: AppColors.dangerText,
-                                        onTap: () => _delete(w),
-                                      ),
+                                      if (widget.canDelete)
+                                        SwipeAction(
+                                          icon: Icons.delete_outline,
+                                          color: AppColors.danger,
+                                          foreground: AppColors.dangerText,
+                                          onTap: () => _delete(w),
+                                        ),
                                     ],
                                     child: card,
                                   );

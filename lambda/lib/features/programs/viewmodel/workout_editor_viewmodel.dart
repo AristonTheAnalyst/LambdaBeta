@@ -254,7 +254,9 @@ class WorkoutEditorViewModel {
     PlannedSessionStore? workoutPlanRepo,
     ProgramRepository? programRepo,
     String? userId,
-  }) : _host = host,
+    bool canDelete = true,
+  }) : _canDelete = canDelete,
+       _host = host,
        _exerciseRepo = exerciseRepo ?? ExerciseRepository(),
        _noteRepo = noteRepo ?? ExerciseNoteRepository(),
        _sessionRepo = workoutRepo ?? SessionRepository(),
@@ -284,6 +286,13 @@ class WorkoutEditorViewModel {
   /// to sign in to — and that put the planner screen, where the draft-row
   /// commit contract lives, out of reach of `flutter test` entirely.
   final String? _userIdOverride;
+
+  /// Coach mode never deletes (2026-10-28). False makes every removal a no-op
+  /// — group, set, draft and the discard rollback — so no DELETE reaches the
+  /// uploader (the server would refuse it and quarantine the op).
+  final bool _canDelete;
+
+  bool get canDelete => _canDelete;
 
   bool get isStandaloneMode => _host == null;
 
@@ -647,6 +656,9 @@ class WorkoutEditorViewModel {
   /// this pass "Discard" could never undo them. A workout created in this
   /// editing session rolls back to nonexistence.
   Future<void> discardWorkoutChanges() async {
+    // Coach mode has no discard (2026-10-28): discarding a newly created
+    // workout deletes it, and the coach may not delete.
+    if (!_canDelete) return;
     final w = state.value.editingWorkout;
     if (w == null) return;
     if (!_openedExisting) {
@@ -744,6 +756,7 @@ class WorkoutEditorViewModel {
   }
 
   Future<void> deletePlannedSession({bool notifyHost = true}) async {
+    if (!_canDelete) return;
     final w = state.value.editingWorkout;
     if (w == null) return;
     // Archive BEFORE clearing the editor — closeWorkoutEditor's list refetch
@@ -944,6 +957,7 @@ class WorkoutEditorViewModel {
   /// archives its group + planned sets.  Active-index is clamped so the tab
   /// bar never points past the new end.
   Future<void> removePlannedExerciseGroup(int index) async {
+    if (!_canDelete) return;
     final s = state.value;
     final workout = s.editingWorkout;
     if (workout == null ||
@@ -1438,6 +1452,7 @@ class WorkoutEditorViewModel {
     String plannedExerciseId,
     int draftId,
   ) {
+    if (!_canDelete) return;
     Future<void> forward() async {
       final drafts = Map<String, List<int>>.from(state.value.workoutSetDrafts);
       drafts[plannedExerciseId]?.remove(draftId);
@@ -1688,6 +1703,7 @@ class WorkoutEditorViewModel {
   }
 
   Future<void> deletePlannedSessionExerciseSet(String setId) async {
+    if (!_canDelete) return;
     final workout = state.value.editingWorkout;
     if (workout == null) return;
     final captured = state.value.workoutPlannedSessionExerciseSets
