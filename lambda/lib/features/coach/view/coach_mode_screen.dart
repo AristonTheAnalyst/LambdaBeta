@@ -84,6 +84,15 @@ class _CoachModeScreenState extends State<CoachModeScreen> {
     }
   }
 
+  /// The way out, standing to the left of the tabs (2026-10-28): a left
+  /// chevron at the bar's leading edge.
+  Widget _exitButton(VoidCallback onExit) => HeaderIconButton(
+    icon: Icons.chevron_left,
+    semanticsLabel: 'Exit coach mode',
+    glyphSize: 22,
+    onPressed: onExit,
+  );
+
   /// The bar's exit, from a record pushed over the shell: close the record,
   /// then leave coach mode once the stack has settled.
   void _exitFromRecord() {
@@ -108,10 +117,8 @@ class _CoachModeScreenState extends State<CoachModeScreen> {
             canCoach: true,
             navItems: coachModeNavItems,
             navIndex: 0,
-            navTrailing: CoachModeIdentity(
-              name: widget.athleteName,
-              onExit: _exitFromRecord,
-            ),
+            navLeading: _exitButton(_exitFromRecord),
+            navTrailing: CoachModeIdentity(name: widget.athleteName),
             onNavTap: (i) {
               Navigator.of(context).pop();
               _selectTab(i);
@@ -132,10 +139,8 @@ class _CoachModeScreenState extends State<CoachModeScreen> {
           currentIndex: _tab,
           onTap: _selectTab,
           items: coachModeNavItems,
-          trailing: CoachModeIdentity(
-            name: widget.athleteName,
-            onExit: _exit,
-          ),
+          leading: _exitButton(_exit),
+          trailing: CoachModeIdentity(name: widget.athleteName),
           child: IndexedStack(
             index: _tab,
             children: [
@@ -177,62 +182,45 @@ class CoachModeIdentity extends StatelessWidget {
   const CoachModeIdentity({
     super.key,
     required this.name,
-    required this.onExit,
   });
 
   final String name;
-  final VoidCallback onExit;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-      child: Row(
-        // The half's two contents — the identity and the way out — share it
-        // evenly: equal air at the divider, between them and at the trailing
-        // edge (2026-10-28).
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: [
-          Flexible(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'COACHING',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppFonts.mono(
-                    fontSize: AppTextStyles.xs,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0.8,
-                    color: AppColors.inkSecondary,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppFonts.ui(
-                    fontSize: AppTextStyles.sm,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.primary,
-                  ),
-                ),
-              ],
+    // The right half holds one block now — the way out moved to the leading
+    // edge — so the identity sits in the middle of its half (2026-10-28).
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Text(
+              'COACHING',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppFonts.mono(
+                fontSize: AppTextStyles.xs,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.8,
+                color: AppColors.inkSecondary,
+              ),
             ),
-          ),
-          HeaderIconButton(
-            // A chevron, not a door: the bar's trailing edge is where this
-            // app leaves a place from, and the glyph says "on, out of here"
-            // without borrowing the destructive vocabulary (2026-10-28).
-            icon: Icons.chevron_right,
-            semanticsLabel: 'Exit coach mode',
-            glyphSize: 22,
-            onPressed: onExit,
-          ),
-        ],
+            const SizedBox(height: 2),
+            Text(
+              name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppFonts.ui(
+                fontSize: AppTextStyles.sm,
+                fontWeight: FontWeight.w600,
+                color: AppColors.primary,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_radius.dart';
+import '../../core/styles/app_spacing.dart';
 import '../../core/theme/lambda_theme.dart';
 import 'floating_bar.dart';
 
@@ -63,6 +64,7 @@ class ScrollShrinkNavBar extends StatefulWidget {
     required this.items,
     required this.child,
     this.aboveBar,
+    this.leading,
     this.trailing,
   });
 
@@ -83,6 +85,12 @@ class ScrollShrinkNavBar extends StatefulWidget {
   /// height, a notice is as tall as its words, and either way
   /// [contentInset] makes room for all of it.
   final Widget? aboveBar;
+
+  /// A control before the destinations, inside the bar's left half
+  /// (2026-10-28) — coach mode's way out, standing to the left of Session.
+  /// The items divide what remains of the half equally. Null leaves the
+  /// destinations alone.
+  final Widget? leading;
 
   /// A second half inside the bar, right of a hairline divider (2026-10-28).
   /// Coach mode puts the athlete's identity here — `COACHING` over the name,
@@ -236,11 +244,23 @@ class _ScrollShrinkNavBarState extends State<ScrollShrinkNavBar>
           ),
       ],
     );
+    final leading = widget.leading;
+    final left = leading == null
+        ? items
+        : Row(
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(left: AppSpacing.xs),
+                child: leading,
+              ),
+              Expanded(child: items),
+            ],
+          );
     final trailing = widget.trailing;
-    if (trailing == null) return items;
+    if (trailing == null) return left;
     return Row(
       children: [
-        Expanded(child: items),
+        Expanded(child: left),
         // The split's own edge: a hairline, not a filled sliver, centred in
         // the bar's height so the two halves read as one surface.
         Padding(
