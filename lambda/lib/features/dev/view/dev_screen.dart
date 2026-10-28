@@ -90,6 +90,13 @@ class DevScreen extends StatelessWidget {
                     subtitle: 'Read vs edit treatments for boxes and stars',
                     onTap: () => context.push('/dev/visual-pairings'),
                   ),
+                  const SizedBox(height: AppSpacing.sm),
+                  _NavCard(
+                    icon: Icons.school_outlined,
+                    label: 'Coach Icons',
+                    subtitle: 'Coaching and exit glyphs at bar size, with names',
+                    onTap: () => context.push('/dev/coach-icons'),
+                  ),
                   const SizedBox(height: AppSpacing.xl),
                   AppCard(
                     child: Column(

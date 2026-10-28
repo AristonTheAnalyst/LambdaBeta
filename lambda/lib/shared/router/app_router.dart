@@ -10,6 +10,7 @@ import '../../features/auth/view/signup_screen.dart';
 import '../../features/coach/view/coach_mode_screen.dart';
 import '../../features/coach/view/coach_screen.dart';
 import '../../features/dev/lab/lab_screen.dart';
+import '../../features/dev/view/coach_icons_screen.dart';
 import '../../features/dev/view/dev_screen.dart';
 import '../../features/dev/view/experimental_screen.dart';
 import '../../features/dev/view/gallery_screen.dart';
@@ -310,6 +311,10 @@ abstract final class AppRouter {
                 GoRoute(
                   path: 'visual-pairings',
                   builder: (_, _) => const VisualPairingsScreen(),
+                ),
+                GoRoute(
+                  path: 'coach-icons',
+                  builder: (_, _) => const CoachIconsScreen(),
                 ),
               ],
             ),
