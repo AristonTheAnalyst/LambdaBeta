@@ -150,6 +150,10 @@ class _CoachModeScreenState extends State<CoachModeScreen> {
             exerciseName: exercise.name,
             userId: widget.athleteId,
             canDelete: false,
+            // Rename only what this coach created; the PR-axis settings are
+            // never a coach write (2026-10-29).
+            canEdit: exercise.createdByUserId != null,
+            canEditViewSettings: false,
           ),
         ),
       ),
@@ -167,8 +171,11 @@ class _CoachModeScreenState extends State<CoachModeScreen> {
           child: SessionDetailScreen(
             sessionId: sessionId,
             userId: widget.athleteId,
-            // Phase 2: the coach edits as her, and still never deletes.
-            readOnly: false,
+            // Her records are read-only to the coach (2026-10-29): the
+            // server only lets a coach edit rows they created, and a session
+            // she logged is hers. Coach-logged sessions stay read-only here
+            // for now — the next pass can open the ones this coach created.
+            readOnly: true,
             canCoach: true,
             navItems: coachModeNavItems,
             navIndex: 0,

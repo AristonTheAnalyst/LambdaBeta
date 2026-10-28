@@ -229,7 +229,11 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
   /// editor, so it is spent on nothing, and the drawer that duplicates and
   /// deletes is not wrapped around it.
   Widget _card(PlannedSession w) => AppCard(
-    onTap: widget.readOnly ? null : () => _edit(w),
+    // Her own workouts are read-only to the coach; the ones this coach
+    // created are theirs to edit (2026-10-29).
+    onTap: widget.readOnly || (widget.userId != null && w.createdByUserId == null)
+        ? null
+        : () => _edit(w),
     background: AppColors.plannedBg,
     borderColor: AppColors.planned.withValues(alpha: 0.35),
     child: Row(

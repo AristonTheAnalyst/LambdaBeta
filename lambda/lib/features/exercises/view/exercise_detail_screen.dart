@@ -39,6 +39,8 @@ class ExerciseDetailScreen extends StatefulWidget {
     this.exerciseName,
     this.userId,
     this.canDelete = true,
+    this.canEdit = true,
+    this.canEditViewSettings = true,
   });
 
   final String exerciseId;
@@ -50,6 +52,15 @@ class ExerciseDetailScreen extends StatefulWidget {
 
   /// Whether the edit menu offers Delete/archive. Coach mode renames only.
   final bool canDelete;
+
+  /// Whether the rename menu is offered. A coach may rename only the
+  /// exercises they created (2026-10-29).
+  final bool canEdit;
+
+  /// Whether the insights' axis hide/show toggles write the per-exercise
+  /// view settings. Coach mode turns this off: `dim_pr_view_setting` is not
+  /// part of the coach grant, so the write would be refused (2026-10-29).
+  final bool canEditViewSettings;
 
   @override
   State<ExerciseDetailScreen> createState() => _ExerciseDetailScreenState();
@@ -179,6 +190,7 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
     String axisValue, {
     required bool hide,
   }) async {
+    if (!widget.canEditViewSettings) return;
     final repo = PrViewSettingRepository();
     if (hide) {
       await repo.hideAxis(_userId, widget.exerciseId, axisType, axisValue);
@@ -479,7 +491,8 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
                 icon: Icons.more_horiz,
                 semanticsLabel: 'Exercise options',
                 glyphSize: 22,
-                onPressed: _openEditMenu,
+                // Inert for an exercise the coach did not create (2026-10-29).
+                onPressed: widget.canEdit ? _openEditMenu : null,
               ),
             ),
             Expanded(

@@ -850,7 +850,13 @@ class _GoalsScreenState extends State<GoalsScreen> {
   /// and a tap that opens no sheet — the focused sheet has an Edit path.
   Widget _goalCard(Goal goal, GoalsState state) {
     final row = GestureDetector(
-      onTap: widget.readOnly ? null : () => _open(goal),
+      // A coach opens only the goals they created; hers stay read-only
+      // (2026-10-29).
+      onTap:
+          widget.readOnly ||
+              (widget.userId != null && goal.createdByUserId == null)
+          ? null
+          : () => _open(goal),
       // The section headers name the exercise and variation, so the card
       // itself leads with the target (2026-10-19).
       child: Column(

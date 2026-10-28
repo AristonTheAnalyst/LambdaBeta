@@ -33,6 +33,11 @@ const schema = Schema([
       // Who put this row down (2026-10-28): NULL = the owner; set = the coach
       // acting on the athlete's behalf in coach mode. No FK on purpose.
       Column.text('created_by_user_id'),
+      // Audit trail (2026-10-29): created_at is immutable like the author;
+      // updated_by/at are stamped server-side on every edit.
+      Column.text('created_at'),
+      Column.text('updated_by_user_id'),
+      Column.text('updated_at'),
       Column.text('pre_notes'),
       Column.text('post_notes'),
       Column.text('created_datetime'),
@@ -62,6 +67,11 @@ const schema = Schema([
       Column.text('custom_exercise_id'),
       Column.text('user_id'),
       Column.text('created_by_user_id'),
+      // Audit trail (2026-10-29): created_at is immutable like the author;
+      // updated_by/at are stamped server-side on every edit.
+      Column.text('created_at'),
+      Column.text('updated_by_user_id'),
+      Column.text('updated_at'),
       Column.text('exercise_name'),
       Column.text('date_archived'),
     ],
@@ -75,6 +85,11 @@ const schema = Schema([
       Column.text('custom_variation_id'),
       Column.text('user_id'),
       Column.text('created_by_user_id'),
+      // Audit trail (2026-10-29): created_at is immutable like the author;
+      // updated_by/at are stamped server-side on every edit.
+      Column.text('created_at'),
+      Column.text('updated_by_user_id'),
+      Column.text('updated_at'),
       Column.text('variation_name'),
       Column.text('date_archived'),
     ],
@@ -96,6 +111,11 @@ const schema = Schema([
       Column.text('session_id'),
       Column.text('user_id'),
       Column.text('created_by_user_id'),
+      // Audit trail (2026-10-29): created_at is immutable like the author;
+      // updated_by/at are stamped server-side on every edit.
+      Column.text('created_at'),
+      Column.text('updated_by_user_id'),
+      Column.text('updated_at'),
       Column.text('custom_exercise_id'),
       Column.integer('exercise_order'),
       Column.text('planned_exercise_id'),
@@ -111,6 +131,11 @@ const schema = Schema([
       Column.text('session_exercise_id'),
       Column.text('user_id'),
       Column.text('created_by_user_id'),
+      // Audit trail (2026-10-29): created_at is immutable like the author;
+      // updated_by/at are stamped server-side on every edit.
+      Column.text('created_at'),
+      Column.text('updated_by_user_id'),
+      Column.text('updated_at'),
       Column.text('custom_variation_id'),
       Column.integer('set_number'),
       Column.text('weight'),
@@ -260,6 +285,11 @@ const schema = Schema([
       Column.text('exercise_note_id'),
       Column.text('user_id'),
       Column.text('created_by_user_id'),
+      // Audit trail (2026-10-29): created_at is immutable like the author;
+      // updated_by/at are stamped server-side on every edit.
+      Column.text('created_at'),
+      Column.text('updated_by_user_id'),
+      Column.text('updated_at'),
       Column.text('custom_exercise_id'),
       Column.text('note_text'),
       Column.integer('pinned'),
@@ -274,6 +304,25 @@ const schema = Schema([
       ]),
     ],
   ),
+  // Name history (2026-10-29): one row per rename of an exercise, variation
+  // or workout, written by an AFTER UPDATE trigger on the server. The owner
+  // reads it and can restore a previous name; nobody writes it from a client.
+  Table('fact_name_change', [
+    Column.text('name_change_id'),
+    Column.text('user_id'),
+    Column.text('entity_type'),
+    Column.text('entity_id'),
+    Column.text('old_name'),
+    Column.text('new_name'),
+    Column.text('changed_by_user_id'),
+    Column.text('changed_at'),
+  ], indexes: [
+    Index('entity_idx', [
+      IndexedColumn.ascending('user_id'),
+      IndexedColumn.ascending('entity_type'),
+      IndexedColumn.ascending('entity_id'),
+    ]),
+  ]),
   Table('coaching_relationship', [
     Column.text('coach_user_id'),
     Column.text('athlete_user_id'),
@@ -378,6 +427,11 @@ const schema = Schema([
       Column.text('session_id'),
       Column.text('user_id'),
       Column.text('created_by_user_id'),
+      // Audit trail (2026-10-29): created_at is immutable like the author;
+      // updated_by/at are stamped server-side on every edit.
+      Column.text('created_at'),
+      Column.text('updated_by_user_id'),
+      Column.text('updated_at'),
       Column.text('name'),
       Column.text('notes'),
       Column.text('date_archived'),
@@ -430,6 +484,11 @@ const schema = Schema([
       Column.text('planned_session_id'),
       Column.text('user_id'),
       Column.text('created_by_user_id'),
+      // Audit trail (2026-10-29): created_at is immutable like the author;
+      // updated_by/at are stamped server-side on every edit.
+      Column.text('created_at'),
+      Column.text('updated_by_user_id'),
+      Column.text('updated_at'),
       Column.text('custom_exercise_id'),
       Column.integer('exercise_order'),
       Column.integer('is_archived'),
@@ -445,6 +504,11 @@ const schema = Schema([
       Column.text('planned_exercise_id'),
       Column.text('user_id'),
       Column.text('created_by_user_id'),
+      // Audit trail (2026-10-29): created_at is immutable like the author;
+      // updated_by/at are stamped server-side on every edit.
+      Column.text('created_at'),
+      Column.text('updated_by_user_id'),
+      Column.text('updated_at'),
       Column.text('custom_variation_id'),
       Column.integer('set_number'),
       Column.text('target_weight'),
@@ -463,6 +527,11 @@ const schema = Schema([
       Column.text('program_run_id'),
       Column.text('user_id'),
       Column.text('created_by_user_id'),
+      // Audit trail (2026-10-29): created_at is immutable like the author;
+      // updated_by/at are stamped server-side on every edit.
+      Column.text('created_at'),
+      Column.text('updated_by_user_id'),
+      Column.text('updated_at'),
       Column.text('goal_text'),
       // Free-form notes about the goal itself (2026-10-08) — the target and its
       // label are target_* / goal_text, not this. See
@@ -503,6 +572,11 @@ const schema = Schema([
       Column.text('goal_id'),
       Column.text('user_id'),
       Column.text('created_by_user_id'),
+      // Audit trail (2026-10-29): created_at is immutable like the author;
+      // updated_by/at are stamped server-side on every edit.
+      Column.text('created_at'),
+      Column.text('updated_by_user_id'),
+      Column.text('updated_at'),
       // 1-based, dense: the order the requirements are listed and matched in.
       Column.integer('target_set_order'),
       // Numeric on the server, text in the mirror — the same mapping

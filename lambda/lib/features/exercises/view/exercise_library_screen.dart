@@ -311,7 +311,16 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
             searchController: _varSearchController,
             onAdd: widget.readOnly ? null : _openCreateVariation,
             onShowArchived: widget.readOnly ? null : _openArchivedVariations,
-            onEdit: widget.readOnly ? null : _openEditVariation,
+            // A coach edits only the variations they created; hers are inert
+            // (2026-10-29).
+            onEdit: widget.readOnly
+                ? null
+                : (v) {
+                    if (widget.userId != null && v.createdByUserId == null) {
+                      return;
+                    }
+                    _openEditVariation(v);
+                  },
             onPrev: _viewModel.prevVarPage,
             onNext: _viewModel.nextVarPage,
             onSort: _viewModel.setVarSort,

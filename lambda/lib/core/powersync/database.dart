@@ -28,6 +28,7 @@ const _pkColumns = {
   'dim_program': 'program_id',
   'fact_program_run': 'program_run_id',
   'fact_program_review': 'review_id',
+  'fact_name_change': 'name_change_id',
   'dim_program_block': 'block_id',
   'dim_exercise_note': 'exercise_note_id',
   'dim_planned_session': 'session_id',
