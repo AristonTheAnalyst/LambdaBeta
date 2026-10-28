@@ -186,10 +186,14 @@ class CoachModeIdentity extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(left: AppSpacing.md, right: AppSpacing.xs),
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
       child: Row(
+        // The half's two contents — the identity and the way out — share it
+        // evenly: equal air at the divider, between them and at the trailing
+        // edge (2026-10-28).
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          Expanded(
+          Flexible(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -220,9 +224,12 @@ class CoachModeIdentity extends StatelessWidget {
             ),
           ),
           HeaderIconButton(
-            icon: Icons.meeting_room_outlined,
+            // A chevron, not a door: the bar's trailing edge is where this
+            // app leaves a place from, and the glyph says "on, out of here"
+            // without borrowing the destructive vocabulary (2026-10-28).
+            icon: Icons.chevron_right,
             semanticsLabel: 'Exit coach mode',
-            glyphSize: 18,
+            glyphSize: 22,
             onPressed: onExit,
           ),
         ],
