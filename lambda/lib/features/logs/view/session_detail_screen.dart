@@ -51,6 +51,8 @@ class SessionDetailScreen extends StatefulWidget {
     this.userId,
     this.readOnly = false,
     this.canCoach = false,
+    this.viewerId,
+    this.canDelete = true,
     this.navRoute = '/session',
     this.navItems,
     this.navIndex,
@@ -95,6 +97,14 @@ class SessionDetailScreen extends StatefulWidget {
   /// is, exactly as on the friend route.
   final bool canCoach;
 
+  /// Who is reading, when the record's owner is not the signed-in user — the
+  /// coach. Feedback authorship reads it (2026-10-28).
+  final String? viewerId;
+
+  /// Whether this page offers any delete. Coach mode sets it false: editing
+  /// stays, removal does not (2026-10-28).
+  final bool canDelete;
+
   /// Which tab the page's own bar lights — '/session' for the Training
   /// viewer, '/friends' for a friend's.
   final String navRoute;
@@ -135,7 +145,9 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
     super.initState();
     _vm = SessionDetailViewModel(
       userId: widget.userId,
+      viewerId: widget.viewerId,
       readOnly: widget.readOnly,
+      canDelete: widget.canDelete,
     );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _vm.load(widget.sessionId, initialExerciseId: widget.initialExerciseId);
@@ -698,6 +710,7 @@ class SessionDetailView extends StatelessWidget {
       sessionId: state.session?.sessionId,
       sessionStartedAt: state.session?.createdDatetime,
       readOnly: readOnly,
+      canDelete: viewModel.canDelete,
       sinceLastReviewAt: state.reviewCheckpoint,
     );
   }
@@ -752,16 +765,18 @@ class SessionDetailView extends StatelessWidget {
       isAdded: (id) =>
           vm.state.value.exerciseSlots.any((slot) => slot.exerciseId == id),
       onAdd: vm.addExerciseGroup,
-      onRemoveRequest: (id) async {
-        final i = vm.state.value.exerciseSlots.indexWhere(
-          (slot) => slot.exerciseId == id,
-        );
-        // A deleted exercise's tick is historic — there is nothing left to
-        // remove; its way back is the Restore button (2026-10-14).
-        if (i >= 0 && !vm.state.value.exerciseSlots[i].deleted) {
-          _confirmRemoveExercise(context, i);
-        }
-      },
+      onRemoveRequest: vm.canDelete
+          ? (id) async {
+              final i = vm.state.value.exerciseSlots.indexWhere(
+                (slot) => slot.exerciseId == id,
+              );
+              // A deleted exercise's tick is historic — there is nothing left
+              // to remove; its way back is the Restore button (2026-10-14).
+              if (i >= 0 && !vm.state.value.exerciseSlots[i].deleted) {
+                _confirmRemoveExercise(context, i);
+              }
+            }
+          : null,
       onCreate: vm.submitNewExercise,
       isCreating: () => vm.state.value.newExCreating,
     );
@@ -961,6 +976,7 @@ class _DetailCardBuilder extends StatelessWidget {
       sessionId: state.session?.sessionId,
       sessionStartedAt: state.session?.createdDatetime,
       readOnly: readOnly,
+      canDelete: viewModel.canDelete,
       sinceLastReviewAt: state.reviewCheckpoint,
     );
 
@@ -1024,6 +1040,9 @@ class _DetailCardBuilder extends StatelessWidget {
             immediate: true,
           ),
           onDelete: () => _confirmDeleteSet(set, context),
+          // Coach mode hides the trash (2026-10-28); the VM refuses the call
+          // too, so a stale callback can never delete.
+          canDelete: viewModel.canDelete,
           onDuplicate: (v) => viewModel.duplicateSet(
             set,
             weight: _parseWeight(v.weight),
@@ -1068,6 +1087,7 @@ class _DetailCardBuilder extends StatelessWidget {
           onVariationChanged: (_) {},
           onNotesSave: (_) {},
           onDelete: () async => viewModel.removeDraftSet(order, draftId),
+          canDelete: viewModel.canDelete,
           onDuplicate: (_) {},
           variationOptions: variationOptions,
           allVariations: allVariations,
@@ -1286,7 +1306,9 @@ class _CoachFeedbackCard extends StatelessWidget {
       eyebrow: state.sessionTitle,
       feedback: mine,
       onSave: viewModel.saveCoachFeedback,
-      onDelete: mine == null ? null : () => viewModel.deleteCoachFeedback(mine),
+      onDelete: mine == null || !viewModel.canDelete
+          ? null
+          : () => viewModel.deleteCoachFeedback(mine),
       // The ViewModel records its refusal as a sentence for the user; the
       // sheet that caused it draws it under the field.
       errorText: () => viewModel.state.value.error,

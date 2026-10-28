@@ -77,6 +77,10 @@ void showExerciseNotesModal(
   /// no composer, no pin, no edit, no delete — the notes are somebody else's.
   bool readOnly = false,
 
+  /// Whether the sheet offers Delete. Coach mode sets this false
+  /// (2026-10-28): notes can be written and pinned, never removed.
+  bool canDelete = true,
+
   /// Where the last review of this ground ended (2026-10-26) — resolved by
   /// the caller, which is the only one that knows a pass stands behind the
   /// record. A note written after it leads the sheet as `SINCE LAST
@@ -102,6 +106,7 @@ void showExerciseNotesModal(
       sessionStartedAt: sessionStartedAt,
       sessionIsLive: sessionIsLive,
       readOnly: readOnly,
+      canDelete: canDelete,
       sinceLastReviewAt: sinceLastReviewAt,
     ),
   );
@@ -122,6 +127,7 @@ class _ExerciseNotesModalContent extends StatefulWidget {
     this.sessionStartedAt,
     this.sessionIsLive = false,
     this.readOnly = false,
+    this.canDelete = true,
     this.sinceLastReviewAt,
   });
 
@@ -142,6 +148,10 @@ class _ExerciseNotesModalContent extends StatefulWidget {
 
   /// A friend's record — the sheet reads, it never writes (2026-10-23).
   final bool readOnly;
+
+  /// Whether the rows offer Delete. Coach mode sets it false (2026-10-28);
+  /// composing, pinning and editing stay.
+  final bool canDelete;
 
   /// Where the last review of this ground ended — the split inside the
   /// after-group (2026-10-26). Null keeps the three shelves.
@@ -263,6 +273,7 @@ class _ExerciseNotesModalContentState extends State<_ExerciseNotesModalContent> 
               _NoteRow(
                 note: note,
                 readOnly: widget.readOnly,
+                canDelete: widget.canDelete,
                 onTogglePin: () =>
                     widget.toggleNotePin(widget.exerciseId, note.exerciseNoteId),
                 onDelete: () =>
@@ -419,6 +430,7 @@ class _NoteRow extends StatefulWidget {
     required this.onDelete,
     required this.onUpdateText,
     this.readOnly = false,
+    this.canDelete = true,
   });
 
   final ExerciseNote note;
@@ -429,6 +441,10 @@ class _NoteRow extends StatefulWidget {
   /// Draws the row without any write affordance — no swipe drawer, no pin
   /// control, no tap-to-edit (2026-10-23).
   final bool readOnly;
+
+  /// Keeps the row editable and pinnable but withholds the delete swipe
+  /// (2026-10-28, coach mode).
+  final bool canDelete;
 
   @override
   State<_NoteRow> createState() => _NoteRowState();
@@ -484,7 +500,7 @@ class _NoteRowState extends State<_NoteRow> {
       ),
       child: _editing ? _editor() : _view(),
     );
-    if (widget.readOnly) return row;
+    if (widget.readOnly || !widget.canDelete) return row;
     return SwipeActions(
       borderRadius: AppRadius.md,
       actions: [

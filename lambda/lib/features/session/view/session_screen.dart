@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -89,7 +90,32 @@ bool showsForeignSessionNotice({required bool hasForeign, required int page}) =>
     hasForeign && page <= SessionViewModel.kPreQuestionnairePage;
 
 class SessionScreen extends StatefulWidget {
-  const SessionScreen({super.key});
+  const SessionScreen({
+    super.key,
+    this.viewModel,
+    this.sessionShellSignals = true,
+    this.reselectSignal,
+    this.openRecord,
+  });
+
+  /// The VM the screen drives. Injected by coach mode, which owns an
+  /// athlete-scoped VM for the whole page (2026-10-28); null means this is the
+  /// signed-in user's Session tab and the static cache is used.
+  final SessionViewModel? viewModel;
+
+  /// Whether this screen owns the main shell's session signals
+  /// (`sessionAboveBarNotice`, `AppRouter.sessionTabReselected`). The real tab
+  /// does; coach mode does not — it has its own local reselect signal and must
+  /// never clear the notice the main tab left floating (2026-10-28).
+  final bool sessionShellSignals;
+
+  /// The re-tap signal; defaults to the main shell's. Coach mode passes its
+  /// own so a re-tap does not reach the tab underneath (2026-10-28).
+  final ValueListenable<int>? reselectSignal;
+
+  /// How a record is opened from this screen's list or recap. Null keeps the
+  /// default `/logs/:id` route; coach mode pushes its own viewer (2026-10-28).
+  final void Function(String sessionId)? openRecord;
 
   @override
   State<SessionScreen> createState() => _SessionScreenState();
@@ -110,6 +136,15 @@ class _SessionScreenState extends State<SessionScreen>
   }
 
   late final SessionViewModel _vm;
+
+  /// The re-tap signal this screen listens to (see [SessionScreen.
+  /// reselectSignal]).
+  late final ValueListenable<int> _reselect;
+
+  /// Whether this screen created the VM (the self tab's cached one). An
+  /// injected coach VM belongs to its shell and must not be cleared by this
+  /// screen's sign-out hook or its dispose (2026-10-28).
+  bool _ownsVm = false;
 
   /// The questionnaire note fields.
   ///
@@ -140,6 +175,7 @@ class _SessionScreenState extends State<SessionScreen>
   /// wizard step), so a page change or a session ending elsewhere moves the
   /// storey with the page — never a rebuild of the wizard itself.
   void _syncAboveBarNotice() {
+    if (!widget.sessionShellSignals) return;
     final show =
         showsForeignSessionNotice(
           hasForeign: _vm.foreignActiveSessions.isNotEmpty,
@@ -177,51 +213,64 @@ class _SessionScreenState extends State<SessionScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    ps.onSignOutReset = _resetCachedVmOnSignOut;
-    if (_cachedVm != null) {
-      // Reuse across hot reload — workout state stays intact
-      _vm = _cachedVm!;
-      // Tab re-entry recreates this State (and its PageView); a freshly
-      // attached PageView always starts at page 0, silently dumping the user
-      // back on Prep — whose header has no Back button. Re-anchor the pager
-      // at the wizard step they left, before the new PageView attaches.
-      _vm.slidePagesController.restorePageView();
-      // Belt to restorePageView's braces: re-assert the remembered step once
-      // the new PageView is attached, so a mis-anchored attach can never dump
-      // the user back on the wizard's first page. A no-op when the restore
-      // held.
-      final restoredPage = _vm.slidePagesController.currentPage;
-      // Returning to the tab: refresh the current program / planned workout so
-      // a newly created or begun program shows without a full restart.
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          _vm.slidePagesController.slideToPage(restoredPage);
-          _vm.refreshCatalog(); // always refresh exercise/variation catalog
-          _vm.refreshProgram();
-        }
-      });
+    final injected = widget.viewModel;
+    if (injected != null) {
+      // Coach mode owns this VM for the page (2026-10-28): never cached,
+      // never handed to the sign-out reset, never disposed here. Two live
+      // identities never share the static slot.
+      _vm = injected;
     } else {
-      _vm = SessionViewModel();
-      _cachedVm = _vm;
-      _vm.onWorkoutEnded = _clearCachedVm;
+      _ownsVm = true;
+      ps.onSignOutReset = _resetCachedVmOnSignOut;
+      _vm = _cachedVm ?? SessionViewModel();
+      if (_cachedVm == null) {
+        _cachedVm = _vm;
+        _vm.onWorkoutEnded = _clearCachedVm;
+      } else {
+        // Reuse across hot reload — workout state stays intact.
+        // Tab re-entry recreates this State (and its PageView); a freshly
+        // attached PageView always starts at page 0, silently dumping the
+        // user back on Prep — whose header has no Back button. Re-anchor the
+        // pager at the wizard step they left, before the new PageView
+        // attaches.
+        _vm.slidePagesController.restorePageView();
+        // Belt to restorePageView's braces: re-assert the remembered step
+        // once the new PageView is attached, so a mis-anchored attach can
+        // never dump the user back on the wizard's first page. A no-op when
+        // the restore held.
+        final restoredPage = _vm.slidePagesController.currentPage;
+        // Returning to the tab: refresh the current program / planned workout
+        // so a newly created or begun program shows without a full restart.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            _vm.slidePagesController.slideToPage(restoredPage);
+            _vm.refreshCatalog(); // always refresh exercise/variation catalog
+            _vm.refreshProgram();
+          }
+        });
+      }
     }
     _startNotesCtrl = TextEditingController(text: _vm.startNotes);
     _endNotesCtrl = TextEditingController(text: _vm.endNotes);
     // The shell's tab bar lives outside this screen, so a re-tap of the
     // Session tab arrives as a signal rather than a callback (2026-10-23).
-    AppRouter.sessionTabReselected.addListener(_onSessionTabReselected);
-    // The notice is a shell storey (2026-10-27): the shell cannot read this
-    // screen's VM, so the two feeds it follows are watched here and only the
-    // notifier is written — no setState, and the wizard itself stays
-    // rebuild-free (2026-10-13).
-    _vm.addListener(_syncAboveBarNotice);
-    _vm.slidePagesController.addListener(_syncAboveBarNotice);
-    // First paint is deferred: the shell is building this screen, and writing
-    // a notifier its ancestor listens to mid-build would mark it dirty inside
-    // its own build.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _syncAboveBarNotice();
-    });
+    // Coach mode passes its own signal — the main shell's is not its to fire.
+    _reselect = widget.reselectSignal ?? AppRouter.sessionTabReselected;
+    _reselect.addListener(_onSessionTabReselected);
+    if (widget.sessionShellSignals) {
+      // The notice is a shell storey (2026-10-27): the shell cannot read this
+      // screen's VM, so the two feeds it follows are watched here and only
+      // the notifier is written — no setState, and the wizard itself stays
+      // rebuild-free (2026-10-13).
+      _vm.addListener(_syncAboveBarNotice);
+      _vm.slidePagesController.addListener(_syncAboveBarNotice);
+      // First paint is deferred: the shell is building this screen, and
+      // writing a notifier its ancestor listens to mid-build would mark it
+      // dirty inside its own build.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _syncAboveBarNotice();
+      });
+    }
     // No whole-screen listener: rebuilds are scoped to the widgets that read
     // the VM (per-page ListenableBuilders below) instead of one setState over
     // the entire wizard per notify (2026-10-13).
@@ -259,14 +308,17 @@ class _SessionScreenState extends State<SessionScreen>
   @override
   void dispose() {
     AppRouter.routeObserver.unsubscribe(this);
-    AppRouter.sessionTabReselected.removeListener(_onSessionTabReselected);
-    _vm.removeListener(_syncAboveBarNotice);
-    _vm.slidePagesController.removeListener(_syncAboveBarNotice);
-    // The shell outlives this screen; a notice left behind would float over
-    // whichever branch is showing next (2026-10-27).
-    sessionAboveBarNotice.value = null;
+    _reselect.removeListener(_onSessionTabReselected);
+    if (widget.sessionShellSignals) {
+      _vm.removeListener(_syncAboveBarNotice);
+      _vm.slidePagesController.removeListener(_syncAboveBarNotice);
+      // The shell outlives this screen; a notice left behind would float over
+      // whichever branch is showing next (2026-10-27). Coach mode must never
+      // clear the main tab's notice (2026-10-28).
+      sessionAboveBarNotice.value = null;
+    }
     WidgetsBinding.instance.removeObserver(this);
-    if (ps.onSignOutReset == _resetCachedVmOnSignOut) {
+    if (_ownsVm && ps.onSignOutReset == _resetCachedVmOnSignOut) {
       ps.onSignOutReset = null;
     }
     _startNotesCtrl.dispose();
@@ -410,6 +462,49 @@ class _SessionScreenState extends State<SessionScreen>
               'Got It',
               style: TextStyle(
                 color: AppColors.primary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Coach mode's way out of a live session (2026-10-28): it ends, it never
+  /// discards. The session is saved for the athlete with `end_datetime`; the
+  /// wizard then carries on to the post-questionnaire exactly as Finish does.
+  void _confirmEndWorkout() {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: Text(
+          'End Session',
+          style: TextStyle(color: AppColors.primary),
+        ),
+        content: Text(
+          'End this session? It is saved for the athlete — coach mode never '
+          'discards a session.',
+          style: TextStyle(color: AppColors.inkSecondary, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(
+              'Keep Going',
+              style: TextStyle(color: AppColors.inkSecondary),
+            ),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              _vm.finishSession();
+            },
+            child: Text(
+              'End session',
+              style: TextStyle(
+                color: AppColors.success,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -605,16 +700,31 @@ class _SessionScreenState extends State<SessionScreen>
                                   // questionnaire when idle.
                                   SessionViewModel.kTrainingPage =>
                                     _vm.hasActiveWorkout
-                                        ? HeaderIconButton(
-                                            // A red X, not the square stop glyph
-                                            // (2026-10-23): the square read as
-                                            // "pause/stop the timer", the X reads
-                                            // as "close this session".
-                                            icon: Icons.close,
-                                            semanticsLabel: 'Cancel workout',
-                                            color: AppColors.danger,
-                                            onPressed: _confirmCancelWorkout,
-                                          )
+                                        ? (_vm.canDelete
+                                              ? HeaderIconButton(
+                                                  // A red X, not the square stop
+                                                  // glyph (2026-10-23): the
+                                                  // square read as "pause/stop
+                                                  // the timer", the X reads as
+                                                  // "close this session".
+                                                  icon: Icons.close,
+                                                  semanticsLabel:
+                                                      'Cancel workout',
+                                                  color: AppColors.danger,
+                                                  onPressed:
+                                                      _confirmCancelWorkout,
+                                                )
+                                              : HeaderIconButton(
+                                                  // Coach mode has no discard
+                                                  // (2026-10-28): the tick ends
+                                                  // the session, never deletes
+                                                  // it.
+                                                  icon: Icons.check,
+                                                  semanticsLabel: 'End session',
+                                                  color: AppColors.success,
+                                                  onPressed:
+                                                      _confirmEndWorkout,
+                                                ))
                                         : HeaderIconButton(
                                             icon: Icons.arrow_back_ios_new,
                                             semanticsLabel: 'Back',
@@ -768,18 +878,29 @@ class _SessionScreenState extends State<SessionScreen>
                           // (unlocked) tabs only — no swipe navigation.
                           physics: const NeverScrollableScrollPhysics(),
                           children: [
-                            _HomePage(vm: _vm),
+                            _HomePage(
+                              vm: _vm,
+                              openRecord: widget.openRecord,
+                            ),
                             _PreEvaluationPage(
                               vm: _vm,
                               startNotesCtrl: _startNotesCtrl,
+                              openRecord: widget.openRecord,
                             ),
                             _TrainingPage(
                               vm: _vm,
                               peekTitle: _peekTitle,
-                              onRemoveExercise: _confirmRemoveExercise,
+                              // Coach mode never removes an exercise
+                              // (2026-10-28): the picker's Remove is not drawn.
+                              onRemoveExercise: _vm.canDelete
+                                  ? _confirmRemoveExercise
+                                  : null,
                               onOpenRatings: _openRatings,
                             ),
-                            _SummaryPage(vm: _vm),
+                            _SummaryPage(
+                              vm: _vm,
+                              openRecord: widget.openRecord,
+                            ),
                             _PostQuestionnairePage(
                               vm: _vm,
                               notesCtrl: _endNotesCtrl,
@@ -907,15 +1028,24 @@ class _ForeignSessionNotice extends StatelessWidget {
 /// a return from the viewer) leaves the key alone and keeps the scroll
 /// position and filters (2026-10-25).
 class _HomePage extends StatelessWidget {
-  const _HomePage({required this.vm});
+  const _HomePage({required this.vm, this.openRecord});
 
   final SessionViewModel vm;
+
+  /// How a record opens; null keeps the default `/logs/:id` route. Coach mode
+  /// pushes its own viewer (2026-10-28).
+  final void Function(String sessionId)? openRecord;
 
   @override
   Widget build(BuildContext context) {
     return LogsScreen(
       key: ValueKey('home-logs-${vm.pastSetsVersion}'),
       showHeader: false,
+      // The list is the VM's owner's — the athlete's in coach mode, whose
+      // deletes are hidden while every other action stays live (2026-10-28).
+      userId: vm.userId,
+      canDelete: vm.canDelete,
+      onOpenSession: openRecord,
       // A deleted session must leave the reflection card too — the recap
       // and the live PR baselines both read the VM's timeline, which only
       // this list's own reload doesn't touch. The reload is asked for
@@ -936,10 +1066,18 @@ class _HomePage extends StatelessWidget {
 /// session's answers (marked as coming from the last session) — the layout
 /// frame never changes.
 class _PreEvaluationPage extends StatefulWidget {
-  const _PreEvaluationPage({required this.vm, required this.startNotesCtrl});
+  const _PreEvaluationPage({
+    required this.vm,
+    required this.startNotesCtrl,
+    this.openRecord,
+  });
 
   final SessionViewModel vm;
   final TextEditingController startNotesCtrl;
+
+  /// How the "last session" card opens a record; null keeps the default
+  /// route. Coach mode passes its viewer (2026-10-28).
+  final void Function(String sessionId)? openRecord;
 
   @override
   State<_PreEvaluationPage> createState() => _PreEvaluationPageState();
@@ -1148,9 +1286,17 @@ class _FeelingForm extends StatelessWidget {
 /// reflection; card 3 shows the session's pre/post bookends. Chevrons page
 /// left = older, right = newer without leaving the page.
 class _LastSessionCard extends StatelessWidget {
-  const _LastSessionCard({required this.vm, this.showPostBookend = true});
+  const _LastSessionCard({
+    required this.vm,
+    this.showPostBookend = true,
+    this.openRecord,
+  });
 
   final SessionViewModel vm;
+
+  /// How the shown record opens; null keeps the `/logs/:id` route. Coach mode
+  /// pushes its own viewer (2026-10-28).
+  final void Function(String sessionId)? openRecord;
 
   /// Whether card 3 renders the POST-WORKOUT bookend. False while the
   /// current (still-active) session is shown — its post rating/notes are
@@ -1172,10 +1318,15 @@ class _LastSessionCard extends StatelessWidget {
           onTap: session == null || vm.reflectionIsCurrent
               ? null
               : () async {
-                  await context.push(
-                    '/logs/${session.sessionId}',
-                    extra: AppRouter.fromLiveExtra,
-                  );
+                  final open = openRecord;
+                  if (open != null) {
+                    open(session.sessionId);
+                  } else {
+                    await context.push(
+                      '/logs/${session.sessionId}',
+                      extra: AppRouter.fromLiveExtra,
+                    );
+                  }
                   // Note/feeling edits made in the past-session viewer show
                   // immediately when the viewer card recomputes on return —
                   // without re-keying the Home browse underneath (it reloads
@@ -1592,7 +1743,9 @@ class _TrainingPage extends StatefulWidget {
   /// left (2026-10-23). Null means today — the live session names the header.
   final ValueNotifier<String?> peekTitle;
 
-  final void Function(int index) onRemoveExercise;
+  /// Null in coach mode: the exercise picker does not offer Remove there
+  /// (2026-10-28).
+  final void Function(int index)? onRemoveExercise;
 
   /// The floor bar's pencil — opened by the screen's State, which holds the
   /// wizard's note controllers and so can keep them in step with the sheet.
@@ -2422,9 +2575,12 @@ Future<String?> _inertSubmitVariation(
 /// (PRS/NOTES + PRE-WORKOUT bookend; no POST bookend for the still-active
 /// session). The Finish Session action is the header's right button.
 class _SummaryPage extends StatelessWidget {
-  const _SummaryPage({required this.vm});
+  const _SummaryPage({required this.vm, this.openRecord});
 
   final SessionViewModel vm;
+
+  /// How the shown record opens; null keeps the `/logs/:id` route (2026-10-28).
+  final void Function(String sessionId)? openRecord;
 
   @override
   Widget build(BuildContext context) {
@@ -2471,7 +2627,11 @@ class _SummaryPage extends StatelessWidget {
               vm.reflectionIsCurrent ? 'THIS SESSION' : 'PREVIOUS SESSION',
             ),
             const SizedBox(height: AppSpacing.sm),
-            _LastSessionCard(vm: vm, showPostBookend: !vm.reflectionIsCurrent),
+            _LastSessionCard(
+              vm: vm,
+              showPostBookend: !vm.reflectionIsCurrent,
+              openRecord: openRecord,
+            ),
           ],
         );
       },

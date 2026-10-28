@@ -120,6 +120,7 @@ class SessionSetRow extends StatefulWidget {
     this.isPr = false,
     this.isGoal = false,
     this.readOnly = false,
+    this.canDelete = true,
     this.deleted = false,
     // ── History-edit gate (the history viewer's tap-to-edit confirm) ──
     // A non-null [onEditConfirm] puts the row in gate mode: it renders
@@ -181,6 +182,11 @@ class SessionSetRow extends StatefulWidget {
   /// both.
   final bool isGoal;
   final bool readOnly;
+
+  /// Whether the swipe drawer offers Delete. Coach mode sets this false
+  /// (2026-10-28): a coach may add, duplicate and note, never remove. The
+  /// row stays editable — [readOnly] would close every write.
+  final bool canDelete;
 
   /// A soft-deleted row (flag `is_deleted`) in the past-session viewer: the
   /// container and its text draw in [AppColors.danger] on [AppColors.dangerBg],
@@ -987,13 +993,14 @@ class _SessionSetRowState extends State<SessionSetRow> {
             foreground: AppColors.bg,
             onTap: _openNotes,
           ),
-          SwipeAction(
-            icon: Icons.delete_outline,
+          if (widget.canDelete)
+            SwipeAction(
+              icon: Icons.delete_outline,
 
-            color: AppColors.danger,
-            foreground: AppColors.dangerText,
-            onTap: _delete,
-          ),
+              color: AppColors.danger,
+              foreground: AppColors.dangerText,
+              onTap: _delete,
+            ),
         ],
         child: row,
       );

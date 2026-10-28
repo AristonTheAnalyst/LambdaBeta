@@ -182,6 +182,7 @@ class LiveExerciseCard extends StatelessWidget {
           sessionId: vm.currentWorkoutId,
           sessionStartedAt: vm.workoutStartedAt,
           sessionIsLive: true,
+          canDelete: vm.canDelete,
         );
 
         // The card's PR pill opens the PR Lab's PR History, scoped to the
@@ -286,6 +287,9 @@ class LiveExerciseCard extends StatelessWidget {
                 immediate: true,
               ),
               onDelete: () => vm.deleteSetById(set.sessionExerciseSetId),
+              // Coach mode hides the trash (2026-10-28); duplicate and note
+              // stay — they are inserts and updates, never a delete.
+              canDelete: vm.canDelete,
               onDuplicate: (v) => vm.duplicateSet(
                 set,
                 weight: _parseWeight(v.weight),
@@ -331,6 +335,7 @@ class LiveExerciseCard extends StatelessWidget {
               onVariationChanged: (_) {},
               onNotesSave: (_) {},
               onDelete: () async => vm.removeDraftSet(exerciseId, draftId),
+              canDelete: vm.canDelete,
               onDuplicate: (_) {},
               variationOptions: variationOptions,
               allVariations: allVariations,

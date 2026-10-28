@@ -31,6 +31,7 @@ class LogsScreen extends StatefulWidget {
     this.emptyHint,
     this.sessionRouteBuilder,
     this.onOpenSession,
+    this.canDelete = true,
   });
 
   /// Whether the header renders — false when the screen is embedded (the
@@ -51,6 +52,11 @@ class LogsScreen extends StatefulWidget {
   /// A friend's list: no delete drawer, no ownership actions — the list is
   /// somebody else's history.
   final bool readOnly;
+
+  /// Whether a card's swipe offers Delete. A friend's list and coach mode
+  /// both set this false; unlike [readOnly] it does not imply "no writes",
+  /// so a coach acting as the athlete keeps every other action (2026-10-28).
+  final bool canDelete;
 
   /// The header's name — 'Training Logs' for the own list, the friend's name
   /// for theirs.
@@ -351,7 +357,9 @@ class _LogsScreenState extends State<LogsScreen> with RouteAware {
                     },
                     // A friend's history has no delete: the drawer is the
                     // list's edit path, and there is none (2026-10-23).
-                    onDelete: widget.readOnly ? null : _confirmDeleteSession,
+                    onDelete: widget.readOnly || !widget.canDelete
+                        ? null
+                        : _confirmDeleteSession,
                     emptyMessage: widget.emptyMessage,
                     emptyHint: widget.emptyHint,
                   ),

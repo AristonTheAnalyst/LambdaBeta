@@ -361,6 +361,7 @@ class SessionDetailViewModel {
     String? userId,
     String? viewerId,
     this.readOnly = false,
+    this.canDelete = true,
   }) : _sessionRepo = sessionRepo ?? SessionRepository(),
        _exerciseRepo = exerciseRepo ?? ExerciseRepository(),
        _noteRepo = noteRepo ?? ExerciseNoteRepository(),
@@ -374,6 +375,11 @@ class SessionDetailViewModel {
   /// history anything — a friend's reviews never reach this device, and the
   /// question ("have they reviewed this?") is not the reader's to ask.
   final bool readOnly;
+
+  /// Whether removal is offered at all. Coach mode sets it false (2026-10-28):
+  /// the page edits and restores, and never deletes or archives. Every delete
+  /// door is hidden AND these guards refuse the call.
+  final bool canDelete;
 
   final SessionRepository _sessionRepo;
   final ExerciseRepository _exerciseRepo;
@@ -1335,6 +1341,7 @@ class SessionDetailViewModel {
   /// as they always have, and a group with no planned rows at all goes
   /// entirely, as before (2026-10-14). One undo step for the whole group.
   Future<void> removeExerciseGroup(int index) async {
+    if (!canDelete) return;
     final s = state.value;
     if (index < 0 || index >= s.exerciseSlots.length) return;
     final slot = s.exerciseSlots[index];
@@ -1608,6 +1615,7 @@ class SessionDetailViewModel {
   }
 
   void removeDraftSet(int groupOrder, int draftId) {
+    if (!canDelete) return;
     Future<void> forward() {
       final drafts = Map<int, List<int>>.from(state.value.workoutSetDrafts);
       drafts[groupOrder]?.remove(draftId);
@@ -1988,6 +1996,7 @@ class SessionDetailViewModel {
   /// restorable — the exercise turns deleted when this was its last active
   /// row); a user-added row hard-deletes as before (2026-10-14).
   Future<void> deleteSetCascade(String setId, String exerciseId) async {
+    if (!canDelete) return;
     final w = state.value.session;
     if (w == null) return;
     final captured = state.value.setsByOrder.values
@@ -2299,6 +2308,7 @@ class SessionDetailViewModel {
   }
 
   Future<void> deleteNote(String exerciseId, String exerciseNoteId) async {
+    if (!canDelete) return;
     try {
       await _noteRepo.deleteNote(exerciseNoteId);
       await loadNotesFor(exerciseId);
@@ -2460,6 +2470,7 @@ class SessionDetailViewModel {
 
   /// Deletes the caller's own feedback row. False records [state.error].
   Future<bool> deleteCoachFeedback(CoachFeedback feedback) async {
+    if (!canDelete) return false;
     if (_disposed) return false;
     try {
       await _coachRepo.deleteFeedback(_viewerId, feedback.feedbackId);

@@ -9,8 +9,9 @@ import '../../../core/styles/app_text_styles.dart';
 import '../../../shared/widgets/header_icon_button.dart';
 import '../../../shared/widgets/scroll_shrink_nav_bar.dart';
 import '../../exercises/view/exercise_hub_screen.dart';
-import '../../logs/view/logs_screen.dart';
 import '../../logs/view/session_detail_screen.dart';
+import '../../session/view/session_screen.dart';
+import '../../session/viewmodel/session_viewmodel.dart';
 import '../model/acting_identity.dart';
 
 /// The coach's two tabs — Session and Library — and nothing else (2026-10-28).
@@ -59,6 +60,15 @@ class _CoachModeScreenState extends State<CoachModeScreen> {
   /// athlete's whole catalog, history and library before anything is shown.
   bool _libraryVisited = false;
 
+  /// The athlete's session VM, owned by the shell for as long as coach mode
+  /// is open (2026-10-28). The Session tab is the real wizard — start, log,
+  /// end — with `canDelete: false`, so its removals and cancel are refused.
+  late final SessionViewModel _sessionVm;
+
+  /// Re-tapping Session inside coach mode is a wizard re-tap — a local
+  /// signal, never the main shell's global one.
+  final _reselect = ValueNotifier<int>(0);
+
   String get _authUserId => Supabase.instance.client.auth.currentUser!.id;
 
   ActingIdentity get _identity => ActingIdentity(
@@ -68,8 +78,29 @@ class _CoachModeScreenState extends State<CoachModeScreen> {
     ownerName: widget.athleteName,
   );
 
+  @override
+  void initState() {
+    super.initState();
+    _sessionVm = SessionViewModel(
+      userId: widget.athleteId,
+      canDelete: false,
+    );
+  }
+
+  @override
+  void dispose() {
+    _sessionVm.dispose();
+    _reselect.dispose();
+    super.dispose();
+  }
+
   void _selectTab(int index) {
-    if (index == _tab) return;
+    if (index == _tab) {
+      // Re-tapping Session is the wizard's own re-tap (2026-10-23) — inside
+      // coach mode it must not reach the main shell's signal.
+      if (index == 0) _reselect.value++;
+      return;
+    }
     setState(() {
       _tab = index;
       if (index == 1) _libraryVisited = true;
@@ -113,12 +144,15 @@ class _CoachModeScreenState extends State<CoachModeScreen> {
           child: SessionDetailScreen(
             sessionId: sessionId,
             userId: widget.athleteId,
-            readOnly: true,
+            // Phase 2: the coach edits as her, and still never deletes.
+            readOnly: false,
             canCoach: true,
             navItems: coachModeNavItems,
             navIndex: 0,
             navLeading: _exitButton(_exitFromRecord),
             navTrailing: CoachModeIdentity(name: widget.athleteName),
+            viewerId: _authUserId,
+            canDelete: false,
             onNavTap: (i) {
               Navigator.of(context).pop();
               _selectTab(i);
@@ -135,6 +169,10 @@ class _CoachModeScreenState extends State<CoachModeScreen> {
       identity: _identity,
       child: Scaffold(
         backgroundColor: AppColors.bg,
+        // The Session tab pins its floor the way the main shell pins
+        // `/session`; the Library lifts for the keyboard the way `/exercises`
+        // does (2026-10-28).
+        resizeToAvoidBottomInset: _tab != 0,
         body: ScrollShrinkNavBar(
           currentIndex: _tab,
           onTap: _selectTab,
@@ -144,14 +182,15 @@ class _CoachModeScreenState extends State<CoachModeScreen> {
           child: IndexedStack(
             index: _tab,
             children: [
-              LogsScreen(
-                userId: widget.athleteId,
-                readOnly: true,
-                headerTitle: 'Training Logs',
-                emptyMessage: 'No sessions yet',
-                emptyHint:
-                    '${widget.athleteName} has not logged a session yet.',
-                onOpenSession: _openRecord,
+              // The real wizard, scoped to the athlete (2026-10-28): start,
+              // log, end — no delete. Its shell signals are off; coach mode
+              // owns its own reselect signal and must never touch the main
+              // tab's notice.
+              SessionScreen(
+                viewModel: _sessionVm,
+                sessionShellSignals: false,
+                reselectSignal: _reselect,
+                openRecord: _openRecord,
               ),
               // Built on first visit, kept mounted: switching back to Session
               // must not throw the library away, and switching to Library the

@@ -52,7 +52,9 @@ class SessionViewModel extends ChangeNotifier {
     Future<void> Function()? waitForFirstSync,
     String? userId,
     String? deviceId,
-  }) : _sessionRepo = sessionRepo ?? SessionRepository(),
+    bool canDelete = true,
+  }) : _canDelete = canDelete,
+       _sessionRepo = sessionRepo ?? SessionRepository(),
        _exerciseRepo = exerciseRepo ?? ExerciseRepository(),
        _programRepo = programRepo ?? ProgramRepository(),
        _programRunRepo = programRunRepo ?? ProgramRunRepository(),
@@ -91,6 +93,18 @@ class SessionViewModel extends ChangeNotifier {
 
   String get _userId =>
       _userIdOverride ?? Supabase.instance.client.auth.currentUser!.id;
+
+  /// Whose session this is — the athlete in coach mode (2026-10-28), the
+  /// signed-in user otherwise. The screen's embedded logs list reads it.
+  String get userId => _userId;
+
+  /// Coach mode never deletes (2026-10-28). With this false the VM's removal
+  /// paths are inert and end-of-session pruning flags untouched planned rows
+  /// instead of deleting them — a DELETE the coach's RLS would refuse anyway,
+  /// quarantined by the uploader and resurrected on the next sync.
+  final bool _canDelete;
+
+  bool get canDelete => _canDelete;
 
   // ── Startup ─────────────────────────────────────────────────────────────────
   bool initLoading = true;
@@ -2358,6 +2372,9 @@ class SessionViewModel extends ChangeNotifier {
   /// and bound drafts still hard-delete. An unplanned slot keeps the old
   /// hard cascade.
   Future<void> removeExerciseSlot(int index) async {
+    // No deletion in coach mode (2026-10-28): the picker's Remove is not
+    // drawn there, and this guard is the belt to that brace.
+    if (!_canDelete) return;
     if (index < 0 || index >= exerciseSlots.length) return;
     // Captures for the inverse (before anything moves).
     final slot = exerciseSlots[index];
@@ -2635,7 +2652,12 @@ class SessionViewModel extends ChangeNotifier {
       draftSlotsByExercise[exerciseId]?.remove(draftId);
       final rowId = _draftRowIds.remove(draftId);
       if (rowId != null) {
-        await _sessionRepo.deleteSet(rowId);
+        if (_canDelete) {
+          await _sessionRepo.deleteSet(rowId);
+        } else {
+          // Coach mode flags what it would have deleted (2026-10-28).
+          await _sessionRepo.updateSet(rowId, isDeleted: true);
+        }
         sets.removeWhere((s) => s.sessionExerciseSetId == rowId);
       }
       _recomputePRs();
@@ -2951,6 +2973,9 @@ class SessionViewModel extends ChangeNotifier {
   /// hard-deletes — the undo stack is its way back, and there is no plan to
   /// restore against. Undoable either way.
   Future<void> deleteSetById(String setId) async {
+    // No deletion in coach mode (2026-10-28); the trash affordance is hidden
+    // and this guard keeps every other caller honest.
+    if (!_canDelete) return;
     final row = sets.where((s) => s.sessionExerciseSetId == setId).firstOrNull;
     if (row == null) return;
     final se = sessionExercises.firstWhereOrNull(
@@ -3190,6 +3215,8 @@ class SessionViewModel extends ChangeNotifier {
   }
 
   Future<void> deleteNote(String exerciseId, String exerciseNoteId) async {
+    // Coach mode never deletes or archives a note (2026-10-28).
+    if (!_canDelete) return;
     try {
       await _noteRepo.deleteNote(exerciseNoteId);
       await loadNotesFor(exerciseId);
@@ -3627,6 +3654,9 @@ class SessionViewModel extends ChangeNotifier {
 
   Future<void> cancelSession() async {
     if (currentWorkoutId == null) return;
+    // Coach mode has no discard (2026-10-28): its way out of a session is
+    // End, which stamps `end_datetime`; cancelling would delete the tree.
+    if (!_canDelete) return;
     final id = currentWorkoutId!;
     _resetActiveWorkoutState();
     lastEndedSessionId = null;
@@ -3672,10 +3702,19 @@ class SessionViewModel extends ChangeNotifier {
         .toList();
     for (final s in untouched) {
       try {
-        await _sessionRepo.deleteSet(s.sessionExerciseSetId);
+        if (_canDelete) {
+          await _sessionRepo.deleteSet(s.sessionExerciseSetId);
+        } else {
+          // Coach mode flags the untouched hint instead of deleting it
+          // (2026-10-28): a DELETE would be refused by RLS and quarantined.
+          await _sessionRepo.updateSet(s.sessionExerciseSetId, isDeleted: true);
+        }
         sets.remove(s);
       } catch (_) {}
     }
+    // With no delete, an emptied exercise row stays in place rather than
+    // being removed (2026-10-28) — the flagged rows above still hang off it.
+    if (!_canDelete) return;
     // An exercise row with no rows AT ALL (active or flagged) is plan-hint
     // residue too (or a group the user emptied) — remove it so the logs
     // viewer doesn't show empty exercise tabs for workouts the user skipped.
