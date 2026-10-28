@@ -30,6 +30,7 @@ class LogsScreen extends StatefulWidget {
     this.emptyMessage,
     this.emptyHint,
     this.sessionRouteBuilder,
+    this.onOpenSession,
   });
 
   /// Whether the header renders — false when the screen is embedded (the
@@ -64,6 +65,11 @@ class LogsScreen extends StatefulWidget {
 
   /// The route a tapped card opens; defaults to the own viewer.
   final String Function(String sessionId)? sessionRouteBuilder;
+
+  /// A tap's whole handling, when the host wants it rather than a route
+  /// string. Coach mode pushes its own viewer with the two-tab bar
+  /// (2026-10-28); when null the [sessionRouteBuilder] route is pushed.
+  final void Function(String sessionId)? onOpenSession;
 
   @override
   State<LogsScreen> createState() => _LogsScreenState();
@@ -333,9 +339,16 @@ class _LogsScreenState extends State<LogsScreen> with RouteAware {
                     workouts: filteredSessions,
                     isRefreshing: state.isRefreshing,
                     onRefresh: _viewModel.refresh,
-                    onTap: (id) => context.push(
-                      widget.sessionRouteBuilder?.call(id) ?? '/logs/$id',
-                    ),
+                    onTap: (id) {
+                      final open = widget.onOpenSession;
+                      if (open != null) {
+                        open(id);
+                        return;
+                      }
+                      context.push(
+                        widget.sessionRouteBuilder?.call(id) ?? '/logs/$id',
+                      );
+                    },
                     // A friend's history has no delete: the drawer is the
                     // list's edit path, and there is none (2026-10-23).
                     onDelete: widget.readOnly ? null : _confirmDeleteSession,

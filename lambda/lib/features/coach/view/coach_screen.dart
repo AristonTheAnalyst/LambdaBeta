@@ -281,8 +281,10 @@ class _CoachScreenState extends State<CoachScreen> {
                               'athlete-${state.athletes[i].userId}',
                             ),
                             athlete: state.athletes[i],
+                            // Coach mode (2026-10-28): the athlete's own
+                            // two-tab page, not the old read-only log list.
                             onTap: () => context.push(
-                              '/profile/coach/${state.athletes[i].userId}',
+                              '/coach-mode/${state.athletes[i].userId}',
                               extra: state.athletes[i].displayName,
                             ),
                             onAssign: () => _openAssignSheet(
@@ -378,7 +380,7 @@ class _CoachScreenState extends State<CoachScreen> {
                                   )
                                 : null,
                             onOpen: () => context.push(
-                              '/profile/coach/'
+                              '/coach-mode/'
                               '${state.assignmentsSent[i].athleteUserId}',
                               extra: _athleteNameOf(
                                 state,

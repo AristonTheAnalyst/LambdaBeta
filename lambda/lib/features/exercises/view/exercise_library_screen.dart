@@ -49,7 +49,17 @@ class ExerciseLibraryScreen extends StatefulWidget {
     this.embedded = false,
     this.panel = 0,
     this.viewModel,
+    this.userId,
+    this.readOnly = false,
   });
+
+  /// Whose library to read. Null = the signed-in user (the normal mount); a
+  /// coach's read of an athlete's passes their id (2026-10-28).
+  final String? userId;
+
+  /// Browse only (2026-10-28): no +, no archived sheet, and the rows do not
+  /// open their editors — coach mode reads, it never writes.
+  final bool readOnly;
 
   /// When embedded in a hub tab, render one panel only — the hub owns the
   /// header and its own tab bar, so the nested header/tabs are hidden.
@@ -81,7 +91,7 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
   @override
   void initState() {
     super.initState();
-    _viewModel = widget.viewModel ?? ExerciseViewModel();
+    _viewModel = widget.viewModel ?? ExerciseViewModel(userId: widget.userId);
     _ownsViewModel = widget.viewModel == null;
     _viewModel.fetchAll();
     if (widget.embedded) {
@@ -268,12 +278,15 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
       body: ValueListenableBuilder<ExerciseState>(
         valueListenable: _viewModel.state,
         builder: (context, state, _) {
+          // Coach mode browses only (2026-10-28): a read-only surface leaves
+          // every write callback unspent, which is what hides its buttons and
+          // makes the rows inert.
           final exercisesPanel = _ExercisesPanel(
             state: state,
             searchController: _exSearchController,
-            onAdd: _openCreateExercise,
-            onShowArchived: _openArchivedExercises,
-            onEdit: _openEditExercise,
+            onAdd: widget.readOnly ? null : _openCreateExercise,
+            onShowArchived: widget.readOnly ? null : _openArchivedExercises,
+            onEdit: widget.readOnly ? null : _openEditExercise,
             onPrev: _viewModel.prevExPage,
             onNext: _viewModel.nextExPage,
             onSort: _viewModel.setExSort,
@@ -281,9 +294,9 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
           final variationsPanel = _VariationsPanel(
             state: state,
             searchController: _varSearchController,
-            onAdd: _openCreateVariation,
-            onShowArchived: _openArchivedVariations,
-            onEdit: _openEditVariation,
+            onAdd: widget.readOnly ? null : _openCreateVariation,
+            onShowArchived: widget.readOnly ? null : _openArchivedVariations,
+            onEdit: widget.readOnly ? null : _openEditVariation,
             onPrev: _viewModel.prevVarPage,
             onNext: _viewModel.nextVarPage,
             onSort: _viewModel.setVarSort,
@@ -345,6 +358,12 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
 
 // ── Panels ─────────────────────────────────────────────────────────────────────
 
+/// The Exercises panel.
+///
+/// Every write callback is nullable and a null one draws nothing: the row is
+/// inert and the + and archive buttons are absent. That is the read-only
+/// surface's whole spread (2026-10-28) — a library scoped to someone else is
+/// browsed, never edited.
 class _ExercisesPanel extends StatelessWidget {
   const _ExercisesPanel({
     required this.state,
@@ -359,15 +378,18 @@ class _ExercisesPanel extends StatelessWidget {
 
   final ExerciseState state;
   final TextEditingController searchController;
-  final VoidCallback onAdd;
-  final VoidCallback onShowArchived;
-  final ValueChanged<CustomExercise> onEdit;
+  final VoidCallback? onAdd;
+  final VoidCallback? onShowArchived;
+  final ValueChanged<CustomExercise>? onEdit;
   final VoidCallback onPrev;
   final VoidCallback onNext;
   final void Function(ExerciseSortCriterion, bool) onSort;
 
   @override
   Widget build(BuildContext context) {
+    // Locals so the null checks promote — a public field does not.
+    final add = onAdd;
+    final archived = onShowArchived;
     return state.isLoading
         ? Center(child: CircularProgressIndicator(color: AppColors.accent))
         : ListView(
@@ -393,22 +415,26 @@ class _ExercisesPanel extends StatelessWidget {
                     descending: state.exSortDesc,
                     onChanged: onSort,
                   ),
-                  const SizedBox(width: AppSpacing.sm),
-                  GlassButton(
-                    label: '',
-                    icon: Icons.add,
-                    semanticsLabel: 'Add exercise',
-                    onPressed: onAdd,
-                    compact: true,
-                  ),
-                  const SizedBox(width: AppSpacing.sm),
-                  GlassButton(
-                    label: '',
-                    icon: Icons.archive_outlined,
-                    semanticsLabel: 'Archived exercises',
-                    onPressed: onShowArchived,
-                    compact: true,
-                  ),
+                  if (add != null) ...[
+                    const SizedBox(width: AppSpacing.sm),
+                    GlassButton(
+                      label: '',
+                      icon: Icons.add,
+                      semanticsLabel: 'Add exercise',
+                      onPressed: add,
+                      compact: true,
+                    ),
+                  ],
+                  if (archived != null) ...[
+                    const SizedBox(width: AppSpacing.sm),
+                    GlassButton(
+                      label: '',
+                      icon: Icons.archive_outlined,
+                      semanticsLabel: 'Archived exercises',
+                      onPressed: archived,
+                      compact: true,
+                    ),
+                  ],
                 ],
               ),
               const SizedBox(height: AppSpacing.md),
@@ -452,7 +478,8 @@ class _ExercisesPanel extends StatelessWidget {
                   (ex) => Padding(
                     padding: const EdgeInsets.only(bottom: AppSpacing.sm),
                     child: AppCard(
-                      onTap: () => onEdit(ex),
+                      // A null callback leaves the row inert (2026-10-28).
+                      onTap: onEdit == null ? null : () => onEdit!(ex),
                       padding: const EdgeInsets.symmetric(
                         horizontal: AppSpacing.md,
                         vertical: AppSpacing.sm,
@@ -505,6 +532,8 @@ class _ExercisesPanel extends StatelessWidget {
   }
 }
 
+/// The Variations panel — the Exercises panel's read-only rule, one tab over:
+/// a null callback draws no button and leaves the row inert (2026-10-28).
 class _VariationsPanel extends StatelessWidget {
   const _VariationsPanel({
     required this.state,
@@ -519,15 +548,18 @@ class _VariationsPanel extends StatelessWidget {
 
   final ExerciseState state;
   final TextEditingController searchController;
-  final VoidCallback onAdd;
-  final VoidCallback onShowArchived;
-  final ValueChanged<CustomVariation> onEdit;
+  final VoidCallback? onAdd;
+  final VoidCallback? onShowArchived;
+  final ValueChanged<CustomVariation>? onEdit;
   final VoidCallback onPrev;
   final VoidCallback onNext;
   final void Function(ExerciseSortCriterion, bool) onSort;
 
   @override
   Widget build(BuildContext context) {
+    // Locals so the null checks promote — a public field does not.
+    final add = onAdd;
+    final archived = onShowArchived;
     return state.isLoading
         ? Center(child: CircularProgressIndicator(color: AppColors.accent))
         : ListView(
@@ -553,22 +585,26 @@ class _VariationsPanel extends StatelessWidget {
                     descending: state.varSortDesc,
                     onChanged: onSort,
                   ),
-                  const SizedBox(width: AppSpacing.sm),
-                  GlassButton(
-                    label: '',
-                    icon: Icons.add,
-                    semanticsLabel: 'Add variation',
-                    onPressed: onAdd,
-                    compact: true,
-                  ),
-                  const SizedBox(width: AppSpacing.sm),
-                  GlassButton(
-                    label: '',
-                    icon: Icons.archive_outlined,
-                    semanticsLabel: 'Archived variations',
-                    onPressed: onShowArchived,
-                    compact: true,
-                  ),
+                  if (add != null) ...[
+                    const SizedBox(width: AppSpacing.sm),
+                    GlassButton(
+                      label: '',
+                      icon: Icons.add,
+                      semanticsLabel: 'Add variation',
+                      onPressed: add,
+                      compact: true,
+                    ),
+                  ],
+                  if (archived != null) ...[
+                    const SizedBox(width: AppSpacing.sm),
+                    GlassButton(
+                      label: '',
+                      icon: Icons.archive_outlined,
+                      semanticsLabel: 'Archived variations',
+                      onPressed: archived,
+                      compact: true,
+                    ),
+                  ],
                 ],
               ),
               const SizedBox(height: AppSpacing.md),
@@ -612,7 +648,8 @@ class _VariationsPanel extends StatelessWidget {
                   (v) => Padding(
                     padding: const EdgeInsets.only(bottom: AppSpacing.sm),
                     child: AppCard(
-                      onTap: () => onEdit(v),
+                      // A null callback leaves the row inert (2026-10-28).
+                      onTap: onEdit == null ? null : () => onEdit!(v),
                       padding: const EdgeInsets.symmetric(
                         horizontal: AppSpacing.md,
                         vertical: AppSpacing.sm,

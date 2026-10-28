@@ -181,9 +181,20 @@ class GoalsScreen extends StatefulWidget {
     this.showHeader = true,
     this.viewModel,
     this.openWorkout,
+    this.userId,
+    this.readOnly = false,
   });
 
   final bool showHeader;
+
+  /// Whose goals to read. Null = the signed-in user (the normal mount); a
+  /// coach's read of an athlete's passes their id (2026-10-28).
+  final String? userId;
+
+  /// Browse only (2026-10-28): no +, no swipe-to-delete, and the cards do
+  /// not open the focused sheet — that sheet has an Edit path, so coach mode
+  /// leaves it unspent. Expanding, sorting and filtering stay live.
+  final bool readOnly;
 
   /// The view model to render, when a caller already has one.
   ///
@@ -233,7 +244,7 @@ class _GoalsScreenState extends State<GoalsScreen> {
     super.initState();
     final injected = widget.viewModel;
     _ownsVm = injected == null;
-    _vm = injected ?? GoalsViewModel();
+    _vm = injected ?? GoalsViewModel(userId: widget.userId);
     _vm.state.addListener(_onState);
     _searchController.addListener(() {
       if (mounted) setState(() => _query = _searchController.text);
@@ -573,15 +584,18 @@ class _GoalsScreenState extends State<GoalsScreen> {
           if (widget.showHeader)
             PageHeader(
               title: 'Goals',
-              right: GlassButton(
-                label: '',
-                icon: Icons.add,
-                semanticsLabel: 'Add goal',
-                compact: true,
-                onPressed: _openAdd,
-              ),
+              // Coach mode browses only (2026-10-28): no + anywhere.
+              right: widget.readOnly
+                  ? null
+                  : GlassButton(
+                      label: '',
+                      icon: Icons.add,
+                      semanticsLabel: 'Add goal',
+                      compact: true,
+                      onPressed: _openAdd,
+                    ),
             ),
-          _toolbar(showAdd: !widget.showHeader),
+          _toolbar(showAdd: !widget.showHeader && !widget.readOnly),
           Expanded(child: _body(state)),
         ],
       ),
@@ -824,21 +838,12 @@ class _GoalsScreenState extends State<GoalsScreen> {
   /// corners — a larger radius shaved the card's border arcs off at every
   /// corner, which only became visible when the success chrome made the edge
   /// green.
-  Widget _goalCard(Goal goal, GoalsState state) => SwipeActions(
-    // Keyed by goal, so a delete never hands an open drawer's state to the
-    // row that slides up into its place.
-    key: ValueKey(goal.goalId),
-    borderRadius: AppRadius.md,
-    actions: [
-      SwipeAction(
-        icon: Icons.delete_outline,
-        color: AppColors.danger,
-        foreground: AppColors.dangerText,
-        onTap: () => _delete(goal),
-      ),
-    ],
-    child: GestureDetector(
-      onTap: () => _open(goal),
+  ///
+  /// A read-only surface draws the bare row (2026-10-28): no delete drawer,
+  /// and a tap that opens no sheet — the focused sheet has an Edit path.
+  Widget _goalCard(Goal goal, GoalsState state) {
+    final row = GestureDetector(
+      onTap: widget.readOnly ? null : () => _open(goal),
       // The section headers name the exercise and variation, so the card
       // itself leads with the target (2026-10-19).
       child: GoalRow(
@@ -848,8 +853,24 @@ class _GoalsScreenState extends State<GoalsScreen> {
         targetDate: goal.targetDate,
         outcome: state.outcomes[goal.goalId],
       ),
-    ),
-  );
+    );
+    if (widget.readOnly) return row;
+    return SwipeActions(
+      // Keyed by goal, so a delete never hands an open drawer's state to the
+      // row that slides up into its place.
+      key: ValueKey(goal.goalId),
+      borderRadius: AppRadius.md,
+      actions: [
+        SwipeAction(
+          icon: Icons.delete_outline,
+          color: AppColors.danger,
+          foreground: AppColors.dangerText,
+          onTap: () => _delete(goal),
+        ),
+      ],
+      child: row,
+    );
+  }
 }
 
 /// One exercise's place in the default (By exercise) ordering: the soonest

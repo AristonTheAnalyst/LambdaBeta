@@ -22,12 +22,26 @@ import 'plan_session_screen.dart';
 
 /// Library of standalone planned workouts (a single session, no program).
 class WorkoutLibraryScreen extends StatefulWidget {
-  const WorkoutLibraryScreen({super.key, this.showHeader = true});
+  const WorkoutLibraryScreen({
+    super.key,
+    this.showHeader = true,
+    this.userId,
+    this.readOnly = false,
+  });
 
   /// When embedded in a tab (Exercises hub), render content only — the hub
   /// owns the header, so a nested PageHeader would add empty top space and a
   /// dead back button.
   final bool showHeader;
+
+  /// Whose workouts to read. Null = the signed-in user (the normal mount); a
+  /// coach's read of an athlete's passes their id (2026-10-28).
+  final String? userId;
+
+  /// Browse only (2026-10-28): no +, no archived sheet, no swipe drawer and
+  /// a card that does not open the editor — coach mode reads, it never
+  /// writes.
+  final bool readOnly;
 
   @override
   State<WorkoutLibraryScreen> createState() => _WorkoutLibraryScreenState();
@@ -41,7 +55,8 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
   String? _error;
   String _query = '';
 
-  String get _userId => Supabase.instance.client.auth.currentUser!.id;
+  String get _userId =>
+      widget.userId ?? Supabase.instance.client.auth.currentUser!.id;
 
   /// Search-filtered view of the loaded workouts.
   List<PlannedSession> get _filtered => _query.isEmpty
@@ -191,6 +206,50 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
     }
   }
 
+  /// One workout's card, the list's only row shape.
+  ///
+  /// A read-only surface draws it bare (2026-10-28): the tap opens the
+  /// editor, so it is spent on nothing, and the drawer that duplicates and
+  /// deletes is not wrapped around it.
+  Widget _card(PlannedSession w) => AppCard(
+    onTap: widget.readOnly ? null : () => _edit(w),
+    background: AppColors.plannedBg,
+    borderColor: AppColors.planned.withValues(alpha: 0.35),
+    child: Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // One line, ellipsized — the notes under it already hold
+              // their own, and a wrapping name moves the card's shape
+              // (2026-10-20).
+              UserNameText(
+                toProperCase(w.name),
+                tooltip: true,
+                style: AppFonts.ui(
+                  fontSize: AppTextStyles.md,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.primary,
+                ),
+              ),
+              if (w.notes?.isNotEmpty == true)
+                Text(
+                  w.notes!,
+                  style: AppFonts.ui(
+                    fontSize: AppTextStyles.xs,
+                    color: AppColors.inkSecondary,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -200,13 +259,17 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
           if (widget.showHeader)
             PageHeader(
               title: 'Workouts',
-              right: GlassButton(
-                label: '',
-                icon: Icons.add,
-                semanticsLabel: 'New workout',
-                compact: true,
-                onPressed: _create,
-              ),
+              // Coach mode browses only (2026-10-28): the + is absent when
+              // nothing may be created.
+              right: widget.readOnly
+                  ? null
+                  : GlassButton(
+                      label: '',
+                      icon: Icons.add,
+                      semanticsLabel: 'New workout',
+                      compact: true,
+                      onPressed: _create,
+                    ),
             ),
           Expanded(
             child: _loading
@@ -257,22 +320,26 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
                                   controller: _searchController,
                                 ),
                               ),
-                              const SizedBox(width: AppSpacing.sm),
-                              GlassButton(
-                                label: '',
-                                icon: Icons.add,
-                                semanticsLabel: 'New workout',
-                                onPressed: _create,
-                                compact: true,
-                              ),
-                              const SizedBox(width: AppSpacing.sm),
-                              GlassButton(
-                                label: '',
-                                icon: Icons.archive_outlined,
-                                semanticsLabel: 'Archived workouts',
-                                onPressed: _openArchived,
-                                compact: true,
-                              ),
+                              // Coach mode browses only (2026-10-28): no +,
+                              // and no archived sheet — restoring writes.
+                              if (!widget.readOnly) ...[
+                                const SizedBox(width: AppSpacing.sm),
+                                GlassButton(
+                                  label: '',
+                                  icon: Icons.add,
+                                  semanticsLabel: 'New workout',
+                                  onPressed: _create,
+                                  compact: true,
+                                ),
+                                const SizedBox(width: AppSpacing.sm),
+                                GlassButton(
+                                  label: '',
+                                  icon: Icons.archive_outlined,
+                                  semanticsLabel: 'Archived workouts',
+                                  onPressed: _openArchived,
+                                  compact: true,
+                                ),
+                              ],
                             ],
                           ),
                         ),
@@ -313,69 +380,26 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
                                     const SizedBox(height: AppSpacing.md),
                                 itemBuilder: (context, i) {
                                   final w = _filtered[i];
+                                  final card = _card(w);
+                                  // Coach mode browses only (2026-10-28): the
+                                  // duplicate/delete drawer is not drawn.
+                                  if (widget.readOnly) return card;
                                   return SwipeActions(
                                     actions: [
                                       SwipeAction(
                                         icon: Icons.copy_rounded,
-
                                         color: AppColors.accent,
                                         foreground: AppColors.accentText,
                                         onTap: () => _duplicate(w),
                                       ),
                                       SwipeAction(
                                         icon: Icons.delete_outline,
-
                                         color: AppColors.danger,
                                         foreground: AppColors.dangerText,
                                         onTap: () => _delete(w),
                                       ),
                                     ],
-                                    child: AppCard(
-                                      onTap: () => _edit(w),
-                                      background: AppColors.plannedBg,
-                                      borderColor: AppColors.planned.withValues(
-                                        alpha: 0.35,
-                                      ),
-                                      child: Row(
-                                        children: [
-                                          Expanded(
-                                            child: Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                                // One line, ellipsized — the
-                                                // notes under it already hold
-                                                // their own, and a wrapping
-                                                // name moves the card's shape
-                                                // (2026-10-20).
-                                                UserNameText(
-                                                  toProperCase(w.name),
-                                                  tooltip: true,
-                                                  style: AppFonts.ui(
-                                                    fontSize: AppTextStyles.md,
-                                                    fontWeight: FontWeight.w600,
-                                                    color: AppColors.primary,
-                                                  ),
-                                                ),
-                                                if (w.notes?.isNotEmpty == true)
-                                                  Text(
-                                                    w.notes!,
-                                                    style: AppFonts.ui(
-                                                      fontSize:
-                                                          AppTextStyles.xs,
-                                                      color: AppColors
-                                                          .inkSecondary,
-                                                    ),
-                                                    maxLines: 1,
-                                                    overflow:
-                                                        TextOverflow.ellipsis,
-                                                  ),
-                                              ],
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
+                                    child: card,
                                   );
                                 },
                               ),

@@ -52,6 +52,10 @@ class SessionDetailScreen extends StatefulWidget {
     this.readOnly = false,
     this.canCoach = false,
     this.navRoute = '/session',
+    this.navItems,
+    this.navIndex,
+    this.onNavTap,
+    this.aboveBar,
   });
 
   final String sessionId;
@@ -92,6 +96,21 @@ class SessionDetailScreen extends StatefulWidget {
   /// Which tab the page's own bar lights — '/session' for the Training
   /// viewer, '/friends' for a friend's.
   final String navRoute;
+
+  /// The bar's items, when the host is not the app's five-tab shell. Coach
+  /// mode passes its two (Session · Library, 2026-10-28); null keeps
+  /// [appTabItems].
+  final List<ScrollShrinkNavItem>? navItems;
+
+  /// The bar's lit index; null falls back to [navRoute]'s tab.
+  final int? navIndex;
+
+  /// What a bar tap does. Coach mode pops back to its shell and picks the
+  /// tab; null keeps the default `go(tabRouteAt(index))`.
+  final ValueChanged<int>? onNavTap;
+
+  /// A storey above the bar — coach mode's banner. Null draws none.
+  final Widget? aboveBar;
 
   @override
   State<SessionDetailScreen> createState() => _SessionDetailScreenState();
@@ -203,6 +222,14 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
   /// from lit ([widget.navRoute]), and a tab tap leaves the record through
   /// the same unsaved-changes guard the back arrow uses.
   Future<void> _onNavTap(int index) async {
+    if (widget.onNavTap != null) {
+      if (_vm.state.value.isEditing) {
+        final didProceed = await confirmBack();
+        if (!didProceed || !mounted) return;
+      }
+      widget.onNavTap!(index);
+      return;
+    }
     final router = GoRouter.of(context);
     if (_vm.state.value.isEditing) {
       final didProceed = await confirmBack();
@@ -245,10 +272,12 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
               body: ScrollShrinkNavBar(
                 // '/session' for the Training viewer, '/friends' for a
                 // friend's record — the bar always lights the tab the page
-                // was opened from (2026-10-23).
-                currentIndex: tabIndexFor(widget.navRoute),
+                // was opened from (2026-10-23). Coach mode overrides all
+                // three with its two-tab bar (2026-10-28).
+                currentIndex: widget.navIndex ?? tabIndexFor(widget.navRoute),
                 onTap: _onNavTap,
-                items: appTabItems,
+                items: widget.navItems ?? appTabItems,
+                aboveBar: widget.aboveBar,
                 child: Column(
                   children: [
                     PageHeader(

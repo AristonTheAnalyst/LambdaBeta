@@ -7,6 +7,7 @@ import '../../features/auth/view/forgot_password_screen.dart';
 import '../../features/auth/view/login_screen.dart';
 import '../../features/auth/view/reset_password_screen.dart';
 import '../../features/auth/view/signup_screen.dart';
+import '../../features/coach/view/coach_mode_screen.dart';
 import '../../features/coach/view/coach_screen.dart';
 import '../../features/dev/lab/lab_screen.dart';
 import '../../features/dev/view/dev_screen.dart';
@@ -162,6 +163,19 @@ abstract final class AppRouter {
           // reader who writes on this page: their feedback (2026-10-26, #24).
           canCoach: true,
           navRoute: '/profile',
+        ),
+      ),
+
+      // ── Coach mode (2026-10-28) ──────────────────────────────────────────
+      // The athlete's account as a two-tab page: Session · Library. Top-level
+      // for the same reason the viewers are — it draws its own bar, so the
+      // shell's five-tab bar must not sit underneath it. Pushed from the
+      // Coach roster; the athlete's name rides `extra`.
+      GoRoute(
+        path: '/coach-mode/:athleteId',
+        builder: (_, state) => CoachModeScreen(
+          athleteId: state.pathParameters['athleteId']!,
+          athleteName: (state.extra as String?) ?? 'Athlete',
         ),
       ),
 
