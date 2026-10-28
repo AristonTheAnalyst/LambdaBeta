@@ -183,6 +183,7 @@ class LiveExerciseCard extends StatelessWidget {
           sessionStartedAt: vm.workoutStartedAt,
           sessionIsLive: true,
           canDelete: vm.canDelete,
+          manageOnlyUserId: vm.actingActorId,
         );
 
         // The card's PR pill opens the PR Lab's PR History, scoped to the

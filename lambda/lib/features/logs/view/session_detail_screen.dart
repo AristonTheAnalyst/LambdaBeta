@@ -711,6 +711,7 @@ class SessionDetailView extends StatelessWidget {
       sessionStartedAt: state.session?.createdDatetime,
       readOnly: readOnly,
       canDelete: viewModel.canDelete,
+      manageOnlyUserId: viewModel.actingActorId,
       sinceLastReviewAt: state.reviewCheckpoint,
     );
   }
@@ -977,6 +978,7 @@ class _DetailCardBuilder extends StatelessWidget {
       sessionStartedAt: state.session?.createdDatetime,
       readOnly: readOnly,
       canDelete: viewModel.canDelete,
+      manageOnlyUserId: viewModel.actingActorId,
       sinceLastReviewAt: state.reviewCheckpoint,
     );
 

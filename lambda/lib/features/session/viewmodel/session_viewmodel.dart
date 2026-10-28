@@ -98,6 +98,21 @@ class SessionViewModel extends ChangeNotifier {
   /// signed-in user otherwise. The screen's embedded logs list reads it.
   String get userId => _userId;
 
+  /// The signed-in actor when this VM is acting for another user (coach
+  /// mode), else null. The notes sheet uses it to keep the athlete's own
+  /// notes read-only to the coach (2026-10-29).
+  String? get actingActorId {
+    // The own VM has no override: its actor IS its owner.
+    if (_userIdOverride == null) return null;
+    try {
+      final auth = Supabase.instance.client.auth.currentUser?.id;
+      return auth != null && auth != _userId ? auth : null;
+    } catch (_) {
+      // Host tests have no Supabase instance.
+      return null;
+    }
+  }
+
   /// Coach mode never deletes (2026-10-28). With this false the VM's removal
   /// paths are inert and end-of-session pruning flags untouched planned rows
   /// instead of deleting them — a DELETE the coach's RLS would refuse anyway,

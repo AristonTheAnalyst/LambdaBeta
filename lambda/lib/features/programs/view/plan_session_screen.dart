@@ -911,6 +911,7 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
       deleteNote: vm.deleteNote,
       updateNote: vm.updateNoteText,
       canDelete: widget.canDelete,
+      manageOnlyUserId: widget.viewModel.actingActorId,
       exerciseId: exerciseId,
       exerciseName: toProperCase(vm.exerciseDisplayName(exerciseId)),
       sinceLastReviewAt: _reviewSession?.sinceDate,

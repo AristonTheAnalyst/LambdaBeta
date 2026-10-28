@@ -410,6 +410,15 @@ class SessionDetailViewModel {
   /// opens an athlete's session.
   String get viewerId => _viewerId;
 
+  /// The actor when the viewer was passed explicitly and is not the record's
+  /// owner (coach mode), else null. Override-only on purpose: the friend path
+  /// passes no viewer, and a host test has no Supabase to resolve one from
+  /// (2026-10-29).
+  String? get actingActorId {
+    final viewer = _viewerIdOverride;
+    return viewer != null && viewer != _userId ? viewer : null;
+  }
+
   // ── Debounced set writes (the live VM's sibling machinery) ────────────────
   /// Same contract as `SessionViewModel.kAutoCommitDebounce` — keep the two
   /// in step (2026-10-13).

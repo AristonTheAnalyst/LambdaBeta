@@ -80,6 +80,7 @@ class SessionStatsBar extends StatelessWidget {
       sessionStartedAt: vm.workoutStartedAt,
       sessionIsLive: true,
       canDelete: vm.canDelete,
+      manageOnlyUserId: vm.actingActorId,
     );
   }
 

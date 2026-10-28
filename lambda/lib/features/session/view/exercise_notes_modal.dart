@@ -82,6 +82,11 @@ void showExerciseNotesModal(
   /// (2026-10-28): notes can be written and pinned, never removed.
   bool canDelete = true,
 
+  /// When set, only notes created by this user are editable/pinnable at all
+  /// — coach mode passes the coach's id, so the athlete's own notes draw as
+  /// read-only shelves while the coach's notes stay manageable (2026-10-29).
+  String? manageOnlyUserId,
+
   /// Where the last review of this ground ended (2026-10-26) — resolved by
   /// the caller, which is the only one that knows a pass stands behind the
   /// record. A note written after it leads the sheet as `SINCE LAST
@@ -108,6 +113,7 @@ void showExerciseNotesModal(
       sessionIsLive: sessionIsLive,
       readOnly: readOnly,
       canDelete: canDelete,
+      manageOnlyUserId: manageOnlyUserId,
       sinceLastReviewAt: sinceLastReviewAt,
     ),
   );
@@ -129,6 +135,7 @@ class _ExerciseNotesModalContent extends StatefulWidget {
     this.sessionIsLive = false,
     this.readOnly = false,
     this.canDelete = true,
+    this.manageOnlyUserId,
     this.sinceLastReviewAt,
   });
 
@@ -153,6 +160,9 @@ class _ExerciseNotesModalContent extends StatefulWidget {
   /// Whether the rows offer Delete. Coach mode sets it false (2026-10-28);
   /// composing, pinning and editing stay.
   final bool canDelete;
+
+  /// When set, only notes created by this user are manageable (2026-10-29).
+  final String? manageOnlyUserId;
 
   /// Where the last review of this ground ended — the split inside the
   /// after-group (2026-10-26). Null keeps the three shelves.
@@ -273,7 +283,12 @@ class _ExerciseNotesModalContentState extends State<_ExerciseNotesModalContent> 
             groups.add(
               _NoteRow(
                 note: note,
-                readOnly: widget.readOnly,
+                // A coach may manage only their own notes; the athlete's shelve
+                // read-only (2026-10-29).
+                readOnly:
+                    widget.readOnly ||
+                    (widget.manageOnlyUserId != null &&
+                        note.createdByUserId != widget.manageOnlyUserId),
                 canDelete: widget.canDelete,
                 onTogglePin: () =>
                     widget.toggleNotePin(widget.exerciseId, note.exerciseNoteId),

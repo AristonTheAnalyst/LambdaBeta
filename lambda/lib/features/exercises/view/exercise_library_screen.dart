@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/styles/app_colors.dart';
+import '../../../../data/repositories/exercise_repository.dart';
 import '../../../../core/styles/app_fonts.dart';
 import '../../../../core/styles/app_radius.dart';
 import '../../../../core/styles/app_spacing.dart';
@@ -8,6 +9,7 @@ import '../../../../core/styles/app_text_styles.dart';
 import '../../../../shared/widgets/app_card.dart';
 import '../../../../shared/widgets/archived_sheet.dart';
 import '../../../../shared/widgets/coach_created_mark.dart';
+import '../../../../shared/widgets/name_history_sheet.dart';
 import '../../../../shared/widgets/container_styles.dart';
 import '../../../../core/utils/name_limit.dart';
 import '../../../../core/utils/session_format.dart';
@@ -229,7 +231,27 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
         controller: _editVarController,
         viewModel: _viewModel,
         onDelete: widget.canDelete ? _confirmDeleteVariation : null,
+        // The owner's rename history; a coach's device never receives it.
+        onHistory: widget.userId == null
+            ? () => _openVariationHistory(v)
+            : null,
       ),
+    );
+  }
+
+  /// The owner's rename history for this variation (2026-10-29); restoring a
+  /// name is a normal rename, which records itself.
+  Future<void> _openVariationHistory(CustomVariation v) async {
+    await showNameHistorySheet(
+      context,
+      userId: _viewModel.userId,
+      entityType: 'variation',
+      entityId: v.variationId,
+      currentName: v.name,
+      onRestore: (name) async {
+        await ExerciseRepository().updateVariation(v.variationId, name);
+        await _viewModel.fetchAll();
+      },
     );
   }
 
@@ -1017,10 +1039,14 @@ class _EditVariationModal extends StatelessWidget {
     required this.controller,
     required this.viewModel,
     required this.onDelete,
+    this.onHistory,
   });
 
   final TextEditingController controller;
   final ExerciseViewModel viewModel;
+
+  /// Opens the owner's name history; null in coach mode.
+  final VoidCallback? onHistory;
   /// Null in coach mode: the sheet edits the name and offers no delete.
   final void Function(String id, String name)? onDelete;
 
@@ -1047,6 +1073,17 @@ class _EditVariationModal extends StatelessWidget {
                         ),
                       ),
                     ),
+                    if (onHistory != null)
+                      Padding(
+                        padding: const EdgeInsets.only(right: AppSpacing.sm),
+                        child: GlassButton(
+                          label: '',
+                          icon: Icons.history,
+                          semanticsLabel: 'Name history',
+                          compact: true,
+                          onPressed: onHistory!,
+                        ),
+                      ),
                     if (onDelete != null)
                       GlassButton(
                         label: '',

@@ -299,6 +299,20 @@ class WorkoutEditorViewModel {
   /// (2026-10-28).
   String get userId => _userId;
 
+  /// The actor when acting for another user (coach mode), else null — the
+  /// notes sheet keeps the athlete's notes read-only to the coach
+  /// (2026-10-29).
+  String? get actingActorId {
+    if (_userIdOverride == null) return null;
+    try {
+      final auth = Supabase.instance.client.auth.currentUser?.id;
+      return auth != null && auth != _userId ? auth : null;
+    } catch (_) {
+      // Host tests have no Supabase instance.
+      return null;
+    }
+  }
+
   bool get isStandaloneMode => _host == null;
 
   /// Virtual draft row ids for the workout editor — "+ ADD SET" and new

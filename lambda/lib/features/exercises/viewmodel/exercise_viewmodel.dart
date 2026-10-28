@@ -270,6 +270,9 @@ class ExerciseViewModel {
   /// The light pop-reload the exercise detail's caller needs: renames and
   /// archives made on the detail page show in the list without a full
   /// catalog + timeline rescan (2026-10-13).
+  /// Whose library this VM reads — the athlete's in coach mode (2026-10-29).
+  String get userId => _userId;
+
   Future<void> refreshExercisesOnly() async {
     try {
       final exercises = await _repo.fetchExercises(_userId);
