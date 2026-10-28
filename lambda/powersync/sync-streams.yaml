@@ -303,3 +303,12 @@ streams:
       - SELECT *, exercise_note_id as id FROM dim_exercise_note WHERE user_id IN my_athletes
       - SELECT *, goal_id as id FROM fact_goal WHERE user_id IN my_athletes
       - SELECT *, goal_target_id as id FROM fact_goal_target WHERE user_id IN my_athletes
+      # The athlete's WORKOUTS (2026-10-28, coach mode): the coach browses —
+      # and later writes — her library on her behalf, so the planned sessions
+      # and their children ride with the rest. The program join is sent with
+      # them because the library lists standalone workouts only; without it a
+      # program copy could not be told from a library original.
+      - SELECT *, session_id as id FROM dim_planned_session WHERE user_id IN my_athletes
+      - SELECT *, planned_exercise_id as id FROM dim_planned_session_exercise WHERE user_id IN my_athletes
+      - SELECT *, planned_set_id as id FROM dim_planned_session_exercise_set WHERE user_id IN my_athletes
+      - SELECT *, planned_session_program_id as id FROM dim_planned_session_program WHERE user_id IN my_athletes

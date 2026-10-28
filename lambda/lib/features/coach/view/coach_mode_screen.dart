@@ -6,7 +6,6 @@ import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
 import '../../../core/styles/app_spacing.dart';
 import '../../../core/styles/app_text_styles.dart';
-import '../../../shared/widgets/floating_bar.dart';
 import '../../../shared/widgets/header_icon_button.dart';
 import '../../../shared/widgets/scroll_shrink_nav_bar.dart';
 import '../../exercises/view/exercise_hub_screen.dart';
@@ -85,6 +84,15 @@ class _CoachModeScreenState extends State<CoachModeScreen> {
     }
   }
 
+  /// The bar's exit, from a record pushed over the shell: close the record,
+  /// then leave coach mode once the stack has settled.
+  void _exitFromRecord() {
+    Navigator.of(context).pop();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _exit();
+    });
+  }
+
   /// A record from the athlete's logs: the viewer, read-only, wearing the
   /// coach-mode two-tab bar. Its bar taps return here and pick the tab.
   void _openRecord(String sessionId) {
@@ -100,6 +108,10 @@ class _CoachModeScreenState extends State<CoachModeScreen> {
             canCoach: true,
             navItems: coachModeNavItems,
             navIndex: 0,
+            navTrailing: CoachModeIdentity(
+              name: widget.athleteName,
+              onExit: _exitFromRecord,
+            ),
             onNavTap: (i) {
               Navigator.of(context).pop();
               _selectTab(i);
@@ -120,7 +132,7 @@ class _CoachModeScreenState extends State<CoachModeScreen> {
           currentIndex: _tab,
           onTap: _selectTab,
           items: coachModeNavItems,
-          aboveBar: CoachModeBanner(
+          trailing: CoachModeIdentity(
             name: widget.athleteName,
             onExit: _exit,
           ),
@@ -154,50 +166,66 @@ class _CoachModeScreenState extends State<CoachModeScreen> {
   }
 }
 
-/// The storey above the bar: whose account is on screen, and the way out.
+/// The bar's right half (2026-10-28): `COACHING` over the athlete's name, and
+/// the way out.
 ///
-/// It rides `ScrollShrinkNavBar.aboveBar`, so `FloatingBarOverlay` measures it
-/// into `contentInset` and both tabs clear it without extra padding.
-class CoachModeBanner extends StatelessWidget {
-  const CoachModeBanner({super.key, required this.name, required this.onExit});
+/// The banner that used to carry this spent a whole storey above the bar; the
+/// identity belongs in the bar itself, beside the tabs, with the exit control
+/// as its trailing glyph. The eyebrow is the app's mono micro-label; the name
+/// is one ellipsized line.
+class CoachModeIdentity extends StatelessWidget {
+  const CoachModeIdentity({
+    super.key,
+    required this.name,
+    required this.onExit,
+  });
 
   final String name;
   final VoidCallback onExit;
 
   @override
   Widget build(BuildContext context) {
-    return FloatingGlass(
-      radius: FloatingBar.cornerRadius,
-      child: Padding(
-        padding: const EdgeInsets.only(left: AppSpacing.lg),
-        child: Row(
-          children: [
-            Icon(
-              Icons.sports_outlined,
-              size: 16,
-              color: AppColors.inkSecondary,
-            ),
-            const SizedBox(width: AppSpacing.sm),
-            Expanded(
-              child: Text(
-                '$name · coach mode',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: AppFonts.ui(
-                  fontSize: AppTextStyles.sm,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.primary,
+    return Padding(
+      padding: const EdgeInsets.only(left: AppSpacing.md, right: AppSpacing.xs),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'COACHING',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppFonts.mono(
+                    fontSize: AppTextStyles.xs,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.8,
+                    color: AppColors.inkSecondary,
+                  ),
                 ),
-              ),
+                const SizedBox(height: 2),
+                Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppFonts.ui(
+                    fontSize: AppTextStyles.sm,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.primary,
+                  ),
+                ),
+              ],
             ),
-            HeaderIconButton(
-              icon: Icons.close,
-              semanticsLabel: 'Exit coach mode',
-              glyphSize: 18,
-              onPressed: onExit,
-            ),
-          ],
-        ),
+          ),
+          HeaderIconButton(
+            icon: Icons.meeting_room_outlined,
+            semanticsLabel: 'Exit coach mode',
+            glyphSize: 18,
+            onPressed: onExit,
+          ),
+        ],
       ),
     );
   }

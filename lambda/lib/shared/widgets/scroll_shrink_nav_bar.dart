@@ -63,6 +63,7 @@ class ScrollShrinkNavBar extends StatefulWidget {
     required this.items,
     required this.child,
     this.aboveBar,
+    this.trailing,
   });
 
   final int currentIndex;
@@ -82,6 +83,13 @@ class ScrollShrinkNavBar extends StatefulWidget {
   /// height, a notice is as tall as its words, and either way
   /// [contentInset] makes room for all of it.
   final Widget? aboveBar;
+
+  /// A second half inside the bar, right of a hairline divider (2026-10-28).
+  /// Coach mode puts the athlete's identity here — `COACHING` over the name,
+  /// and the exit control — so the bar carries whose account is on screen
+  /// without a storey above it. Null keeps the bar the destinations' alone;
+  /// when set, the items share the left half equally and this fills the right.
+  final Widget? trailing;
 
   /// Bar height at full size. The geometry lives on [FloatingBar] — the app's
   /// bottom chrome shares one container — and is re-exported here because
@@ -213,7 +221,7 @@ class _ScrollShrinkNavBarState extends State<ScrollShrinkNavBar>
   /// bar, so it keeps its full colour and weight as it recedes rather than
   /// fading out.
   Widget _buildItems() {
-    return Row(
+    final items = Row(
       children: [
         for (var i = 0; i < widget.items.length; i++)
           Expanded(
@@ -226,6 +234,20 @@ class _ScrollShrinkNavBarState extends State<ScrollShrinkNavBar>
               },
             ),
           ),
+      ],
+    );
+    final trailing = widget.trailing;
+    if (trailing == null) return items;
+    return Row(
+      children: [
+        Expanded(child: items),
+        // The split's own edge: a hairline, not a filled sliver, centred in
+        // the bar's height so the two halves read as one surface.
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Container(width: 1, color: AppColors.border),
+        ),
+        Expanded(child: trailing),
       ],
     );
   }

@@ -56,6 +56,7 @@ class SessionDetailScreen extends StatefulWidget {
     this.navIndex,
     this.onNavTap,
     this.aboveBar,
+    this.navTrailing,
   });
 
   final String sessionId;
@@ -111,6 +112,10 @@ class SessionDetailScreen extends StatefulWidget {
 
   /// A storey above the bar — coach mode's banner. Null draws none.
   final Widget? aboveBar;
+
+  /// The bar's right half, when the host splits it — coach mode's athlete
+  /// identity and exit control (2026-10-28). Null keeps the items alone.
+  final Widget? navTrailing;
 
   @override
   State<SessionDetailScreen> createState() => _SessionDetailScreenState();
@@ -278,6 +283,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
                 onTap: _onNavTap,
                 items: widget.navItems ?? appTabItems,
                 aboveBar: widget.aboveBar,
+                trailing: widget.navTrailing,
                 child: Column(
                   children: [
                     PageHeader(
