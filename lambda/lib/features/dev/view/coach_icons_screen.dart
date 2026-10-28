@@ -94,6 +94,127 @@ class CoachIconsScreen extends StatelessWidget {
                         name: 'military_tech',
                         reads: 'Award/medal — same risk, louder.',
                       ),
+                      _IconRowData(
+                        icon: Icons.supervised_user_circle_outlined,
+                        name: 'supervised_user_circle_outlined',
+                        reads: 'A person inside someone’s circle of care.',
+                      ),
+                      _IconRowData(
+                        icon: Icons.manage_accounts_outlined,
+                        name: 'manage_accounts_outlined',
+                        reads: 'Managing someone’s account — close to “act as”.',
+                      ),
+                      _IconRowData(
+                        icon: Icons.escalator_warning,
+                        name: 'escalator_warning',
+                        reads: 'The mentor sign: an adult guiding a smaller figure.',
+                      ),
+                      _IconRowData(
+                        icon: Icons.cast_for_education,
+                        name: 'cast_for_education',
+                        reads: 'Teaching a class — instruction, not partnership.',
+                      ),
+                      _IconRowData(
+                        icon: Icons.menu_book,
+                        name: 'menu_book',
+                        reads: 'A playbook — the plan, not the person.',
+                      ),
+                      _IconRowData(
+                        icon: Icons.person_outline,
+                        name: 'person_outline',
+                        reads: 'Plain person: no role, no relationship.',
+                      ),
+                      _IconRowData(
+                        icon: Icons.account_circle_outlined,
+                        name: 'account_circle_outlined',
+                        reads: 'A profile avatar — an identity, but any identity.',
+                      ),
+                      _IconRowData(
+                        icon: Icons.diversity_3,
+                        name: 'diversity_3',
+                        reads: 'A small group — coach and athlete together.',
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+                  const _IconSection(
+                    label: 'COACHING WORK — what the role does',
+                    rows: [
+                      _IconRowData(
+                        icon: Icons.fact_check,
+                        name: 'fact_check',
+                        reads: 'Reviewing what she did.',
+                      ),
+                      _IconRowData(
+                        icon: Icons.checklist,
+                        name: 'checklist',
+                        reads: 'The plan, ticked off.',
+                      ),
+                      _IconRowData(
+                        icon: Icons.rate_review_outlined,
+                        name: 'rate_review_outlined',
+                        reads: 'Feedback — already the Library’s Reviews glyph.',
+                      ),
+                      _IconRowData(
+                        icon: Icons.forum,
+                        name: 'forum',
+                        reads: 'A conversation.',
+                      ),
+                      _IconRowData(
+                        icon: Icons.insights,
+                        name: 'insights',
+                        reads: 'Progress at a glance.',
+                      ),
+                      _IconRowData(
+                        icon: Icons.query_stats,
+                        name: 'query_stats',
+                        reads: 'Trends and queries.',
+                      ),
+                      _IconRowData(
+                        icon: Icons.trending_up,
+                        name: 'trending_up',
+                        reads: 'Getting better.',
+                      ),
+                      _IconRowData(
+                        icon: Icons.lightbulb_outline,
+                        name: 'lightbulb_outline',
+                        reads: 'A cue or an idea.',
+                      ),
+                      _IconRowData(
+                        icon: Icons.tips_and_updates,
+                        name: 'tips_and_updates',
+                        reads: 'Tips — reads a little casual.',
+                      ),
+                      _IconRowData(
+                        icon: Icons.monitor_heart_outlined,
+                        name: 'monitor_heart_outlined',
+                        reads: 'Training load / heart rate.',
+                      ),
+                      _IconRowData(
+                        icon: Icons.sports_score,
+                        name: 'sports_score',
+                        reads: 'A scoreboard flag — results.',
+                      ),
+                      _IconRowData(
+                        icon: Icons.scoreboard,
+                        name: 'scoreboard',
+                        reads: 'Results, more literally.',
+                      ),
+                      _IconRowData(
+                        icon: Icons.assignment_turned_in_outlined,
+                        name: 'assignment_turned_in_outlined',
+                        reads: 'Work done.',
+                      ),
+                      _IconRowData(
+                        icon: Icons.task_alt,
+                        name: 'task_alt',
+                        reads: 'A tick — completion.',
+                      ),
+                      _IconRowData(
+                        icon: Icons.verified_outlined,
+                        name: 'verified_outlined',
+                        reads: 'Checked / verified.',
+                      ),
                     ],
                   ),
                   const SizedBox(height: AppSpacing.lg),
@@ -135,6 +256,87 @@ class CoachIconsScreen extends StatelessWidget {
                         icon: Icons.exit_to_app,
                         name: 'exit_to_app',
                         reads: 'Same sign-out risk, and the shape is busier.',
+                      ),
+                      _IconRowData(
+                        icon: Icons.arrow_back,
+                        name: 'arrow_back',
+                        reads: 'Plain back arrow.',
+                      ),
+                      _IconRowData(
+                        icon: Icons.arrow_left,
+                        name: 'arrow_left',
+                        reads: 'The same arrow without the iOS tail.',
+                      ),
+                      _IconRowData(
+                        icon: Icons.navigate_before,
+                        name: 'navigate_before',
+                        reads: 'The old Material back chevron.',
+                      ),
+                      _IconRowData(
+                        icon: Icons.west,
+                        name: 'west',
+                        reads: 'A left arrow wearing a compass name.',
+                      ),
+                      _IconRowData(
+                        icon: Icons.keyboard_backspace,
+                        name: 'keyboard_backspace',
+                        reads: 'Delete-shaped — reads as erasing text.',
+                      ),
+                      _IconRowData(
+                        icon: Icons.first_page,
+                        name: 'first_page',
+                        reads: 'Jump to the start — a bar glyph.',
+                      ),
+                      _IconRowData(
+                        icon: Icons.arrow_circle_left_outlined,
+                        name: 'arrow_circle_left_outlined',
+                        reads: 'Back inside a circle — a control, not a bar glyph.',
+                      ),
+                      _IconRowData(
+                        icon: Icons.door_back_door_outlined,
+                        name: 'door_back_door_outlined',
+                        reads: 'The back door.',
+                      ),
+                      _IconRowData(
+                        icon: Icons.door_sliding_outlined,
+                        name: 'door_sliding_outlined',
+                        reads: 'A sliding door — leaving, softly.',
+                      ),
+                      _IconRowData(
+                        icon: Icons.close,
+                        name: 'close',
+                        reads: 'Dismiss — reads as closing a sheet.',
+                      ),
+                      _IconRowData(
+                        icon: Icons.cancel_outlined,
+                        name: 'cancel_outlined',
+                        reads: 'Cancel — an abort read.',
+                      ),
+                      _IconRowData(
+                        icon: Icons.undo,
+                        name: 'undo',
+                        reads: 'Undo — the wrong meaning entirely.',
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+                  const _IconSection(
+                    label: 'SWITCHING — for a later “switch athlete”',
+                    rows: [
+                      _IconRowData(
+                        icon: Icons.switch_account,
+                        name: 'switch_account',
+                        reads: 'The natural switch — one account to another.',
+                      ),
+                      _IconRowData(
+                        icon: Icons.swap_horiz,
+                        name: 'swap_horiz',
+                        reads: 'Exchange two things.',
+                      ),
+                      _IconRowData(
+                        icon: Icons.sync_alt,
+                        name: 'sync_alt',
+                        reads: 'Two arrows cycling — switch without a new account.',
                       ),
                     ],
                   ),
