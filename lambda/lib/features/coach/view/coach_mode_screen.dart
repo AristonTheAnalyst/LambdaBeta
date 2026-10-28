@@ -199,10 +199,11 @@ class _CoachModeScreenState extends State<CoachModeScreen> {
                   ? ExerciseHubScreen(
                       userId: widget.athleteId,
                       // Phase 3: the coach creates and edits as her; delete
-                      // stays off (2026-10-28). Reviews are still phase 4.
+                      // stays off (2026-10-28). Phase 4: her completed review
+                      // records browse read-only.
                       readOnly: false,
                       canDelete: false,
-                      showReviews: false,
+                      showReviews: true,
                     )
                   : const SizedBox.shrink(),
             ],

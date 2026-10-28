@@ -38,9 +38,23 @@ import 'review_name_sheet.dart';
 /// dev lab — the same idiom as the workout library: the host owns the header,
 /// and the compact + stands in the toolbar instead.
 class ReviewsScreen extends StatefulWidget {
-  const ReviewsScreen({super.key, this.showHeader = true, this.viewModel});
+  const ReviewsScreen({
+    super.key,
+    this.showHeader = true,
+    this.viewModel,
+    this.userId,
+    this.canDelete = true,
+  });
 
   final bool showHeader;
+
+  /// Whose reviews these are. Null = the signed-in user; coach mode passes
+  /// the athlete (2026-10-28).
+  final String? userId;
+
+  /// Whether the screen starts passes and deletes records. Coach mode passes
+  /// false: it browses her completed records read-only (2026-10-28).
+  final bool canDelete;
 
   /// The view model a host test injects. The seam exists for host tests —
   /// the real constructor reads Supabase — and a real caller never passes
@@ -75,7 +89,7 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
   void initState() {
     super.initState();
     final injected = widget.viewModel;
-    _vm = injected ?? ReviewsViewModel();
+    _vm = injected ?? ReviewsViewModel(userId: widget.userId);
     _ownsVm = injected == null;
     _vm.state.addListener(_onState);
     _searchController.addListener(() {
@@ -202,6 +216,9 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
         review: entry.review,
         sessionIds: entry.sessionIds,
       ),
+      // Whose record it is — the athlete's in coach mode (2026-10-28). The
+      // landing and its workout records read as that user.
+      userId: widget.userId,
     );
   }
 
@@ -274,16 +291,18 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
           if (widget.showHeader)
             PageHeader(
               title: 'Reviews',
-              right: GlassButton(
-                label: '',
-                icon: Icons.add,
-                semanticsLabel: 'Start review',
-                compact: true,
-                loading: _busy,
-                onPressed: _start,
-              ),
+              right: widget.canDelete
+                  ? GlassButton(
+                      label: '',
+                      icon: Icons.add,
+                      semanticsLabel: 'Start review',
+                      compact: true,
+                      loading: _busy,
+                      onPressed: _start,
+                    )
+                  : null,
             ),
-          _toolbar(showAdd: !widget.showHeader),
+          _toolbar(showAdd: !widget.showHeader && widget.canDelete),
           Expanded(child: _body(state)),
         ],
       ),
@@ -335,6 +354,8 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
               onPressed: _start,
             ),
           ],
+          // Coach mode's toolbar ends at the date range: no pass is started
+          // from another account (2026-10-28).
         ],
       ),
     );
@@ -368,7 +389,9 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
         ),
       );
     }
-    if (state.entries.isEmpty) return const _EmptyState();
+    if (state.entries.isEmpty) {
+      return _EmptyState(readOnly: !widget.canDelete);
+    }
 
     final open = state.open.where(_matchesSearch).toList();
     final completed = state.completed
@@ -402,7 +425,9 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
         AppSpacing.lg + ScrollShrinkNavBar.contentInset(context),
       ),
       children: [
-        if (open.isNotEmpty) ...[
+        // An open pass is its owner's working state — not a record to browse
+        // (2026-10-28). Coach mode sees only what was finished.
+        if (widget.canDelete && open.isNotEmpty) ...[
           const _SectionLabel('IN PROGRESS'),
           const SizedBox(height: AppSpacing.sm),
           for (final entry in open) ...[
@@ -428,24 +453,30 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
           const _SectionLabel('COMPLETED'),
           const SizedBox(height: AppSpacing.sm),
           for (final entry in completed) ...[
-            SwipeActions(
-              // Keyed by review, like the open drawer: a delete must not hand
-              // one record's drawer state to the card that slides up into its
-              // place.
-              key: ValueKey(entry.review.reviewId),
-              actions: [
-                SwipeAction(
-                  icon: Icons.delete_outline,
-                  color: AppColors.danger,
-                  foreground: AppColors.dangerText,
-                  onTap: () => _deleteCompleted(entry),
-                ),
-              ],
-              child: _CompletedReviewCard(
+            if (!widget.canDelete)
+              _CompletedReviewCard(
                 entry: entry,
                 onTap: () => _openCompleted(entry),
+              )
+            else
+              SwipeActions(
+                // Keyed by review, like the open drawer: a delete must not
+                // hand one record's drawer state to the card that slides up
+                // into its place.
+                key: ValueKey(entry.review.reviewId),
+                actions: [
+                  SwipeAction(
+                    icon: Icons.delete_outline,
+                    color: AppColors.danger,
+                    foreground: AppColors.dangerText,
+                    onTap: () => _deleteCompleted(entry),
+                  ),
+                ],
+                child: _CompletedReviewCard(
+                  entry: entry,
+                  onTap: () => _openCompleted(entry),
+                ),
               ),
-            ),
             const SizedBox(height: AppSpacing.md),
           ],
         ],
@@ -457,7 +488,10 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
 /// Nothing yet: the one place the screen can say what a review *is*, to
 /// somebody who has never started one.
 class _EmptyState extends StatelessWidget {
-  const _EmptyState();
+  const _EmptyState({this.readOnly = false});
+
+  /// Coach mode has no way to start a pass, so it must not describe one.
+  final bool readOnly;
 
   @override
   Widget build(BuildContext context) => Center(
@@ -475,9 +509,11 @@ class _EmptyState extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.sm),
           Text(
-            'A review is a pass over workouts you pick: open each one, change '
-            'what needs changing, note what you think — then finish it and it '
-            'is kept here.',
+            readOnly
+                ? 'This athlete has not finished a review yet.'
+                : 'A review is a pass over workouts you pick: open each one, '
+                      'change what needs changing, note what you think — then '
+                      'finish it and it is kept here.',
             textAlign: TextAlign.center,
             style: AppFonts.ui(
               fontSize: AppTextStyles.xs,

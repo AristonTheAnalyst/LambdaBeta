@@ -294,6 +294,11 @@ class WorkoutEditorViewModel {
 
   bool get canDelete => _canDelete;
 
+  /// Whose rows this editor writes — the athlete's in coach mode, the
+  /// signed-in user's otherwise. The review bar reads it for its owner
+  /// (2026-10-28).
+  String get userId => _userId;
+
   bool get isStandaloneMode => _host == null;
 
   /// Virtual draft row ids for the workout editor — "+ ADD SET" and new

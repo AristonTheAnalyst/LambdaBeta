@@ -146,7 +146,12 @@ class _ExerciseHubScreenState extends State<ExerciseHubScreen> {
       readOnly: widget.readOnly,
       canDelete: widget.canDelete,
     ),
-    if (widget.showReviews) const ReviewsScreen(showHeader: false),
+    if (widget.showReviews)
+      ReviewsScreen(
+        showHeader: false,
+        userId: widget.userId,
+        canDelete: widget.canDelete,
+      ),
     GoalsScreen(
       showHeader: false,
       userId: widget.userId,

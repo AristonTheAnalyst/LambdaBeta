@@ -348,7 +348,13 @@ ReviewSession completedReviewSession({
 /// [ReviewRoute]'s dispose never clears a session it did not set. Refuses
 /// while a pass is live for the mirror-image reason [startReview] refuses:
 /// the notifier and the ceremony answer for one review at a time.
-Future<bool?> openCompletedReview(BuildContext context, ReviewSession session) {
+Future<bool?> openCompletedReview(
+  BuildContext context,
+  ReviewSession session, {
+  /// Whose record it is, when the reader is not the owner — the coach in
+  /// coach mode (2026-10-28). Null reads the signed-in user.
+  String? userId,
+}) {
   if (reviewSessionNotifier.value != null) {
     ScaffoldMessenger.maybeOf(
       context,
@@ -358,7 +364,8 @@ Future<bool?> openCompletedReview(BuildContext context, ReviewSession session) {
   return Navigator.of(context, rootNavigator: true).push<bool>(
     MaterialPageRoute(
       settings: const RouteSettings(name: kReviewRouteNameRecord),
-      builder: (_) => ReviewRoute(session: session, readOnly: true),
+      builder: (_) =>
+          ReviewRoute(session: session, readOnly: true, userId: userId),
     ),
   );
 }
@@ -655,6 +662,7 @@ class _ReviewRouteState extends State<ReviewRoute> {
       return _ReviewShell(
         session: live,
         readOnly: widget.readOnly,
+        userId: _userId,
         body: const Center(
           child: SizedBox(
             width: 22,
@@ -674,6 +682,7 @@ class _ReviewRouteState extends State<ReviewRoute> {
     if (cards.isEmpty && live.sessionIds.isNotEmpty) return _missing(live);
     return _ReviewLanding(
       session: live,
+      userId: _userId,
       cards: cards,
       goals: _goals!,
       detailMap: _details,
@@ -947,7 +956,7 @@ class _ReviewRouteState extends State<ReviewRoute> {
       await _staged?.flush();
       await _history.completeReview(
         session.reviewId,
-        userId: _currentUserId(),
+        userId: _userId,
         outcome: kOutcomeReviewed,
         notes: notes.isEmpty ? null : notes,
         stage: session.stage,
@@ -974,6 +983,7 @@ class _ReviewRouteState extends State<ReviewRoute> {
   Widget _missing(ReviewSession session) => _ReviewShell(
     session: session,
     readOnly: widget.readOnly,
+    userId: _userId,
     onFinish: widget.readOnly ? null : () => _finishPass(session),
     body: Center(
       child: Padding(
@@ -1120,10 +1130,14 @@ class _ReviewShell extends StatelessWidget {
     required this.body,
     this.onFinish,
     this.readOnly = false,
+    this.userId,
   });
 
   final ReviewSession session;
   final Widget body;
+
+  /// Whose data the bar reads; null = the signed-in user (2026-10-28).
+  final String? userId;
 
   /// Finishes the pass from the shell. Null while the set is still loading —
   /// there is nothing loaded to record — and on a record, which is closed
@@ -1146,6 +1160,7 @@ class _ReviewShell extends StatelessWidget {
           session: session.asLanding,
           onFinish: onFinish,
           readOnly: readOnly,
+          userId: userId,
         ),
         child: body,
       ),
@@ -1167,6 +1182,7 @@ class _ReviewShell extends StatelessWidget {
 class _ReviewLanding extends StatefulWidget {
   const _ReviewLanding({
     required this.session,
+    this.userId,
     required this.cards,
     required this.goals,
     required this.detailMap,
@@ -1180,6 +1196,11 @@ class _ReviewLanding extends StatefulWidget {
   });
 
   final ReviewSession session;
+
+  /// Whose data the cards and sheets read; null = the signed-in user
+  /// (2026-10-28).
+  final String? userId;
+
   final List<_ReviewCard> cards;
 
   /// The goals the pass covers, resolved. A goal has no editor — it is read,
@@ -1235,6 +1256,10 @@ enum _LandingTab {
 }
 
 class _ReviewLandingState extends State<_ReviewLanding> {
+  /// The owner the cards, goals and scope sheet read; the route's injected
+  /// user in coach mode, the signed-in account otherwise (2026-10-28).
+  String get _userId => widget.userId ?? _currentUserId();
+
   /// Which half of the pass is showing. Workouts first: the walking happens
   /// there, and a pass begun empty opens on the list it has to fill first.
   int _tab = 0;
@@ -1276,6 +1301,7 @@ class _ReviewLandingState extends State<_ReviewLanding> {
         bar: ReviewBar(
           session: session.asLanding,
           readOnly: widget.readOnly,
+          userId: _userId,
           onFinish: widget.onFinish,
           // The count and the Finish gate both read the whole pass, both
           // halves — this is the one bar that can see all of it. A record's
@@ -1354,7 +1380,7 @@ class _ReviewLandingState extends State<_ReviewLanding> {
     await showReviewScopeSheet(
       context,
       reviewId: session.reviewId,
-      userId: _currentUserId(),
+      userId: _userId,
       sessionIds: session.sessionIds,
       goalIds: session.goalIds,
       section: section,
@@ -1505,7 +1531,7 @@ class _ReviewLandingState extends State<_ReviewLanding> {
             // pass reads them: a goal is read, not walked, and a completed
             // review did not freeze the sets it measures.
             loadPastSets: () =>
-                SessionRepository().loadPastSetsTimeline(_currentUserId()),
+                SessionRepository().loadPastSetsTimeline(_userId),
           ),
           child: GoalRow(exerciseName: goal.exerciseName, target: goal.target),
         )
@@ -1525,7 +1551,7 @@ class _ReviewLandingState extends State<_ReviewLanding> {
             // run for a while, and the sheet's whole point is the story as it
             // stands now.
             loadPastSets: () =>
-                SessionRepository().loadPastSetsTimeline(_currentUserId()),
+                SessionRepository().loadPastSetsTimeline(_userId),
           ),
           child: GoalRow(exerciseName: goal.exerciseName, target: goal.target),
         ),
@@ -1766,6 +1792,7 @@ Widget reviewChrome(
   Widget? aboveBar,
   ValueChanged<String>? onExerciseTap,
   String? recordLabel,
+  String? userId,
 }) {
   final resolved = session ?? ReviewScope.maybeOf(context);
   if (resolved == null) return child;
@@ -1778,6 +1805,7 @@ Widget reviewChrome(
       onComparison: onComparison,
       comparing: comparing,
       readOnly: readOnly,
+      userId: userId,
       loadComparison: loadComparison,
       onExerciseTap: onExerciseTap,
       recordLabel: recordLabel,
@@ -1922,6 +1950,7 @@ Widget editorNavBar(
   Widget? aboveBar,
   ValueChanged<String>? onExerciseTap,
   ReviewSession? session,
+  String? userId,
 }) {
   final review = session ?? ReviewScope.maybeOf(context);
   if (review != null) {
@@ -1934,6 +1963,7 @@ Widget editorNavBar(
       comparing: comparing,
       aboveBar: aboveBar,
       onExerciseTap: onExerciseTap,
+      userId: userId,
       // The caller's own session, never the resolved one: a bar found
       // through the scope has to keep READING the scope, or a Done tick
       // would not move it.
@@ -2100,9 +2130,14 @@ class ReviewBar extends StatefulWidget {
     this.onExerciseTap,
     this.overviewProgress,
     this.recordLabel,
+    this.userId,
   });
 
   final ReviewSession session;
+
+  /// Whose data the bar's reads use; null = the signed-in user
+  /// (2026-10-28).
+  final String? userId;
 
   /// Whether this bar is over a record — a completed pass opened to be read.
   /// A record is a walk that has happened: over a workout the label names the
@@ -2187,6 +2222,10 @@ class ReviewBar extends StatefulWidget {
 }
 
 class _ReviewBarState extends State<ReviewBar> {
+  /// The owner a comparison reads; the record's user in coach mode
+  /// (2026-10-28).
+  String get _userId => widget.userId ?? _currentUserId();
+
   bool _finishing = false;
   bool _comparing = false;
   bool _readingChanges = false;
@@ -2565,7 +2604,7 @@ class _ReviewBarState extends State<ReviewBar> {
     try {
       final load =
           widget.loadComparison ??
-          () => loadReviewComparison(widget.session, userId: _currentUserId());
+          () => loadReviewComparison(widget.session, userId: _userId);
       final comparison = await load();
       if (!mounted) return;
       setState(() => _comparing = false);
@@ -2625,7 +2664,7 @@ class _ReviewBarState extends State<ReviewBar> {
     try {
       final load =
           widget.loadComparison ??
-          () => loadReviewComparison(widget.session, userId: _currentUserId());
+          () => loadReviewComparison(widget.session, userId: _userId);
       final comparison = await load();
       if (!mounted) return;
       setState(() => _readingChanges = false);

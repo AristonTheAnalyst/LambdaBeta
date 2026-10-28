@@ -334,6 +334,7 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
     context,
     child: child,
     session: _reviewSession,
+    userId: widget.viewModel.userId,
     onTap: _onNavTap,
     settle: settleForReview,
     settleForCompare: settleForCompare,
@@ -370,6 +371,7 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
                 settle: null,
                 // The route's own pass, like the bar below it (2026-10-25).
                 session: _reviewSession,
+                userId: widget.viewModel.userId,
                 child: Center(
                   child: Padding(
                     padding: const EdgeInsets.all(AppSpacing.xl),
@@ -418,6 +420,7 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
               context,
               settle: null,
               session: _reviewSession,
+              userId: widget.viewModel.userId,
               child: Center(
                 child: CircularProgressIndicator(color: AppColors.accent),
               ),

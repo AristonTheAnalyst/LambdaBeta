@@ -312,3 +312,8 @@ streams:
       - SELECT *, planned_exercise_id as id FROM dim_planned_session_exercise WHERE user_id IN my_athletes
       - SELECT *, planned_set_id as id FROM dim_planned_session_exercise_set WHERE user_id IN my_athletes
       - SELECT *, planned_session_program_id as id FROM dim_planned_session_program WHERE user_id IN my_athletes
+      # Her review passes (2026-10-28, phase 4): completed records browse
+      # read-only in coach mode. Open passes stay her working state (the
+      # client filters them out), and the row's snapshots carry what each
+      # version looked like.
+      - SELECT *, review_id as id FROM fact_program_review WHERE user_id IN my_athletes

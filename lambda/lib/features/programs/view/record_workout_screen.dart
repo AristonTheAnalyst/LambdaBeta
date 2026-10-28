@@ -169,6 +169,8 @@ class _RecordWorkoutScreenState extends State<RecordWorkoutScreen> {
         context,
         session: widget.session,
         readOnly: true,
+        // The record's owner — the athlete in coach mode (2026-10-28).
+        userId: widget.userId,
         // Nothing underneath to settle: the record is not an editor, and no
         // page here holds a value that could be lost.
         settle: null,
