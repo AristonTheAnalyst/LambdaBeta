@@ -30,6 +30,9 @@ const schema = Schema([
     [
       Column.text('session_id'),
       Column.text('user_id'),
+      // Who put this row down (2026-10-28): NULL = the owner; set = the coach
+      // acting on the athlete's behalf in coach mode. No FK on purpose.
+      Column.text('created_by_user_id'),
       Column.text('pre_notes'),
       Column.text('post_notes'),
       Column.text('created_datetime'),
@@ -58,6 +61,7 @@ const schema = Schema([
     [
       Column.text('custom_exercise_id'),
       Column.text('user_id'),
+      Column.text('created_by_user_id'),
       Column.text('exercise_name'),
       Column.text('date_archived'),
     ],
@@ -70,6 +74,7 @@ const schema = Schema([
     [
       Column.text('custom_variation_id'),
       Column.text('user_id'),
+      Column.text('created_by_user_id'),
       Column.text('variation_name'),
       Column.text('date_archived'),
     ],
@@ -90,6 +95,7 @@ const schema = Schema([
       Column.text('session_exercise_id'),
       Column.text('session_id'),
       Column.text('user_id'),
+      Column.text('created_by_user_id'),
       Column.text('custom_exercise_id'),
       Column.integer('exercise_order'),
       Column.text('planned_exercise_id'),
@@ -104,6 +110,7 @@ const schema = Schema([
       Column.text('session_exercise_set_id'),
       Column.text('session_exercise_id'),
       Column.text('user_id'),
+      Column.text('created_by_user_id'),
       Column.text('custom_variation_id'),
       Column.integer('set_number'),
       Column.text('weight'),
@@ -252,6 +259,7 @@ const schema = Schema([
     [
       Column.text('exercise_note_id'),
       Column.text('user_id'),
+      Column.text('created_by_user_id'),
       Column.text('custom_exercise_id'),
       Column.text('note_text'),
       Column.integer('pinned'),
@@ -352,6 +360,13 @@ const schema = Schema([
       // (exercise notes and a session's pre/post notes); the numbers and each
       // set's notes are the first tier and always shared.
       Column.integer('share_notes'),
+      // Friendship state (2026-10-28, 20261028140000_coach_mode_foundation):
+      // accepted_date NULL = a pending request. The coaching columns live on
+      // the ATHLETE's directed row (user_id = athlete, friend_user_id = coach);
+      // the grant is coaching_granted_at, set when the coach accepts.
+      Column.text('accepted_date'),
+      Column.text('coaching_requested_at'),
+      Column.text('coaching_granted_at'),
     ],
     indexes: [
       Index('user_idx', [IndexedColumn.ascending('user_id')]),
@@ -362,6 +377,7 @@ const schema = Schema([
     [
       Column.text('session_id'),
       Column.text('user_id'),
+      Column.text('created_by_user_id'),
       Column.text('name'),
       Column.text('notes'),
       Column.text('date_archived'),
@@ -413,6 +429,7 @@ const schema = Schema([
       Column.text('planned_exercise_id'),
       Column.text('planned_session_id'),
       Column.text('user_id'),
+      Column.text('created_by_user_id'),
       Column.text('custom_exercise_id'),
       Column.integer('exercise_order'),
       Column.integer('is_archived'),
@@ -427,6 +444,7 @@ const schema = Schema([
       Column.text('planned_set_id'),
       Column.text('planned_exercise_id'),
       Column.text('user_id'),
+      Column.text('created_by_user_id'),
       Column.text('custom_variation_id'),
       Column.integer('set_number'),
       Column.text('target_weight'),
@@ -444,6 +462,7 @@ const schema = Schema([
       Column.text('goal_id'),
       Column.text('program_run_id'),
       Column.text('user_id'),
+      Column.text('created_by_user_id'),
       Column.text('goal_text'),
       // Free-form notes about the goal itself (2026-10-08) — the target and its
       // label are target_* / goal_text, not this. See
@@ -483,6 +502,7 @@ const schema = Schema([
       Column.text('goal_target_id'),
       Column.text('goal_id'),
       Column.text('user_id'),
+      Column.text('created_by_user_id'),
       // 1-based, dense: the order the requirements are listed and matched in.
       Column.integer('target_set_order'),
       // Numeric on the server, text in the mirror — the same mapping

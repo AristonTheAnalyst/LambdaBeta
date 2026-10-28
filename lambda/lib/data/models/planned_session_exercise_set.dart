@@ -9,6 +9,7 @@ class PlannedSessionExerciseSet {
     required this.plannedExerciseId,
     required this.plannedSessionId,
     required this.userId,
+    this.createdByUserId,
     required this.setNumber,
     this.exerciseId,
     this.variationId,
@@ -24,6 +25,7 @@ class PlannedSessionExerciseSet {
   final String plannedExerciseId;
   final String plannedSessionId;
   final String userId;
+  final String? createdByUserId;
   final String? exerciseId;
   final String? variationId;
   final int setNumber;
@@ -65,6 +67,7 @@ class PlannedSessionExerciseSet {
         plannedExerciseId: map['planned_exercise_id'] as String,
         plannedSessionId: map['planned_session_id'] as String,
         userId: map['user_id'] as String,
+        createdByUserId: map['created_by_user_id'] as String?,
         exerciseId: map['custom_exercise_id'] as String?,
         setNumber: _toInt(map['set_number']) ?? 1,
         variationId: map['custom_variation_id'] as String?,
@@ -116,6 +119,7 @@ class PlannedSessionExerciseSet {
     'planned_exercise_id': plannedExerciseId,
     'planned_session_id': plannedSessionId,
     'user_id': userId,
+    'created_by_user_id': createdByUserId,
     'custom_exercise_id': exerciseId,
     'custom_variation_id': variationId,
     'set_number': setNumber,

@@ -2,6 +2,7 @@ class ExerciseNote {
   const ExerciseNote({
     required this.exerciseNoteId,
     required this.userId,
+    this.createdByUserId,
     required this.exerciseId,
     required this.text,
     required this.pinned,
@@ -11,6 +12,7 @@ class ExerciseNote {
 
   final String exerciseNoteId;
   final String userId;
+  final String? createdByUserId;
   final String exerciseId;
   final String text;
   final bool pinned;
@@ -23,6 +25,7 @@ class ExerciseNote {
   factory ExerciseNote.fromMap(Map<String, dynamic> map) => ExerciseNote(
     exerciseNoteId: map['exercise_note_id'] as String,
     userId: map['user_id'] as String,
+    createdByUserId: map['created_by_user_id'] as String?,
     exerciseId: map['custom_exercise_id'] as String,
     text: map['note_text'] as String,
     pinned: _toBool(map['pinned']),
@@ -33,6 +36,7 @@ class ExerciseNote {
   Map<String, dynamic> toMap() => {
     'exercise_note_id': exerciseNoteId,
     'user_id': userId,
+    'created_by_user_id': createdByUserId,
     'custom_exercise_id': exerciseId,
     'note_text': text,
     'pinned': pinned,

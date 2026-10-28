@@ -10,6 +10,7 @@ class SessionExerciseSet {
     required this.sessionExerciseId,
     required this.sessionId,
     required this.userId,
+    this.createdByUserId,
     required this.setNumber,
     required this.reps,
     this.exerciseId,
@@ -26,6 +27,7 @@ class SessionExerciseSet {
   final String sessionExerciseId;
   final String sessionId;
   final String userId;
+  final String? createdByUserId;
   final String? exerciseId;
   final String? variationId;
   final int setNumber;
@@ -70,6 +72,7 @@ class SessionExerciseSet {
         sessionExerciseId: map['session_exercise_id'] as String,
         sessionId: map['session_id'] as String,
         userId: map['user_id'] as String,
+        createdByUserId: map['created_by_user_id'] as String?,
         exerciseId: map['custom_exercise_id'] as String?,
         variationId: map['custom_variation_id'] as String?,
         setNumber: map['set_number'] as int,
@@ -87,6 +90,7 @@ class SessionExerciseSet {
     'session_exercise_id': sessionExerciseId,
     'session_id': sessionId,
     'user_id': userId,
+    'created_by_user_id': createdByUserId,
     'custom_exercise_id': exerciseId,
     'custom_variation_id': variationId,
     'set_number': setNumber,
@@ -128,6 +132,7 @@ class PastSetRow extends SessionExerciseSet {
     required super.sessionExerciseId,
     required super.sessionId,
     required super.userId,
+    super.createdByUserId,
     required super.setNumber,
     required super.reps,
     required this.sessionCreatedDate,
@@ -154,6 +159,7 @@ class PastSetRow extends SessionExerciseSet {
     sessionExerciseId: map['session_exercise_id'] as String,
     sessionId: map['session_id'] as String,
     userId: map['user_id'] as String,
+    createdByUserId: map['created_by_user_id'] as String?,
     exerciseId: map['custom_exercise_id'] as String?,
     variationId: map['custom_variation_id'] as String?,
     setNumber: map['set_number'] as int,

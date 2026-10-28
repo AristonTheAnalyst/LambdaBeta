@@ -30,6 +30,7 @@ class Goal {
   const Goal({
     required this.goalId,
     required this.userId,
+    this.createdByUserId,
     this.programId,
     this.blockId,
     this.programRunId,
@@ -47,6 +48,7 @@ class Goal {
 
   final String goalId;
   final String userId;
+  final String? createdByUserId;
 
   /// The program this goal belongs to. NULL = standalone (no program scope).
   final String? programId;
@@ -130,6 +132,7 @@ class Goal {
   factory Goal.fromMap(Map<String, dynamic> map) => Goal(
     goalId: map['goal_id'] as String,
     userId: map['user_id'] as String,
+    createdByUserId: map['created_by_user_id'] as String?,
     programId: map['program_id'] as String?,
     blockId: map['block_id'] as String?,
     programRunId: map['program_run_id'] as String?,
@@ -161,6 +164,7 @@ class Goal {
   Map<String, dynamic> toMap() => {
     'goal_id': goalId,
     'user_id': userId,
+    'created_by_user_id': createdByUserId,
     'program_id': programId,
     'block_id': blockId,
     'program_run_id': programRunId,

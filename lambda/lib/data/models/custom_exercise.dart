@@ -2,12 +2,14 @@ class CustomExercise {
   const CustomExercise({
     required this.exerciseId,
     required this.userId,
+    this.createdByUserId,
     required this.name,
     this.archivedDate,
   });
 
   final String exerciseId;
   final String userId;
+  final String? createdByUserId;
   final String name;
 
   /// NULL = active; a timestamp = archived (sortable, latest first).
@@ -28,6 +30,7 @@ class CustomExercise {
   factory CustomExercise.fromMap(Map<String, dynamic> map) => CustomExercise(
     exerciseId: map['custom_exercise_id'] as String,
     userId: map['user_id'] as String,
+    createdByUserId: map['created_by_user_id'] as String?,
     name: map['exercise_name'] as String,
     archivedDate: map['date_archived'] != null
         ? DateTime.tryParse(map['date_archived'] as String)
@@ -37,6 +40,7 @@ class CustomExercise {
   Map<String, dynamic> toMap() => {
     'custom_exercise_id': exerciseId,
     'user_id': userId,
+    'created_by_user_id': createdByUserId,
     'exercise_name': name,
     'date_archived': archivedDate?.toIso8601String(),
   };
