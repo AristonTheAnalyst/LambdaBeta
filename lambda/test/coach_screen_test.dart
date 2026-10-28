@@ -132,6 +132,16 @@ void main() {
     await tester.tap(find.text('Accept'));
     await tester.pumpAndSettle();
 
+    // The consent statement stands between the tap and the write (2026-10-29).
+    expect(
+      find.widgetWithText(GlassButton, 'Accept coaching'),
+      findsOneWidget,
+    );
+    expect(repo.accepted, isEmpty);
+
+    await tester.tap(find.widgetWithText(GlassButton, 'Accept coaching'));
+    await tester.pumpAndSettle();
+
     expect(repo.accepted, ['coach-1']);
   });
 

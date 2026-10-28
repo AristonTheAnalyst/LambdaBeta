@@ -555,9 +555,11 @@ class _ExercisesPanel extends StatelessWidget {
                                       color: AppColors.inkSecondary,
                                     ),
                                   ),
-                                if (ex.createdByUserId != null)
+                                if (ex.createdByUserId != null ||
+                                    ex.updatedByUserId != null)
                                   CoachCreatedMark(
                                     createdByUserId: ex.createdByUserId,
+                                    updatedByUserId: ex.updatedByUserId,
                                   ),
                               ],
                             ),
@@ -729,9 +731,11 @@ class _VariationsPanel extends StatelessWidget {
                                       color: AppColors.inkSecondary,
                                     ),
                                   ),
-                                if (v.createdByUserId != null)
+                                if (v.createdByUserId != null ||
+                                    v.updatedByUserId != null)
                                   CoachCreatedMark(
                                     createdByUserId: v.createdByUserId,
+                                    updatedByUserId: v.updatedByUserId,
                                   ),
                               ],
                             ),

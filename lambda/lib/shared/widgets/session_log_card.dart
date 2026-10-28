@@ -69,9 +69,12 @@ class SessionLogCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             _identityGrid(s),
-            if (s.createdByUserId != null) ...[
+            if (s.createdByUserId != null || s.updatedByUserId != null) ...[
               const SizedBox(height: AppSpacing.xs),
-              CoachCreatedMark(createdByUserId: s.createdByUserId),
+              CoachCreatedMark(
+                createdByUserId: s.createdByUserId,
+                updatedByUserId: s.updatedByUserId,
+              ),
             ],
             if (workout.sets.isNotEmpty) ...[
               const SizedBox(height: AppSpacing.md),

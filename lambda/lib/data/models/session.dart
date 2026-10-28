@@ -9,6 +9,7 @@ class Session {
     required this.sessionId,
     required this.userId,
     this.createdByUserId,
+    this.updatedByUserId,
     required this.createdDatetime,
     this.endDatetime,
     this.preNotes,
@@ -24,6 +25,7 @@ class Session {
   final String sessionId;
   final String userId;
   final String? createdByUserId;
+  final String? updatedByUserId;
   final String? preNotes;
   final String? postNotes;
   final DateTime createdDatetime;
@@ -45,6 +47,7 @@ class Session {
     sessionId: map['session_id'] as String,
     userId: map['user_id'] as String,
     createdByUserId: map['created_by_user_id'] as String?,
+    updatedByUserId: map['updated_by_user_id'] as String?,
     preNotes: map['pre_notes'] as String?,
     postNotes: map['post_notes'] as String?,
     createdDatetime: DateTime.parse(map['created_datetime'] as String),
@@ -63,6 +66,7 @@ class Session {
     'session_id': sessionId,
     'user_id': userId,
     'created_by_user_id': createdByUserId,
+    'updated_by_user_id': updatedByUserId,
     'pre_notes': preNotes,
     'post_notes': postNotes,
     'created_datetime': createdDatetime.toIso8601String(),

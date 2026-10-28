@@ -3,6 +3,7 @@ class ExerciseNote {
     required this.exerciseNoteId,
     required this.userId,
     this.createdByUserId,
+    this.updatedByUserId,
     required this.exerciseId,
     required this.text,
     required this.pinned,
@@ -13,6 +14,7 @@ class ExerciseNote {
   final String exerciseNoteId;
   final String userId;
   final String? createdByUserId;
+  final String? updatedByUserId;
   final String exerciseId;
   final String text;
   final bool pinned;
@@ -26,6 +28,7 @@ class ExerciseNote {
     exerciseNoteId: map['exercise_note_id'] as String,
     userId: map['user_id'] as String,
     createdByUserId: map['created_by_user_id'] as String?,
+    updatedByUserId: map['updated_by_user_id'] as String?,
     exerciseId: map['custom_exercise_id'] as String,
     text: map['note_text'] as String,
     pinned: _toBool(map['pinned']),
@@ -37,6 +40,7 @@ class ExerciseNote {
     'exercise_note_id': exerciseNoteId,
     'user_id': userId,
     'created_by_user_id': createdByUserId,
+    'updated_by_user_id': updatedByUserId,
     'custom_exercise_id': exerciseId,
     'note_text': text,
     'pinned': pinned,

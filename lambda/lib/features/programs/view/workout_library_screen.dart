@@ -285,9 +285,12 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-              if (w.createdByUserId != null) ...[
+              if (w.createdByUserId != null || w.updatedByUserId != null) ...[
                 const SizedBox(height: 2),
-                CoachCreatedMark(createdByUserId: w.createdByUserId),
+                CoachCreatedMark(
+                  createdByUserId: w.createdByUserId,
+                  updatedByUserId: w.updatedByUserId,
+                ),
               ],
             ],
           ),

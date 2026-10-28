@@ -18,17 +18,29 @@ import '../../core/styles/app_text_styles.dart';
 ///
 /// One line, quiet ink — this is a fact about the row, not a control.
 class CoachCreatedMark extends StatelessWidget {
-  const CoachCreatedMark({super.key, required this.createdByUserId});
+  const CoachCreatedMark({
+    super.key,
+    this.createdByUserId,
+    this.updatedByUserId,
+  });
 
+  /// Who created the row. NULL = the owner.
   final String? createdByUserId;
+
+  /// Who last edited it. Shown only when the creation was not the coach's —
+  /// a row the coach added stays “Added by your coach” even if they later
+  /// edited it (2026-10-29).
+  final String? updatedByUserId;
 
   @override
   Widget build(BuildContext context) {
-    final author = createdByUserId;
     final me = Supabase.instance.client.auth.currentUser?.id;
-    if (author == null || author == me) return const SizedBox.shrink();
+    final added = createdByUserId != null && createdByUserId != me;
+    final edited =
+        !added && updatedByUserId != null && updatedByUserId != me;
+    if (!added && !edited) return const SizedBox.shrink();
     return Text(
-      'Added by your coach',
+      added ? 'Added by your coach' : 'Edited by your coach',
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
       style: AppFonts.ui(

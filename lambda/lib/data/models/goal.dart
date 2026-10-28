@@ -31,6 +31,7 @@ class Goal {
     required this.goalId,
     required this.userId,
     this.createdByUserId,
+    this.updatedByUserId,
     this.programId,
     this.blockId,
     this.programRunId,
@@ -49,6 +50,7 @@ class Goal {
   final String goalId;
   final String userId;
   final String? createdByUserId;
+  final String? updatedByUserId;
 
   /// The program this goal belongs to. NULL = standalone (no program scope).
   final String? programId;
@@ -133,6 +135,7 @@ class Goal {
     goalId: map['goal_id'] as String,
     userId: map['user_id'] as String,
     createdByUserId: map['created_by_user_id'] as String?,
+    updatedByUserId: map['updated_by_user_id'] as String?,
     programId: map['program_id'] as String?,
     blockId: map['block_id'] as String?,
     programRunId: map['program_run_id'] as String?,
@@ -165,6 +168,7 @@ class Goal {
     'goal_id': goalId,
     'user_id': userId,
     'created_by_user_id': createdByUserId,
+    'updated_by_user_id': updatedByUserId,
     'program_id': programId,
     'block_id': blockId,
     'program_run_id': programRunId,

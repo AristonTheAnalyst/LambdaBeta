@@ -579,11 +579,12 @@ class _NoteRowState extends State<_NoteRow> {
             color: AppColors.inkSecondary,
           ),
         ),
-        if (note.createdByUserId != null)
+        if (note.createdByUserId != null || note.updatedByUserId != null)
           Padding(
             padding: const EdgeInsets.only(top: 2),
             child: CoachCreatedMark(
               createdByUserId: note.createdByUserId,
+              updatedByUserId: note.updatedByUserId,
             ),
           ),
       ],

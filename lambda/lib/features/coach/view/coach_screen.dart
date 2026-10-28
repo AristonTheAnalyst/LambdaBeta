@@ -14,6 +14,8 @@ import '../../../data/repositories/coach_repository.dart';
 import '../../../shared/widgets/app_card.dart';
 import '../../../shared/widgets/container_styles.dart';
 import '../../../shared/widgets/glass_button.dart';
+import 'coach_activity_sheet.dart';
+import 'coach_permissions_sheet.dart';
 import '../../../shared/widgets/header_icon_button.dart';
 import '../../../shared/widgets/lambda_input.dart';
 import '../../../shared/widgets/page_header.dart';
@@ -84,7 +86,15 @@ class _CoachScreenState extends State<CoachScreen> {
     );
   }
 
+  /// The athlete's accept carries the consent statement (2026-10-29): the
+  /// permission sheet is the accept step, and only its Accept writes.
   Future<void> _accept(Athlete coach) async {
+    final allowed = await showCoachPermissionsSheet(
+      context,
+      coachName: coach.displayName,
+      accepting: true,
+    );
+    if (!allowed || !mounted) return;
     final ok = await _vm.accept(coach);
     if (!mounted || ok) return;
     _toast(_vm.state.value.error ?? 'Could not accept that invitation.');
@@ -198,6 +208,30 @@ class _CoachScreenState extends State<CoachScreen> {
                     AppSpacing.lg + ScrollShrinkNavBar.contentInset(context),
                   ),
                   children: [
+                    // The consent statement stays reachable after the grant
+                    // (2026-10-29).
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: AppSpacing.lg),
+                      child: Wrap(
+                        spacing: AppSpacing.sm,
+                        runSpacing: AppSpacing.sm,
+                        children: [
+                          GlassButton(
+                            label: 'What coaching allows',
+                            icon: Icons.info_outline,
+                            compact: true,
+                            onPressed: () =>
+                                showCoachPermissionsSheet(context),
+                          ),
+                          GlassButton(
+                            label: 'From your coach',
+                            icon: Icons.history,
+                            compact: true,
+                            onPressed: () => showCoachActivitySheet(context),
+                          ),
+                        ],
+                      ),
+                    ),
                     if (state.isLoading && state.isEmpty)
                       Padding(
                         padding: const EdgeInsets.only(top: AppSpacing.xxl),

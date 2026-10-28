@@ -6,6 +6,7 @@ class PlannedSession {
     required this.sessionId,
     required this.userId,
     this.createdByUserId,
+    this.updatedByUserId,
     required this.name,
     this.notes,
     this.archivedDate,
@@ -17,6 +18,7 @@ class PlannedSession {
   final String sessionId;
   final String userId;
   final String? createdByUserId;
+  final String? updatedByUserId;
   final String name;
   final String? notes;
 
@@ -51,6 +53,7 @@ class PlannedSession {
     sessionId: map['session_id'] as String,
     userId: map['user_id'] as String,
     createdByUserId: map['created_by_user_id'] as String?,
+    updatedByUserId: map['updated_by_user_id'] as String?,
     name: map['name'] as String,
     notes: map['notes'] as String?,
     archivedDate: map['date_archived'] != null
@@ -67,6 +70,7 @@ class PlannedSession {
     'session_id': sessionId,
     'user_id': userId,
     'created_by_user_id': createdByUserId,
+    'updated_by_user_id': updatedByUserId,
     'name': name,
     'notes': notes,
     'date_archived': archivedDate?.toIso8601String(),

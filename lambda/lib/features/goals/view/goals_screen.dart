@@ -869,11 +869,12 @@ class _GoalsScreenState extends State<GoalsScreen> {
             targetDate: goal.targetDate,
             outcome: state.outcomes[goal.goalId],
           ),
-          if (goal.createdByUserId != null)
+          if (goal.createdByUserId != null || goal.updatedByUserId != null)
             Padding(
               padding: const EdgeInsets.only(top: 2),
               child: CoachCreatedMark(
                 createdByUserId: goal.createdByUserId,
+                updatedByUserId: goal.updatedByUserId,
               ),
             ),
         ],
