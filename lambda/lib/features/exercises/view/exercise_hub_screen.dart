@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../../core/styles/app_colors.dart';
+import '../../../data/models/custom_exercise.dart';
 import '../../../../shared/widgets/info_button.dart';
 import '../../../../shared/widgets/page_header.dart';
 import '../../../../shared/widgets/slide_tab_bar.dart';
@@ -27,6 +28,7 @@ class ExerciseHubScreen extends StatefulWidget {
     this.userId,
     this.readOnly = false,
     this.canDelete = true,
+    this.openExercise,
     this.showReviews = true,
   });
 
@@ -40,6 +42,10 @@ class ExerciseHubScreen extends StatefulWidget {
   /// archive and delete affordances, and the taps that would open an editor
   /// are spent. Coach mode's mount, never the app's own Library.
   final bool readOnly;
+
+  /// What an exercise tap opens. Null pushes the app's own route; coach mode
+  /// passes a coach-scoped detail (2026-10-28).
+  final void Function(CustomExercise exercise)? openExercise;
 
   /// Whether the tabs offer deletion. Coach mode passes false while keeping
   /// [readOnly] false, so the athlete's library can be created in and edited
@@ -139,6 +145,7 @@ class _ExerciseHubScreenState extends State<ExerciseHubScreen> {
       userId: widget.userId,
       readOnly: widget.readOnly,
       canDelete: widget.canDelete,
+      openExercise: widget.openExercise,
     ),
     WorkoutLibraryScreen(
       showHeader: false,

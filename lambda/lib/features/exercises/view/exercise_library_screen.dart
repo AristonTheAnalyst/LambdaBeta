@@ -53,6 +53,7 @@ class ExerciseLibraryScreen extends StatefulWidget {
     this.userId,
     this.readOnly = false,
     this.canDelete = true,
+    this.openExercise,
   });
 
   /// Whose library to read. Null = the signed-in user (the normal mount); a
@@ -66,6 +67,12 @@ class ExerciseLibraryScreen extends StatefulWidget {
   /// Whether the edit sheet offers Delete. Coach mode creates and renames as
   /// the athlete but never removes (2026-10-28).
   final bool canDelete;
+
+  /// What an exercise tap opens. Null pushes the app's own
+  /// `/exercises/:id` route; coach mode passes a callback that pushes the
+  /// exercise detail scoped to the athlete, so a tap never leaves coach mode
+  /// into the coach's own library (2026-10-28).
+  final void Function(CustomExercise exercise)? openExercise;
 
   /// When embedded in a hub tab, render one panel only — the hub owns the
   /// header and its own tab bar, so the nested header/tabs are hidden.
@@ -292,7 +299,9 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
             searchController: _exSearchController,
             onAdd: widget.readOnly ? null : _openCreateExercise,
             onShowArchived: widget.readOnly ? null : _openArchivedExercises,
-            onEdit: widget.readOnly ? null : _openEditExercise,
+            onEdit: widget.readOnly
+                ? null
+                : (widget.openExercise ?? _openEditExercise),
             onPrev: _viewModel.prevExPage,
             onNext: _viewModel.nextExPage,
             onSort: _viewModel.setExSort,

@@ -8,6 +8,8 @@ import '../../../core/styles/app_spacing.dart';
 import '../../../core/styles/app_text_styles.dart';
 import '../../../shared/widgets/header_icon_button.dart';
 import '../../../shared/widgets/scroll_shrink_nav_bar.dart';
+import '../../../data/models/custom_exercise.dart';
+import '../../exercises/view/exercise_detail_screen.dart';
 import '../../exercises/view/exercise_hub_screen.dart';
 import '../../logs/view/session_detail_screen.dart';
 import '../../session/view/session_screen.dart';
@@ -133,6 +135,27 @@ class _CoachModeScreenState extends State<CoachModeScreen> {
     });
   }
 
+  /// An exercise from her library: the detail scoped to her — her history,
+  /// notes and PRs — with rename but no delete. Pushed over the shell like
+  /// the workout editor, so it never escapes into the coach's own library
+  /// (2026-10-28).
+  void _openExercise(CustomExercise exercise) {
+    final identity = _identity;
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => CoachModeScope(
+          identity: identity,
+          child: ExerciseDetailScreen(
+            exerciseId: exercise.exerciseId,
+            exerciseName: exercise.name,
+            userId: widget.athleteId,
+            canDelete: false,
+          ),
+        ),
+      ),
+    );
+  }
+
   /// A record from the athlete's logs: the viewer, read-only, wearing the
   /// coach-mode two-tab bar. Its bar taps return here and pick the tab.
   void _openRecord(String sessionId) {
@@ -204,6 +227,7 @@ class _CoachModeScreenState extends State<CoachModeScreen> {
                       readOnly: false,
                       canDelete: false,
                       showReviews: true,
+                      openExercise: _openExercise,
                     )
                   : const SizedBox.shrink(),
             ],
@@ -241,14 +265,6 @@ class CoachModeIdentity extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            ExcludeSemantics(
-              child: Icon(
-                Icons.supervisor_account_outlined,
-                size: 22,
-                color: AppColors.primary,
-              ),
-            ),
-            const SizedBox(width: AppSpacing.sm),
             Flexible(
               child: Column(
                 mainAxisSize: MainAxisSize.min,

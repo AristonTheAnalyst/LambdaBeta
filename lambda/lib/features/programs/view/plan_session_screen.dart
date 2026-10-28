@@ -91,6 +91,7 @@ Future<bool> confirmEditWhileRunning(BuildContext context) async {
 class PlanSessionScreen extends StatefulWidget {
   const PlanSessionScreen({
     this.canDelete = true,
+    this.ownsViewModel = false,
     super.key,
     required this.viewModel,
     this.workout,
@@ -102,6 +103,15 @@ class PlanSessionScreen extends StatefulWidget {
 
   final WorkoutEditorViewModel viewModel;
   final PlannedSession? workout; // null = new workout
+
+  /// Whether this screen created the VM it was handed, and so disposes it.
+  /// The library's create/edit path passes true (2026-10-28): it used to
+  /// dispose the VM as soon as the pop future resolved — while the editor's
+  /// own `dispose` still had to commit its name and notes, which then threw
+  /// inside the navigator's locked section and left every later push failing
+  /// (`!_debugLocked`). Tests and the review flow own their VMs and pass
+  /// false.
+  final bool ownsViewModel;
 
   /// Whether the editor offers removal. Coach mode sets it false
   /// (2026-10-28): plan on the athlete's behalf, never prune her library. The
@@ -249,6 +259,10 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
     // updates that rebuild widgets referencing these controllers.
     widget.viewModel.commitWorkoutName();
     widget.viewModel.commitWorkoutNotes();
+    // Only an owned VM is disposed here, and only after its commits — the
+    // library hands the VM over rather than disposing it out from under this
+    // dispose (2026-10-28).
+    if (widget.ownsViewModel) widget.viewModel.dispose();
     _nameCtrl.dispose();
     _notesCtrl.dispose();
     _nameFocus.dispose();

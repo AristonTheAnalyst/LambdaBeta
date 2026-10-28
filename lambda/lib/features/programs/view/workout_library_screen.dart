@@ -119,10 +119,12 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
           viewModel: vm,
           standalone: true,
           canDelete: widget.canDelete,
+          // The editor disposes it, after its own dispose has committed the
+          // name and notes (2026-10-28).
+          ownsViewModel: true,
         ),
       ),
     );
-    vm.dispose();
     await _load();
   }
 
@@ -134,10 +136,10 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
           viewModel: vm,
           standaloneWorkoutId: w.sessionId,
           canDelete: widget.canDelete,
+          ownsViewModel: true,
         ),
       ),
     );
-    vm.dispose();
     await _load();
   }
 

@@ -37,17 +37,26 @@ class ExerciseDetailScreen extends StatefulWidget {
     super.key,
     required this.exerciseId,
     this.exerciseName,
+    this.userId,
+    this.canDelete = true,
   });
 
   final String exerciseId;
   final String? exerciseName;
+
+  /// Whose exercise this is; null = the signed-in user. Coach mode passes the
+  /// athlete so the history, notes and PRs are hers (2026-10-28).
+  final String? userId;
+
+  /// Whether the edit menu offers Delete/archive. Coach mode renames only.
+  final bool canDelete;
 
   @override
   State<ExerciseDetailScreen> createState() => _ExerciseDetailScreenState();
 }
 
 class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
-  final _viewModel = ExerciseViewModel();
+  late final ExerciseViewModel _viewModel;
   final _noteRepo = ExerciseNoteRepository();
   String? _name;
   List<PastSetRow> _sets = const [];
@@ -73,11 +82,13 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
   /// All-time note count for this exercise (knowledge isn't windowed).
   int _notesTotal = 0;
 
-  String get _userId => Supabase.instance.client.auth.currentUser!.id;
+  String get _userId =>
+      widget.userId ?? Supabase.instance.client.auth.currentUser!.id;
 
   @override
   void initState() {
     super.initState();
+    _viewModel = ExerciseViewModel(userId: widget.userId);
     _name = widget.exerciseName;
     _load();
   }
@@ -276,8 +287,9 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
                 ),
               ),
             ),
-            InkWell(
-              onTap: () => Navigator.of(ctx).pop('delete'),
+            if (widget.canDelete)
+              InkWell(
+                onTap: () => Navigator.of(ctx).pop('delete'),
               child: Padding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: AppSpacing.lg,
