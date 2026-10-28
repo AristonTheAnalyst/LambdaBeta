@@ -188,35 +188,52 @@ class CoachModeIdentity extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // The right half holds one block now — the way out moved to the leading
-    // edge — so the identity sits in the middle of its half (2026-10-28).
+    // The right half holds one block — the way out moved to the leading
+    // edge — so the identity sits in the middle of its half: the role's glyph
+    // beside `COACHING` over the name (2026-10-28). The glyph is decorative;
+    // the words are what a screen reader reads.
     return Center(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-        child: Column(
+        child: Row(
           mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Text(
-              'COACHING',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: AppFonts.mono(
-                fontSize: AppTextStyles.xs,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 0.8,
-                color: AppColors.inkSecondary,
+            ExcludeSemantics(
+              child: Icon(
+                Icons.supervisor_account_outlined,
+                size: 22,
+                color: AppColors.primary,
               ),
             ),
-            const SizedBox(height: 2),
-            Text(
-              name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: AppFonts.ui(
-                fontSize: AppTextStyles.sm,
-                fontWeight: FontWeight.w600,
-                color: AppColors.primary,
+            const SizedBox(width: AppSpacing.sm),
+            Flexible(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'COACHING',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppFonts.mono(
+                      fontSize: AppTextStyles.xs,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.8,
+                      color: AppColors.inkSecondary,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppFonts.ui(
+                      fontSize: AppTextStyles.sm,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                ],
               ),
             ),
           ],

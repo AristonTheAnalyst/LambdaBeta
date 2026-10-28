@@ -58,6 +58,7 @@ class CoachIconsScreen extends StatelessWidget {
                         icon: Icons.supervisor_account_outlined,
                         name: 'supervisor_account_outlined',
                         reads: 'One person overseeing another: coach + athlete.',
+                        inUse: true,
                       ),
                       _IconRowData(
                         icon: Icons.assignment_ind_outlined,
