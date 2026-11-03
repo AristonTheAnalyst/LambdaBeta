@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
@@ -82,7 +83,7 @@ class ReviewTickRow extends StatelessWidget {
                           target,
                           style: AppFonts.mono(
                             fontSize: AppTextStyles.xs,
-                            color: AppColors.muted,
+                            color: AppColors.inkSecondary,
                           ),
                         ),
                       ],
@@ -95,7 +96,7 @@ class ReviewTickRow extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: AppFonts.ui(
                         fontSize: AppTextStyles.xs,
-                        color: AppColors.muted,
+                        color: AppColors.inkSecondary,
                       ),
                     ),
                 ],
@@ -105,7 +106,7 @@ class ReviewTickRow extends StatelessWidget {
             // ticked, nothing on an unticked row.
             if (ticked) ...[
               const SizedBox(width: 8),
-              Icon(Icons.check_circle, size: 14, color: AppColors.success),
+              Icon(LucideIcons.circleCheck, size: 14, color: AppColors.success),
             ],
           ],
         ),
@@ -125,7 +126,8 @@ class ReviewSectionLabel extends StatelessWidget {
     text,
     style: AppFonts.mono(
       fontSize: AppTextStyles.xs,
-      color: AppColors.muted,
+      fontWeight: FontWeight.w600,
+      color: AppColors.primary,
       letterSpacing: 0.8,
     ),
   );

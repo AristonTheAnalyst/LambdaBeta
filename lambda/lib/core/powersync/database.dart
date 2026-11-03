@@ -28,34 +28,36 @@ const _pkColumns = {
   'dim_program': 'program_id',
   'fact_program_run': 'program_run_id',
   'fact_program_review': 'review_id',
+  'fact_name_change': 'name_change_id',
   'dim_program_block': 'block_id',
-  'dim_lesson': 'lesson_id',
+  'dim_exercise_note': 'exercise_note_id',
   'dim_planned_session': 'session_id',
   'dim_planned_session_exercise_set': 'planned_set_id',
   'dim_planned_session_exercise': 'planned_exercise_id',
   'dim_planned_session_program': 'planned_session_program_id',
   'dim_pr_view_setting': 'pr_view_setting_id',
   'fact_goal': 'goal_id',
+  'fact_goal_target': 'goal_target_id',
+  'dim_friend_code': 'user_id',
+  'fact_coach_assignment': 'assignment_id',
+  'fact_coach_feedback': 'feedback_id',
 };
 
-// coaching_relationship is the one remaining table with no single-column PK —
-// its real Postgres primary key is the composite pair below (there's no 'id'
-// column server-side at all). PUT upserts on the pair instead of a pkCol;
-// PATCH needs the pair's actual values, which aren't in a PATCH's opData
-// (only changed columns are), so those get looked up locally by PowerSync's
-// internal id first.
+// The tables with no single-column PK — their real Postgres primary key is
+// the composite pair below (there's no 'id' column server-side at all). PUT
+// upserts on the pair instead of a pkCol; PATCH needs the pair's actual
+// values, which aren't in a PATCH's opData (only changed columns are), so
+// those get looked up locally by PowerSync's internal id first.
 const _compositeKeyTables = {
   'coaching_relationship': ['coach_user_id', 'athlete_user_id'],
+  'friend_relationship': ['user_id', 'friend_user_id'],
 };
 
 // Postgres integer[] columns are mirrored locally as Column.text (written as
 // JSON-encoded strings, same as how they arrive via download sync). Undo that
 // encoding on the way back up, or PostgREST receives a string instead of an
 // array.
-const _arrayColumns = {
-  'reps',
-  'target_reps',
-};
+const _arrayColumns = {'reps', 'target_reps'};
 
 Map<String, dynamic> _decodeArrayColumns(Map<String, dynamic> data) {
   final result = Map<String, dynamic>.of(data);
@@ -74,14 +76,14 @@ final _fatalCodes = [
   RegExp(r'^22...$'), // data exception
   RegExp(r'^23502$'), // NOT NULL violation (permanent)
   RegExp(r'^23503$'), // FK violation (permanent — dims are archive-only, so a
-                      // violating fact ref is unrecoverable data; quarantining
-                      // it keeps the checkpoint from stalling on it forever)
+  // violating fact ref is unrecoverable data; quarantining
+  // it keeps the checkpoint from stalling on it forever)
   RegExp(r'^23505$'), // unique violation (permanent)
   RegExp(r'^23514$'), // check violation (permanent)
   RegExp(r'^42501$'), // insufficient privilege / RLS
   RegExp(r'^PGRST205$'), // table not found in schema cache (transient but
-                         // unrecoverable — the row won't change, and retrying
-                         // the same op keeps failing the same way)
+  // unrecoverable — the row won't change, and retrying
+  // the same op keeps failing the same way)
 ];
 
 class SupabaseConnector extends PowerSyncBackendConnector {
@@ -149,8 +151,10 @@ class SupabaseConnector extends PowerSyncBackendConnector {
           }
         } else if (op.op == UpdateType.patch) {
           if (compositeKey != null) {
-            final localRows = await database
-                .getAll('SELECT * FROM ${op.table} WHERE id = ?', [op.id]);
+            final localRows = await database.getAll(
+              'SELECT * FROM ${op.table} WHERE id = ?',
+              [op.id],
+            );
             if (localRows.isEmpty) continue;
             final patchData = _decodeArrayColumns(op.opData!);
             patchData.remove('id');
@@ -160,12 +164,16 @@ class SupabaseConnector extends PowerSyncBackendConnector {
             }
             await query;
           } else {
-            await table.update(_decodeArrayColumns(op.opData!)).eq(pkCol, op.id);
+            await table
+                .update(_decodeArrayColumns(op.opData!))
+                .eq(pkCol, op.id);
           }
         } else if (op.op == UpdateType.delete) {
           if (compositeKey != null) {
-            final localRows = await database
-                .getAll('SELECT * FROM ${op.table} WHERE id = ?', [op.id]);
+            final localRows = await database.getAll(
+              'SELECT * FROM ${op.table} WHERE id = ?',
+              [op.id],
+            );
             if (localRows.isEmpty) continue;
             var query = table.delete();
             for (final col in compositeKey) {
@@ -231,15 +239,14 @@ PowerSyncDatabase get db =>
 /// integration harness starts (it swaps in the first database of its
 /// process).
 ///
-/// Two callers, one mechanism. Integration tests drive the REAL repositories
+/// One caller, one mechanism. Integration tests drive the REAL repositories
 /// against a throwaway PowerSync database with the real client schema
 /// (`openDatabase` is never called there, and cannot be: it wants a signed-in
-/// Supabase session and the device's app container). The dev flow lab swaps in
-/// a scratch database for the length of a sandbox session and restores the
-/// app's own on the way out.
+/// Supabase session and the device's app container). The swap is restored on
+/// the way out.
 ///
 /// Repositories read `db` per call, so a swap takes effect for any repo
-/// already constructed — with one exception, [LessonRepository], which
+/// already constructed — with one exception, [ExerciseNoteRepository], which
 /// captures the database it was given at construction and therefore only
 /// follows a swap made before it exists.
 PowerSyncDatabase? swapDatabase(PowerSyncDatabase database) {
@@ -272,19 +279,14 @@ void resetForSignOut() {
 ///
 /// Prefer [safeWriteTransaction] for multi-statement work that must be atomic.
 Future<void> safeExec(String sql, [List<Object?> params = const []]) async {
-  await db
-      .execute(sql, params)
-      .timeout(Duration(seconds: _execTimeoutSeconds));
+  await db.execute(sql, params).timeout(Duration(seconds: _execTimeoutSeconds));
 }
 
 /// Transactional wrapper — all statements run atomically or not at all.
 /// The callback receives the database transaction; prefer this over multiple
 /// standalone [safeExec] calls when the writes must be atomic.
-Future<void> safeWriteTransaction(
-    Future<void> Function(dynamic tx) fn) async {
-  await db
-      .writeTransaction(fn)
-      .timeout(Duration(seconds: _execTimeoutSeconds));
+Future<void> safeWriteTransaction(Future<void> Function(dynamic tx) fn) async {
+  await db.writeTransaction(fn).timeout(Duration(seconds: _execTimeoutSeconds));
 }
 
 /// How long a single PowerSync write may take before the helper gives up.
@@ -331,12 +333,10 @@ Future<void> openDatabase() async {
   // on upload and block the checkpoint from applying, stalling all sync.
   try {
     await db.writeTransaction((tx) async {
-      // `coaching_relationship` was historically local-only (missing from the
-      // sync stream) — any queued uploads for it would fail with a 404 on the
-      // PowerSync server and stall the checkpoint.
-      await tx.execute(
-        "DELETE FROM ps_crud WHERE table_name = 'coaching_relationship'",
-      );
+      // `coaching_relationship` is no longer purged (2026-10-26): it is in the
+      // coaching_data stream and the coach's own row is writable under its
+      // RLS, so a queued coaching write is a real upload rather than a 404
+      // that would stall the checkpoint.
       // Tables renamed in the session-model redesign (2026-08-13) — queued
       // entries under the old names can never upload.
       for (final old in [
@@ -351,6 +351,10 @@ Future<void> openDatabase() async {
         'dim_program_goal',
         'fact_rest',
         'fact_pr',
+        // The exercise-note rename (2026-10-28): `dim_lesson` became
+        // `dim_exercise_note`, so a queued write under the old name can
+        // never upload and would stall the checkpoint.
+        'dim_lesson',
         // Schema redesign v2 (2026-08-24) — dropped/restructured tables.
         'fact_session_set',
         'dim_planned_session_set',
@@ -360,10 +364,7 @@ Future<void> openDatabase() async {
         // upload against a table the schema no longer has.
         'fact_program_revision',
       ]) {
-        await tx.execute(
-          'DELETE FROM ps_crud WHERE table_name = ?',
-          [old],
-        );
+        await tx.execute('DELETE FROM ps_crud WHERE table_name = ?', [old]);
       }
     });
   } catch (_) {

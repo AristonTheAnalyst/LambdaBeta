@@ -82,36 +82,36 @@ class ProgramRun {
   /// of nothing afterwards, which is exactly the kind of stale claim that made
   /// runs unaddressable in the first place.
   ProgramRun asPaused() => ProgramRun(
-        programRunId: programRunId,
-        programId: programId,
-        userId: userId,
-        startedDate: startedDate,
-        isCurrent: false,
-        endedDate: null,
-        blockId: blockId,
-        progressionMode: progressionMode,
-        targetSessions: targetSessions,
-        targetWeeks: targetWeeks,
-        endDate: endDate,
-      );
+    programRunId: programRunId,
+    programId: programId,
+    userId: userId,
+    startedDate: startedDate,
+    isCurrent: false,
+    endedDate: null,
+    blockId: blockId,
+    progressionMode: progressionMode,
+    targetSessions: targetSessions,
+    targetWeeks: targetWeeks,
+    endDate: endDate,
+  );
 
   factory ProgramRun.fromMap(Map<String, dynamic> map) => ProgramRun(
-        programRunId: map['program_run_id'] as String,
-        programId: map['program_id'] as String,
-        userId: map['user_id'] as String,
-        startedDate: DateTime.parse(map['started_date'] as String),
-        endedDate: map['ended_date'] != null
-            ? DateTime.parse(map['ended_date'] as String)
-            : null,
-        isCurrent: _toBool(map['is_current']),
-        targetSessions: _toInt(map['target_sessions']),
-        targetWeeks: _toInt(map['target_weeks']),
-        endDate: map['end_date'] != null
-            ? DateTime.parse(map['end_date'] as String)
-            : null,
-        progressionMode: map['progression_mode'] as String?,
-        blockId: map['block_id'] as String?,
-      );
+    programRunId: map['program_run_id'] as String,
+    programId: map['program_id'] as String,
+    userId: map['user_id'] as String,
+    startedDate: DateTime.parse(map['started_date'] as String),
+    endedDate: map['ended_date'] != null
+        ? DateTime.parse(map['ended_date'] as String)
+        : null,
+    isCurrent: _toBool(map['is_current']),
+    targetSessions: _toInt(map['target_sessions']),
+    targetWeeks: _toInt(map['target_weeks']),
+    endDate: map['end_date'] != null
+        ? DateTime.parse(map['end_date'] as String)
+        : null,
+    progressionMode: map['progression_mode'] as String?,
+    blockId: map['block_id'] as String?,
+  );
 
   static bool _toBool(dynamic v) {
     if (v is bool) return v;
@@ -131,16 +131,16 @@ class ProgramRun {
   // the same arithmetic with the block in view, and it is the only spelling.
 
   Map<String, dynamic> toMap() => {
-        'program_run_id': programRunId,
-        'program_id': programId,
-        'user_id': userId,
-        'started_date': startedDate.toIso8601String(),
-        'ended_date': endedDate?.toIso8601String(),
-        'is_current': isCurrent,
-        'target_sessions': targetSessions,
-        'target_weeks': targetWeeks,
-        'end_date': endDate?.toIso8601String(),
-        'progression_mode': progressionMode,
-        'block_id': blockId,
-      };
+    'program_run_id': programRunId,
+    'program_id': programId,
+    'user_id': userId,
+    'started_date': startedDate.toIso8601String(),
+    'ended_date': endedDate?.toIso8601String(),
+    'is_current': isCurrent,
+    'target_sessions': targetSessions,
+    'target_weeks': targetWeeks,
+    'end_date': endDate?.toIso8601String(),
+    'progression_mode': progressionMode,
+    'block_id': blockId,
+  };
 }

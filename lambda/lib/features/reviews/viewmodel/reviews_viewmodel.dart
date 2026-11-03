@@ -8,7 +8,7 @@ import '../../../data/repositories/planned_session_repository.dart';
 import '../../../data/repositories/program_history_repository.dart';
 import '../../../data/repositories/program_repository.dart';
 import '../../../shared/widgets/exercise_target_picker.dart'
-    show goalTargetValue;
+    show goalRequirementsValue;
 import '../../goals/view/goal_row.dart' show goalExerciseNameFor;
 import '../../programs/viewmodel/program_history_viewmodel.dart'
     show StartedReview;
@@ -91,9 +91,9 @@ class ReviewableGoal {
   /// back to the text captured when the goal was written.
   final String exerciseName;
 
-  /// The target alone ("100 kg × 5"), or empty when the goal recorded neither
-  /// number. The row draws it as its own element rather than gluing it to the
-  /// name with a dash (2026-10-10).
+  /// The target alone ("5 × 100 kg"), or empty when the goal recorded
+  /// neither number. The row draws it as its own element rather than gluing
+  /// it to the name with a dash (2026-10-10).
   final String target;
 
   /// The numbers behind [target], kept as numbers so a caller can order by
@@ -126,10 +126,7 @@ Future<List<ReviewableGoal>> fetchReviewableGoals({
       ReviewableGoal(
         goalId: option.goal.goalId,
         exerciseName: goalExerciseNameFor(option.goal, details),
-        target: goalTargetValue(
-          option.goal.targetWeight,
-          option.goal.targetReps,
-        ),
+        target: goalRequirementsValue(option.goal.requirements),
         targetWeight: option.goal.targetWeight,
         targetReps: option.goal.targetReps,
       ),
@@ -219,7 +216,10 @@ class ReviewsState {
   /// half, the order the repository sorted them in.
   final List<ReviewListEntry> entries;
 
-  List<ReviewListEntry> get open => [for (final e in entries) if (e.isOpen) e];
+  List<ReviewListEntry> get open => [
+    for (final e in entries)
+      if (e.isOpen) e,
+  ];
 
   List<ReviewListEntry> get completed => [
     for (final e in entries)
@@ -250,19 +250,13 @@ class ReviewsViewModel {
   ReviewsViewModel({
     ProgramHistoryRepository? historyRepository,
     PlannedSessionRepository? plannedRepository,
-    ProgramRepository? programRepository,
-    ExerciseRepository? exerciseRepository,
     String? userId,
   }) : _historyRepo = historyRepository ?? ProgramHistoryRepository(),
        _plannedRepo = plannedRepository ?? PlannedSessionRepository(),
-       _programRepo = programRepository ?? ProgramRepository(),
-       _exerciseRepo = exerciseRepository ?? ExerciseRepository(),
        _userIdOverride = userId;
 
   final ProgramHistoryRepository _historyRepo;
   final PlannedSessionRepository _plannedRepo;
-  final ProgramRepository _programRepo;
-  final ExerciseRepository _exerciseRepo;
   final String? _userIdOverride;
 
   final state = ValueNotifier(const ReviewsState());
@@ -302,7 +296,9 @@ class ReviewsViewModel {
           var links = linksByProgram[programId];
           if (links == null) {
             links = [
-              for (final link in await _plannedRepo.fetchProgramLinks(programId))
+              for (final link in await _plannedRepo.fetchProgramLinks(
+                programId,
+              ))
                 (sessionId: link.plannedSessionId, blockId: link.blockId),
             ];
             linksByProgram[programId] = links;
@@ -340,28 +336,17 @@ class ReviewsViewModel {
     }
   }
 
-  /// Everything the picker can offer, in its recency order.
-  Future<List<ReviewableWorkout>> reviewableWorkouts() =>
-      fetchReviewableWorkouts(
-        userId: _userId,
-        plannedRepository: _plannedRepo,
-      );
-
-  /// The goals half of the picker, in library order.
-  Future<List<ReviewableGoal>> reviewableGoals() => fetchReviewableGoals(
-    userId: _userId,
-    programRepository: _programRepo,
-    exerciseRepository: _exerciseRepo,
-  );
-
   /// Starts a standalone review **now**: writes the row, records "as found",
   /// and returns what the ceremony needs to open on it.
+  ///
+  /// The pass begins with an empty scope (2026-10-27): its landing is where
+  /// the workouts and goals are picked, so nothing is handed in here but the
+  /// name. A workout added there amends the baseline as it lands
+  /// ([ProgramHistoryRepository.setReviewScope]).
   ///
   /// The row is written before the ceremony opens, because the pass's whole job
   /// is to end in a snapshot on it: a review that existed only in the UI until
   /// Finish would lose everything the user did if the app died mid-pass.
-  /// [goalIds] travels with the set — a review contains workouts **and** goals,
-  /// and both are stored at the start so a resume opens the same pass.
   ///
   /// Null when the write failed; the state carries the error.
   Future<StartedReview?> startReview({
@@ -430,6 +415,28 @@ class ReviewsViewModel {
     }
   }
 
+  /// Deletes a completed record — the record half of [cancelReview].
+  ///
+  /// Same contract: the row is deleted outright, the list is re-read, and a
+  /// false return means the write failed and the state carries the sentence.
+  /// The repository's guard is the opposite one, so a stale completed card can
+  /// never delete an open pass: the DELETE no-ops, and the reload puts the row
+  /// back under IN PROGRESS where it now belongs.
+  Future<bool> deleteCompletedReview(String reviewId) async {
+    try {
+      await _historyRepo.deleteCompletedReview(reviewId);
+      await load();
+      return true;
+    } catch (_) {
+      if (!_disposed) {
+        state.value = state.value.copyWith(
+          error: 'Could not delete the review.',
+        );
+      }
+      return false;
+    }
+  }
+
   /// Reopens [review], which is already open: the same facts [startReview]
   /// gathers, without writing a review row.
   ///
@@ -449,11 +456,7 @@ class ReviewsViewModel {
         _userId,
         sessionIds: ids,
       );
-      return StartedReview(
-        review: current,
-        sessionIds: ids,
-        sinceDate: since,
-      );
+      return StartedReview(review: current, sessionIds: ids, sinceDate: since);
     } catch (_) {
       return null;
     }

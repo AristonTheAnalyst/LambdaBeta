@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lambda/data/models/program_content.dart';
 import 'package:lambda/features/programs/view/content_diff_sheet.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 /// The comparison sheet: a card per exercise, and the note-change popup.
 ///
@@ -37,27 +38,25 @@ void main() {
     String id, {
     String? exerciseId = 'ex1',
     List<ContentSet>? sets,
-  }) =>
-      ContentExercise(
-        plannedExerciseId: id,
-        plannedSessionId: 's1',
-        userId: 'u1',
-        exerciseId: exerciseId,
-        exerciseOrder: 1,
-        sets: sets ?? [cset('${id}s1')],
-      );
+  }) => ContentExercise(
+    plannedExerciseId: id,
+    plannedSessionId: 's1',
+    userId: 'u1',
+    exerciseId: exerciseId,
+    exerciseOrder: 1,
+    sets: sets ?? [cset('${id}s1')],
+  );
 
   ContentSession cworkout(
     String id, {
     String name = 'Push Day',
     List<ContentExercise>? exercises,
-  }) =>
-      ContentSession(
-        sessionId: id,
-        userId: 'u1',
-        name: name,
-        exercises: exercises ?? const [],
-      );
+  }) => ContentSession(
+    sessionId: id,
+    userId: 'u1',
+    name: name,
+    exercises: exercises ?? const [],
+  );
 
   Future<void> openContentSheet(
     WidgetTester tester, {
@@ -121,7 +120,11 @@ void main() {
     const was = 'Squat felt slow out of the hole, keep the pause honest';
     const now = 'Pause worked — everything moved faster today';
 
-    await openSheet(tester, before: session(notes: was), after: session(notes: now));
+    await openSheet(
+      tester,
+      before: session(notes: was),
+      after: session(notes: now),
+    );
 
     // The row: a preview that says both things changed...
     expect(find.textContaining('…'), findsOneWidget);
@@ -148,7 +151,7 @@ void main() {
     expect(find.text('renamed: Push → Push Day'), findsOneWidget);
     // No rung, and a tap on the row does nothing — the detail already says
     // everything the row has.
-    expect(find.byIcon(Icons.chevron_right), findsNothing);
+    expect(find.byIcon(LucideIcons.chevronRight), findsNothing);
     await tester.tap(find.text('renamed: Push → Push Day'));
     await tester.pumpAndSettle();
     expect(find.text('Note changed'), findsNothing);
@@ -159,14 +162,21 @@ void main() {
     // counts the pass is about, answered before the rows get specific.
     await openContentSheet(
       tester,
-      before: ProgramContent(sessions: [
-        cworkout('s1', exercises: [cexercise('pe1')]),
-      ]),
-      after: ProgramContent(sessions: [
-        cworkout('s1', exercises: [
-          cexercise('pe1', sets: [cset('a'), cset('b'), cset('c')]),
-        ]),
-      ]),
+      before: ProgramContent(
+        sessions: [
+          cworkout('s1', exercises: [cexercise('pe1')]),
+        ],
+      ),
+      after: ProgramContent(
+        sessions: [
+          cworkout(
+            's1',
+            exercises: [
+              cexercise('pe1', sets: [cset('a'), cset('b'), cset('c')]),
+            ],
+          ),
+        ],
+      ),
     );
 
     expect(find.text('SETS'), findsOneWidget);
@@ -188,16 +198,26 @@ void main() {
   ) async {
     await openContentSheet(
       tester,
-      before: ProgramContent(sessions: [
-        cworkout('s1', exercises: [
-          cexercise('pe1', sets: [cset('a', weight: '60')]),
-        ]),
-      ]),
-      after: ProgramContent(sessions: [
-        cworkout('s1', exercises: [
-          cexercise('pe1', sets: [cset('a', weight: '65')]),
-        ]),
-      ]),
+      before: ProgramContent(
+        sessions: [
+          cworkout(
+            's1',
+            exercises: [
+              cexercise('pe1', sets: [cset('a', weight: '60')]),
+            ],
+          ),
+        ],
+      ),
+      after: ProgramContent(
+        sessions: [
+          cworkout(
+            's1',
+            exercises: [
+              cexercise('pe1', sets: [cset('a', weight: '65')]),
+            ],
+          ),
+        ],
+      ),
     );
 
     // The target edit is a real row below; the counts it did not move stay
@@ -213,18 +233,28 @@ void main() {
     // card exists to give, so it renders too — "No changes" is not silence.
     await openContentSheet(
       tester,
-      before: ProgramContent(sessions: [
-        cworkout('s1', exercises: [
-          cexercise('pe1', sets: [cset('a', weight: '60')]),
-          cexercise('pe2', exerciseId: 'ex2', sets: [cset('pe2s1')]),
-        ]),
-      ]),
-      after: ProgramContent(sessions: [
-        cworkout('s1', exercises: [
-          cexercise('pe1', sets: [cset('a', weight: '65')]),
-          cexercise('pe2', exerciseId: 'ex2', sets: [cset('pe2s1')]),
-        ]),
-      ]),
+      before: ProgramContent(
+        sessions: [
+          cworkout(
+            's1',
+            exercises: [
+              cexercise('pe1', sets: [cset('a', weight: '60')]),
+              cexercise('pe2', exerciseId: 'ex2', sets: [cset('pe2s1')]),
+            ],
+          ),
+        ],
+      ),
+      after: ProgramContent(
+        sessions: [
+          cworkout(
+            's1',
+            exercises: [
+              cexercise('pe1', sets: [cset('a', weight: '65')]),
+              cexercise('pe2', exerciseId: 'ex2', sets: [cset('pe2s1')]),
+            ],
+          ),
+        ],
+      ),
       exerciseNames: const {'ex1': 'Bench Press', 'ex2': 'Incline Press'},
     );
 
@@ -245,25 +275,35 @@ void main() {
 
     await openContentSheet(
       tester,
-      before: ProgramContent(sessions: [
-        cworkout('s1', exercises: [
-          cexercise('pe1', sets: [cset('a', weight: '60')]),
-          cexercise('pe2', exerciseId: 'ex2', sets: [cset('pe2s1')]),
-        ]),
-      ]),
-      after: ProgramContent(sessions: [
-        cworkout('s1', exercises: [
-          cexercise('pe1', sets: [cset('a', weight: '65')]),
-          cexercise('pe2', exerciseId: 'ex2', sets: [cset('pe2s1')]),
-        ]),
-      ]),
+      before: ProgramContent(
+        sessions: [
+          cworkout(
+            's1',
+            exercises: [
+              cexercise('pe1', sets: [cset('a', weight: '60')]),
+              cexercise('pe2', exerciseId: 'ex2', sets: [cset('pe2s1')]),
+            ],
+          ),
+        ],
+      ),
+      after: ProgramContent(
+        sessions: [
+          cworkout(
+            's1',
+            exercises: [
+              cexercise('pe1', sets: [cset('a', weight: '65')]),
+              cexercise('pe2', exerciseId: 'ex2', sets: [cset('pe2s1')]),
+            ],
+          ),
+        ],
+      ),
       exerciseNames: const {'ex1': 'Bench Press', 'ex2': 'Incline Press'},
       onExerciseTap: (id) => opened = id,
     );
 
     // Both cards offer the rung — an untouched exercise is still somewhere
     // to go.
-    expect(find.byIcon(Icons.chevron_right), findsNWidgets(2));
+    expect(find.byIcon(LucideIcons.chevronRight), findsNWidgets(2));
 
     await tester.tap(find.text('Bench Press'));
     await tester.pumpAndSettle();
@@ -285,17 +325,27 @@ void main() {
     String? opened;
     await openContentSheet(
       tester,
-      before: ProgramContent(sessions: [
-        cworkout('s1', exercises: [
-          cexercise('pe1', sets: [cset('a')]),
-          cexercise('pe2', exerciseId: 'ex2', sets: [cset('pe2s1')]),
-        ]),
-      ]),
-      after: ProgramContent(sessions: [
-        cworkout('s1', exercises: [
-          cexercise('pe1', sets: [cset('a')]),
-        ]),
-      ]),
+      before: ProgramContent(
+        sessions: [
+          cworkout(
+            's1',
+            exercises: [
+              cexercise('pe1', sets: [cset('a')]),
+              cexercise('pe2', exerciseId: 'ex2', sets: [cset('pe2s1')]),
+            ],
+          ),
+        ],
+      ),
+      after: ProgramContent(
+        sessions: [
+          cworkout(
+            's1',
+            exercises: [
+              cexercise('pe1', sets: [cset('a')]),
+            ],
+          ),
+        ],
+      ),
       exerciseNames: const {'ex1': 'Bench Press', 'ex2': 'Incline Press'},
       onExerciseTap: (id) => opened = id,
     );
@@ -309,7 +359,7 @@ void main() {
     expect(find.text('No changes'), findsOneWidget);
 
     // One rung, on the survivor alone: the removed card has nowhere to go.
-    expect(find.byIcon(Icons.chevron_right), findsOneWidget);
+    expect(find.byIcon(LucideIcons.chevronRight), findsOneWidget);
 
     await tester.tap(find.text('Incline Press'));
     await tester.pumpAndSettle();
@@ -322,16 +372,26 @@ void main() {
   ) async {
     await openContentSheet(
       tester,
-      before: ProgramContent(sessions: [
-        cworkout('s1', exercises: [
-          cexercise('pe1', sets: [cset('a', variation: 'v1')]),
-        ]),
-      ]),
-      after: ProgramContent(sessions: [
-        cworkout('s1', exercises: [
-          cexercise('pe1', sets: [cset('a', variation: 'v2')]),
-        ]),
-      ]),
+      before: ProgramContent(
+        sessions: [
+          cworkout(
+            's1',
+            exercises: [
+              cexercise('pe1', sets: [cset('a', variation: 'v1')]),
+            ],
+          ),
+        ],
+      ),
+      after: ProgramContent(
+        sessions: [
+          cworkout(
+            's1',
+            exercises: [
+              cexercise('pe1', sets: [cset('a', variation: 'v2')]),
+            ],
+          ),
+        ],
+      ),
       exerciseNames: const {'ex1': 'Bench Press'},
       variationNames: const {'v1': 'Paused', 'v2': 'Tempo'},
     );
@@ -342,9 +402,9 @@ void main() {
     expect(find.text('Changes made'), findsOneWidget);
     expect(find.textContaining('variation'), findsNothing);
     // The glyph vocabulary the sheet used to speak is gone.
-    expect(find.byIcon(Icons.add_circle_outline), findsNothing);
-    expect(find.byIcon(Icons.remove_circle_outline), findsNothing);
-    expect(find.byIcon(Icons.edit_outlined), findsNothing);
+    expect(find.byIcon(LucideIcons.circlePlus), findsNothing);
+    expect(find.byIcon(LucideIcons.circleMinus), findsNothing);
+    expect(find.byIcon(LucideIcons.pencil), findsNothing);
   });
 
   testWidgets('a subtitle renders when the caller has one to give', (
@@ -367,9 +427,11 @@ void main() {
     await openContentSheet(
       tester,
       before: null,
-      after: ProgramContent(sessions: [
-        cworkout('s1', exercises: [cexercise('pe1')]),
-      ]),
+      after: ProgramContent(
+        sessions: [
+          cworkout('s1', exercises: [cexercise('pe1')]),
+        ],
+      ),
       beforeMissingNote: 'no earlier version to compare',
     );
 
@@ -381,9 +443,11 @@ void main() {
   testWidgets('identical contents show the note, not zeroed counts', (
     tester,
   ) async {
-    final content = ProgramContent(sessions: [
-      cworkout('s1', exercises: [cexercise('pe1')]),
-    ]);
+    final content = ProgramContent(
+      sessions: [
+        cworkout('s1', exercises: [cexercise('pe1')]),
+      ],
+    );
     await openContentSheet(
       tester,
       before: content,

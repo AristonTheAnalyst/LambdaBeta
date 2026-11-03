@@ -100,8 +100,9 @@ Future<List<WorkoutOption>> fetchWorkoutOptions({
           label: toProperCase(workout.name),
           blockId: link.blockId,
           blockName: blockNames[link.blockId],
-          exerciseCount:
-              (await planned.fetchPlannedExercises(workout.sessionId)).length,
+          exerciseCount: (await planned.fetchPlannedExercises(
+            workout.sessionId,
+          )).length,
         ),
   ];
 }
@@ -664,7 +665,10 @@ class ProgramHistoryViewModel {
       // found" available for it. Idempotent by construction: a review that
       // has one keeps it, so a resume can never move a live baseline.
       final current =
-          await _historyRepo.captureBaseline(review.reviewId, userId: _userId) ??
+          await _historyRepo.captureBaseline(
+            review.reviewId,
+            userId: _userId,
+          ) ??
           review;
       final since = await _historyRepo.checkpointFor(
         programId,

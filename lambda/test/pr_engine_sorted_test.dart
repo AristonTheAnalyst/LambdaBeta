@@ -52,10 +52,31 @@ void main() {
     final base = DateTime(2026, 10, 1);
     final rows = <PastSetRow>[
       // Same-session tie-break: two sets in one workout.
-      set(id: 'a', sessionId: 's1', date: base, setNumber: 2, weight: 100, reps: 5),
-      set(id: 'b', sessionId: 's1', date: base, setNumber: 1, weight: 100, reps: 3),
+      set(
+        id: 'a',
+        sessionId: 's1',
+        date: base,
+        setNumber: 2,
+        weight: 100,
+        reps: 5,
+      ),
+      set(
+        id: 'b',
+        sessionId: 's1',
+        date: base,
+        setNumber: 1,
+        weight: 100,
+        reps: 3,
+      ),
       // An earlier session, heavier weight, fewer reps — the frontier pair.
-      set(id: 'c', sessionId: 's0', date: base.subtract(const Duration(days: 1)), setNumber: 1, weight: 110, reps: 1),
+      set(
+        id: 'c',
+        sessionId: 's0',
+        date: base.subtract(const Duration(days: 1)),
+        setNumber: 1,
+        weight: 110,
+        reps: 1,
+      ),
       // Null variation is its own key — same exercise, separate pair.
       set(
         id: 'd',
@@ -78,26 +99,47 @@ void main() {
     ];
 
     final shuffled = [...rows]..shuffle();
-    final asc = [...rows]..sort((a, b) {
-      final d = a.sessionCreatedDate.compareTo(b.sessionCreatedDate);
-      return d != 0 ? d : a.setNumber.compareTo(b.setNumber);
-    });
+    final asc = [...rows]
+      ..sort((a, b) {
+        final d = a.sessionCreatedDate.compareTo(b.sessionCreatedDate);
+        return d != 0 ? d : a.setNumber.compareTo(b.setNumber);
+      });
 
-    expect(sameEvents(prEvents(shuffled), prEventsSorted(asc)), isTrue,
-        reason: 'the sorted fast path must walk exactly the engine\'s order');
+    expect(
+      sameEvents(prEvents(shuffled), prEventsSorted(asc)),
+      isTrue,
+      reason: 'the sorted fast path must walk exactly the engine\'s order',
+    );
   });
 
   test('a frontier extended mid-session still reads the before-facts', () {
     final base = DateTime(2026, 10, 2);
     final rows = [
-      set(id: 'a', sessionId: 's1', date: base, setNumber: 1, weight: 100, reps: 5),
-      set(id: 'b', sessionId: 's1', date: base, setNumber: 2, weight: 100, reps: 6),
+      set(
+        id: 'a',
+        sessionId: 's1',
+        date: base,
+        setNumber: 1,
+        weight: 100,
+        reps: 5,
+      ),
+      set(
+        id: 'b',
+        sessionId: 's1',
+        date: base,
+        setNumber: 2,
+        weight: 100,
+        reps: 6,
+      ),
     ];
     final asc = [...rows]..sort((a, b) => a.setNumber.compareTo(b.setNumber));
 
     final events = prEventsSorted(asc);
     expect(events.map((e) => e.sessionExerciseSetId), ['a', 'b']);
-    expect(events.last.beforeReps, 5,
-        reason: 'the second set beat the first at exactly 100kg');
+    expect(
+      events.last.beforeReps,
+      5,
+      reason: 'the second set beat the first at exactly 100kg',
+    );
   });
 }

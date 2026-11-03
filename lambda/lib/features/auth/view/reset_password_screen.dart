@@ -1,5 +1,6 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_text_styles.dart';
 import '../../../core/utils/validators.dart';
@@ -15,9 +16,9 @@ class ResetPasswordScreen extends StatefulWidget {
 }
 
 class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
-  final _passwordController        = TextEditingController();
+  final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
-  final _viewModel                 = ResetPasswordViewModel();
+  final _viewModel = ResetPasswordViewModel();
   String? _passwordError;
   String? _confirmError;
 
@@ -37,12 +38,14 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
   }
 
   bool _validate() {
-    final passErr    = Validators.password(_passwordController.text);
+    final passErr = Validators.password(_passwordController.text);
     final confirmErr = Validators.confirmPassword(
-        _passwordController.text, _confirmPasswordController.text);
+      _passwordController.text,
+      _confirmPasswordController.text,
+    );
     setState(() {
       _passwordError = passErr;
-      _confirmError  = confirmErr;
+      _confirmError = confirmErr;
     });
     return passErr == null && confirmErr == null;
   }
@@ -80,7 +83,8 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 24),
                 child: ConstrainedBox(
                   constraints: BoxConstraints(
-                    minHeight: MediaQuery.of(context).size.height -
+                    minHeight:
+                        MediaQuery.of(context).size.height -
                         MediaQuery.of(context).padding.top -
                         MediaQuery.of(context).padding.bottom,
                   ),
@@ -96,14 +100,17 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                               padding: const EdgeInsets.all(12),
                               decoration: BoxDecoration(
                                 color: AppColors.dangerBg,
-                                border: Border.all(color: AppColors.dangerBorder),
+                                border: Border.all(
+                                  color: AppColors.dangerBorder,
+                                ),
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: Text(
                                 state.error!,
                                 style: TextStyle(
-                                    color: AppColors.danger,
-                                    fontSize: AppTextStyles.sm),
+                                  color: AppColors.danger,
+                                  fontSize: AppTextStyles.sm,
+                                ),
                                 textAlign: TextAlign.center,
                               ),
                             ),
@@ -126,8 +133,9 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                             Text(
                               'Choose a new password for your account',
                               style: TextStyle(
-                                  fontSize: AppTextStyles.md,
-                                  color: AppColors.muted),
+                                fontSize: AppTextStyles.md,
+                                color: AppColors.inkSecondary,
+                              ),
                               textAlign: TextAlign.center,
                             ),
                           ],
@@ -191,28 +199,28 @@ class _SuccessView extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Icon(Icons.check_circle_outline,
-              size: 64, color: AppColors.accent),
+          Icon(LucideIcons.circleCheck, size: 64, color: AppColors.accent),
           SizedBox(height: 24),
           Text(
             'Password updated!',
             style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: AppColors.primary),
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              color: AppColors.primary,
+            ),
             textAlign: TextAlign.center,
           ),
           SizedBox(height: 8),
           Text(
             'Your password has been changed successfully.',
-            style: TextStyle(fontSize: AppTextStyles.md, color: AppColors.muted),
+            style: TextStyle(
+              fontSize: AppTextStyles.md,
+              color: AppColors.inkSecondary,
+            ),
             textAlign: TextAlign.center,
           ),
           SizedBox(height: 32),
-          LambdaButton(
-            label: 'Continue',
-            onPressed: onContinue,
-          ),
+          LambdaButton(label: 'Continue', onPressed: onContinue),
         ],
       ),
     );

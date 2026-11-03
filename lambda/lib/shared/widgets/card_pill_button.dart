@@ -4,7 +4,7 @@ import '../../core/styles/app_fonts.dart';
 import './container_styles.dart';
 
 /// The card-header pill button shared by the three session surfaces — the
-/// Lessons / History / PRs chrome. Greyed (`enabled` false) renders the
+/// Notes / History / PRs chrome. Greyed (`enabled` false) renders the
 /// placeholder state (the PRs placeholder, the planner's disabled pills).
 class CardPillButton extends StatelessWidget {
   const CardPillButton({
@@ -49,7 +49,7 @@ class CardPillButton extends StatelessWidget {
               icon,
               size: 14,
               color: enabled
-                  ? (active ? c : AppColors.muted)
+                  ? (active ? c : AppColors.inkSecondary)
                   : AppColors.muted.withValues(alpha: 0.4),
             ),
             const SizedBox(width: 5),
@@ -64,7 +64,7 @@ class CardPillButton extends StatelessWidget {
                   fontSize: 13,
                   letterSpacing: 0.4,
                   color: enabled
-                      ? (active ? c : AppColors.muted)
+                      ? (active ? c : AppColors.inkSecondary)
                       : AppColors.muted.withValues(alpha: 0.4),
                 ),
               ),

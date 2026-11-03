@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
 import '../../../core/styles/app_spacing.dart';
 import '../../../core/styles/app_text_styles.dart';
+import '../../../core/utils/date_range.dart';
 import '../../../shared/widgets/app_card.dart';
+import '../../../shared/widgets/date_range_selector.dart';
 import '../../../shared/widgets/glass_button.dart';
+import '../../../shared/widgets/lambda_search_field.dart';
 import '../../../shared/widgets/page_header.dart';
 import '../../../shared/widgets/scroll_shrink_nav_bar.dart';
 import '../../../shared/widgets/swipe_actions.dart';
@@ -14,9 +18,8 @@ import '../../programs/view/review_container.dart';
 import '../../programs/viewmodel/program_history_viewmodel.dart'
     show StartedReview;
 import '../viewmodel/reviews_viewmodel.dart';
-import 'review_cancel_dialog.dart';
+import 'review_dialogs.dart';
 import 'review_name_sheet.dart';
-import 'review_selection_screen.dart';
 
 /// The reviews library: every pass the user has, open ones pinned first, and
 /// the + that starts a new one.
@@ -27,13 +30,32 @@ import 'review_selection_screen.dart';
 /// points are retired while the concept is ironed out, and their plumbing is
 /// kept for the day it is not.
 ///
+/// The tab wears the library's toolbar (2026-10-19): search narrows both
+/// halves by name, and the date button opens the shared range sheet for the
+/// records. A date filter never hides an open pass — that is current work,
+/// not history — so it only narrows the COMPLETED half.
+///
 /// [showHeader] false is the embedded form — the Library's Reviews tab and the
 /// dev lab — the same idiom as the workout library: the host owns the header,
-/// and the compact + sits on a caption row instead.
+/// and the compact + stands in the toolbar instead.
 class ReviewsScreen extends StatefulWidget {
-  const ReviewsScreen({super.key, this.showHeader = true, this.viewModel});
+  const ReviewsScreen({
+    super.key,
+    this.showHeader = true,
+    this.viewModel,
+    this.userId,
+    this.canDelete = true,
+  });
 
   final bool showHeader;
+
+  /// Whose reviews these are. Null = the signed-in user; coach mode passes
+  /// the athlete (2026-10-28).
+  final String? userId;
+
+  /// Whether the screen starts passes and deletes records. Coach mode passes
+  /// false: it browses her completed records read-only (2026-10-28).
+  final bool canDelete;
 
   /// The view model a host test injects. The seam exists for host tests —
   /// the real constructor reads Supabase — and a real caller never passes
@@ -53,13 +75,27 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
   /// rather than sit there looking untouched.
   bool _busy = false;
 
+  final _searchController = TextEditingController();
+  String _query = '';
+
+  /// All time until the date button says otherwise. The same shared selection
+  /// the Logs and exercise-insights filters use, so the sheet and the list
+  /// cannot disagree about what a range means.
+  static const _allTime = DateRangeSelection.preset(DateRangePreset.all);
+  DateRangeSelection _dateSelection = _allTime;
+
+  bool get _dateActive => _dateSelection != _allTime;
+
   @override
   void initState() {
     super.initState();
     final injected = widget.viewModel;
-    _vm = injected ?? ReviewsViewModel();
+    _vm = injected ?? ReviewsViewModel(userId: widget.userId);
     _ownsVm = injected == null;
     _vm.state.addListener(_onState);
+    _searchController.addListener(() {
+      if (mounted) setState(() => _query = _searchController.text);
+    });
     // A host test drives the load itself — it owns the VM's fakes. The screen
     // loads only when it owns the view model.
     if (_ownsVm) {
@@ -76,6 +112,7 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
 
   @override
   void dispose() {
+    _searchController.dispose();
     _vm.state.removeListener(_onState);
     if (_ownsVm) {
       _vm.dispose();
@@ -87,7 +124,14 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
     SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
   );
 
-  /// + → name it → pick what to review → start, and open the ceremony on it.
+  /// + → name it → open the pass, and open the ceremony on it.
+  ///
+  /// The pass begins **empty** (2026-10-27): its landing is where the scope is
+  /// built, so the first page a pass shows is the page it is walked from, with
+  /// its add tiles waiting. The scope sheet — reached from those tiles — is the
+  /// same tick rows the old selection screen drew, opened where their write
+  /// lands, and it edits a pass that already exists instead of being the only
+  /// way to build one.
   ///
   /// The row is written before the ceremony opens — the pass's whole job is to
   /// end in a snapshot on it — and the ceremony is opened by route, so
@@ -98,49 +142,20 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
     if (name == null || !mounted) return;
 
     setState(() => _busy = true);
-    final List<ReviewableWorkout> workouts;
-    final List<ReviewableGoal> goals;
-    try {
-      workouts = await _vm.reviewableWorkouts();
-      goals = await _vm.reviewableGoals();
-    } catch (_) {
-      if (mounted) {
-        setState(() => _busy = false);
-        _snack('Could not load your workouts.');
-      }
-      return;
-    }
-    if (!mounted) return;
-    setState(() => _busy = false);
-
-    final selection =
-        await Navigator.of(context, rootNavigator: true).push<ReviewSelection>(
-          MaterialPageRoute(
-            builder: (_) => ReviewSelectionScreen(
-              name: name,
-              workouts: workouts,
-              goals: goals,
-            ),
-          ),
-        );
-    if (selection == null || !mounted) return;
-
     final started = await _vm.startReview(
-      sessionIds: selection.sessionIds,
-      goalIds: selection.goalIds,
+      sessionIds: const [],
+      goalIds: const [],
       title: name,
     );
     if (!mounted) return;
+    setState(() => _busy = false);
     if (started == null) {
       _snack('Could not start the review.');
       return;
     }
     await _openCeremony(
       started,
-      // The stored ids, read back off the written row — with the picker's own
-      // answer as the fallback, so a read that came back thin cannot drop the
-      // goals half of the pass.
-      goalIds: started.review.storedGoalIds ?? selection.goalIds,
+      goalIds: started.review.storedGoalIds ?? const [],
     );
   }
 
@@ -182,6 +197,10 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
         title: started.review.title,
         sinceDate: started.sinceDate,
         achievements: started.achievements,
+        // The edits the pass had staged when it was left: a resume must open
+        // on what the pass has done, not on the plan it hasn't written yet
+        // (2026-10-27).
+        stage: started.review.stage,
       ),
     );
     if (mounted) await _vm.load();
@@ -198,6 +217,9 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
         review: entry.review,
         sessionIds: entry.sessionIds,
       ),
+      // Whose record it is — the athlete's in coach mode (2026-10-28). The
+      // landing and its workout records read as that user.
+      userId: widget.userId,
     );
   }
 
@@ -211,6 +233,55 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
     _snack('Could not cancel the review.');
   }
 
+  /// Deletes a completed record: a confirm first — a record is the finished
+  /// thing the pass existed to make — then the write, then the list.
+  Future<void> _deleteCompleted(ReviewListEntry entry) async {
+    if (!await confirmDeleteCompletedReview(context, label: entry.label)) {
+      return;
+    }
+    if (!mounted) return;
+    final deleted = await _vm.deleteCompletedReview(entry.review.reviewId);
+    if (!mounted || deleted) return;
+    _snack('Could not delete the review.');
+  }
+
+  /// The shared range sheet, seeded with the range in force. Picking a preset
+  /// is one tap; a custom range is the calendar's.
+  Future<void> _pickDate() async {
+    final selection = await showDateRangeSelector(
+      context,
+      initial: _dateSelection,
+    );
+    if (selection != null && mounted) {
+      setState(() => _dateSelection = selection);
+    }
+  }
+
+  /// Search reads the whole row: the pass's label, its stored title, and the
+  /// workouts it covered — typing "bench" finds a pass by what was in it, not
+  /// only by what it was called.
+  bool _matchesSearch(ReviewListEntry entry) {
+    final query = _query.trim().toLowerCase();
+    if (query.isEmpty) return true;
+    final haystack = [
+      entry.label,
+      entry.review.title ?? '',
+      ...entry.workoutNames,
+    ].join(' ').toLowerCase();
+    return haystack.contains(query);
+  }
+
+  /// A date filter narrows the RECORDS only. An open pass is current work, not
+  /// history — hiding it because it sits outside the chosen range would take
+  /// the one thing still asking something of the user off the screen.
+  bool _matchesDate(ReviewListEntry entry) {
+    if (!_dateActive) return true;
+    final completed = entry.review.completedDate;
+    if (completed == null) return true;
+    final window = _dateSelection.window(DateTime.now());
+    return !completed.isBefore(window.from) && completed.isBefore(window.to);
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = _vm.state.value;
@@ -221,45 +292,71 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
           if (widget.showHeader)
             PageHeader(
               title: 'Reviews',
-              right: GlassButton(
-                label: '',
-                icon: Icons.add,
-                compact: true,
-                loading: _busy,
-                onPressed: _start,
-              ),
+              right: widget.canDelete
+                  ? GlassButton(
+                      label: '',
+                      icon: LucideIcons.plus,
+                      semanticsLabel: 'Start review',
+                      compact: true,
+                      loading: _busy,
+                      onPressed: _start,
+                    )
+                  : null,
             ),
-          if (!widget.showHeader)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(
-                AppSpacing.lg,
-                AppSpacing.lg,
-                AppSpacing.lg,
-                0,
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      'Passes over the workouts and goals you pick.',
-                      style: AppFonts.ui(
-                        fontSize: AppTextStyles.xs,
-                        color: AppColors.muted,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.sm),
-                  GlassButton(
-                    label: '',
-                    icon: Icons.add,
-                    compact: true,
-                    loading: _busy,
-                    onPressed: _start,
-                  ),
-                ],
-              ),
-            ),
+          _toolbar(showAdd: !widget.showHeader && widget.canDelete),
           Expanded(child: _body(state)),
+        ],
+      ),
+    );
+  }
+
+  /// The toolbar every library tab wears (2026-10-19): search, then the date
+  /// button, then the tab's own + where the host header has none.
+  ///
+  /// The date button is icon-only to keep the search box wide on a phone —
+  /// its state reads off the accent, and the sheet it opens names the range
+  /// in words.
+  Widget _toolbar({required bool showAdd}) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.lg,
+        AppSpacing.lg,
+        AppSpacing.lg,
+        0,
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: LambdaSearchField(
+              controller: _searchController,
+              hint: 'Search reviews…',
+            ),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          Semantics(
+            button: true,
+            label: 'Date filter',
+            child: GlassButton(
+              label: '',
+              icon: LucideIcons.calendarRange,
+              compact: true,
+              color: _dateActive ? AppColors.accent : null,
+              onPressed: _pickDate,
+            ),
+          ),
+          if (showAdd) ...[
+            const SizedBox(width: AppSpacing.sm),
+            GlassButton(
+              label: '',
+              icon: LucideIcons.plus,
+              semanticsLabel: 'Start review',
+              compact: true,
+              loading: _busy,
+              onPressed: _start,
+            ),
+          ],
+          // Coach mode's toolbar ends at the date range: no pass is started
+          // from another account (2026-10-28).
         ],
       ),
     );
@@ -293,10 +390,32 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
         ),
       );
     }
-    if (state.entries.isEmpty) return const _EmptyState();
+    if (state.entries.isEmpty) {
+      return _EmptyState(readOnly: !widget.canDelete);
+    }
 
-    final open = state.open;
-    final completed = state.completed;
+    final open = state.open.where(_matchesSearch).toList();
+    final completed = state.completed
+        .where(_matchesSearch)
+        .where(_matchesDate)
+        .toList();
+    if (open.isEmpty && completed.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.xl),
+          child: Text(
+            _query.trim().isNotEmpty
+                ? 'No reviews match "${_query.trim()}".'
+                : 'No reviews in this range.',
+            textAlign: TextAlign.center,
+            style: AppFonts.ui(
+              fontSize: AppTextStyles.md,
+              color: AppColors.inkSecondary,
+            ),
+          ),
+        ),
+      );
+    }
     return ListView(
       padding: EdgeInsets.fromLTRB(
         AppSpacing.lg,
@@ -307,7 +426,9 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
         AppSpacing.lg + ScrollShrinkNavBar.contentInset(context),
       ),
       children: [
-        if (open.isNotEmpty) ...[
+        // An open pass is its owner's working state — not a record to browse
+        // (2026-10-28). Coach mode sees only what was finished.
+        if (widget.canDelete && open.isNotEmpty) ...[
           const _SectionLabel('IN PROGRESS'),
           const SizedBox(height: AppSpacing.sm),
           for (final entry in open) ...[
@@ -317,9 +438,10 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
               key: ValueKey(entry.review.reviewId),
               actions: [
                 SwipeAction(
-                  icon: Icons.delete_outline,
-                  
+                  icon: LucideIcons.trash2,
+
                   color: AppColors.danger,
+                  foreground: AppColors.dangerText,
                   onTap: () => _cancel(entry),
                 ),
               ],
@@ -332,10 +454,30 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
           const _SectionLabel('COMPLETED'),
           const SizedBox(height: AppSpacing.sm),
           for (final entry in completed) ...[
-            _CompletedReviewCard(
-              entry: entry,
-              onTap: () => _openCompleted(entry),
-            ),
+            if (!widget.canDelete)
+              _CompletedReviewCard(
+                entry: entry,
+                onTap: () => _openCompleted(entry),
+              )
+            else
+              SwipeActions(
+                // Keyed by review, like the open drawer: a delete must not
+                // hand one record's drawer state to the card that slides up
+                // into its place.
+                key: ValueKey(entry.review.reviewId),
+                actions: [
+                  SwipeAction(
+                    icon: LucideIcons.trash2,
+                    color: AppColors.danger,
+                    foreground: AppColors.dangerText,
+                    onTap: () => _deleteCompleted(entry),
+                  ),
+                ],
+                child: _CompletedReviewCard(
+                  entry: entry,
+                  onTap: () => _openCompleted(entry),
+                ),
+              ),
             const SizedBox(height: AppSpacing.md),
           ],
         ],
@@ -347,7 +489,10 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
 /// Nothing yet: the one place the screen can say what a review *is*, to
 /// somebody who has never started one.
 class _EmptyState extends StatelessWidget {
-  const _EmptyState();
+  const _EmptyState({this.readOnly = false});
+
+  /// Coach mode has no way to start a pass, so it must not describe one.
+  final bool readOnly;
 
   @override
   Widget build(BuildContext context) => Center(
@@ -360,18 +505,21 @@ class _EmptyState extends StatelessWidget {
             'No reviews yet',
             style: AppFonts.ui(
               fontSize: AppTextStyles.md,
-              color: AppColors.muted,
+              color: AppColors.inkSecondary,
             ),
           ),
           const SizedBox(height: AppSpacing.sm),
           Text(
-            'A review is a pass over workouts you pick: open each one, change '
-            'what needs changing, note what you think — then finish it and it '
-            'is kept here.',
+            readOnly
+                ? 'This athlete has not finished a review yet.'
+                : 'A review is a pass over workouts you pick: open each one, '
+                      'change what needs changing, note what you think — then '
+                      'finish it and it is kept here.',
             textAlign: TextAlign.center,
             style: AppFonts.ui(
               fontSize: AppTextStyles.xs,
-              color: AppColors.muted,
+              color: AppColors.inkSecondary,
+              height: 1.4,
             ),
           ),
         ],
@@ -475,13 +623,13 @@ class _CompletedReviewCard extends StatelessWidget {
                   caption,
                   style: AppFonts.mono(
                     fontSize: AppTextStyles.xs,
-                    color: AppColors.muted,
+                    color: AppColors.inkSecondary,
                   ),
                 ),
               ],
             ),
           ),
-          Icon(Icons.chevron_right, size: 16, color: AppColors.muted),
+          Icon(LucideIcons.chevronRight, size: 16, color: AppColors.muted),
         ],
       ),
     );
@@ -498,7 +646,8 @@ class _SectionLabel extends StatelessWidget {
     text,
     style: AppFonts.mono(
       fontSize: AppTextStyles.xs,
-      color: AppColors.muted,
+      fontWeight: FontWeight.w600,
+      color: AppColors.primary,
       letterSpacing: 0.8,
     ),
   );

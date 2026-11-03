@@ -27,10 +27,10 @@ class AchievementSession {
   final DateTime date;
 
   Map<String, dynamic> toMap() => {
-        'session_id': sessionId,
-        'name': name,
-        'date': date.toUtc().toIso8601String(),
-      };
+    'session_id': sessionId,
+    'name': name,
+    'date': date.toUtc().toIso8601String(),
+  };
 
   factory AchievementSession.fromMap(Map<String, dynamic> map) =>
       AchievementSession(
@@ -107,34 +107,35 @@ class DueItem {
 
   /// Short label for a chip or badge.
   String get label => switch (kind) {
-        kDueReview => 'Review due',
-        // "Reached its length", not "finished": carrying on is one of the
-        // answers the prompt offers, and a chip that called the run over
-        // would be announcing a decision the user has not made. A block and a
-        // program are not the same thing to reach, either.
-        kDueRunFinished =>
-          isBlockScoped ? 'Block length reached' : 'Program length reached',
-        kDueBlockStart => 'Block ready',
-        _ => 'Due',
-      };
+    kDueReview => 'Review due',
+    // "Reached its length", not "finished": carrying on is one of the
+    // answers the prompt offers, and a chip that called the run over
+    // would be announcing a decision the user has not made. A block and a
+    // program are not the same thing to reach, either.
+    kDueRunFinished =>
+      isBlockScoped ? 'Block length reached' : 'Program length reached',
+    kDueBlockStart => 'Block ready',
+    _ => 'Due',
+  };
 
   /// What the banner says. Written here rather than at the render site because
   /// the wording and the kind are one decision: a banner that describes a
   /// state the item does not carry is how "this program has finished" ended up
   /// sitting over a run that was still going.
   String get prompt => switch (kind) {
-        kDueReview => 'A review is due.',
-        // The prompt leads into the review, and the run's fate — continue,
-        // change length, end — is decided after it, on the far side of
-        // looking at the plan. Wording that promised an ending would be
-        // describing the request the old flow made, not this one.
-        kDueRunFinished =>
-          isBlockScoped
-              ? 'This block has reached its length — review it before deciding what is next.'
-              : 'This program has reached its length — review it before deciding what is next.',
-        kDueBlockStart => blockName == null
-            ? 'A block is ready to begin.'
-            : '$blockName is ready to begin.',
-        _ => 'Something is due.',
-      };
+    kDueReview => 'A review is due.',
+    // The prompt leads into the review, and the run's fate — continue,
+    // change length, end — is decided after it, on the far side of
+    // looking at the plan. Wording that promised an ending would be
+    // describing the request the old flow made, not this one.
+    kDueRunFinished =>
+      isBlockScoped
+          ? 'This block has reached its length — review it before deciding what is next.'
+          : 'This program has reached its length — review it before deciding what is next.',
+    kDueBlockStart =>
+      blockName == null
+          ? 'A block is ready to begin.'
+          : '$blockName is ready to begin.',
+    _ => 'Something is due.',
+  };
 }

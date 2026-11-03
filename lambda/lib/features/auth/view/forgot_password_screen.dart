@@ -1,8 +1,10 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_text_styles.dart';
 import '../../../core/utils/validators.dart';
+import '../../../shared/widgets/header_icon_button.dart';
 import '../../../shared/widgets/lambda_button.dart';
 import '../../../shared/widgets/lambda_input.dart';
 import '../viewmodel/auth_viewmodel.dart';
@@ -16,7 +18,7 @@ class ForgotPasswordScreen extends StatefulWidget {
 
 class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   final _emailController = TextEditingController();
-  final _viewModel       = AuthViewModel();
+  final _viewModel = AuthViewModel();
   String? _emailError;
 
   @override
@@ -62,23 +64,14 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                   // Back button
                   Align(
                     alignment: Alignment.centerLeft,
-                    child: GestureDetector(
-                      onTap: () => context.pop(),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.chevron_left,
-                              color: AppColors.accent, size: 20),
-                          Text(
-                            'Back',
-                            style: TextStyle(
-                              color: AppColors.accent,
-                              fontSize: AppTextStyles.sm,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+                    child: // The header's own control: one glyph, its word kept as the
+                        // tooltip and the screen-reader label (2026-10-20).
+                        HeaderIconButton(
+                          icon: LucideIcons.chevronLeft,
+                          semanticsLabel: 'Back',
+                          glyphSize: 18,
+                          onPressed: () => context.pop(),
+                        ),
                   ),
 
                   Expanded(
@@ -103,7 +96,8 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                               : "Enter your email and we'll send you a reset link.",
                           style: TextStyle(
                             fontSize: AppTextStyles.md,
-                            color: AppColors.muted,
+                            color: AppColors.inkSecondary,
+                            height: 1.4,
                           ),
                           textAlign: TextAlign.center,
                         ),
@@ -117,8 +111,9 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                               padding: const EdgeInsets.all(12),
                               decoration: BoxDecoration(
                                 color: AppColors.dangerBg,
-                                border:
-                                    Border.all(color: AppColors.dangerBorder),
+                                border: Border.all(
+                                  color: AppColors.dangerBorder,
+                                ),
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: Text(

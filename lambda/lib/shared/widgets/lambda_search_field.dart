@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_fonts.dart';
 import '../../core/styles/app_text_styles.dart';
@@ -10,8 +11,8 @@ import '../../core/styles/app_text_styles.dart';
 /// Every search box in the app wears this — library toolbars, sheets,
 /// popovers, pickers — rather than each hand-rolling its own
 /// [InputDecoration]. [showIcon] adds the muted magnifier the sheets and
-/// popovers lead with; [suffix] takes a trailing control (a picker's collapse
-/// X) where one exists.
+/// popovers lead with (a glyph, not text — 3:1, not AA); [suffix] takes a
+/// trailing control (a picker's collapse X) where one exists.
 class LambdaSearchField extends StatelessWidget {
   const LambdaSearchField({
     super.key,
@@ -65,17 +66,22 @@ class LambdaSearchField extends StatelessWidget {
       decoration: InputDecoration(
         hintText: hint,
         counterText: maxLength == null ? null : '',
+        // The hint is read; the magnifier is decoration and stays muted.
         hintStyle: AppFonts.ui(
           fontSize: AppTextStyles.sm,
-          color: AppColors.muted,
+          color: AppColors.inkSecondary,
         ),
-        prefixIcon:
-            showIcon ? Icon(Icons.search, size: 18, color: AppColors.muted) : null,
+        prefixIcon: showIcon
+            ? Icon(LucideIcons.search, size: 18, color: AppColors.muted)
+            : null,
         suffixIcon: suffix,
         filled: true,
         fillColor: elevated ? AppColors.surfaceHigh : AppColors.surface,
         isDense: true,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 10,
+        ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
           borderSide: BorderSide(color: AppColors.border),

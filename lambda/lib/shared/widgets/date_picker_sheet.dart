@@ -4,6 +4,7 @@ import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_fonts.dart';
 import '../../core/styles/app_radius.dart';
 import '../../core/styles/app_spacing.dart';
+import '../../core/styles/app_text_styles.dart';
 import 'container_styles.dart';
 import 'glass_button.dart';
 import 'month_calendar.dart';
@@ -63,10 +64,22 @@ class _DatePickerSheetState extends State<_DatePickerSheet> {
   /// existing value must stay visible and re-pickable — clamping it would
   /// silently move a date the user never touched, and hiding it would strand
   /// them with a blank grid.
-  late final DateTime _firstDate = _widen(widget.firstDate, widget.initial, earlier: true);
-  late final DateTime _lastDate = _widen(widget.lastDate, widget.initial, earlier: false);
+  late final DateTime _firstDate = _widen(
+    widget.firstDate,
+    widget.initial,
+    earlier: true,
+  );
+  late final DateTime _lastDate = _widen(
+    widget.lastDate,
+    widget.initial,
+    earlier: false,
+  );
 
-  static DateTime _widen(DateTime bound, DateTime? value, {required bool earlier}) {
+  static DateTime _widen(
+    DateTime bound,
+    DateTime? value, {
+    required bool earlier,
+  }) {
     if (value == null) return bound;
     if (earlier && value.isBefore(bound)) return value;
     if (!earlier && value.isAfter(bound)) return value;
@@ -122,8 +135,10 @@ class _DatePickerSheetState extends State<_DatePickerSheet> {
                     : DateFormat('d MMMM yyyy').format(_picked!),
                 textAlign: TextAlign.center,
                 style: AppFonts.mono(
-                  fontSize: 13,
-                  color: _picked == null ? AppColors.muted : AppColors.primary,
+                  fontSize: AppTextStyles.caption,
+                  color: _picked == null
+                      ? AppColors.inkSecondary
+                      : AppColors.primary,
                 ),
               ),
             ),
@@ -142,10 +157,8 @@ class _DatePickerSheetState extends State<_DatePickerSheet> {
                   child: GlassButton(
                     label: 'Apply',
                     solid: true,
-                    onPressed: () => Navigator.of(
-                      context,
-                      rootNavigator: true,
-                    ).pop(_picked),
+                    onPressed: () =>
+                        Navigator.of(context, rootNavigator: true).pop(_picked),
                   ),
                 ),
               ],

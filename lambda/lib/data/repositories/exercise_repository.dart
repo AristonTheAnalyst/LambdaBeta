@@ -12,7 +12,6 @@ import '../models/exercise_usage.dart';
 const _uuid = Uuid();
 
 class ExerciseRepository {
-
   /// Aggregate per-exercise and per-variation usage across the user's history
   /// (sets, workouts, last used, and the distinct other-entity count). Derived
   /// from the past-sets timeline so it stays consistent with what the library
@@ -47,7 +46,8 @@ class ExerciseRepository {
           exVariations.putIfAbsent(exerciseId, () => {}).add(s.variationId!);
         }
         if (d.isAfter(
-            exLast[exerciseId] ?? DateTime.fromMillisecondsSinceEpoch(0))) {
+          exLast[exerciseId] ?? DateTime.fromMillisecondsSinceEpoch(0),
+        )) {
           exLast[exerciseId] = d;
         }
       }
@@ -120,16 +120,14 @@ class ExerciseRepository {
   }
 
   Future<Map<String, ExerciseDetail>> fetchExerciseDetailMap(
-      String userId) async {
+    String userId,
+  ) async {
     final exercises = await fetchExercises(userId);
 
     // Exercises and variations are independent since schema v2 (no bridge) —
     // variation assignment is gone, so each detail is just its exercise.
     return {
-      for (final ex in exercises)
-        ex.exerciseId: ExerciseDetail(
-          exercise: ex,
-        ),
+      for (final ex in exercises) ex.exerciseId: ExerciseDetail(exercise: ex),
     };
   }
 
@@ -170,8 +168,7 @@ class ExerciseRepository {
     };
   }
 
-  Future<CustomExercise?> findExerciseByName(
-      String userId, String name) async {
+  Future<CustomExercise?> findExerciseByName(String userId, String name) async {
     final rows = await ps.db.getAll(
       'SELECT * FROM dim_exercise WHERE user_id = ? AND LOWER(exercise_name) = LOWER(?)',
       [userId, name],
@@ -181,7 +178,9 @@ class ExerciseRepository {
   }
 
   Future<CustomVariation?> findVariationByName(
-      String userId, String name) async {
+    String userId,
+    String name,
+  ) async {
     final rows = await ps.db.getAll(
       'SELECT * FROM dim_variation WHERE user_id = ? AND LOWER(variation_name) = LOWER(?)',
       [userId, name],
@@ -254,7 +253,7 @@ class ExerciseRepository {
     final queries = [
       'SELECT COUNT(*) c FROM fact_session_exercise WHERE custom_exercise_id = ?',
       'SELECT COUNT(*) c FROM dim_planned_session_exercise WHERE custom_exercise_id = ?',
-      'SELECT COUNT(*) c FROM dim_lesson WHERE custom_exercise_id = ?',
+      'SELECT COUNT(*) c FROM dim_exercise_note WHERE custom_exercise_id = ?',
       'SELECT COUNT(*) c FROM fact_goal WHERE custom_exercise_id = ?',
     ];
     var total = 0;
@@ -290,7 +289,9 @@ class ExerciseRepository {
   /// been "used" and can only be archived (the FKs are the server backstop).
   Future<int> variationUsageCount(String variationId) async {
     final queries = [
-      'SELECT COUNT(*) c FROM fact_session_exercise_set WHERE custom_variation_id = ?',
+      // Flagged rows (soft-deleted inside an active session) never count as
+      // usage — the gate they feed decides archive vs hard-delete (2026-10-13).
+      'SELECT COUNT(*) c FROM fact_session_exercise_set WHERE custom_variation_id = ? AND COALESCE(is_deleted, 0) = 0',
       'SELECT COUNT(*) c FROM dim_planned_session_exercise_set WHERE custom_variation_id = ?',
     ];
     var total = 0;

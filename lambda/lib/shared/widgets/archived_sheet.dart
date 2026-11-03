@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_fonts.dart';
 import '../../core/styles/app_radius.dart';
@@ -46,10 +47,12 @@ class _ArchivedSheetState extends State<ArchivedSheet> {
   @override
   void initState() {
     super.initState();
-    _searchController.addListener(() => setState(() {
-      _query = _searchController.text;
-      _page = 0;
-    }));
+    _searchController.addListener(
+      () => setState(() {
+        _query = _searchController.text;
+        _page = 0;
+      }),
+    );
     _load();
   }
 
@@ -73,9 +76,7 @@ class _ArchivedSheetState extends State<ArchivedSheet> {
   List<({String id, String name})> get _filtered => _query.isEmpty
       ? _items
       : _items
-            .where(
-              (i) => i.name.toLowerCase().contains(_query.toLowerCase()),
-            )
+            .where((i) => i.name.toLowerCase().contains(_query.toLowerCase()))
             .toList();
 
   List<({String id, String name})> get _paged {
@@ -120,7 +121,8 @@ class _ArchivedSheetState extends State<ArchivedSheet> {
                 widget.emptyText,
                 style: AppFonts.ui(
                   fontSize: AppTextStyles.sm,
-                  color: AppColors.muted,
+                  height: 1.4,
+                  color: AppColors.inkSecondary,
                 ),
               )
             else ...[
@@ -146,7 +148,7 @@ class _ArchivedSheetState extends State<ArchivedSheet> {
                       ),
                       trailing: widget.onDelete == null
                           ? Icon(
-                              Icons.restore,
+                              LucideIcons.rotateCcw,
                               size: 18,
                               color: AppColors.accent,
                             )
@@ -154,7 +156,7 @@ class _ArchivedSheetState extends State<ArchivedSheet> {
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Icon(
-                                  Icons.restore,
+                                  LucideIcons.rotateCcw,
                                   size: 18,
                                   color: AppColors.accent,
                                 ),
@@ -168,7 +170,7 @@ class _ArchivedSheetState extends State<ArchivedSheet> {
                                     await _load();
                                   },
                                   child: Icon(
-                                    Icons.delete_outline,
+                                    LucideIcons.trash2,
                                     size: 18,
                                     color: AppColors.danger,
                                   ),
@@ -186,7 +188,7 @@ class _ArchivedSheetState extends State<ArchivedSheet> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       _PagerButton(
-                        icon: Icons.chevron_left,
+                        icon: LucideIcons.chevronLeft,
                         enabled: _canPrev,
                         onTap: () => setState(() => _page--),
                       ),
@@ -195,13 +197,13 @@ class _ArchivedSheetState extends State<ArchivedSheet> {
                         // Cumulative: everything shown up to this page.
                         '${((_page + 1) * _pageSize).clamp(0, _filtered.length)} of ${_filtered.length}',
                         style: AppFonts.mono(
-                          fontSize: 13,
-                          color: AppColors.muted,
+                          fontSize: AppTextStyles.caption,
+                          color: AppColors.inkSecondary,
                         ),
                       ),
                       const SizedBox(width: AppSpacing.md),
                       _PagerButton(
-                        icon: Icons.chevron_right,
+                        icon: LucideIcons.chevronRight,
                         enabled: _canNext,
                         onTap: () => setState(() => _page++),
                       ),

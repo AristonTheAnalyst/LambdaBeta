@@ -20,9 +20,9 @@ enum BlockLengthMode {
   sessions;
 
   String get label => switch (this) {
-        BlockLengthMode.weeks => 'Weeks',
-        BlockLengthMode.sessions => 'Sessions',
-      };
+    BlockLengthMode.weeks => 'Weeks',
+    BlockLengthMode.sessions => 'Sessions',
+  };
 }
 
 /// Which length a block carries.
@@ -65,9 +65,21 @@ DateTime endDateFor(DateTime start, int weeks, [int days = 0]) {
   final day = start.day + 7 * weeks + days;
   return start.isUtc
       ? DateTime.utc(
-          start.year, start.month, day, start.hour, start.minute, start.second)
+          start.year,
+          start.month,
+          day,
+          start.hour,
+          start.minute,
+          start.second,
+        )
       : DateTime(
-          start.year, start.month, day, start.hour, start.minute, start.second);
+          start.year,
+          start.month,
+          day,
+          start.hour,
+          start.minute,
+          start.second,
+        );
 }
 
 /// The exact inverse of [endDateFor]: the length between two dates, split into
@@ -153,8 +165,7 @@ bool isSessionsBounded({
   required bool hasBlock,
   required int? blockTargetSessions,
   required String? progressionMode,
-}) =>
-    hasBlock ? blockTargetSessions != null : progressionMode != 'frequency';
+}) => hasBlock ? blockTargetSessions != null : progressionMode != 'frequency';
 
 /// Whether two instants fall on the same calendar day, ignoring both the time
 /// and which flavour they are. Used by the block editor's dirty check and by

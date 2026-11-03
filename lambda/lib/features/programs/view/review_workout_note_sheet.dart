@@ -25,16 +25,15 @@ Future<String?> showReviewWorkoutNoteSheet(
   BuildContext context, {
   required String workoutName,
   required String initialValue,
-}) =>
-    showLambdaModal<String>(
-      context,
-      fitContent: true,
-      keyboardAware: true,
-      child: _ReviewWorkoutNoteSheet(
-        workoutName: workoutName,
-        initialValue: initialValue,
-      ),
-    );
+}) => showLambdaModal<String>(
+  context,
+  fitContent: true,
+  keyboardAware: true,
+  child: _ReviewWorkoutNoteSheet(
+    workoutName: workoutName,
+    initialValue: initialValue,
+  ),
+);
 
 class _ReviewWorkoutNoteSheet extends StatefulWidget {
   const _ReviewWorkoutNoteSheet({
@@ -134,7 +133,8 @@ class _ReviewWorkoutNoteSheetState extends State<_ReviewWorkoutNoteSheet> {
               minLines: 3,
               maxLines: 6,
               textCapitalization: TextCapitalization.sentences,
-              placeholder: 'What this workout is for, or what you changed and '
+              placeholder:
+                  'What this workout is for, or what you changed and '
                   'why…',
               // The sheet's default background is a surface ground.
               elevated: true,

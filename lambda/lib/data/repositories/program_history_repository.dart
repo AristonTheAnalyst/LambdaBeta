@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:uuid/uuid.dart';
 
 import '../../core/powersync/database.dart' as ps;
+import '../../core/utils/name_limit.dart';
 import '../models/block_sequence.dart';
 import '../models/planned_session_exercise.dart';
 import '../models/planned_session_exercise_set.dart';
@@ -10,11 +11,15 @@ import '../models/planned_session_program.dart';
 import '../models/program_block.dart';
 import '../models/program_content.dart';
 import '../models/program_history.dart';
+import '../models/program_progress.dart';
 import '../models/program_review.dart';
 import '../models/program_run.dart';
+import '../models/review_stage.dart';
 import 'planned_session_repository.dart';
+import 'planned_session_store.dart';
 import 'program_repository.dart';
 import 'program_run_repository.dart';
+import 'staged_planned_sessions.dart';
 
 const _uuid = Uuid();
 
@@ -25,7 +30,11 @@ const _unordered = 1 << 30;
 /// Where a review's comparison starts — see
 /// [ProgramHistoryRepository.comparisonBase].
 class ComparisonBase {
-  const ComparisonBase(this.content, {this.completedDate, this.notes = const {}});
+  const ComparisonBase(
+    this.content, {
+    this.completedDate,
+    this.notes = const {},
+  });
 
   final ProgramContent content;
 
@@ -43,6 +52,142 @@ class ComparisonBase {
   bool get asFound => completedDate == null;
 }
 
+/// Which moment of a workout's story a [WorkoutVersion] is.
+enum WorkoutVersionSide {
+  /// The workout as a review found it — the pass's baseline, captured when it
+  /// began.
+  start,
+
+  /// The workout as a review left it — the pass's snapshot, frozen when it
+  /// completed.
+  end,
+
+  /// The plan as it stands today; it belongs to no review.
+  current,
+}
+
+/// One frozen version of a workout, read as a record (2026-10-26).
+///
+/// A version is one document, narrowed to one workout — not a pair. The
+/// reader walks them in order and the eye flips between the two sides of the
+/// version's own review; the current plan is the one version with no pair,
+/// because nothing has been recorded after it yet.
+class WorkoutVersion {
+  const WorkoutVersion({
+    required this.sessionId,
+    required this.side,
+    this.reviewId,
+    this.date,
+    this.session,
+    this.exerciseNotes = const {},
+    this.workoutNote,
+  });
+
+  /// The workout this version is about (`dim_planned_session.session_id`).
+  final String sessionId;
+
+  final WorkoutVersionSide side;
+
+  /// The review this version came from; null on [WorkoutVersionSide.current].
+  final String? reviewId;
+
+  /// When this version was taken: the pass began ([start]), the review
+  /// completed ([end]). Null on the current plan, which stands outside time.
+  final DateTime? date;
+
+  /// The workout's content on this side, or null when the review's document
+  /// did not hold it — a workout the pass deleted before it completed, or one
+  /// it added after the baseline was taken. Null is a fact to say, not a
+  /// version to drop.
+  final ContentSession? session;
+
+  /// The review's exercise notes, keyed by `planned_exercise_id`. Empty on a
+  /// baseline (the plan as found had no notes of its own) and on the current
+  /// plan (a plan carries no review notes).
+  final Map<String, String> exerciseNotes;
+
+  /// The review's note for this workout as a whole, when it left one — same
+  /// rule as [exerciseNotes].
+  final String? workoutNote;
+
+  bool get isStart => side == WorkoutVersionSide.start;
+
+  bool get isCurrent => side == WorkoutVersionSide.current;
+}
+
+/// The frozen sides of [sessionId]'s story in [reviews], newest first — the
+/// pure half of [ProgramHistoryRepository.fetchWorkoutVersions], split out so
+/// the ordering and the side rules can be read (and tested) without a
+/// database.
+///
+/// Reviews order by `completed_date` (the moment their snapshot was taken),
+/// and within one review the end is newer than its start — so the newest
+/// first list runs `reviewN.end, reviewN.start, …, review1.start`.
+List<WorkoutVersion> assembleWorkoutVersions(
+  List<ProgramReview> reviews,
+  String sessionId,
+) {
+  final completed =
+      [
+        for (final review in reviews)
+          if (review.isCompleted && review.hasSnapshot) review,
+      ]..sort((a, b) {
+        final byDate = a.completedDate!.compareTo(b.completedDate!);
+        return byDate != 0 ? byDate : a.reviewId.compareTo(b.reviewId);
+      });
+
+  final versions = <WorkoutVersion>[];
+  for (final review in completed) {
+    final start = _sessionIn(review.baseline, sessionId);
+    final end = _sessionIn(review.snapshot, sessionId);
+    // A review that never held this workout is not part of its story.
+    if (start == null && end == null) continue;
+    if (review.hasBaseline) {
+      versions.add(
+        WorkoutVersion(
+          sessionId: sessionId,
+          reviewId: review.reviewId,
+          side: WorkoutVersionSide.start,
+          date: review.createdDate,
+          session: start,
+        ),
+      );
+    }
+    versions.add(
+      WorkoutVersion(
+        sessionId: sessionId,
+        reviewId: review.reviewId,
+        side: WorkoutVersionSide.end,
+        date: review.completedDate,
+        session: end,
+        exerciseNotes: review.exerciseNotes,
+        workoutNote: review.workoutNotes[sessionId],
+      ),
+    );
+  }
+  return versions.reversed.toList();
+}
+
+/// One session out of a document — the single-session form of
+/// [contentInScope], kept here because the version read has no view in hand.
+ContentSession? _sessionIn(ProgramContent? content, String sessionId) {
+  for (final session in content?.sessions ?? const <ContentSession>[]) {
+    if (session.sessionId == sessionId) return session;
+  }
+  return null;
+}
+
+/// The current run as the caller already found it — [progress] is null
+/// exactly when there is no current run.
+///
+/// The wrapper exists so `fetchDueItems` can tell "nobody has looked" from
+/// "looked, and the answer is none": only the first should cost a read.
+class CurrentRunReading {
+  const CurrentRunReading(this.progress);
+
+  final ProgramProgress? progress;
+}
+
 /// A program's checkpoints: the reviews that record it, and the snapshot each
 /// completed review carries.
 ///
@@ -52,6 +197,22 @@ class ComparisonBase {
 /// review complete inside a single local transaction — neither belongs on the
 /// CRUD repository the rest of the screens already depend on.
 class ProgramHistoryRepository {
+  /// Refuses a review title longer than the name sheet allows, at the column.
+  ///
+  /// The sheet caps its field; this catches a programmatic start. The local
+  /// mirror cannot check (`Column.text`, no CHECK), so an over-long title
+  /// would insert locally and only die at upload — quarantined server-side
+  /// while the device keeps drawing it.
+  void _assertTitleFits(String? title) {
+    if (title != null && nameTooLong(title, kMaxReviewTitleLength)) {
+      throw ArgumentError.value(
+        title,
+        'title',
+        'exceeds $kMaxReviewTitleLength characters',
+      );
+    }
+  }
+
   ProgramHistoryRepository({
     PlannedSessionRepository? plannedSessionRepository,
     ProgramRunRepository? programRunRepository,
@@ -87,9 +248,15 @@ class ProgramHistoryRepository {
   /// 'order' runs walk and the order `reorderWorkouts` writes. A position in
   /// the returned list IS the workout's place in the program, which is what
   /// makes the diff's move detection mean anything.
+  ///
+  /// [store] is the rows to read when the caller has edits the plan has not
+  /// taken yet — a review pass finishing reads its own staged rows through it,
+  /// which is how the snapshot records what the pass left rather than what the
+  /// plan held before it (2026-10-27). Null reads the live rows.
   Future<ProgramContent> buildContent({
     required String userId,
     required String programId,
+    PlannedSessionStore? store,
   }) async {
     final links = await _plannedRepo.fetchProgramLinks(programId);
     final sessions = await _plannedRepo.fetchPlannedSessions(
@@ -115,15 +282,19 @@ class ProgramHistoryRepository {
           );
 
     final snapshot = <ContentSession>[];
+    final reader = store ?? _plannedRepo;
     for (final link in ordered) {
-      final session = sessionById[link.plannedSessionId]!;
+      var session = sessionById[link.plannedSessionId]!;
+      // The pass may have renamed (or noted) the workout it is reviewing.
+      if (store != null) {
+        session =
+            await store.fetchPlannedSessionById(session.sessionId) ?? session;
+      }
 
       // Both reads are already scoped to active rows and ordered by
       // exercise_order / set_number, so grouping preserves that order.
-      final exercises = await _plannedRepo.fetchPlannedExercises(
-        session.sessionId,
-      );
-      final sets = await _plannedRepo.fetchPlannedSets(session.sessionId);
+      final exercises = await reader.fetchPlannedExercises(session.sessionId);
+      final sets = await reader.fetchPlannedSets(session.sessionId);
       final setsByExercise = <String, List<PlannedSessionExerciseSet>>{};
       for (final set in sets) {
         setsByExercise.putIfAbsent(set.plannedExerciseId, () => []).add(set);
@@ -177,6 +348,7 @@ class ProgramHistoryRepository {
             variationId: g.variationId,
             targetWeight: g.targetWeight,
             targetReps: g.targetReps,
+            targets: g.targets,
             text: g.text,
           ),
       ],
@@ -234,6 +406,7 @@ class ProgramHistoryRepository {
     required String userId,
     required List<String> sessionIds,
     List<String> goalIds = const [],
+    PlannedSessionStore? store,
   }) async {
     final links = await _plannedRepo.fetchLinksForSessions(sessionIds);
     final linkBySession = <String, PlannedSessionProgram>{};
@@ -242,15 +415,18 @@ class ProgramHistoryRepository {
     }
 
     final sessions = <ContentSession>[];
+    final reader = store ?? _plannedRepo;
     for (final id in sessionIds) {
-      final session = await _plannedRepo.fetchPlannedSessionById(id);
+      final session = store == null
+          ? await _plannedRepo.fetchPlannedSessionById(id)
+          : await store.fetchPlannedSessionById(id);
       if (session == null) continue;
       final link = linkBySession[id];
 
       // Both reads are already scoped to active rows and ordered by
       // exercise_order / set_number, so grouping preserves that order.
-      final exercises = await _plannedRepo.fetchPlannedExercises(id);
-      final sets = await _plannedRepo.fetchPlannedSets(id);
+      final exercises = await reader.fetchPlannedExercises(id);
+      final sets = await reader.fetchPlannedSets(id);
       final setsByExercise = <String, List<PlannedSessionExerciseSet>>{};
       for (final set in sets) {
         setsByExercise.putIfAbsent(set.plannedExerciseId, () => []).add(set);
@@ -318,6 +494,7 @@ class ProgramHistoryRepository {
               variationId: goal.variationId,
               targetWeight: goal.targetWeight,
               targetReps: goal.targetReps,
+              targets: goal.targets,
               text: goal.text,
             ),
       ],
@@ -389,14 +566,21 @@ class ProgramHistoryRepository {
 
   /// Creates a review — always a [kReviewKindReview].
   ///
-  /// `proposed_content` rows still read back ([ProgramReview.fromMap] keeps the
-  /// columns), but nothing writes them any more: reviewing IS editing, so a
-  /// "proposed change" was a second way to describe the same act.
+  /// `proposed_content`/`proposed_hash` are the pass's **staged workouts**
+  /// (2026-10-27): the editor writes the workouts into the review's own row
+  /// while the pass runs ([saveProposal]) and the plan only moves when the
+  /// pass finishes ([completeReview]). The columns are named for the retired
+  /// "propose a change" path they were born under; the document on them is
+  /// [ReviewStage]'s, not [ProgramContent]'s.
   ///
-  /// [sessionIds] is the SCOPE — the workouts the pass covers, ticked in the
-  /// picker. A review of nothing is not a review: an empty set would store no
-  /// scope and resolve to the whole program, silently claiming a look nobody
-  /// took, so it is refused here rather than written.
+  /// [sessionIds] is the SCOPE — the workouts the pass covers. A **standalone**
+  /// pass may begin empty (2026-10-27): its + opens the pass itself, and the
+  /// landing it lands on is where the set is built, so the row has to exist
+  /// before it covers anything. A **program** review still refuses an empty
+  /// set: it stores no scope there, and a scoped row that stores nothing
+  /// resolves to the whole program — a look nobody took, silently recorded as
+  /// a checkpoint. (A pass begun empty cannot be finished until it covers a
+  /// workout; that gate lives with the finish.)
   ///
   /// A null [programId] is a **standalone** review — workouts picked from
   /// anywhere, no program in the picture. [goalIds] is the other half of the
@@ -414,11 +598,13 @@ class ProgramHistoryRepository {
     String? notes,
     DateTime? scheduledFor,
   }) async {
-    if (sessionIds.isEmpty) {
+    if (sessionIds.isEmpty && programId != null) {
       throw ArgumentError(
-        'A review covers at least one workout: sessionIds cannot be empty',
+        'A program review covers at least one workout: sessionIds cannot be '
+        'empty',
       );
     }
+    _assertTitleFits(title);
     final reviewId = _uuid.v4();
     final now = DateTime.now().toUtc();
 
@@ -618,6 +804,50 @@ class ProgramHistoryRepository {
     return baseline == null ? null : ComparisonBase(baseline);
   }
 
+  /// Every frozen version of one workout's story, newest first (2026-10-26).
+  ///
+  /// Each completed review that held the workout contributes up to two
+  /// versions: the side the pass found (`START OF REVIEW`, its baseline) and
+  /// the side it left (`END OF REVIEW`, its snapshot). A review contributes
+  /// only the sides its row actually recorded — a row with no baseline offers
+  /// no start — and a workout absent from one side is still a version of that
+  /// review: a review that deleted the workout left an empty end, and the
+  /// reader has to be able to say so rather than skip the moment.
+  ///
+  /// The current plan is prepended when the workout still exists: the story
+  /// does not stop at the newest review, and "how it stands today" is the
+  /// version a reader most often wants next. A deleted (archived) workout has
+  /// no current version to draw.
+  ///
+  /// Scoping asks the DOCUMENTS, not the scope columns: a version is a
+  /// snapshot of the plan, so whether a review held this workout is exactly
+  /// whether one of its two documents does. The stored id set can name a
+  /// workout the snapshot no longer contains — the pass deleted it — and
+  /// that absence is itself the version.
+  Future<List<WorkoutVersion>> fetchWorkoutVersions({
+    required String userId,
+    required String sessionId,
+  }) async {
+    final reviews = await fetchReviewsForUser(userId);
+    final versions = assembleWorkoutVersions(reviews, sessionId);
+    final live = await buildContentForSessions(
+      userId: userId,
+      sessionIds: [sessionId],
+    );
+    final session = live.sessions.isEmpty ? null : live.sessions.first;
+    if (session != null) {
+      versions.insert(
+        0,
+        WorkoutVersion(
+          sessionId: sessionId,
+          side: WorkoutVersionSide.current,
+          session: session,
+        ),
+      );
+    }
+    return versions;
+  }
+
   /// Sets (or, with a blank [note], clears) one exercise's review note.
   ///
   /// Write-through rather than buffered at Finish: the notes are the review's
@@ -684,31 +914,95 @@ class ProgramHistoryRepository {
   /// stored order, and a set re-ticked into a different order would open in a
   /// sequence nobody chose.
   ///
-  /// Guarded on `completed_date IS NULL`, like [markWorkoutReviewed]: a finished
-  /// review's scope is part of what was recorded, so a late edit cannot rewrite
-  /// it. An empty [sessionIds] is refused for the reason [scheduleReview]
-  /// refuses one — a review contains workouts, and a row covering none is not a
-  /// review.
+  /// Empty is legal here — a pass begins with no scope and this is how it
+  /// grows (2026-10-27); "a review covers at least one workout" is a rule of
+  /// the finish, not of every edit. A completed row is refused, like
+  /// [markWorkoutReviewed]: a finished review's scope is part of what was
+  /// recorded, so a late edit cannot rewrite it.
+  ///
+  /// A workout or goal added mid-pass is merged into the **baseline** as it is
+  /// added: "as found" is the row as it stood when the pass first covered it,
+  /// so Compare has a "before" for a workout the pass picked up halfway
+  /// instead of reading everything the pass does to it as a change. Entries
+  /// the baseline already holds are never rewritten — the first look is the
+  /// look — and only a standalone pass grows: a program review's baseline IS
+  /// the program, not a set that can gain members.
   Future<void> setReviewScope(
     String reviewId, {
     required List<String> sessionIds,
     required List<String> goalIds,
   }) async {
-    if (sessionIds.isEmpty) {
-      throw ArgumentError(
-        'A review covers at least one workout: sessionIds cannot be empty',
+    final review = await fetchReview(reviewId);
+    if (review == null || review.isCompleted) return;
+
+    final addedSessions = [
+      for (final id in sessionIds)
+        if (!(review.storedSessionIds ?? const []).contains(id)) id,
+    ];
+    final addedGoals = [
+      for (final id in goalIds)
+        if (!(review.storedGoalIds ?? const []).contains(id)) id,
+    ];
+
+    final baseline = review.baseline;
+    String? baselineContent;
+    String? baselineHash;
+    if (review.isStandalone &&
+        baseline != null &&
+        (addedSessions.isNotEmpty || addedGoals.isNotEmpty)) {
+      final additions = await buildContentForSessions(
+        userId: review.userId,
+        sessionIds: addedSessions,
+        goalIds: addedGoals,
       );
+      final merged = _mergeIntoBaseline(baseline, additions);
+      baselineContent = merged.encode();
+      baselineHash = merged.contentHash;
     }
+
     await ps.safeExec(
       '''
       UPDATE fact_program_review
-      SET session_ids_json = ?, goal_ids_json = ?
+      SET session_ids_json = ?, goal_ids_json = ?,
+          baseline_content = COALESCE(?, baseline_content),
+          baseline_hash = COALESCE(?, baseline_hash)
       WHERE review_id = ? AND completed_date IS NULL
       ''',
       [
         jsonEncode(sessionIds),
         goalIds.isEmpty ? null : jsonEncode(goalIds),
+        baselineContent,
+        baselineHash,
         reviewId,
+      ],
+    );
+  }
+
+  /// [found] with the entries of [added] appended, keyed by id: what the pass
+  /// found first is what "as found" keeps, and nothing the baseline already
+  /// holds is rewritten by a later addition.
+  static ProgramContent _mergeIntoBaseline(
+    ProgramContent found,
+    ProgramContent added,
+  ) {
+    final sessionIds = {for (final s in found.sessions) s.sessionId};
+    final goalIds = {for (final g in found.goals) g.goalId};
+    final blockIds = {for (final b in found.blocks) b.blockId};
+    return ProgramContent(
+      blocks: [
+        ...found.blocks,
+        for (final b in added.blocks)
+          if (!blockIds.contains(b.blockId)) b,
+      ],
+      sessions: [
+        ...found.sessions,
+        for (final s in added.sessions)
+          if (!sessionIds.contains(s.sessionId)) s,
+      ],
+      goals: [
+        ...found.goals,
+        for (final g in added.goals)
+          if (!goalIds.contains(g.goalId)) g,
       ],
     );
   }
@@ -729,6 +1023,21 @@ class ProgramHistoryRepository {
     '''
     DELETE FROM fact_program_review
     WHERE review_id = ? AND completed_date IS NULL
+    ''',
+    [reviewId],
+  );
+
+  /// Deletes a completed review — the Reviews list's record verb, and the
+  /// mirror of [deleteReview]: the row is hard-deleted, locally and on the
+  /// server, and nothing else goes with it. The one deliberate difference is
+  /// the guard, `completed_date IS NOT NULL`: a swipe made against a stale
+  /// list must never take an open pass out from under a walk in progress — the
+  /// open pass's ticks and notes are live work, while a record is what the
+  /// list is allowed to take back.
+  Future<void> deleteCompletedReview(String reviewId) => ps.safeExec(
+    '''
+    DELETE FROM fact_program_review
+    WHERE review_id = ? AND completed_date IS NOT NULL
     ''',
     [reviewId],
   );
@@ -807,18 +1116,54 @@ class ProgramHistoryRepository {
     );
   }
 
-  /// Completes a review, writing the snapshot it is a checkpoint of onto the
-  /// row.
+  /// Stages [stage] on [reviewId]'s row — the working copy of every workout
+  /// the pass has edited so far (2026-10-27).
   ///
-  /// The snapshot write and the completion UPDATE share ONE transaction: a
-  /// review marked complete with no snapshot behind it, or a snapshot no
-  /// review claims, are both worse than the operation failing outright.
+  /// Only an OPEN row takes it: a completed review is a record, and a late
+  /// persist landing after the finish must not reopen a question the pass
+  /// already answered. An empty stage clears the columns.
+  Future<void> saveProposal(String reviewId, ReviewStage stage) async {
+    if (stage.isEmpty) {
+      await ps.safeExec(
+        '''
+        UPDATE fact_program_review
+        SET proposed_content = NULL, proposed_hash = NULL
+        WHERE review_id = ? AND completed_date IS NULL
+        ''',
+        [reviewId],
+      );
+      return;
+    }
+    await ps.safeExec(
+      '''
+      UPDATE fact_program_review
+      SET proposed_content = ?, proposed_hash = ?
+      WHERE review_id = ? AND completed_date IS NULL
+      ''',
+      [stage.encode(), stage.contentHash, reviewId],
+    );
+  }
+
+  /// Completes a review, applying the pass's staged workouts and writing the
+  /// snapshot it is a checkpoint of onto the row.
   ///
-  /// A [kOutcomeDismissed] review is "not now", not a checkpoint, so it takes
-  /// the completion UPDATE alone — no snapshot, no content build. It is also
-  /// excluded from the achievements window ([checkpointFor]); otherwise
-  /// dismissing a prompt would silently swallow everything achieved since the
-  /// last real review.
+  /// A pass no longer edits the plan as it goes (2026-10-27): its changes are
+  /// staged on the row ([saveProposal]) and this is the one moment they land —
+  /// the staged rows are written into the dims, the snapshot is taken of what
+  /// they produced, and the completion stamp is written, all in ONE
+  /// transaction. A review marked complete with half its edits applied, or a
+  /// snapshot no review claims, are both worse than the operation failing
+  /// outright.
+  ///
+  /// [stage] is the finishing route's live workbook, which is ahead of the
+  /// last persisted document by at most one queued write. Null reads the
+  /// document off the row, which is what a completion from anywhere else does.
+  ///
+  /// A [kOutcomeDismissed] review is "not now", not a checkpoint, so its
+  /// staged edits are DROPPED rather than applied — it takes the completion
+  /// UPDATE alone, clearing the proposal with it. It is also excluded from the
+  /// achievements window ([checkpointFor]); otherwise dismissing a prompt would
+  /// silently swallow everything achieved since the last real review.
   ///
   /// Idempotent: a review that is already completed is returned unchanged, so
   /// a double-tap cannot re-snapshot a program the user has since edited.
@@ -827,6 +1172,7 @@ class ProgramHistoryRepository {
     required String userId,
     required String outcome,
     String? notes,
+    ReviewStage? stage,
   }) async {
     if (!kReviewOutcomes.contains(outcome)) {
       throw ArgumentError.value(outcome, 'outcome', 'Unknown review outcome');
@@ -838,12 +1184,14 @@ class ProgramHistoryRepository {
     if (review.isCompleted) return review;
 
     final now = DateTime.now().toUtc();
+    final pass = stage ?? review.stage;
 
     if (outcome == kOutcomeDismissed) {
       await ps.safeExec(
         '''
         UPDATE fact_program_review
-        SET completed_date = ?, outcome = ?, notes = COALESCE(?, notes)
+        SET completed_date = ?, outcome = ?, notes = COALESCE(?, notes),
+            proposed_content = NULL, proposed_hash = NULL
         WHERE review_id = ? AND completed_date IS NULL
         ''',
         [now.toIso8601String(), outcome, notes, reviewId],
@@ -851,30 +1199,57 @@ class ProgramHistoryRepository {
       return (await fetchReview(reviewId)) ?? review;
     }
 
-    // The snapshot is of the LIVE rows. Reviewing IS editing: the user
-    // changes the plan through the normal editor, and finishing records what
-    // that produced — the review row never writes back to the rows it
-    // describes. Which rows "live" means follows the pass's own scope: the
-    // whole program for a program review, the stored set and picked goals for
-    // a standalone one.
+    // A pass must cover something to become a record (2026-10-27). It BEGINS
+    // empty now — its landing builds the scope — so this is where the
+    // "at least one workout" rail lives: finishing an empty one would write a
+    // checkpoint of nothing, and the landing would open on a record with no
+    // cards. Dismissal is above it: "not now" is always allowed out.
+    if (review.isStandalone && (review.storedSessionIds ?? const []).isEmpty) {
+      throw ArgumentError.value(
+        reviewId,
+        'reviewId',
+        'A review covers at least one workout: add one before finishing',
+      );
+    }
+
+    // The snapshot is of the rows as the PASS left them: live where the pass
+    // changed nothing, staged where it did. Which rows that means follows the
+    // pass's own scope: the whole program for a program review, the stored set
+    // and picked goals for a standalone one.
     //
     // Built BEFORE the transaction opens — querying from inside a
     // `writeTransaction` callback contends with the write lock that
     // transaction holds (see the note on `ProgramRepository.duplicateProgram`).
+    final stageRows = (pass == null || pass.isEmpty)
+        ? null
+        : StagedPlannedSessions(
+            reviewId: reviewId,
+            userId: userId,
+            stage: pass,
+          );
     final content = review.isStandalone
         ? await buildContentForSessions(
             userId: userId,
             sessionIds: review.storedSessionIds ?? const [],
             goalIds: review.storedGoalIds ?? const [],
+            store: stageRows,
           )
-        : await buildContent(userId: userId, programId: review.programId!);
+        : await buildContent(
+            userId: userId,
+            programId: review.programId!,
+            store: stageRows,
+          );
 
     await ps.safeWriteTransaction((tx) async {
+      if (pass != null && pass.isNotEmpty) {
+        await _applyStage(tx, pass);
+      }
       await tx.execute(
         '''
         UPDATE fact_program_review
         SET completed_date = ?, outcome = ?, notes = COALESCE(?, notes),
-            snapshot_content = ?, snapshot_hash = ?
+            snapshot_content = ?, snapshot_hash = ?,
+            proposed_content = NULL, proposed_hash = NULL
         WHERE review_id = ? AND completed_date IS NULL
         ''',
         [
@@ -888,6 +1263,81 @@ class ProgramHistoryRepository {
       );
     });
     return (await fetchReview(reviewId)) ?? review;
+  }
+
+  /// Writes a pass's staged workouts onto the dim rows — row for row, archived
+  /// flags included, so a group the pass removed lands removed.
+  ///
+  /// `INSERT OR REPLACE` keyed on the logical id (the mirror's `id` is that
+  /// same value, and the staged rows kept their ids): every row the workout
+  /// already had is rewritten, the rows the pass added arrive, and nothing is
+  /// deleted — an archived row stays on disk, exactly as the planner's own
+  /// deletes write it.
+  Future<void> _applyStage(dynamic tx, ReviewStage stage) async {
+    for (final workout in stage.workouts.values) {
+      await tx.execute(
+        '''
+        UPDATE dim_planned_session
+        SET name = ?, notes = ?, date_archived = ?
+        WHERE session_id = ?
+        ''',
+        [
+          workout.session['name'],
+          workout.session['notes'],
+          workout.session['date_archived'],
+          workout.sessionId,
+        ],
+      );
+      for (final row in workout.exercises.values) {
+        await tx.execute(
+          '''
+          INSERT OR REPLACE INTO dim_planned_session_exercise
+            (id, planned_exercise_id, planned_session_id, user_id,
+             custom_exercise_id, exercise_order, is_archived)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+          ''',
+          [
+            row['planned_exercise_id'],
+            row['planned_exercise_id'],
+            row['planned_session_id'],
+            row['user_id'],
+            row['custom_exercise_id'],
+            (row['exercise_order'] as num?)?.toInt() ?? 0,
+            _flag(row['is_archived']),
+          ],
+        );
+      }
+      for (final row in workout.sets.values) {
+        await tx.execute(
+          '''
+          INSERT OR REPLACE INTO dim_planned_session_exercise_set
+            (id, planned_set_id, planned_exercise_id, user_id,
+             custom_variation_id, set_number, target_weight, target_reps,
+             target_notes, is_archived)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ''',
+          [
+            row['planned_set_id'],
+            row['planned_set_id'],
+            row['planned_exercise_id'],
+            row['user_id'],
+            row['custom_variation_id'],
+            (row['set_number'] as num?)?.toInt() ?? 1,
+            row['target_weight'],
+            row['target_reps'],
+            row['target_notes'],
+            _flag(row['is_archived']),
+          ],
+        );
+      }
+    }
+  }
+
+  /// A staged boolean as the mirror stores it.
+  static int _flag(Object? value) {
+    if (value is bool) return value ? 1 : 0;
+    if (value is int) return value == 0 ? 0 : 1;
+    return 0;
   }
 
   // ── Achievements ─────────────────────────────────────────────────────────
@@ -948,9 +1398,8 @@ class ProgramHistoryRepository {
     ];
     final everySession = [for (final link in links) link.plannedSessionId];
 
-    final candidates = [
-      for (final row in rows) ProgramReview.fromMap(row),
-    ]..sort((a, b) => b.effectiveDate.compareTo(a.effectiveDate));
+    final candidates = [for (final row in rows) ProgramReview.fromMap(row)]
+      ..sort((a, b) => b.effectiveDate.compareTo(a.effectiveDate));
 
     for (final review in candidates) {
       final set = review.sessionsIn(sessionLinks);
@@ -1140,7 +1589,17 @@ class ProgramHistoryRepository {
   /// Called from the library and the program detail loader ONLY, never from
   /// `getProgress` — a read that prompts must not be the same read that
   /// mutates.
-  Future<List<DueItem>> fetchDueItems(String userId) async {
+  ///
+  /// [currentRun] is for a caller that has just read the current run to draw
+  /// its own screen — the library does, one line up. Passing it stops this
+  /// read from asking again: the run read, then the whole progress chain
+  /// behind it (program, workouts, completed count, blocks) used to be paid a
+  /// second time here, and on a mirror holding no current run that is a
+  /// second REST round-trip (2026-10-25).
+  Future<List<DueItem>> fetchDueItems(
+    String userId, {
+    CurrentRunReading? currentRun,
+  }) async {
     final now = DateTime.now();
     final due = <DueItem>[];
 
@@ -1180,7 +1639,9 @@ class ProgramHistoryRepository {
     // with it, change it, or end the run — and the prompt comes down at Finish
     // rather than waiting for an end that may never come. The cadence feature,
     // when it lands, is what will earn the right to ask again.
-    final progress = await _runRepo.getProgress(userId);
+    final progress = currentRun != null
+        ? currentRun.progress
+        : await _runRepo.getProgress(userId);
     final currentProgramId = progress?.program.programId;
     if (progress != null && progress.isReadyToEnd) {
       final answered = await hasCompletedReviewForRun(

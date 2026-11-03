@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_fonts.dart';
 import '../../core/styles/app_spacing.dart';
+import '../../core/styles/app_text_styles.dart';
 import '../../core/utils/name_limit.dart';
 import '../../features/session/model/session_local_state.dart';
 import './container_styles.dart';
+import './exercise_selector.dart';
 import './lambda_search_field.dart';
 import './name_limit_counter.dart';
 import './slide_up_modal.dart';
@@ -60,6 +63,11 @@ DateTime? lastUsedFromHistory(
 /// [onAdd] null leaves unticked rows inert and muted, [onRemoveRequest] null
 /// leaves a tick as information rather than a control, and [onCreate] null
 /// hides the create row.
+///
+/// [autofocusSearch] defaults to true — the session screens open the picker to
+/// search, so the keyboard rising with it is the point. The goals filter
+/// passes false (2026-10-20): it already opens on a narrowed list, so the
+/// sheet arrives list-first and the keyboard waits for a tap on the field.
 void showAddExerciseModal(
   BuildContext context, {
   required Listenable listenable,
@@ -70,6 +78,7 @@ void showAddExerciseModal(
   Future<String?> Function(String name)? onCreate,
   bool Function()? isCreating,
   String title = 'Add/Remove Exercises',
+  bool autofocusSearch = true,
 }) {
   showLambdaModal(
     context,
@@ -84,6 +93,7 @@ void showAddExerciseModal(
       onCreate: onCreate,
       isCreating: isCreating,
       title: title,
+      autofocusSearch: autofocusSearch,
     ),
   );
 }
@@ -94,6 +104,7 @@ class _AddExerciseModalContent extends StatefulWidget {
     required this.entries,
     required this.isAdded,
     required this.title,
+    required this.autofocusSearch,
     this.onAdd,
     this.onRemoveRequest,
     this.onCreate,
@@ -108,6 +119,7 @@ class _AddExerciseModalContent extends StatefulWidget {
   final Future<String?> Function(String name)? onCreate;
   final bool Function()? isCreating;
   final String title;
+  final bool autofocusSearch;
 
   @override
   State<_AddExerciseModalContent> createState() =>
@@ -138,8 +150,10 @@ class _AddExerciseModalContentState extends State<_AddExerciseModalContent> {
   /// recently used (never-used last), then alphabetically.
   List<AddExerciseEntry> get _filtered {
     final q = _query.toLowerCase();
-    final matches =
-        widget.entries().where((e) => e.name.toLowerCase().contains(q)).toList();
+    final matches = widget
+        .entries()
+        .where((e) => e.name.toLowerCase().contains(q))
+        .toList();
     matches.sort((a, b) {
       // What is already in the workout rises to the top: the sheet answers
       // "what is active" before "what else could be".
@@ -215,14 +229,15 @@ class _AddExerciseModalContentState extends State<_AddExerciseModalContent> {
                 ),
                 GestureDetector(
                   onTap: () => Navigator.of(context, rootNavigator: true).pop(),
-                  child: Icon(Icons.close, size: 20, color: AppColors.muted),
+                  child: Icon(LucideIcons.x, size: 20, color: AppColors.muted),
                 ),
               ],
             ),
             const SizedBox(height: AppSpacing.lg),
             LambdaSearchField(
+              key: const ValueKey('add-exercise-search'),
               controller: _searchController,
-              autofocus: true,
+              autofocus: widget.autofocusSearch,
               showIcon: true,
               hint: 'Search exercises…',
               // The text *is* the new name when the create row is used, so the
@@ -233,53 +248,68 @@ class _AddExerciseModalContentState extends State<_AddExerciseModalContent> {
               elevated: true,
               onChanged: (v) => setState(() => _query = v),
             ),
-            if (_isNaming) ...[
+            // The counter belongs to naming a new exercise, so it only shows
+            // where the create row does — a caller with no `onCreate` (the
+            // goals filter) is searching, not naming.
+            if (_isNaming && widget.onCreate != null) ...[
               const SizedBox(height: 4),
               NameLimitCounter(length: _query.trim().length),
             ],
             const SizedBox(height: AppSpacing.sm),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 260),
-              child: ListenableBuilder(
-                listenable: widget.listenable,
-                builder: (context, _) => ListView(
-                  controller: _scrollController,
-                  shrinkWrap: true,
-                  children: [
-                    ..._filtered.map((e) {
-                      final added = widget.isAdded(e.exerciseId);
-                      return _resultRow(
-                        key: _rowKey(e.exerciseId),
-                        label: e.name,
-                        onTap: _tapFor(e, added: added),
-                        added: added,
-                      );
-                    }),
-                    if (_canCreate)
-                      _resultRow(
-                        label: '+ Create "${_query.trim()}"',
-                        // Visible but inert while a create is in flight — a row
-                        // that vanished under the finger would read as a
-                        // mis-tap.
-                        onTap: (widget.isCreating?.call() ?? false) ? null : _create,
-                        accent: true,
-                      ),
-                    if (_filtered.isEmpty && !_canCreate && _query.trim().isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(
-                          vertical: AppSpacing.lg,
+            // The list takes the pickers' shared cap, and gives way when the
+            // sheet has less room than that — the search field's keyboard
+            // eats most of the screen, and Flexible lets the list shrink into
+            // what is left instead of overflowing the sheet (2026-10-26).
+            Flexible(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: exercisePickerListCap(context),
+                ),
+                child: ListenableBuilder(
+                  listenable: widget.listenable,
+                  builder: (context, _) => ListView(
+                    controller: _scrollController,
+                    shrinkWrap: true,
+                    children: [
+                      ..._filtered.map((e) {
+                        final added = widget.isAdded(e.exerciseId);
+                        return _resultRow(
+                          key: _rowKey(e.exerciseId),
+                          label: e.name,
+                          onTap: _tapFor(e, added: added),
+                          added: added,
+                        );
+                      }),
+                      if (_canCreate)
+                        _resultRow(
+                          label: '+ Create "${_query.trim()}"',
+                          // Visible but inert while a create is in flight — a row
+                          // that vanished under the finger would read as a
+                          // mis-tap.
+                          onTap: (widget.isCreating?.call() ?? false)
+                              ? null
+                              : _create,
+                          accent: true,
                         ),
-                        child: Center(
-                          child: Text(
-                            'No exercises found',
-                            style: AppFonts.ui(
-                              fontSize: 13,
-                              color: AppColors.muted,
+                      if (_filtered.isEmpty &&
+                          !_canCreate &&
+                          _query.trim().isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                            vertical: AppSpacing.lg,
+                          ),
+                          child: Center(
+                            child: Text(
+                              'No exercises found',
+                              style: AppFonts.ui(
+                                fontSize: AppTextStyles.caption,
+                                color: AppColors.inkSecondary,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -339,7 +369,7 @@ class _AddExerciseModalContentState extends State<_AddExerciseModalContent> {
               ),
               if (added) ...[
                 const SizedBox(width: 8),
-                Icon(Icons.check_circle, size: 14, color: AppColors.success),
+                Icon(LucideIcons.circleCheck, size: 14, color: AppColors.success),
                 const SizedBox(width: 4),
                 Text(
                   'Added',

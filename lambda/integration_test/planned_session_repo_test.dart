@@ -179,4 +179,123 @@ void main() {
             'and the group after it moves past rather than onto it');
     expect(orders[last.plannedExerciseId], 3);
   });
+
+  // ── Recency (2026-10-26) ────────────────────────────────────────────────
+  // The library listing leads with the workout trained most recently, then
+  // the newest-created never-logged ones — the review picker's rule, now one
+  // comparator both reads share. A program listing keeps its sequence order.
+
+  test('the library list leads with the workout last trained', () async {
+    Future<void> stamp(String sessionId, DateTime created) => db.execute(
+      'UPDATE dim_planned_session SET created_date = ? WHERE session_id = ?',
+      [created.toUtc().toIso8601String(), sessionId],
+    );
+    Future<void> log(String id, String plannedSessionId, DateTime at) =>
+        db.execute(
+          '''
+          INSERT INTO fact_session
+            (id, session_id, user_id, created_datetime, end_datetime,
+             planned_session_id)
+          VALUES (?, ?, ?, ?, ?, ?)
+          ''',
+          [
+            id,
+            id,
+            userId,
+            at.toUtc().toIso8601String(),
+            at.toUtc().toIso8601String(),
+            plannedSessionId,
+          ],
+        );
+
+    final oldest = await planned.createPlannedSession(userId, name: 'Oldest');
+    final middle = await planned.createPlannedSession(userId, name: 'Middle');
+    final newest = await planned.createPlannedSession(userId, name: 'Newest');
+    await stamp(oldest.sessionId, DateTime(2026, 10, 1));
+    await stamp(middle.sessionId, DateTime(2026, 10, 2));
+    await stamp(newest.sessionId, DateTime(2026, 10, 3));
+
+    expect(
+      (await planned.fetchPlannedSessions(userId)).map((s) => s.name),
+      ['Newest', 'Middle', 'Oldest'],
+      reason: 'nothing logged yet — newest created leads',
+    );
+
+    await log('w1', middle.sessionId, DateTime(2026, 10, 5));
+    expect(
+      (await planned.fetchPlannedSessions(userId)).map((s) => s.name),
+      ['Middle', 'Newest', 'Oldest'],
+      reason: 'the logged workout leads; the rest stay newest-created first',
+    );
+
+    await log('w2', oldest.sessionId, DateTime(2026, 10, 6));
+    expect(
+      (await planned.fetchPlannedSessions(userId)).map((s) => s.name),
+      ['Oldest', 'Middle', 'Newest'],
+      reason: 'the most recent session decides, not the creation date',
+    );
+
+    // An open session is still a use — a template in the middle of being
+    // trained is the most recently used one.
+    await db.execute(
+      '''
+      INSERT INTO fact_session
+        (id, session_id, user_id, created_datetime, end_datetime,
+         planned_session_id)
+      VALUES (?, ?, ?, ?, ?, ?)
+      ''',
+      [
+        'w3',
+        'w3',
+        userId,
+        DateTime(2026, 10, 7).toUtc().toIso8601String(),
+        null,
+        newest.sessionId,
+      ],
+    );
+    expect(
+      (await planned.fetchPlannedSessions(userId)).map((s) => s.name),
+      ['Newest', 'Oldest', 'Middle'],
+    );
+  });
+
+  test('a program listing keeps its sequence order, not recency', () async {
+    final first = await planned.createPlannedSession(userId, name: 'First');
+    final second = await planned.createPlannedSession(userId, name: 'Second');
+    for (final (i, s) in [second, first].indexed) {
+      await db.execute(
+        '''
+        INSERT INTO dim_planned_session_program
+          (id, planned_session_program_id, program_id, planned_session_id,
+           user_id, sequence_order)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ''',
+        ['link-$i', 'link-$i', 'p1', s.sessionId, userId, i + 1],
+      );
+    }
+    // Recency would put First on top; sequence order must not.
+    await db.execute(
+      '''
+      INSERT INTO fact_session
+        (id, session_id, user_id, created_datetime, end_datetime,
+         planned_session_id)
+      VALUES (?, ?, ?, ?, ?, ?)
+      ''',
+      [
+        'w1',
+        'w1',
+        userId,
+        DateTime(2026, 10, 9).toUtc().toIso8601String(),
+        DateTime(2026, 10, 9).toUtc().toIso8601String(),
+        first.sessionId,
+      ],
+    );
+
+    expect(
+      (await planned.fetchPlannedSessions(userId, programId: 'p1'))
+          .map((s) => s.name),
+      ['Second', 'First'],
+      reason: 'a program\'s workouts are the plan\'s shape, not a usage list',
+    );
+  });
 }

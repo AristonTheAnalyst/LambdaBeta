@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_radius.dart';
 import '../../../core/styles/app_fonts.dart';
@@ -8,6 +9,7 @@ import '../../../core/styles/app_spacing.dart';
 import '../../../core/styles/app_text_styles.dart';
 import '../../../core/utils/block_length.dart';
 import '../../../core/utils/session_format.dart';
+import '../../../core/utils/name_limit.dart';
 import '../../../data/models/planned_session.dart';
 import '../../../data/models/program_block.dart';
 import '../../../data/models/program_history.dart';
@@ -16,6 +18,7 @@ import '../../../data/models/program_run.dart';
 import '../../../shared/router/app_router.dart';
 import '../../../shared/widgets/app_card.dart';
 import '../../../shared/widgets/glass_button.dart';
+import '../../../shared/widgets/header_icon_button.dart';
 import '../../../shared/widgets/lambda_input.dart';
 import '../../../shared/widgets/option_picker_sheet.dart';
 import '../../../shared/widgets/page_header.dart';
@@ -25,6 +28,7 @@ import '../../../shared/widgets/slide_tab_bar.dart';
 import '../../../shared/widgets/slide_tab_view.dart';
 import '../../../shared/widgets/status_chip.dart';
 import '../../../shared/widgets/swipe_actions.dart';
+import '../../../shared/widgets/user_name_text.dart';
 import '../viewmodel/program_detail_viewmodel.dart';
 import 'run_confirm_dialog.dart';
 import 'plan_session_screen.dart';
@@ -51,18 +55,22 @@ enum _ProgramTab { workouts, blocks, reviews }
 /// list: a blocked program that has no blocks yet is a real state, and it
 /// lands on Blocks so that the first thing it asks for is a block.
 List<_ProgramTab> _tabsFor({required bool blocked}) => [
-      blocked ? _ProgramTab.blocks : _ProgramTab.workouts,
-      _ProgramTab.reviews,
-    ];
+  blocked ? _ProgramTab.blocks : _ProgramTab.workouts,
+  _ProgramTab.reviews,
+];
 
 String _tabLabel(_ProgramTab tab) => switch (tab) {
-      _ProgramTab.workouts => 'Workouts',
-      _ProgramTab.blocks => 'Blocks',
-      _ProgramTab.reviews => 'Reviews',
-    };
+  _ProgramTab.workouts => 'Workouts',
+  _ProgramTab.blocks => 'Blocks',
+  _ProgramTab.reviews => 'Reviews',
+};
 
 class ProgramDetailScreen extends StatefulWidget {
-  const ProgramDetailScreen({super.key, required this.programId, this.viewModel});
+  const ProgramDetailScreen({
+    super.key,
+    required this.programId,
+    this.viewModel,
+  });
 
   final String programId;
 
@@ -126,9 +134,7 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
     setState(() => _reviewScope = blockId);
     // Derived from the same list the tabs are built from — the Reviews tab is
     // wherever that list puts it.
-    _onTabChanged(
-      _tabsFor(blocked: _usesBlocks).indexOf(_ProgramTab.reviews),
-    );
+    _onTabChanged(_tabsFor(blocked: _usesBlocks).indexOf(_ProgramTab.reviews));
   }
 
   // ── UnsavedChangesGuard overrides ─────────────────────────────────────────
@@ -156,7 +162,7 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
   }
 
   @override
-  void onDiscard() {
+  Future<void> onDiscard() async {
     final s = _vm.state.value;
     _nameController.text = s.program?.name ?? '';
     _descriptionController.text = s.program?.description ?? '';
@@ -372,7 +378,10 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
   /// what the attempt got to. It is deliberately reachable from the paused state,
   /// because "I am not finishing this, but I am done with it" is a real answer,
   /// and without it the only way out of a pause would be to resume and end.
-  Future<void> _confirmEndRun(BuildContext context, {bool paused = false}) async {
+  Future<void> _confirmEndRun(
+    BuildContext context, {
+    bool paused = false,
+  }) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -387,14 +396,17 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
         content: Text(
           paused
               ? 'This run is paused, not finished. Ending it records what it '
-                  'got to, and you can begin the program again afterwards.'
+                    'got to, and you can begin the program again afterwards.'
               : 'Your progress will be saved. You can start this program again later.',
-          style: AppFonts.ui(color: AppColors.muted),
+          style: AppFonts.ui(color: AppColors.inkSecondary, height: 1.4),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text('Cancel', style: AppFonts.ui(color: AppColors.muted)),
+            child: Text(
+              'Cancel',
+              style: AppFonts.ui(color: AppColors.inkSecondary),
+            ),
           ),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(true),
@@ -426,7 +438,8 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
       run: run,
       title: forBlock ? 'Restart this block' : 'Restart program',
       actionLabel: 'Restart',
-      warning: 'This ends the current run and records what it got to, then '
+      warning:
+          'This ends the current run and records what it got to, then '
           'starts a new one from the first workout. Your logged sessions stay '
           'in your history.',
     );
@@ -534,7 +547,7 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
               ),
             ),
             ListTile(
-              leading: Icon(Icons.add, color: AppColors.accent),
+              leading: Icon(LucideIcons.plus, color: AppColors.accent),
               title: Text(
                 'New workout',
                 style: AppFonts.ui(
@@ -546,7 +559,7 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
             ),
             ListTile(
               leading: Icon(
-                Icons.library_add_outlined,
+                LucideIcons.libraryBig,
                 color: AppColors.accent,
               ),
               title: Text(
@@ -593,12 +606,15 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
                     'will skip to the following workout. '
                     'Past logged sets stay intact.'
               : 'Remove "${toProperCase(w.name)}" from this program?',
-          style: AppFonts.ui(color: AppColors.muted),
+          style: AppFonts.ui(color: AppColors.inkSecondary, height: 1.4),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text('Cancel', style: AppFonts.ui(color: AppColors.muted)),
+            child: Text(
+              'Cancel',
+              style: AppFonts.ui(color: AppColors.inkSecondary),
+            ),
           ),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(true),
@@ -630,7 +646,8 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
       context,
       title: 'Add workout to program',
       options: [
-        for (final w in workouts) (id: w.sessionId, label: toProperCase(w.name)),
+        for (final w in workouts)
+          (id: w.sessionId, label: toProperCase(w.name)),
       ],
     );
     if (chosen == null || !mounted) return;
@@ -642,8 +659,7 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
     // changes apply to future sessions only; already-logged sets are snapshots
     // and won't change. Shared with the block editor, which is the other way
     // into this editor and has to say exactly the same thing.
-    if (_vm.state.value.isCurrent &&
-        !await confirmEditWhileRunning(context)) {
+    if (_vm.state.value.isCurrent && !await confirmEditWhileRunning(context)) {
       return;
     }
     if (!mounted) return;
@@ -697,15 +713,17 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
             onTap: () => _openEditWorkout(workouts[i]),
             swipeActions: [
               SwipeAction(
-                icon: Icons.copy_rounded,
-                
+                icon: LucideIcons.copy,
+
                 color: AppColors.accent,
+                foreground: AppColors.accentText,
                 onTap: () => _vm.duplicatePlannedSession(workouts[i]),
               ),
               SwipeAction(
-                icon: Icons.delete_outline,
-                
+                icon: LucideIcons.trash2,
+
                 color: AppColors.danger,
+                foreground: AppColors.dangerText,
                 onTap: () => _confirmDeleteWorkout(workouts[i]),
               ),
             ],
@@ -764,10 +782,7 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
   void _showSnack(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(
-          message,
-          style: AppFonts.ui(fontSize: AppTextStyles.sm),
-        ),
+        content: Text(message, style: AppFonts.ui(fontSize: AppTextStyles.sm)),
       ),
     );
   }
@@ -809,163 +824,172 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
 
   @override
   Widget build(BuildContext context) {
-    return _reviewChrome(buildGuardedScaffold(
-      scaffold: Scaffold(
-        backgroundColor: AppColors.bg,
-        body: ValueListenableBuilder<ProgramDetailState>(
-          valueListenable: _vm.state,
-          builder: (context, state, _) {
-            // The shape as the schema stores it. Read once here and handed to
-            // the list — every surface below (the tabs, the run block, the
-            // goals picker) branches on it, and none of them may infer it from
-            // something else.
-            final tabs = _tabsFor(
-              blocked: state.program?.usesBlocks ?? false,
-            );
-            return Column(
-              children: [
-                PageHeader(
-                  // Rendered by [titleWidget]; the plain title is the name
-                  // this screen falls back on before the fetch lands.
-                  title: 'Program',
-                  // The program's name lives here rather than in a field
-                  // below, exactly as the workout editor's does: tap it to
-                  // rename, and losing focus saves it.
-                  titleWidget: TextField(
-                    controller: _nameController,
-                    focusNode: _nameFocus,
-                    textAlign: TextAlign.center,
-                    textCapitalization: TextCapitalization.words,
-                    style: AppFonts.ui(
-                      fontSize: AppTextStyles.lg,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.primary,
-                    ),
-                    decoration: const InputDecoration(
-                      border: InputBorder.none,
-                      hintText: 'Program name',
-                      contentPadding: EdgeInsets.zero,
-                      isDense: true,
-                    ),
-                    onChanged: _vm.setNameDraft,
-                    onSubmitted: (_) => _nameFocus.unfocus(),
-                  ),
-                  left: GestureDetector(
-                    onTap: () async {
-                      // Blur first — the name commits on focus loss, and the
-                      // back guard must see the rename as saved before it
-                      // decides whether there is anything to ask about.
-                      FocusManager.instance.primaryFocus?.unfocus();
-                      final nav = Navigator.of(context);
-                      await _commitName();
-                      if (!mounted) return;
-                      if (await confirmBack() && mounted) {
-                        nav.pop();
-                      }
-                    },
-                    child: Icon(
-                      Icons.arrow_back_ios_new,
-                      size: 18,
-                      color: AppColors.accent,
-                    ),
-                  ),
-                  // No history icon any more: versions and reviews are the
-                  // Reviews tab, which is also what frees the title up on a
-                  // long program name.
-                  //
-                  // Save appears only once there is something to save — the
-                  // same rule the planner's header follows. An always-present
-                  // Save reads as a claim that something changed.
-                  right: hasUnsavedChanges
-                      ? GlassButton(
-                          label: 'Save',
-                          compact: true,
-                          loading: state.isSaving,
-                          disabled: state.isSaving,
-                          onPressed: _saveAll,
-                        )
-                      : null,
-                ),
-                if (state.error != null)
-                  Container(
-                    width: double.infinity,
-                    color: AppColors.dangerBg,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.lg,
-                      vertical: AppSpacing.sm,
-                    ),
-                    child: Text(
-                      state.error!,
+    return _reviewChrome(
+      buildGuardedScaffold(
+        scaffold: Scaffold(
+          backgroundColor: AppColors.bg,
+          body: ValueListenableBuilder<ProgramDetailState>(
+            valueListenable: _vm.state,
+            builder: (context, state, _) {
+              // The shape as the schema stores it. Read once here and handed to
+              // the list — every surface below (the tabs, the run block, the
+              // goals picker) branches on it, and none of them may infer it from
+              // something else.
+              final tabs = _tabsFor(
+                blocked: state.program?.usesBlocks ?? false,
+              );
+              return Column(
+                children: [
+                  PageHeader(
+                    // Rendered by [titleWidget]; the plain title is the name
+                    // this screen falls back on before the fetch lands.
+                    title: 'Program',
+                    // The program's name lives here rather than in a field
+                    // below, exactly as the workout editor's does: tap it to
+                    // rename, and losing focus saves it.
+                    titleWidget: TextField(
+                      controller: _nameController,
+                      focusNode: _nameFocus,
+                      textAlign: TextAlign.center,
+                      textCapitalization: TextCapitalization.words,
+                      // A header title has no room for a counter under it —
+                      // the field stops at the cap, which is the same hard
+                      // stop the cards enforce.
+                      maxLength: kMaxProgramNameLength,
                       style: AppFonts.ui(
-                        color: AppColors.danger,
-                        fontSize: AppTextStyles.sm,
+                        fontSize: AppTextStyles.lg,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.primary,
+                      ),
+                      decoration: const InputDecoration(
+                        border: InputBorder.none,
+                        hintText: 'Program name',
+                        counterText: '',
+                        contentPadding: EdgeInsets.zero,
+                        isDense: true,
+                      ),
+                      onChanged: _vm.setNameDraft,
+                      onSubmitted: (_) => _nameFocus.unfocus(),
+                    ),
+                    left: HeaderIconButton(
+                      icon: LucideIcons.chevronLeft,
+                      semanticsLabel: 'Back',
+                      glyphSize: 18,
+                      onPressed: () async {
+                        // Blur first — the name commits on focus loss, and the
+                        // back guard must see the rename as saved before it
+                        // decides whether there is anything to ask about.
+                        FocusManager.instance.primaryFocus?.unfocus();
+                        final nav = Navigator.of(context);
+                        await _commitName();
+                        if (!mounted) return;
+                        if (await confirmBack() && mounted) {
+                          nav.pop();
+                        }
+                      },
+                    ),
+                    // No history icon any more: versions and reviews are the
+                    // Reviews tab, which is also what frees the title up on a
+                    // long program name.
+                    //
+                    // Save appears only once there is something to save — the
+                    // same rule the planner's header follows. An always-present
+                    // Save reads as a claim that something changed.
+                    right: hasUnsavedChanges
+                        ? GlassButton(
+                            label: '',
+                            icon: LucideIcons.check,
+                            semanticsLabel: 'Save program',
+                            compact: true,
+                            loading: state.isSaving,
+                            disabled: state.isSaving,
+                            onPressed: _saveAll,
+                          )
+                        : null,
+                  ),
+                  if (state.error != null)
+                    Container(
+                      width: double.infinity,
+                      color: AppColors.dangerBg,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.lg,
+                        vertical: AppSpacing.sm,
+                      ),
+                      child: Text(
+                        state.error!,
+                        style: AppFonts.ui(
+                          color: AppColors.danger,
+                          fontSize: AppTextStyles.sm,
+                        ),
                       ),
                     ),
-                  ),
-                // Not an error: the run action succeeded. But a run that ended
-                // without its record is a real loss, and nothing else would
-                // ever say so.
-                if (state.historyWarning != null)
-                  Container(
-                    width: double.infinity,
-                    color: AppColors.dangerBg,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.lg,
-                      vertical: AppSpacing.sm,
-                    ),
-                    child: Text(
-                      state.historyWarning!,
-                      style: AppFonts.ui(
-                        color: AppColors.danger,
-                        fontSize: AppTextStyles.sm,
+                  // Not an error: the run action succeeded. But a run that ended
+                  // without its record is a real loss, and nothing else would
+                  // ever say so.
+                  if (state.historyWarning != null)
+                    Container(
+                      width: double.infinity,
+                      color: AppColors.dangerBg,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.lg,
+                        vertical: AppSpacing.sm,
+                      ),
+                      child: Text(
+                        state.historyWarning!,
+                        style: AppFonts.ui(
+                          color: AppColors.danger,
+                          fontSize: AppTextStyles.sm,
+                        ),
                       ),
                     ),
-                  ),
-                if (state.due != null)
-                  _DueBanner(
-                    due: state.due!,
-                    onAct: () => _actOnDue(state.due!),
-                  ),
-                if (state.saveSuccess)
-                  Container(
-                    width: double.infinity,
-                    color: AppColors.successBg,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.lg,
-                      vertical: AppSpacing.sm,
+                  if (state.due != null)
+                    _DueBanner(
+                      due: state.due!,
+                      onAct: () => _actOnDue(state.due!),
                     ),
-                    child: Text(
-                      'Program saved.',
-                      style: AppFonts.ui(
-                        color: AppColors.success,
-                        fontSize: AppTextStyles.sm,
+                  if (state.saveSuccess)
+                    Container(
+                      width: double.infinity,
+                      color: AppColors.successBg,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.lg,
+                        vertical: AppSpacing.sm,
+                      ),
+                      child: Text(
+                        'Program saved.',
+                        style: AppFonts.ui(
+                          color: AppColors.success,
+                          fontSize: AppTextStyles.sm,
+                        ),
                       ),
                     ),
-                  ),
-                if (state.isLoading)
-                  Expanded(
-                    child: Center(
-                      child: CircularProgressIndicator(color: AppColors.accent),
+                  if (state.isLoading)
+                    Expanded(
+                      child: Center(
+                        child: CircularProgressIndicator(
+                          color: AppColors.accent,
+                        ),
+                      ),
+                    )
+                  else ...[
+                    SlideTabBar(
+                      tabs: [for (final t in tabs) _tabLabel(t)],
+                      activeIndex: _tab,
+                      onTap: _onTabChanged,
                     ),
-                  )
-                else ...[
-                  SlideTabBar(
-                    tabs: [for (final t in tabs) _tabLabel(t)],
-                    activeIndex: _tab,
-                    onTap: _onTabChanged,
-                  ),
-                  SlideTabView(
-                    controller: _tabController,
-                    onPageChanged: (i) => setState(() => _tab = i),
-                    tabs: [for (final t in tabs) _bodyFor(context, t, state)],
-                  ),
+                    SlideTabView(
+                      controller: _tabController,
+                      onPageChanged: (i) => setState(() => _tab = i),
+                      tabs: [for (final t in tabs) _bodyFor(context, t, state)],
+                    ),
+                  ],
                 ],
-              ],
-            );
-          },
+              );
+            },
+          ),
         ),
       ),
-    ));
+    );
   }
 
   /// The body behind a tab. The workouts/blocks split is the shape rule
@@ -974,18 +998,21 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
   /// [context] is the builder's, not the State's: the tab bodies measure the
   /// floating bar's inset, and that only answers from below the chrome this
   /// screen draws around itself.
-  Widget _bodyFor(BuildContext context, _ProgramTab tab, ProgramDetailState state) =>
-      switch (tab) {
-        _ProgramTab.workouts => _workoutsTab(context, state),
-        _ProgramTab.blocks => _blocksTab(context, state),
-        // Keyed by epoch so an edit elsewhere on the screen rebuilds it into
-        // a fresh load, and by scope so a due block review opens filtered.
-        _ProgramTab.reviews => ProgramHistoryPanel(
-            key: ValueKey('history-$_historyEpoch-$_reviewScope'),
-            programId: widget.programId,
-            initialBlockId: _reviewScope,
-          ),
-      };
+  Widget _bodyFor(
+    BuildContext context,
+    _ProgramTab tab,
+    ProgramDetailState state,
+  ) => switch (tab) {
+    _ProgramTab.workouts => _workoutsTab(context, state),
+    _ProgramTab.blocks => _blocksTab(context, state),
+    // Keyed by epoch so an edit elsewhere on the screen rebuilds it into
+    // a fresh load, and by scope so a due block review opens filtered.
+    _ProgramTab.reviews => ProgramHistoryPanel(
+      key: ValueKey('history-$_historyEpoch-$_reviewScope'),
+      programId: widget.programId,
+      initialBlockId: _reviewScope,
+    ),
+  };
 
   /// What the program is — the preamble both workout surfaces open with.
   ///
@@ -1038,7 +1065,8 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
               ),
               GlassButton(
                 label: '',
-                icon: Icons.add,
+                icon: LucideIcons.plus,
+                semanticsLabel: 'Add workout',
                 compact: true,
                 onPressed: _openAddWorkoutMenu,
               ),
@@ -1078,7 +1106,7 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
         children: [
           GlassButton(
             label: 'Begin Program',
-            icon: Icons.play_circle_outline,
+            icon: LucideIcons.circlePlay,
             disabled: true,
             onPressed: _confirmBeginProgram,
           ),
@@ -1087,7 +1115,7 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
             'Add a block to run this program.',
             style: AppFonts.ui(
               fontSize: AppTextStyles.sm,
-              color: AppColors.muted,
+              color: AppColors.inkSecondary,
             ),
           ),
         ],
@@ -1098,7 +1126,7 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
         Expanded(
           child: GlassButton(
             label: 'Begin Program',
-            icon: Icons.play_circle_outline,
+            icon: LucideIcons.circlePlay,
             loading: state.settingCurrent,
             disabled: state.settingCurrent,
             onPressed: _confirmBeginProgram,
@@ -1132,14 +1160,17 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
           ),
         Text(
           _runConfigLabel(run, progress?.block),
-          style: AppFonts.mono(fontSize: 14, color: AppColors.muted),
+          style: AppFonts.mono(
+            fontSize: AppTextStyles.sm,
+            color: AppColors.inkSecondary,
+          ),
         ),
         if (progress != null) ...[
           const SizedBox(height: AppSpacing.xs),
           Text(
             progress.remainingLabel,
             style: AppFonts.mono(
-              fontSize: 14,
+              fontSize: AppTextStyles.sm,
               fontWeight: FontWeight.w600,
               color: AppColors.accent,
             ),
@@ -1153,14 +1184,14 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
         if (run.blockId == null)
           GlassButton(
             label: 'Edit duration',
-            icon: Icons.tune,
+            icon: LucideIcons.slidersHorizontal,
             compact: true,
             onPressed: () => _editRunConfig(run),
           ),
         const SizedBox(height: AppSpacing.xs),
         GlassButton(
           label: 'End Program',
-          icon: Icons.stop_circle_outlined,
+          icon: LucideIcons.circleStop,
           compact: true,
           onPressed: () => _confirmEndRun(context),
         ),
@@ -1188,7 +1219,7 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
             if (progress?.blockLabel != null) ...[
               const SizedBox(width: AppSpacing.sm),
               Expanded(
-                child: Text(
+                child: UserNameText(
                   progress!.blockLabel!,
                   style: AppFonts.ui(
                     fontSize: AppTextStyles.sm,
@@ -1203,14 +1234,17 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
         const SizedBox(height: AppSpacing.xs),
         Text(
           _runConfigLabel(run, progress?.block),
-          style: AppFonts.mono(fontSize: 14, color: AppColors.muted),
+          style: AppFonts.mono(
+            fontSize: AppTextStyles.sm,
+            color: AppColors.inkSecondary,
+          ),
         ),
         if (_loggedLabel(progress) != null) ...[
           const SizedBox(height: AppSpacing.xs),
           Text(
             _loggedLabel(progress)!,
             style: AppFonts.mono(
-              fontSize: 14,
+              fontSize: AppTextStyles.sm,
               fontWeight: FontWeight.w600,
               color: AppColors.accent,
             ),
@@ -1219,7 +1253,7 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
         const SizedBox(height: AppSpacing.md),
         GlassButton(
           label: 'Resume',
-          icon: Icons.play_circle_outline,
+          icon: LucideIcons.circlePlay,
           solid: true,
           loading: state.settingCurrent,
           disabled: state.settingCurrent,
@@ -1231,7 +1265,7 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
             Expanded(
               child: GlassButton(
                 label: forBlock ? 'Restart this block' : 'Restart program',
-                icon: Icons.restart_alt,
+                icon: LucideIcons.rotateCw,
                 compact: true,
                 disabled: state.settingCurrent,
                 onPressed: () => _confirmRestart(run),
@@ -1241,7 +1275,7 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
             Expanded(
               child: GlassButton(
                 label: 'End Program',
-                icon: Icons.stop_circle_outlined,
+                icon: LucideIcons.circleStop,
                 compact: true,
                 disabled: state.settingCurrent,
                 onPressed: () => _confirmEndRun(context, paused: true),
@@ -1328,7 +1362,8 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
               'and so on.',
               style: AppFonts.ui(
                 fontSize: AppTextStyles.sm,
-                color: AppColors.muted,
+                color: AppColors.inkSecondary,
+                height: 1.4,
               ),
             )
           else
@@ -1348,7 +1383,7 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
           const SizedBox(height: AppSpacing.md),
           GlassButton(
             label: 'Add block',
-            icon: Icons.add,
+            icon: LucideIcons.plus,
             compact: true,
             onPressed: _openCreateBlock,
           ),
@@ -1376,14 +1411,12 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
       context,
       title: 'File into…',
       options: [
-        for (final b in blocks)
-          (id: b.blockId, label: toProperCase(b.name)),
+        for (final b in blocks) (id: b.blockId, label: toProperCase(b.name)),
       ],
     );
     if (picked == null || !mounted) return;
     await _vm.assignWorkoutToBlock(w.sessionId, picked);
   }
-
 }
 
 // ── Rows ─────────────────────────────────────────────────────────────────────
@@ -1404,14 +1437,14 @@ class _DueBanner extends StatelessWidget {
   /// What tapping does, in one word. Reads as the strip's own button — the
   /// whole thing is tappable, this is just the part that says so.
   String get _verb => switch (due.kind) {
-        // Both lead into a review: one already scheduled, one earned by a run
-        // reaching its length. The second is the newer reading of the same
-        // verb — whether the run carries on is decided after the plan has
-        // been looked at, not by tapping the banner.
-        kDueReview || kDueRunFinished => 'Review',
-        kDueBlockStart => 'Begin',
-        _ => 'Open',
-      };
+    // Both lead into a review: one already scheduled, one earned by a run
+    // reaching its length. The second is the newer reading of the same
+    // verb — whether the run carries on is decided after the plan has
+    // been looked at, not by tapping the banner.
+    kDueReview || kDueRunFinished => 'Review',
+    kDueBlockStart => 'Begin',
+    _ => 'Open',
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -1427,7 +1460,9 @@ class _DueBanner extends StatelessWidget {
         child: Row(
           children: [
             Icon(
-              due.isBlockStart ? Icons.play_circle_outline : Icons.flag_outlined,
+              due.isBlockStart
+                  ? LucideIcons.circlePlay
+                  : LucideIcons.flag,
               size: 16,
               color: AppColors.accent,
             ),
@@ -1446,13 +1481,12 @@ class _DueBanner extends StatelessWidget {
             Text(
               _verb,
               style: AppFonts.ui(
-                color: AppColors.accentText,
+                color: AppColors.accent,
                 fontSize: AppTextStyles.sm,
                 fontWeight: FontWeight.w800,
-                letterSpacing: 0.5,
               ),
             ),
-            Icon(Icons.chevron_right, size: 18, color: AppColors.accent),
+            Icon(LucideIcons.chevronRight, size: 18, color: AppColors.accent),
           ],
         ),
       ),
@@ -1530,13 +1564,13 @@ class _BlockHeader extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Icon(Icons.view_agenda_outlined, size: 18, color: AppColors.accent),
+            Icon(LucideIcons.rows3, size: 18, color: AppColors.accent),
             const SizedBox(width: AppSpacing.sm),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
+                  UserNameText(
                     toProperCase(block.name),
                     style: AppFonts.ui(
                       fontSize: AppTextStyles.md,
@@ -1548,7 +1582,7 @@ class _BlockHeader extends StatelessWidget {
                     _meta,
                     style: AppFonts.ui(
                       fontSize: AppTextStyles.xs,
-                      color: AppColors.muted,
+                      color: AppColors.inkSecondary,
                     ),
                   ),
                   if (blockedReason != null) ...[
@@ -1558,7 +1592,7 @@ class _BlockHeader extends StatelessWidget {
                       style: AppFonts.ui(
                         fontSize: AppTextStyles.xs,
                         fontWeight: FontWeight.w600,
-                        color: AppColors.muted,
+                        color: AppColors.inkSecondary,
                       ),
                     ),
                   ],
@@ -1568,15 +1602,17 @@ class _BlockHeader extends StatelessWidget {
             if (onBegin != null)
               GlassButton(
                 label: 'Begin',
-                icon: Icons.play_circle_outline,
+                icon: LucideIcons.circlePlay,
                 compact: true,
                 onPressed: onBegin!,
               ),
-            IconButton(
-              icon: Icon(Icons.add, size: 18, color: AppColors.accent),
+            HeaderIconButton(
+              icon: LucideIcons.plus,
+              semanticsLabel: 'Add workouts',
+              glyphSize: 18,
               onPressed: onAddWorkouts,
             ),
-            Icon(Icons.chevron_right, size: 18, color: AppColors.muted),
+            Icon(LucideIcons.chevronRight, size: 18, color: AppColors.muted),
           ],
         ),
       ),
@@ -1627,7 +1663,8 @@ class _UnfiledGroup extends StatelessWidget {
                     'one, or remove them from the program.',
           style: AppFonts.ui(
             fontSize: AppTextStyles.xs,
-            color: AppColors.muted,
+            color: AppColors.inkSecondary,
+            height: 1.4,
           ),
         ),
         const SizedBox(height: AppSpacing.sm),
@@ -1638,15 +1675,17 @@ class _UnfiledGroup extends StatelessWidget {
             onTap: () => onTap(w),
             swipeActions: [
               SwipeAction(
-                icon: Icons.drive_file_move_outline,
-                
+                icon: LucideIcons.folderInput,
+
                 color: AppColors.accent,
+                foreground: AppColors.accentText,
                 onTap: () => onFile(w),
               ),
               SwipeAction(
-                icon: Icons.delete_outline,
-                
+                icon: LucideIcons.trash2,
+
                 color: AppColors.danger,
+                foreground: AppColors.dangerText,
                 onTap: () => onDelete(w),
               ),
             ],
@@ -1662,6 +1701,9 @@ class _NoWorkouts extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Text(
     'No program workouts yet.',
-    style: AppFonts.ui(color: AppColors.muted, fontSize: AppTextStyles.sm),
+    style: AppFonts.ui(
+      color: AppColors.inkSecondary,
+      fontSize: AppTextStyles.sm,
+    ),
   );
 }

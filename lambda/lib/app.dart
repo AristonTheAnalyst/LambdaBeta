@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'core/theme/lambda_theme.dart';
 import 'features/update/view/update_nudge_banner.dart';
 import 'shared/router/app_router.dart';
+import 'shared/widgets/keyboard_dismiss.dart';
 
 class LambdaApp extends StatefulWidget {
   const LambdaApp({super.key, this.showUpdateNudge = false});
@@ -38,19 +39,24 @@ class _LambdaAppState extends State<LambdaApp> {
       theme: themeNotifier.colors.toThemeData(),
       routerConfig: AppRouter.router,
       builder: (context, child) {
-        return Stack(
-          children: [
-            ?child,
-            if (_showNudge)
-              Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                child: UpdateNudgeBanner(
-                  onDismiss: () => setState(() => _showNudge = false),
+        // The frame owns keyboard dismissal: a tap on empty space unfocuses
+        // wherever a field is up, while controls and other fields keep their
+        // taps (see `KeyboardDismissOnTap`).
+        return KeyboardDismissOnTap(
+          child: Stack(
+            children: [
+              ?child,
+              if (_showNudge)
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  child: UpdateNudgeBanner(
+                    onDismiss: () => setState(() => _showNudge = false),
+                  ),
                 ),
-              ),
-          ],
+            ],
+          ),
         );
       },
     );

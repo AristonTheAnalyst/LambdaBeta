@@ -1,11 +1,15 @@
 import 'package:uuid/uuid.dart';
 import '../../core/powersync/database.dart' as ps;
 import '../../core/utils/lambda_exception.dart';
+import '../../core/utils/name_limit.dart';
 import '../../shared/utils/unique_name.dart';
+import '../models/exercise_usage.dart';
 import '../models/planned_session.dart';
 import '../models/planned_session_exercise.dart';
 import '../models/planned_session_exercise_set.dart';
 import '../models/planned_session_program.dart';
+
+import 'planned_session_store.dart';
 
 const _uuid = Uuid();
 
@@ -13,7 +17,30 @@ const _uuid = Uuid();
 /// via the join table) and their exercise groups + planned sets. Dimensions
 /// are soft-deleted via is_archived so logged history that references them
 /// never dangles; join-table rows hard-delete (nothing references them).
-class PlannedSessionRepository {
+///
+/// The workout editor talks to it through [PlannedSessionStore] — this class
+/// is that store, writing every call straight to the live rows. Inside a
+/// review pass the editor is handed `StagedPlannedSessions` instead, and
+/// nothing it does lands until the pass finishes (2026-10-27).
+class PlannedSessionRepository implements PlannedSessionStore {
+  /// Refuses a workout name the field would have stopped at.
+  ///
+  /// The screens cap the field (`LambdaInput.maxLength`), so this can only
+  /// fire on a programmatic write — and it should: the local PowerSync mirror
+  /// is a plain `Column.text` with no CHECK, so an over-long row would insert
+  /// locally, render, survive a restart, and then be quarantined by the
+  /// server's 23514 check. Refusing here keeps the device and the server
+  /// telling the same story.
+  void _assertNameFits(String name) {
+    if (nameTooLong(name, kMaxWorkoutNameLength)) {
+      throw ArgumentError.value(
+        name,
+        'name',
+        'exceeds $kMaxWorkoutNameLength characters',
+      );
+    }
+  }
+
   /// Planned session names for [userId], used to bump auto-generated defaults.
   Future<Set<String>> _sessionNames(String userId) async {
     final rows = await ps.db.getAll(
@@ -21,6 +48,15 @@ class PlannedSessionRepository {
       [userId],
     );
     return rows.map((r) => r['name'] as String).toSet();
+  }
+
+  /// The name a workout row currently holds, or null when the row is gone.
+  Future<String?> _storedName(String sessionId) async {
+    final rows = await ps.db.getAll(
+      'SELECT name FROM dim_planned_session WHERE session_id = ?',
+      [sessionId],
+    );
+    return rows.isEmpty ? null : rows.first['name'] as String?;
   }
 
   Future<bool> _nameExists(
@@ -50,6 +86,61 @@ class PlannedSessionRepository {
     }
   }
 
+  // ── The review stage's reads (2026-10-27) ─────────────────────────────────
+
+  /// The name a workout row currently holds, or null when the row is gone.
+  /// The staged store checks it so the grandfather rule judges the row the
+  /// PLAN holds, not the pass's copy of it.
+  Future<String?> storedPlannedName(String sessionId) => _storedName(sessionId);
+
+  /// Refuses [name] when another active workout of [userId] holds it — the
+  /// staged store's half of the rename check, so a rename inside a pass fails
+  /// at the field exactly where a rename outside one does.
+  Future<void> assertSessionNameAvailable(
+    String userId,
+    String name, {
+    String? excludeSessionId,
+  }) => _assertSessionNameUnique(
+    userId,
+    name,
+    excludeSessionId: excludeSessionId,
+  );
+
+  /// The standalone branch of [fetchPlannedSessions] reads its recency from
+  /// here: the most recent `fact_session.created_datetime` per template, any
+  /// session (open or finished) — a template in use right now is the most
+  /// recently used one. Parsed and compared in Dart, never in SQL: a
+  /// downloaded row's timestamp formatting is not guaranteed to match what
+  /// the client writes, and MAX() over mixed text forms picks the wrong row.
+  Future<Map<String, DateTime>> _lastLoggedMap(String userId) async {
+    final rows = await ps.db.getAll(
+      '''
+      SELECT planned_session_id, created_datetime FROM fact_session
+      WHERE user_id = ? AND planned_session_id IS NOT NULL
+      ''',
+      [userId],
+    );
+    return _lastLoggedByPlanned(rows);
+  }
+
+  /// The parse-and-compare half of [_lastLoggedMap], shared with
+  /// [fetchReviewableRows] so the two reads can never disagree about what
+  /// "last logged" means.
+  Map<String, DateTime> _lastLoggedByPlanned(
+    List<Map<String, Object?>> sessionRows,
+  ) {
+    final last = <String, DateTime>{};
+    for (final row in sessionRows) {
+      final id = row['planned_session_id'] as String?;
+      if (id == null) continue;
+      final at = DateTime.tryParse('${row['created_datetime']}')?.toLocal();
+      if (at == null) continue;
+      final current = last[id];
+      if (current == null || at.isAfter(current)) last[id] = at;
+    }
+    return last;
+  }
+
   /// Fetches planned sessions — standalone (no program link) or attached to
   /// [programId] via the join table.
   /// Program workouts (when [programId] is given) or library workouts.
@@ -58,6 +149,12 @@ class PlannedSessionRepository {
   /// non-null [programId] returns the WHOLE program, blocks included — the
   /// ordered block view groups that list in Dart rather than issuing a query
   /// per block.
+  ///
+  /// A program listing keeps the program's own sequence order — that is the
+  /// plan's structure, not a usage list. The standalone listing is
+  /// most-recently-logged first (then newest created), the same rule the
+  /// review picker applies (2026-10-26): the workouts actually trained
+  /// recently are the ones a picker is most likely about.
   Future<List<PlannedSession>> fetchPlannedSessions(
     String userId, {
     String? programId,
@@ -81,16 +178,32 @@ class PlannedSessionRepository {
                 SELECT 1 FROM dim_planned_session_program psp
                 WHERE psp.planned_session_id = dps.session_id
               )
-            ORDER BY dps.created_date DESC
             ''',
       programId != null ? [userId, programId, ?blockId] : [userId],
+    );
+    final sessions = rows.map((r) => PlannedSession.fromMap(r)).toList();
+    if (programId != null) return sessions;
+    return sortByLastLogged(sessions, await _lastLoggedMap(userId));
+  }
+
+  /// Every active workout of [userId]'s — standalone OR program-attached — in
+  /// creation order, newest first. The coach's assign picker's list
+  /// (2026-10-26, #24): a coach may hand over any workout they authored,
+  /// whether or not it sits in one of their programs.
+  Future<List<PlannedSession>> fetchAllActiveSessions(String userId) async {
+    final rows = await ps.db.getAll(
+      'SELECT * FROM dim_planned_session '
+      'WHERE user_id = ? AND date_archived IS NULL '
+      'ORDER BY created_date DESC',
+      [userId],
     );
     return rows.map((r) => PlannedSession.fromMap(r)).toList();
   }
 
-  /// Every active workout of [userId]'s — any membership, program-attached or
-  /// not — with when it was last LOGGED and how much of it is finished. This
-  /// is the review picker's list.
+  /// Every active STANDALONE workout of [userId]'s, with when it was last
+  /// LOGGED and how much of it is finished. This is the review picker's list
+  /// (program-attached workouts are out since 2026-10-26, when programs left
+  /// the UI: listing them beside their library originals read as duplicates).
   ///
   /// "Last logged, then newest created" is the agreed recency rule
   /// (2026-10-07): the workouts actually trained recently are the ones a
@@ -142,20 +255,16 @@ class PlannedSessionRepository {
       if (lastReview == null || at.isAfter(lastReview)) lastReview = at;
     }
 
-    final lastLoggedAt = <String, DateTime>{};
+    final lastLoggedAt = _lastLoggedByPlanned(sessionRows);
     final finished = <String, int>{};
     for (final row in sessionRows) {
       final id = row['planned_session_id'] as String?;
       if (id == null) continue;
-      final at = DateTime.tryParse('${row['created_datetime']}')?.toLocal();
-      if (at != null) {
-        final current = lastLoggedAt[id];
-        if (current == null || at.isAfter(current)) lastLoggedAt[id] = at;
-      }
       // Only what has been finished counts, and with a review to measure
       // from, only what came after it — a session whose date cannot be read
       // is not provably after, so it counts only when there is no window.
       if (row['end_datetime'] == null) continue;
+      final at = DateTime.tryParse('${row['created_datetime']}')?.toLocal();
       final review = lastReview;
       if (review != null && (at == null || !at.isAfter(review))) continue;
       finished[id] = (finished[id] ?? 0) + 1;
@@ -163,8 +272,12 @@ class PlannedSessionRepository {
 
     final rows = await ps.db.getAll(
       '''
-      SELECT * FROM dim_planned_session
-      WHERE user_id = ? AND date_archived IS NULL
+      SELECT * FROM dim_planned_session dps
+      WHERE dps.user_id = ? AND dps.date_archived IS NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM dim_planned_session_program psp
+          WHERE psp.planned_session_id = dps.session_id
+        )
       ''',
       [userId],
     );
@@ -179,29 +292,10 @@ class PlannedSessionRepository {
     ];
 
     // Last logged desc (nulls last), then created desc, then id desc — the
-    // id tie-break keeps the order deterministic when two rows share both
-    // dates (Dart's sort is not stable).
-    reviewable.sort((a, b) {
-      final aLogged = a.lastLogged;
-      final bLogged = b.lastLogged;
-      if ((aLogged != null) != (bLogged != null)) {
-        return aLogged != null ? -1 : 1;
-      }
-      if (aLogged != null && bLogged != null) {
-        final byLogged = bLogged.compareTo(aLogged);
-        if (byLogged != 0) return byLogged;
-      }
-      final aCreated = a.session.createdDate;
-      final bCreated = b.session.createdDate;
-      if ((aCreated != null) != (bCreated != null)) {
-        return aCreated != null ? -1 : 1;
-      }
-      if (aCreated != null && bCreated != null) {
-        final byCreated = bCreated.compareTo(aCreated);
-        if (byCreated != 0) return byCreated;
-      }
-      return b.session.sessionId.compareTo(a.session.sessionId);
-    });
+    // one recency rule, shared with the library listing (2026-10-26).
+    reviewable.sort(
+      (a, b) => compareByLastLogged(a.session, b.session, lastLoggedAt),
+    );
     return reviewable;
   }
 
@@ -214,6 +308,7 @@ class PlannedSessionRepository {
   /// database level, so two offline devices can still independently create
   /// (or rename to) the same string and the server accepts a cosmetic
   /// duplicate after sync. Records are keyed by UUID, never by name.
+  @override
   Future<PlannedSession> createPlannedSession(
     String userId, {
     String? name,
@@ -224,6 +319,7 @@ class PlannedSessionRepository {
       final names = await _sessionNames(userId);
       finalName = uniqueName('New Session', names);
     } else {
+      _assertNameFits(finalName);
       await _assertSessionNameUnique(userId, finalName);
     }
     final id = _uuid.v4();
@@ -234,15 +330,7 @@ class PlannedSessionRepository {
         (id, session_id, user_id, name, notes, date_archived, created_date)
       VALUES (?, ?, ?, ?, ?, ?, ?)
       ''',
-      [
-        id,
-        id,
-        userId,
-        finalName,
-        notes,
-        null,
-        createdDate.toIso8601String(),
-      ],
+      [id, id, userId, finalName, notes, null, createdDate.toIso8601String()],
     );
     return PlannedSession(
       sessionId: id,
@@ -253,6 +341,7 @@ class PlannedSessionRepository {
     );
   }
 
+  @override
   Future<void> updatePlannedSession(
     String sessionId, {
     String? name,
@@ -261,6 +350,15 @@ class PlannedSessionRepository {
     String userId = '',
   }) async {
     if (name != null) {
+      // A row written before the cap tightened is grandfathered: the discard
+      // path (`discardWorkoutChanges`) writes back the name the workout was
+      // OPENED with, and refusing it would leave that one old row unable to
+      // roll back at all. A row already over the cap may therefore be written
+      // freely — the field still caps every edit the user can make.
+      final stored = await _storedName(sessionId);
+      final grandfathered =
+          stored != null && nameTooLong(stored, kMaxWorkoutNameLength);
+      if (!grandfathered) _assertNameFits(name);
       await _assertSessionNameUnique(userId, name, excludeSessionId: sessionId);
     }
     final updates = <String, dynamic>{};
@@ -280,6 +378,7 @@ class PlannedSessionRepository {
 
   /// Soft-deletes a planned session, its exercise groups and sets
   /// (is_archived = 1), and hard-deletes its program links.
+  @override
   Future<void> deletePlannedSession(String sessionId) async {
     await ps.db.execute(
       '''
@@ -369,6 +468,7 @@ class PlannedSessionRepository {
   /// One template by id — used to restore a session's planned context from
   /// its persisted `planned_session_id` (the template may be standalone or
   /// program-attached; both live in the same table).
+  @override
   Future<PlannedSession?> fetchPlannedSessionById(String sessionId) async {
     final rows = await ps.db.getAll(
       'SELECT * FROM dim_planned_session WHERE session_id = ? AND date_archived IS NULL',
@@ -380,15 +480,24 @@ class PlannedSessionRepository {
 
   // ── Exercise groups ────────────────────────────────────────────────────────
 
+  /// A template's exercise groups, in order.
+  ///
+  /// [includeArchived] also brings back the groups a removal flagged. Every
+  /// read that SHOWS a workout hides them; the one caller that asks for them
+  /// is the review editor, where a removal made during the pass must stay on
+  /// the card so its note can explain it (2026-10-26).
+  @override
   Future<List<PlannedSessionExercise>> fetchPlannedExercises(
-    String plannedSessionId,
-  ) async {
+    String plannedSessionId, {
+    bool includeArchived = false,
+  }) async {
     final rows = await ps.db.getAll(
       '''
       SELECT pe.*, e.exercise_name AS exercise_name
       FROM dim_planned_session_exercise pe
       LEFT JOIN dim_exercise e ON e.custom_exercise_id = pe.custom_exercise_id
-      WHERE pe.planned_session_id = ? AND pe.is_archived = 0
+      WHERE pe.planned_session_id = ?
+        ${includeArchived ? '' : 'AND pe.is_archived = 0'}
       ORDER BY pe.exercise_order
       ''',
       [plannedSessionId],
@@ -396,6 +505,7 @@ class PlannedSessionRepository {
     return rows.map((r) => PlannedSessionExercise.fromMap(r)).toList();
   }
 
+  @override
   Future<PlannedSessionExercise> createPlannedExercise(
     String userId,
     String plannedSessionId, {
@@ -410,15 +520,7 @@ class PlannedSessionRepository {
          exercise_order, is_archived)
       VALUES (?, ?, ?, ?, ?, ?, ?)
       ''',
-      [
-        id,
-        id,
-        plannedSessionId,
-        userId,
-        exerciseId,
-        exerciseOrder,
-        0,
-      ],
+      [id, id, plannedSessionId, userId, exerciseId, exerciseOrder, 0],
     );
     return PlannedSessionExercise(
       plannedExerciseId: id,
@@ -430,6 +532,7 @@ class PlannedSessionRepository {
   }
 
   /// Archives an exercise group and its sets.
+  @override
   Future<void> deletePlannedExercise(String plannedExerciseId) async {
     await ps.db.execute(
       'UPDATE dim_planned_session_exercise_set SET is_archived = 1 WHERE planned_exercise_id = ?',
@@ -441,13 +544,46 @@ class PlannedSessionRepository {
     );
   }
 
+  /// The undo of [deletePlannedExercise]: un-archives the group with its
+  /// captured order — the restore half of the planner's soft-delete inverses
+  /// (2026-10-13; the discard pass's raw-SQL precedent, as a repo method so
+  /// host tests can fake it).
+  @override
+  Future<void> restorePlannedExercise(
+    String plannedExerciseId, {
+    required int exerciseOrder,
+  }) async {
+    await ps.db.execute(
+      'UPDATE dim_planned_session_exercise SET is_archived = 0, exercise_order = ? WHERE planned_exercise_id = ?',
+      [exerciseOrder, plannedExerciseId],
+    );
+  }
+
+  /// The undo of [deletePlannedSet]: un-archives the row with its captured
+  /// number (2026-10-13).
+  @override
+  Future<void> restorePlannedSet(
+    String plannedSetId, {
+    required int setNumber,
+  }) async {
+    await ps.db.execute(
+      'UPDATE dim_planned_session_exercise_set SET is_archived = 0, set_number = ? WHERE planned_set_id = ?',
+      [setNumber, plannedSetId],
+    );
+  }
+
   // ── Planned sets ───────────────────────────────────────────────────────────
 
-  /// Fetches a template's active target sets, hydrated with the exercise from
-  /// their parent group so consumers don't need to re-join.
+  /// Fetches a template's target sets, hydrated with the exercise from their
+  /// parent group so consumers don't need to re-join.
+  ///
+  /// [includeArchived] also brings back the rows a removal flagged — the
+  /// review editor's read (2026-10-26), same as [fetchPlannedExercises].
+  @override
   Future<List<PlannedSessionExerciseSet>> fetchPlannedSets(
-    String plannedSessionId,
-  ) async {
+    String plannedSessionId, {
+    bool includeArchived = false,
+  }) async {
     final rows = await ps.db.getAll(
       '''
       SELECT s.*,
@@ -460,7 +596,8 @@ class PlannedSessionRepository {
         ON pe.planned_exercise_id = s.planned_exercise_id
       LEFT JOIN dim_exercise e ON e.custom_exercise_id = pe.custom_exercise_id
       LEFT JOIN dim_variation v ON v.custom_variation_id = s.custom_variation_id
-      WHERE pe.planned_session_id = ? AND s.is_archived = 0
+      WHERE pe.planned_session_id = ?
+        ${includeArchived ? '' : 'AND s.is_archived = 0'}
       ORDER BY pe.exercise_order, s.set_number
       ''',
       [plannedSessionId],
@@ -468,6 +605,7 @@ class PlannedSessionRepository {
     return rows.map((r) => PlannedSessionExerciseSet.fromMap(r)).toList();
   }
 
+  @override
   Future<PlannedSessionExerciseSet> createPlannedSet(
     String userId,
     String plannedExerciseId, {
@@ -514,6 +652,7 @@ class PlannedSessionRepository {
     );
   }
 
+  @override
   Future<void> updatePlannedSet(
     String plannedSetId, {
     String? targetWeight,
@@ -555,6 +694,7 @@ class PlannedSessionRepository {
   }
 
   /// Soft-deletes a planned set.
+  @override
   Future<void> deletePlannedSet(String plannedSetId) async {
     await ps.db.execute(
       'UPDATE dim_planned_session_exercise_set SET is_archived = 1 WHERE planned_set_id = ?',
@@ -617,11 +757,33 @@ class PlannedSessionRepository {
   /// preview). Stored numbers that are already sequential — the steady
   /// state — read identically, and the writing variant still repairs
   /// genuinely broken numbering on save (2026-10-13).
+  @override
   Future<List<PlannedSessionExerciseSet>> readNormalizedPlannedSession(
-    String plannedSessionId,
-  ) async {
-    final sets = await fetchPlannedSets(plannedSessionId);
-    final exercises = await fetchPlannedExercises(plannedSessionId);
+    String plannedSessionId, {
+    bool includeArchived = false,
+  }) async {
+    final exercises = await fetchPlannedExercises(
+      plannedSessionId,
+      includeArchived: includeArchived,
+    );
+    // A removed GROUP keeps the rows under it — that is the review editor's
+    // whole point (2026-10-26). A set removed on its own stays hidden even
+    // there: the card draws no row the user could not put back.
+    final archivedGroups = {
+      for (final e in exercises)
+        if (e.isArchived) e.plannedExerciseId,
+    };
+    final allSets = await fetchPlannedSets(
+      plannedSessionId,
+      includeArchived: includeArchived,
+    );
+    final sets = includeArchived
+        ? [
+            for (final s in allSets)
+              if (!s.isArchived || archivedGroups.contains(s.plannedExerciseId))
+                s,
+          ]
+        : allSets;
     final exerciseOrder = {
       for (var i = 0; i < exercises.length; i++)
         exercises[i].plannedExerciseId: i + 1,
@@ -674,7 +836,8 @@ class PlannedSessionRepository {
         // A copy of a program workout inherits its base; a copy of a library
         // workout points at it. Either way the lineage names the original
         // rather than the last intermediate.
-        baseSessionId: source.baseSessionId ??
+        baseSessionId:
+            source.baseSessionId ??
             (sourceLink == null ? source.sessionId : null),
         createdDate: createdDate,
       );
@@ -766,7 +929,8 @@ class PlannedSessionRepository {
           'SELECT MAX(sequence_order) AS max_order FROM dim_planned_session_program WHERE program_id = ?',
           [programId],
         );
-        order = (_toInt(rows.isEmpty ? null : rows.first['max_order']) ?? 0) + 1;
+        order =
+            (_toInt(rows.isEmpty ? null : rows.first['max_order']) ?? 0) + 1;
       }
 
       final newLinkId = _uuid.v4();
@@ -1037,6 +1201,7 @@ class PlannedSessionRepository {
   /// out a strict 1..N per group, because [fetchNormalizedPlannedSets]
   /// renumbers by appearance on every open — a tie would let it reorder the
   /// group behind the user's back.
+  @override
   Future<void> renumberPlannedSets(List<String> orderedSetIds) async {
     for (var i = 0; i < orderedSetIds.length; i++) {
       await ps.db.execute(
@@ -1071,6 +1236,7 @@ class PlannedSessionRepository {
   /// Renumbers every exercise group's order so each (old order → new index)
   /// entry in [orderToIndex] lands at index+1. Two-phase (shift to
   /// negatives, then assign) so intermediate collisions can't occur.
+  @override
   Future<void> renumberExerciseOrders(
     String plannedSessionId,
     List<(int, int)> orderToIndex,
@@ -1135,6 +1301,7 @@ class PlannedSessionRepository {
     return rows.map((r) => PlannedSessionProgram.fromMap(r)).toList();
   }
 
+  @override
   Future<PlannedSessionProgram> createProgramLink(
     String userId, {
     required String programId,

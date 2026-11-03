@@ -382,7 +382,8 @@ void main() {
     expect(
       tester.getTopLeft(find.text('Push A')).dy,
       lessThan(tester.getTopLeft(find.text('Pull A')).dy),
-      reason: 'the record reads in the order the program trains, however the '
+      reason:
+          'the record reads in the order the program trains, however the '
           'set was ticked',
     );
   });
@@ -447,10 +448,7 @@ void main() {
     // "Not now" is an answer, so there is nothing to show — and a blank panel
     // under a heading would read as a loading failure rather than as one.
     expect(find.text('Dismissed'.toUpperCase()), findsOneWidget);
-    expect(
-      find.textContaining('Nothing was recorded'),
-      findsOneWidget,
-    );
+    expect(find.textContaining('Nothing was recorded'), findsOneWidget);
   });
 
   testWidgets('what a checkpoint changed leads, and offers the whole diff', (

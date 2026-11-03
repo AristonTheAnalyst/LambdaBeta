@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../../core/styles/app_colors.dart';
+import '../../../../data/repositories/exercise_repository.dart';
 import '../../../../core/styles/app_fonts.dart';
 import '../../../../core/styles/app_radius.dart';
 import '../../../../core/styles/app_spacing.dart';
 import '../../../../core/styles/app_text_styles.dart';
 import '../../../../shared/widgets/app_card.dart';
 import '../../../../shared/widgets/archived_sheet.dart';
+import '../../../../shared/widgets/coach_created_mark.dart';
+import '../../../../shared/widgets/name_history_sheet.dart';
 import '../../../../shared/widgets/container_styles.dart';
 import '../../../../core/utils/name_limit.dart';
 import '../../../../core/utils/session_format.dart';
@@ -18,6 +22,7 @@ import '../../../../shared/widgets/lambda_button.dart';
 import '../../../../shared/widgets/lambda_input.dart';
 import '../../../../shared/widgets/lambda_search_field.dart';
 import '../../../../shared/widgets/name_limit_counter.dart';
+import '../../../../shared/widgets/header_icon_button.dart';
 import '../../../../shared/widgets/page_header.dart';
 import '../../../../shared/widgets/scroll_shrink_nav_bar.dart';
 import '../../../../shared/widgets/slide_tab_bar.dart';
@@ -48,7 +53,29 @@ class ExerciseLibraryScreen extends StatefulWidget {
     this.embedded = false,
     this.panel = 0,
     this.viewModel,
+    this.userId,
+    this.readOnly = false,
+    this.canDelete = true,
+    this.openExercise,
   });
+
+  /// Whose library to read. Null = the signed-in user (the normal mount); a
+  /// coach's read of an athlete's passes their id (2026-10-28).
+  final String? userId;
+
+  /// Browse only (2026-10-28): no +, no archived sheet, and the rows do not
+  /// open their editors — coach mode reads, it never writes.
+  final bool readOnly;
+
+  /// Whether the edit sheet offers Delete. Coach mode creates and renames as
+  /// the athlete but never removes (2026-10-28).
+  final bool canDelete;
+
+  /// What an exercise tap opens. Null pushes the app's own
+  /// `/exercises/:id` route; coach mode passes a callback that pushes the
+  /// exercise detail scoped to the athlete, so a tap never leaves coach mode
+  /// into the coach's own library (2026-10-28).
+  final void Function(CustomExercise exercise)? openExercise;
 
   /// When embedded in a hub tab, render one panel only — the hub owns the
   /// header and its own tab bar, so the nested header/tabs are hidden.
@@ -80,7 +107,7 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
   @override
   void initState() {
     super.initState();
-    _viewModel = widget.viewModel ?? ExerciseViewModel();
+    _viewModel = widget.viewModel ?? ExerciseViewModel(userId: widget.userId);
     _ownsViewModel = widget.viewModel == null;
     _viewModel.fetchAll();
     if (widget.embedded) {
@@ -204,8 +231,28 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
       child: _EditVariationModal(
         controller: _editVarController,
         viewModel: _viewModel,
-        onDelete: _confirmDeleteVariation,
+        onDelete: widget.canDelete ? _confirmDeleteVariation : null,
+        // The owner's rename history; a coach's device never receives it.
+        onHistory: widget.userId == null
+            ? () => _openVariationHistory(v)
+            : null,
       ),
+    );
+  }
+
+  /// The owner's rename history for this variation (2026-10-29); restoring a
+  /// name is a normal rename, which records itself.
+  Future<void> _openVariationHistory(CustomVariation v) async {
+    await showNameHistorySheet(
+      context,
+      userId: _viewModel.userId,
+      entityType: 'variation',
+      entityId: v.variationId,
+      currentName: v.name,
+      onRestore: (name) async {
+        await ExerciseRepository().updateVariation(v.variationId, name);
+        await _viewModel.fetchAll();
+      },
     );
   }
 
@@ -228,15 +275,18 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
         content: Text(
           used
               ? 'Archive "$name"? It has been used, so it can\'t be fully '
-                'deleted — it will disappear from pickers, but your logged '
-                'history keeps it.'
+                    'deleted — it will disappear from pickers, but your logged '
+                    'history keeps it.'
               : 'Delete "$name"? This can\'t be undone.',
-          style: AppFonts.ui(color: AppColors.muted),
+          style: AppFonts.ui(color: AppColors.inkSecondary, height: 1.4),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: Text('Cancel', style: AppFonts.ui(color: AppColors.muted)),
+            child: Text(
+              'Cancel',
+              style: AppFonts.ui(color: AppColors.inkSecondary),
+            ),
           ),
           TextButton(
             onPressed: () {
@@ -264,12 +314,17 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
       body: ValueListenableBuilder<ExerciseState>(
         valueListenable: _viewModel.state,
         builder: (context, state, _) {
+          // Coach mode browses only (2026-10-28): a read-only surface leaves
+          // every write callback unspent, which is what hides its buttons and
+          // makes the rows inert.
           final exercisesPanel = _ExercisesPanel(
             state: state,
             searchController: _exSearchController,
-            onAdd: _openCreateExercise,
-            onShowArchived: _openArchivedExercises,
-            onEdit: _openEditExercise,
+            onAdd: widget.readOnly ? null : _openCreateExercise,
+            onShowArchived: widget.readOnly ? null : _openArchivedExercises,
+            onEdit: widget.readOnly
+                ? null
+                : (widget.openExercise ?? _openEditExercise),
             onPrev: _viewModel.prevExPage,
             onNext: _viewModel.nextExPage,
             onSort: _viewModel.setExSort,
@@ -277,9 +332,18 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
           final variationsPanel = _VariationsPanel(
             state: state,
             searchController: _varSearchController,
-            onAdd: _openCreateVariation,
-            onShowArchived: _openArchivedVariations,
-            onEdit: _openEditVariation,
+            onAdd: widget.readOnly ? null : _openCreateVariation,
+            onShowArchived: widget.readOnly ? null : _openArchivedVariations,
+            // A coach edits only the variations they created; hers are inert
+            // (2026-10-29).
+            onEdit: widget.readOnly
+                ? null
+                : (v) {
+                    if (widget.userId != null && v.createdByUserId == null) {
+                      return;
+                    }
+                    _openEditVariation(v);
+                  },
             onPrev: _viewModel.prevVarPage,
             onNext: _viewModel.nextVarPage,
             onSort: _viewModel.setVarSort,
@@ -288,14 +352,12 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
             children: [
               if (!widget.embedded) ...[
                 PageHeader(
-                  title: 'Exercises & Variations',
-                  left: GestureDetector(
-                    onTap: () => context.pop(),
-                    child: Icon(
-                      Icons.arrow_back_ios_new,
-                      size: 18,
-                      color: AppColors.accent,
-                    ),
+                  title: 'Exercise Library',
+                  left: HeaderIconButton(
+                    icon: LucideIcons.chevronLeft,
+                    semanticsLabel: 'Back',
+                    glyphSize: 18,
+                    onPressed: () => context.pop(),
                   ),
                 ),
                 SlideTabBar(
@@ -325,9 +387,7 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
                 ),
               if (widget.embedded)
                 Expanded(
-                  child: widget.panel == 0
-                      ? exercisesPanel
-                      : variationsPanel,
+                  child: widget.panel == 0 ? exercisesPanel : variationsPanel,
                 )
               else
                 SlideTabView(
@@ -345,6 +405,12 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
 
 // ── Panels ─────────────────────────────────────────────────────────────────────
 
+/// The Exercises panel.
+///
+/// Every write callback is nullable and a null one draws nothing: the row is
+/// inert and the + and archive buttons are absent. That is the read-only
+/// surface's whole spread (2026-10-28) — a library scoped to someone else is
+/// browsed, never edited.
 class _ExercisesPanel extends StatelessWidget {
   const _ExercisesPanel({
     required this.state,
@@ -359,15 +425,18 @@ class _ExercisesPanel extends StatelessWidget {
 
   final ExerciseState state;
   final TextEditingController searchController;
-  final VoidCallback onAdd;
-  final VoidCallback onShowArchived;
-  final ValueChanged<CustomExercise> onEdit;
+  final VoidCallback? onAdd;
+  final VoidCallback? onShowArchived;
+  final ValueChanged<CustomExercise>? onEdit;
   final VoidCallback onPrev;
   final VoidCallback onNext;
   final void Function(ExerciseSortCriterion, bool) onSort;
 
   @override
   Widget build(BuildContext context) {
+    // Locals so the null checks promote — a public field does not.
+    final add = onAdd;
+    final archived = onShowArchived;
     return state.isLoading
         ? Center(child: CircularProgressIndicator(color: AppColors.accent))
         : ListView(
@@ -384,9 +453,7 @@ class _ExercisesPanel extends StatelessWidget {
                 children: [
                   if (state.exercises.isNotEmpty)
                     Expanded(
-                      child: LambdaSearchField(
-                        controller: searchController,
-                      ),
+                      child: LambdaSearchField(controller: searchController),
                     ),
                   const SizedBox(width: AppSpacing.sm),
                   SortButton<ExerciseSortCriterion>(
@@ -395,20 +462,26 @@ class _ExercisesPanel extends StatelessWidget {
                     descending: state.exSortDesc,
                     onChanged: onSort,
                   ),
-                  const SizedBox(width: AppSpacing.sm),
-                  GlassButton(
-                    label: '',
-                    icon: Icons.add,
-                    onPressed: onAdd,
-                    compact: true,
-                  ),
-                  const SizedBox(width: AppSpacing.sm),
-                  GlassButton(
-                    label: '',
-                    icon: Icons.archive_outlined,
-                    onPressed: onShowArchived,
-                    compact: true,
-                  ),
+                  if (add != null) ...[
+                    const SizedBox(width: AppSpacing.sm),
+                    GlassButton(
+                      label: '',
+                      icon: LucideIcons.plus,
+                      semanticsLabel: 'Add exercise',
+                      onPressed: add,
+                      compact: true,
+                    ),
+                  ],
+                  if (archived != null) ...[
+                    const SizedBox(width: AppSpacing.sm),
+                    GlassButton(
+                      label: '',
+                      icon: LucideIcons.archive,
+                      semanticsLabel: 'Archived exercises',
+                      onPressed: archived,
+                      compact: true,
+                    ),
+                  ],
                 ],
               ),
               const SizedBox(height: AppSpacing.md),
@@ -431,7 +504,8 @@ class _ExercisesPanel extends StatelessWidget {
                           'Tap + to create your first exercise.',
                           style: AppFonts.ui(
                             fontSize: AppTextStyles.sm,
-                            color: AppColors.muted,
+                            height: 1.4,
+                            color: AppColors.inkSecondary,
                           ),
                         ),
                       ],
@@ -442,7 +516,7 @@ class _ExercisesPanel extends StatelessWidget {
                 Text(
                   'No results.',
                   style: AppFonts.ui(
-                    color: AppColors.muted,
+                    color: AppColors.inkSecondary,
                     fontSize: AppTextStyles.sm,
                   ),
                 )
@@ -451,7 +525,8 @@ class _ExercisesPanel extends StatelessWidget {
                   (ex) => Padding(
                     padding: const EdgeInsets.only(bottom: AppSpacing.sm),
                     child: AppCard(
-                      onTap: () => onEdit(ex),
+                      // A null callback leaves the row inert (2026-10-28).
+                      onTap: onEdit == null ? null : () => onEdit!(ex),
                       padding: const EdgeInsets.symmetric(
                         horizontal: AppSpacing.md,
                         vertical: AppSpacing.sm,
@@ -478,8 +553,14 @@ class _ExercisesPanel extends StatelessWidget {
                                     ),
                                     style: AppFonts.ui(
                                       fontSize: AppTextStyles.xs,
-                                      color: AppColors.muted,
+                                      color: AppColors.inkSecondary,
                                     ),
+                                  ),
+                                if (ex.createdByUserId != null ||
+                                    ex.updatedByUserId != null)
+                                  CoachCreatedMark(
+                                    createdByUserId: ex.createdByUserId,
+                                    updatedByUserId: ex.updatedByUserId,
                                   ),
                               ],
                             ),
@@ -504,6 +585,8 @@ class _ExercisesPanel extends StatelessWidget {
   }
 }
 
+/// The Variations panel — the Exercises panel's read-only rule, one tab over:
+/// a null callback draws no button and leaves the row inert (2026-10-28).
 class _VariationsPanel extends StatelessWidget {
   const _VariationsPanel({
     required this.state,
@@ -518,15 +601,18 @@ class _VariationsPanel extends StatelessWidget {
 
   final ExerciseState state;
   final TextEditingController searchController;
-  final VoidCallback onAdd;
-  final VoidCallback onShowArchived;
-  final ValueChanged<CustomVariation> onEdit;
+  final VoidCallback? onAdd;
+  final VoidCallback? onShowArchived;
+  final ValueChanged<CustomVariation>? onEdit;
   final VoidCallback onPrev;
   final VoidCallback onNext;
   final void Function(ExerciseSortCriterion, bool) onSort;
 
   @override
   Widget build(BuildContext context) {
+    // Locals so the null checks promote — a public field does not.
+    final add = onAdd;
+    final archived = onShowArchived;
     return state.isLoading
         ? Center(child: CircularProgressIndicator(color: AppColors.accent))
         : ListView(
@@ -543,9 +629,7 @@ class _VariationsPanel extends StatelessWidget {
                 children: [
                   if (state.variations.isNotEmpty)
                     Expanded(
-                      child: LambdaSearchField(
-                        controller: searchController,
-                      ),
+                      child: LambdaSearchField(controller: searchController),
                     ),
                   const SizedBox(width: AppSpacing.sm),
                   SortButton<ExerciseSortCriterion>(
@@ -554,20 +638,26 @@ class _VariationsPanel extends StatelessWidget {
                     descending: state.varSortDesc,
                     onChanged: onSort,
                   ),
-                  const SizedBox(width: AppSpacing.sm),
-                  GlassButton(
-                    label: '',
-                    icon: Icons.add,
-                    onPressed: onAdd,
-                    compact: true,
-                  ),
-                  const SizedBox(width: AppSpacing.sm),
-                  GlassButton(
-                    label: '',
-                    icon: Icons.archive_outlined,
-                    onPressed: onShowArchived,
-                    compact: true,
-                  ),
+                  if (add != null) ...[
+                    const SizedBox(width: AppSpacing.sm),
+                    GlassButton(
+                      label: '',
+                      icon: LucideIcons.plus,
+                      semanticsLabel: 'Add variation',
+                      onPressed: add,
+                      compact: true,
+                    ),
+                  ],
+                  if (archived != null) ...[
+                    const SizedBox(width: AppSpacing.sm),
+                    GlassButton(
+                      label: '',
+                      icon: LucideIcons.archive,
+                      semanticsLabel: 'Archived variations',
+                      onPressed: archived,
+                      compact: true,
+                    ),
+                  ],
                 ],
               ),
               const SizedBox(height: AppSpacing.md),
@@ -590,7 +680,8 @@ class _VariationsPanel extends StatelessWidget {
                           'Tap + to create your first variation.',
                           style: AppFonts.ui(
                             fontSize: AppTextStyles.sm,
-                            color: AppColors.muted,
+                            height: 1.4,
+                            color: AppColors.inkSecondary,
                           ),
                         ),
                       ],
@@ -601,7 +692,7 @@ class _VariationsPanel extends StatelessWidget {
                 Text(
                   'No results.',
                   style: AppFonts.ui(
-                    color: AppColors.muted,
+                    color: AppColors.inkSecondary,
                     fontSize: AppTextStyles.sm,
                   ),
                 )
@@ -610,7 +701,8 @@ class _VariationsPanel extends StatelessWidget {
                   (v) => Padding(
                     padding: const EdgeInsets.only(bottom: AppSpacing.sm),
                     child: AppCard(
-                      onTap: () => onEdit(v),
+                      // A null callback leaves the row inert (2026-10-28).
+                      onTap: onEdit == null ? null : () => onEdit!(v),
                       padding: const EdgeInsets.symmetric(
                         horizontal: AppSpacing.md,
                         vertical: AppSpacing.sm,
@@ -637,8 +729,14 @@ class _VariationsPanel extends StatelessWidget {
                                     ),
                                     style: AppFonts.ui(
                                       fontSize: AppTextStyles.xs,
-                                      color: AppColors.muted,
+                                      color: AppColors.inkSecondary,
                                     ),
+                                  ),
+                                if (v.createdByUserId != null ||
+                                    v.updatedByUserId != null)
+                                  CoachCreatedMark(
+                                    createdByUserId: v.createdByUserId,
+                                    updatedByUserId: v.updatedByUserId,
                                   ),
                               ],
                             ),
@@ -667,7 +765,7 @@ class _VariationsPanel extends StatelessWidget {
 
 const _pageSize = 10;
 
-/// Builds the muted usage line under an exercise/variation name — just the
+/// Builds the secondary usage line under an exercise/variation name — just the
 /// last-used label (workout/set counts intentionally not shown).
 String _usageLine(ExerciseUsage u, {required bool isExercise}) =>
     u.lastUsedLabel;
@@ -705,7 +803,7 @@ class _PaginationBar extends StatelessWidget {
                   ? glassBox(AppColors.accent)
                   : lambdaBox(ContainerTone.ghost, radius: AppRadius.md),
               child: Icon(
-                Icons.chevron_left,
+                LucideIcons.chevronLeft,
                 size: 20,
                 color: canPrev ? AppColors.accent : AppColors.muted,
               ),
@@ -716,7 +814,10 @@ class _PaginationBar extends StatelessWidget {
             // Cumulative: everything shown up to this page, not just the
             // rows on the current one.
             '${((page + 1) * _pageSize).clamp(0, total)} of $total',
-            style: AppFonts.mono(fontSize: 13, color: AppColors.muted),
+            style: AppFonts.mono(
+              fontSize: AppTextStyles.caption,
+              color: AppColors.inkSecondary,
+            ),
           ),
           const SizedBox(width: AppSpacing.md),
           GestureDetector(
@@ -728,7 +829,7 @@ class _PaginationBar extends StatelessWidget {
                   ? glassBox(AppColors.accent)
                   : lambdaBox(ContainerTone.ghost, radius: AppRadius.md),
               child: Icon(
-                Icons.chevron_right,
+                LucideIcons.chevronRight,
                 size: 20,
                 color: canNext ? AppColors.accent : AppColors.muted,
               ),
@@ -741,6 +842,28 @@ class _PaginationBar extends StatelessWidget {
 }
 
 // ── Create Exercise Modal ───────────────────────────────────────────────────────
+
+/// A failed write's reason, drawn inside the sheet that attempted it.
+///
+/// The library's error banner sits on the screen *beneath* the modal, so a
+/// sheet that stays open on a failure would otherwise say nothing at all.
+class _ModalError extends StatelessWidget {
+  const _ModalError(this.message);
+
+  final String? message;
+
+  @override
+  Widget build(BuildContext context) {
+    if (message == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: AppSpacing.sm),
+      child: Text(
+        message!,
+        style: AppFonts.ui(fontSize: AppTextStyles.sm, color: AppColors.danger),
+      ),
+    );
+  }
+}
 
 class _CreateExerciseModal extends StatelessWidget {
   const _CreateExerciseModal({
@@ -787,6 +910,7 @@ class _CreateExerciseModal extends StatelessWidget {
                   const SizedBox(height: 4),
                   NameLimitCounter(length: state.createExName.trim().length),
                 ],
+                _ModalError(state.error),
                 const SizedBox(height: AppSpacing.lg),
                 Row(
                   children: [
@@ -873,6 +997,7 @@ class _CreateVariationModal extends StatelessWidget {
                   const SizedBox(height: 4),
                   NameLimitCounter(length: state.createVarName.trim().length),
                 ],
+                _ModalError(state.error),
                 const SizedBox(height: AppSpacing.lg),
                 Row(
                   children: [
@@ -919,11 +1044,16 @@ class _EditVariationModal extends StatelessWidget {
     required this.controller,
     required this.viewModel,
     required this.onDelete,
+    this.onHistory,
   });
 
   final TextEditingController controller;
   final ExerciseViewModel viewModel;
-  final void Function(String id, String name) onDelete;
+
+  /// Opens the owner's name history; null in coach mode.
+  final VoidCallback? onHistory;
+  /// Null in coach mode: the sheet edits the name and offers no delete.
+  final void Function(String id, String name)? onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -948,16 +1078,29 @@ class _EditVariationModal extends StatelessWidget {
                         ),
                       ),
                     ),
-                    GlassButton(
-                      label: '',
-                      icon: Icons.delete_outline,
-                      color: AppColors.danger,
-                      compact: true,
-                      onPressed: () => onDelete(
-                        state.editVariation!.variationId,
-                        state.editVarName,
+                    if (onHistory != null)
+                      Padding(
+                        padding: const EdgeInsets.only(right: AppSpacing.sm),
+                        child: GlassButton(
+                          label: '',
+                          icon: LucideIcons.history,
+                          semanticsLabel: 'Name history',
+                          compact: true,
+                          onPressed: onHistory!,
+                        ),
                       ),
-                    ),
+                    if (onDelete != null)
+                      GlassButton(
+                        label: '',
+                        icon: LucideIcons.trash2,
+                        semanticsLabel: 'Delete variation',
+                        color: AppColors.danger,
+                        compact: true,
+                        onPressed: () => onDelete!(
+                          state.editVariation!.variationId,
+                          state.editVarName,
+                        ),
+                      ),
                   ],
                 ),
                 const SizedBox(height: AppSpacing.md),
@@ -975,6 +1118,7 @@ class _EditVariationModal extends StatelessWidget {
                   const SizedBox(height: 4),
                   NameLimitCounter(length: state.editVarName.trim().length),
                 ],
+                _ModalError(state.error),
                 const SizedBox(height: AppSpacing.lg),
                 Row(
                   children: [
@@ -994,11 +1138,15 @@ class _EditVariationModal extends StatelessWidget {
                       child: LambdaButton(
                         label: 'Save',
                         // Nothing to write until the name differs from the
-                        // one being renamed — Cancel is the dismissal.
-                        disabled: state.isSaving ||
+                        // one being renamed — Cancel is the dismissal. Nor
+                        // when the write would be refused for length: the
+                        // counter above is already at the cap.
+                        disabled:
+                            state.isSaving ||
                             state.editVarName.trim().isEmpty ||
                             state.editVarName.trim() ==
-                                state.editVariation!.name,
+                                state.editVariation!.name ||
+                            nameTooLong(state.editVarName),
                         onPressed: () async {
                           final original = state.editVariation!.name;
                           final renamed = state.editVarName.trim() != original;
@@ -1016,7 +1164,10 @@ class _EditVariationModal extends StatelessWidget {
                                 ),
                                 content: Text(
                                   'This updates the variation name everywhere — all past sessions included.',
-                                  style: AppFonts.ui(color: AppColors.muted),
+                                  style: AppFonts.ui(
+                                    color: AppColors.inkSecondary,
+                                    height: 1.4,
+                                  ),
                                 ),
                                 actions: [
                                   TextButton(
@@ -1025,7 +1176,7 @@ class _EditVariationModal extends StatelessWidget {
                                     child: Text(
                                       'Cancel',
                                       style: AppFonts.ui(
-                                        color: AppColors.muted,
+                                        color: AppColors.inkSecondary,
                                       ),
                                     ),
                                   ),
@@ -1045,8 +1196,11 @@ class _EditVariationModal extends StatelessWidget {
                             );
                             if (ok != true || !context.mounted) return;
                           }
-                          await viewModel.saveEditVariation();
-                          if (context.mounted) {
+                          // Stay open on a failed write: its error is drawn
+                          // here, and closing would hide it behind the sheet
+                          // (the banner lives on the screen below).
+                          final ok = await viewModel.saveEditVariation();
+                          if (ok && context.mounted) {
                             Navigator.of(context, rootNavigator: true).pop();
                           }
                         },

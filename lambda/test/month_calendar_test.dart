@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lambda/core/styles/app_colors.dart';
 import 'package:lambda/shared/widgets/month_calendar.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 /// [MonthCalendar] owns layout, bounds and hit-testing; the caller owns what a
 /// day means. These tests pin the half that moved — the bounds — because that
@@ -76,8 +77,9 @@ void main() {
     }
   }
 
-  testWidgets('every day sits under its weekday, short last row included',
-      (tester) async {
+  testWidgets('every day sits under its weekday, short last row included', (
+    tester,
+  ) async {
     // Three shapes of final row: July 2030 leaves three days after a Monday
     // start, September 2030 exactly one after a Sunday start, and June 2030
     // lands on a full seven so there is no short row at all. Only the first
@@ -101,10 +103,9 @@ void main() {
 
   testWidgets('a day past lastDate is inert', (tester) async {
     DateTime? tapped;
-    await tester.pumpWidget(host(
-      lastDate: DateTime(2030, 6, 14),
-      onDayTap: (d) => tapped = d,
-    ));
+    await tester.pumpWidget(
+      host(lastDate: DateTime(2030, 6, 14), onDayTap: (d) => tapped = d),
+    );
     await tester.tap(find.text('15'));
     expect(tapped, isNull);
     await tester.tap(find.text('14'));
@@ -113,10 +114,9 @@ void main() {
 
   testWidgets('a day before firstDate is inert', (tester) async {
     DateTime? tapped;
-    await tester.pumpWidget(host(
-      firstDate: DateTime(2030, 6, 15),
-      onDayTap: (d) => tapped = d,
-    ));
+    await tester.pumpWidget(
+      host(firstDate: DateTime(2030, 6, 15), onDayTap: (d) => tapped = d),
+    );
     await tester.tap(find.text('14'));
     expect(tapped, isNull);
     await tester.tap(find.text('15'));
@@ -128,54 +128,54 @@ void main() {
     await tester.pumpWidget(host(onMonthChanged: shifts.add));
 
     // June 2030 is inside a 2029..2031 window, so both arrows work.
-    await tester.tap(find.byIcon(Icons.chevron_right));
-    await tester.tap(find.byIcon(Icons.chevron_left));
+    await tester.tap(find.byIcon(LucideIcons.chevronRight));
+    await tester.tap(find.byIcon(LucideIcons.chevronLeft));
     expect(shifts, [DateTime(2030, 7, 1), DateTime(2030, 5, 1)]);
 
     // Sitting on the last allowed month, forward does nothing.
     shifts.clear();
-    await tester.pumpWidget(host(
-      month: DateTime(2031, 12, 1),
-      onMonthChanged: shifts.add,
-    ));
-    await tester.tap(find.byIcon(Icons.chevron_right));
+    await tester.pumpWidget(
+      host(month: DateTime(2031, 12, 1), onMonthChanged: shifts.add),
+    );
+    await tester.tap(find.byIcon(LucideIcons.chevronRight));
     expect(shifts, isEmpty);
 
     // And on the first allowed month, back does nothing.
     shifts.clear();
-    await tester.pumpWidget(host(
-      month: DateTime(2029, 1, 1),
-      onMonthChanged: shifts.add,
-    ));
-    await tester.tap(find.byIcon(Icons.chevron_left));
+    await tester.pumpWidget(
+      host(month: DateTime(2029, 1, 1), onMonthChanged: shifts.add),
+    );
+    await tester.tap(find.byIcon(LucideIcons.chevronLeft));
     expect(shifts, isEmpty);
   });
 
   testWidgets('a selected day takes the accent fill', (tester) async {
-    await tester.pumpWidget(host(
-      isSelected: (d) => d.day == 15,
-    ));
+    await tester.pumpWidget(host(isSelected: (d) => d.day == 15));
     expect(decorationOf(tester, '15').color, AppColors.accent);
     expect(decorationOf(tester, '16').color, Colors.transparent);
   });
 
-  testWidgets('a range interior reads differently from its edges', (tester) async {
-    await tester.pumpWidget(host(
-      isSelected: (d) => d.day == 3 || d.day == 7,
-      isInRange: (d) => d.day >= 3 && d.day <= 7,
-    ));
+  testWidgets('a range interior reads differently from its edges', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      host(
+        isSelected: (d) => d.day == 3 || d.day == 7,
+        isInRange: (d) => d.day >= 3 && d.day <= 7,
+      ),
+    );
     expect(decorationOf(tester, '3').color, AppColors.accent);
     expect(decorationOf(tester, '5').color, AppColors.accentBg);
     expect(decorationOf(tester, '7').color, AppColors.accent);
     expect(decorationOf(tester, '8').color, Colors.transparent);
   });
 
-  testWidgets('degenerate bounds say so instead of rendering a blank month',
-      (tester) async {
-    await tester.pumpWidget(host(
-      firstDate: DateTime(2031, 1, 1),
-      lastDate: DateTime(2030, 1, 1),
-    ));
+  testWidgets('degenerate bounds say so instead of rendering a blank month', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      host(firstDate: DateTime(2031, 1, 1), lastDate: DateTime(2030, 1, 1)),
+    );
     expect(find.text('No selectable dates'), findsOneWidget);
   });
 }

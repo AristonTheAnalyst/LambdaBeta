@@ -62,18 +62,19 @@ class UserProfile {
     bool? onboarded,
     bool clearDob = false,
     bool clearGender = false,
-  }) =>
-      UserProfile(
-        userId: userId,
-        userName: userName ?? this.userName,
-        userLastname: userLastname ?? this.userLastname,
-        userDateOfBirth: clearDob ? null : (userDateOfBirth ?? this.userDateOfBirth),
-        userGender: clearGender ? null : (userGender ?? this.userGender),
-        userHeightCm: userHeightCm ?? this.userHeightCm,
-        userWeightKg: userWeightKg ?? this.userWeightKg,
-        onboarded: onboarded ?? this.onboarded,
-        userDateCreated: userDateCreated,
-      );
+  }) => UserProfile(
+    userId: userId,
+    userName: userName ?? this.userName,
+    userLastname: userLastname ?? this.userLastname,
+    userDateOfBirth: clearDob
+        ? null
+        : (userDateOfBirth ?? this.userDateOfBirth),
+    userGender: clearGender ? null : (userGender ?? this.userGender),
+    userHeightCm: userHeightCm ?? this.userHeightCm,
+    userWeightKg: userWeightKg ?? this.userWeightKg,
+    onboarded: onboarded ?? this.onboarded,
+    userDateCreated: userDateCreated,
+  );
 
   Map<String, dynamic> toMap() {
     return {

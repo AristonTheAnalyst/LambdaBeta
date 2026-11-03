@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lambda/shared/widgets/dropdown_select.dart';
 import 'package:lambda/shared/widgets/session_set_row.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 /// The duplicate gesture end-to-end at the row level (2026-10-13): swipe the
 /// row, tap the copy icon, and the caller receives the on-screen values —
@@ -46,11 +47,12 @@ void main() {
             ],
             allVariations: const [],
             findSimilarVariations: (_) => const [],
-            submitNewVariation: (
-              _, {
-              required String exerciseId,
-              String? useExistingId,
-            }) async => null,
+            submitNewVariation:
+                (
+                  _, {
+                  required String exerciseId,
+                  String? useExistingId,
+                }) async => null,
           ),
         ),
       ),
@@ -70,7 +72,10 @@ void main() {
     );
 
     // Type a value (debounced commit NOT settled) then duplicate it.
-    await tester.enterText(find.byType(TextField).first, '10');
+    await tester.enterText(
+      find.byKey(const ValueKey('live-set-1-reps')),
+      '10',
+    );
     await tester.pump();
 
     // Swipe the row left to reveal the drawer — starting from the
@@ -84,22 +89,37 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.byIcon(Icons.copy_rounded), findsOneWidget,
-        reason: 'the icon-only drawer shows the duplicate action');
-    expect(find.text('Duplicate'), findsNothing,
-        reason: 'labels are gone from swipe actions');
+    expect(
+      find.byIcon(LucideIcons.copy),
+      findsOneWidget,
+      reason: 'the icon-only drawer shows the duplicate action',
+    );
+    expect(
+      find.text('Duplicate'),
+      findsNothing,
+      reason: 'labels are gone from swipe actions',
+    );
 
-    await tester.tap(find.byIcon(Icons.copy_rounded));
+    await tester.tap(find.byIcon(LucideIcons.copy));
     await tester.pumpAndSettle();
 
-    expect(commits, isNotEmpty,
-        reason: 'the on-screen text commits before the copy');
-    expect(commits.last.immediate, isTrue,
-        reason: 'the pre-copy commit is immediate, not debounced');
+    expect(
+      commits,
+      isNotEmpty,
+      reason: 'the on-screen text commits before the copy',
+    );
+    expect(
+      commits.last.immediate,
+      isTrue,
+      reason: 'the pre-copy commit is immediate, not debounced',
+    );
     expect(commits.last.reps, '10');
     expect(duplicates, hasLength(1));
-    expect(duplicates.single.reps, '10',
-        reason: 'the copy carries the text on screen, not the stale seeds');
+    expect(
+      duplicates.single.reps,
+      '10',
+      reason: 'the copy carries the text on screen, not the stale seeds',
+    );
   });
 
   testWidgets('an empty live row duplicates as an empty copy', (tester) async {
@@ -121,13 +141,17 @@ void main() {
       const Offset(-400, 0),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.byIcon(Icons.copy_rounded));
+    await tester.tap(find.byIcon(LucideIcons.copy));
     await tester.pumpAndSettle();
 
-    expect(duplicates, hasLength(1),
-        reason: 'tapping Duplicate on a row is deliberate intent — an empty '
-            'row copies as an empty row (the old guard made the button '
-            'silently do nothing on planned ghost rows)');
+    expect(
+      duplicates,
+      hasLength(1),
+      reason:
+          'tapping Duplicate on a row is deliberate intent — an empty '
+          'row copies as an empty row (the old guard made the button '
+          'silently do nothing on planned ghost rows)',
+    );
     expect(duplicates.single.reps, isNull);
     expect(duplicates.single.weight, isNull);
   });

@@ -50,23 +50,32 @@ void main() {
       expect(groups.length, 2, reason: 'no unassigned section to show');
       expect(groups[0].workouts.length, 1);
       expect(groups[1].block!.blockId, 'b2');
-      expect(groups[1].workouts, isEmpty,
-          reason: 'an empty block must still render, or it cannot be filled');
-    });
-
-    test('a link naming a block this list does not hold reads as unassigned',
-        () {
-      final groups = groupWorkoutsByBlock(
-        blocks: [_block('b1', 'Accumulation', 1)],
-        workouts: [_workout('w1'), _workout('w2')],
-        links: [_link('w1', blockId: 'b1'), _link('w2', blockId: 'archived')],
+      expect(
+        groups[1].workouts,
+        isEmpty,
+        reason: 'an empty block must still render, or it cannot be filled',
       );
-
-      expect(groups.length, 2);
-      expect(groups[1].isUnassigned, isTrue);
-      expect(groups[1].workouts.map((w) => w.sessionId), ['w2'],
-          reason: 'a workout must never vanish because its block did');
     });
+
+    test(
+      'a link naming a block this list does not hold reads as unassigned',
+      () {
+        final groups = groupWorkoutsByBlock(
+          blocks: [_block('b1', 'Accumulation', 1)],
+          workouts: [_workout('w1'), _workout('w2')],
+          links: [
+            _link('w1', blockId: 'b1'),
+            _link('w2', blockId: 'archived'),
+          ],
+        );
+
+        expect(groups.length, 2);
+        expect(groups[1].isUnassigned, isTrue);
+        expect(groups[1].workouts.map((w) => w.sessionId), [
+          'w2',
+        ], reason: 'a workout must never vanish because its block did');
+      },
+    );
 
     test('order within a group follows the incoming order', () {
       final groups = groupWorkoutsByBlock(
@@ -79,7 +88,11 @@ void main() {
         ],
       );
 
-      expect(groups.single.workouts.map((w) => w.sessionId), ['w3', 'w1', 'w2']);
+      expect(groups.single.workouts.map((w) => w.sessionId), [
+        'w3',
+        'w1',
+        'w2',
+      ]);
     });
   });
 
@@ -92,8 +105,13 @@ void main() {
         slotSessionIds: {'b', 'd'},
       );
 
-      expect(result, ['a', 'd', 'c', 'b', 'e'],
-          reason: 'the workouts outside the block must not move');
+      expect(result, [
+        'a',
+        'd',
+        'c',
+        'b',
+        'e',
+      ], reason: 'the workouts outside the block must not move');
     });
 
     test('the unassigned group is permuted the same way', () {
@@ -118,11 +136,8 @@ void main() {
   });
 }
 
-PlannedSession _workout(String id) => PlannedSession(
-  sessionId: id,
-  userId: 'u1',
-  name: id,
-);
+PlannedSession _workout(String id) =>
+    PlannedSession(sessionId: id, userId: 'u1', name: id);
 
 PlannedSessionProgram _link(String sessionId, {String? blockId}) =>
     PlannedSessionProgram(

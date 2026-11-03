@@ -3,22 +3,23 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lambda/shared/widgets/slide_pages.dart';
 
 Widget _pager(SlidePagesController c) => MaterialApp(
-      home: Scaffold(
-        body: SlidePages(
-          controller: c,
-          physics: const NeverScrollableScrollPhysics(),
-          children: const [
-            Center(child: Text('prep')),
-            Center(child: Text('training')),
-            Center(child: Text('reflection')),
-          ],
-        ),
-      ),
-    );
+  home: Scaffold(
+    body: SlidePages(
+      controller: c,
+      physics: const NeverScrollableScrollPhysics(),
+      children: const [
+        Center(child: Text('prep')),
+        Center(child: Text('training')),
+        Center(child: Text('reflection')),
+      ],
+    ),
+  ),
+);
 
 void main() {
-  testWidgets('wizard page survives tab re-entry via restorePageView',
-      (tester) async {
+  testWidgets('wizard page survives tab re-entry via restorePageView', (
+    tester,
+  ) async {
     final c = SlidePagesController();
     await tester.pumpWidget(_pager(c));
     c.slideToPage(1); // header Start → Training
@@ -35,14 +36,18 @@ void main() {
     await tester.pumpWidget(_pager(c));
     await tester.pump();
 
-    expect(c.currentPage, 1,
-        reason: 'a fresh PageView must resume at the page the user left');
+    expect(
+      c.currentPage,
+      1,
+      reason: 'a fresh PageView must resume at the page the user left',
+    );
     expect(find.text('training'), findsOneWidget);
     expect(find.text('prep'), findsNothing);
   });
 
-  testWidgets('without restorePageView a fresh PageView resets to page 0',
-      (tester) async {
+  testWidgets('without restorePageView a fresh PageView resets to page 0', (
+    tester,
+  ) async {
     final c = SlidePagesController();
     await tester.pumpWidget(_pager(c));
     c.slideToPage(1);

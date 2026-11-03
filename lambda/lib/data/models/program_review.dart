@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'program_content.dart';
+import 'review_stage.dart';
 
 /// What a review examines — on rows written **before** reviews were re-scoped
 /// to a set of workouts (2026-10-06). New rows carry their set in
@@ -96,10 +97,10 @@ class ProgramReview {
   /// the completion it describes.
   final String? outcome;
 
-  /// A proposed edit, kind [kReviewKindChange] only. Mutable until acted on —
-  /// this is a PROPOSAL, never a snapshot. Nothing copies it into live rows:
-  /// the review container opens the normal editor, and the user makes the
-  /// change themselves.
+  /// The workouts an OPEN pass has staged — a [ReviewStage] document, read
+  /// through [stage] (2026-10-27). The columns were born for a retired
+  /// "propose an edit" kind and keep their names; nothing proposes any more,
+  /// the pass just keeps its own edits here until it finishes.
   final String? proposedContent;
   final String? proposedHash;
 
@@ -128,7 +129,7 @@ class ProgramReview {
   /// exercise's id: `{"<planned_exercise_id>": "<note>"}`.
   ///
   /// Part of the review's record only — not written to the exercise, not
-  /// pinned as lessons, and not carried into the next review.
+  /// pinned as notes, and not carried into the next review.
   final String? exerciseNotesJson;
 
   /// The frozen record of what the run achieved, written by `closeRun`
@@ -166,7 +167,12 @@ class ProgramReview {
 
   bool get isCompleted => completedDate != null;
 
-  bool get hasProposal => proposedContent != null;
+  /// The workouts an open pass has staged so far — its edits to the plan,
+  /// kept here until the pass finishes (2026-10-27). Null when the pass has
+  /// edited nothing, on a completed record, and when the document is
+  /// unreadable: a stage this build cannot understand must read as an empty
+  /// one, never crash the pass that resumes onto it.
+  ReviewStage? get stage => ReviewStage.tryDecode(proposedContent);
 
   bool get isClosed => kind == kReviewKindClose;
 
@@ -226,7 +232,10 @@ class ProgramReview {
     final known = {for (final l in links) l.sessionId};
     final stored = storedSessionIds;
     if (stored != null) {
-      final alive = [for (final id in stored) if (known.contains(id)) id];
+      final alive = [
+        for (final id in stored)
+          if (known.contains(id)) id,
+      ];
       if (alive.isNotEmpty) return alive;
     }
     final single = sessionId;
@@ -293,19 +302,6 @@ class ProgramReview {
   /// reminded on the day, not at a particular hour.
   bool isDue(DateTime now) =>
       isOpen && scheduledFor != null && !scheduledFor!.isAfter(now);
-
-  /// The proposed edit, decoded — or null when there is none, or when the
-  /// stored document was written by a newer build than this one. An unreadable
-  /// proposal must not crash the sheet that offers it.
-  ProgramContent? get proposal {
-    final json = proposedContent;
-    if (json == null) return null;
-    try {
-      return ProgramContent.decode(json);
-    } catch (_) {
-      return null;
-    }
-  }
 
   factory ProgramReview.fromMap(Map<String, dynamic> map) => ProgramReview(
     reviewId: map['review_id'] as String,

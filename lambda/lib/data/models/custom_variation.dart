@@ -2,6 +2,8 @@ class CustomVariation {
   const CustomVariation({
     required this.variationId,
     required this.userId,
+    this.createdByUserId,
+    this.updatedByUserId,
     required this.name,
     this.archivedDate,
     this.lastUsed,
@@ -9,6 +11,8 @@ class CustomVariation {
 
   final String variationId;
   final String userId;
+  final String? createdByUserId;
+  final String? updatedByUserId;
   final String name;
 
   /// NULL = active; a timestamp = archived (sortable, latest first).
@@ -23,6 +27,8 @@ class CustomVariation {
   factory CustomVariation.fromMap(Map<String, dynamic> map) => CustomVariation(
     variationId: map['custom_variation_id'] as String,
     userId: map['user_id'] as String,
+    createdByUserId: map['created_by_user_id'] as String?,
+    updatedByUserId: map['updated_by_user_id'] as String?,
     name: map['variation_name'] as String,
     archivedDate: map['date_archived'] != null
         ? DateTime.tryParse(map['date_archived'] as String)
@@ -68,6 +74,8 @@ class CustomVariation {
   Map<String, dynamic> toMap() => {
     'custom_variation_id': variationId,
     'user_id': userId,
+    'created_by_user_id': createdByUserId,
+    'updated_by_user_id': updatedByUserId,
     'variation_name': name,
     'date_archived': archivedDate?.toIso8601String(),
   };

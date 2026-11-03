@@ -4,9 +4,7 @@ import 'custom_exercise.dart';
 /// this is a thin wrapper kept so the exercise-picker call sites keep their
 /// map shape; variations are a flat per-user library fetched separately.
 class ExerciseDetail {
-  const ExerciseDetail({
-    required this.exercise,
-  });
+  const ExerciseDetail({required this.exercise});
 
   final CustomExercise exercise;
 

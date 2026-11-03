@@ -80,13 +80,15 @@ void main() {
     expect(
       call.sessionIds,
       ['s1'],
-      reason: 'the set the picker returned is the whole scope — the row '
+      reason:
+          'the set the picker returned is the whole scope — the row '
           'stores it and nothing re-derives it',
     );
     expect(
       call.programRunId,
       'run-1',
-      reason: 'the run in progress over this program is the one the review '
+      reason:
+          'the run in progress over this program is the one the review '
           'answers for, and the prompt suppression keys off exactly this id',
     );
 
@@ -98,17 +100,15 @@ void main() {
     expect(
       started.achievements,
       isNotNull,
-      reason: 'read back from the reload that follows the write, not derived '
+      reason:
+          'read back from the reload that follows the write, not derived '
           'a second time — the sheet and the panel must tell one story',
     );
   });
 
   test('the run a review answers for is the one whose block the set sits in — '
       'a run in a block none of the set touches is somebody else\'s', () async {
-    planned.links = [
-      _link('s1', blockId: 'b1'),
-      _link('s2', blockId: 'b2'),
-    ];
+    planned.links = [_link('s1', blockId: 'b1'), _link('s2', blockId: 'b2')];
     runs.currentRun = testRun(blockId: 'b1');
 
     final vm = build();
@@ -117,7 +117,8 @@ void main() {
     expect(
       history.beginCalls.last.programRunId,
       'run-1',
-      reason: 'the pass covers a workout of the running block, so the run '
+      reason:
+          'the pass covers a workout of the running block, so the run '
           'prompt it stands in front of is this one',
     );
 
@@ -127,7 +128,8 @@ void main() {
     expect(
       history.beginCalls.last.programRunId,
       isNull,
-      reason: 'a review of another block is not answering for this run — '
+      reason:
+          'a review of another block is not answering for this run — '
           'attaching it would suppress a prompt it was never about',
     );
   });
@@ -151,7 +153,8 @@ void main() {
     expect(
       history.baselineCalls,
       ['r1'],
-      reason: 'the baseline call is a capture, idempotent by construction — it '
+      reason:
+          'the baseline call is a capture, idempotent by construction — it '
           'is how a review from before baselines were recorded gets one, and '
           'how every resume touches the row without changing it',
     );
@@ -159,13 +162,15 @@ void main() {
     expect(
       resumed.sessionIds,
       ['s1', 's2'],
-      reason: 'the ceremony opens on the row\'s stored set — reading the '
+      reason:
+          'the ceremony opens on the row\'s stored set — reading the '
           'columns instead would show an empty review',
     );
     expect(
       resumed.achievements,
       isNotNull,
-      reason: 'the loaded state carries the achievements the panel derived for '
+      reason:
+          'the loaded state carries the achievements the panel derived for '
           'the open review; resume passes them through rather than deriving',
     );
   });
@@ -188,33 +193,37 @@ void main() {
     expect(
       resumed!.sessionIds,
       ['s1', 's2'],
-      reason: 'the fall-through is the only reason an old review can still be '
+      reason:
+          'the fall-through is the only reason an old review can still be '
           'walked — it is a set of the block\'s workouts now',
     );
   });
 
-  test('a resume opens on the healed row, not the stale one it was handed',
-      () async {
-    runs.currentRun = testRun(startedDate: DateTime(2026, 2, 1));
-    final stale = openReview();
-    final healed = openReview(
-      baselineContent: const ProgramContent().encode(),
-    );
-    history.reviews = [stale];
-    history.baselineResult = healed;
-    final vm = build();
-    await vm.load('p1');
+  test(
+    'a resume opens on the healed row, not the stale one it was handed',
+    () async {
+      runs.currentRun = testRun(startedDate: DateTime(2026, 2, 1));
+      final stale = openReview();
+      final healed = openReview(
+        baselineContent: const ProgramContent().encode(),
+      );
+      history.reviews = [stale];
+      history.baselineResult = healed;
+      final vm = build();
+      await vm.load('p1');
 
-    final resumed = await vm.resumeReview('p1', stale);
+      final resumed = await vm.resumeReview('p1', stale);
 
-    expect(
-      resumed!.review.hasBaseline,
-      isTrue,
-      reason: 'the row that came back from the capture is the one the ceremony '
-          'opens on — a baseline captured into the DB but not into the screen '
-          'would leave Compare blind for the rest of the pass',
-    );
-  });
+      expect(
+        resumed!.review.hasBaseline,
+        isTrue,
+        reason:
+            'the row that came back from the capture is the one the ceremony '
+            'opens on — a baseline captured into the DB but not into the screen '
+            'would leave Compare blind for the rest of the pass',
+      );
+    },
+  );
 }
 
 /// A join row as the view model reads them: the workout's membership, and the

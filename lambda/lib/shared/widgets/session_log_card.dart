@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_fonts.dart';
 import '../../core/styles/app_radius.dart';
 import '../../core/styles/app_spacing.dart';
 import '../../core/styles/app_text_styles.dart';
 import '../../core/utils/session_format.dart';
+import 'coach_created_mark.dart';
 import '../../data/models/session.dart';
 import '../../data/models/session_exercise_set.dart';
 import './container_styles.dart';
@@ -68,6 +70,13 @@ class SessionLogCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             _identityGrid(s),
+            if (s.createdByUserId != null || s.updatedByUserId != null) ...[
+              const SizedBox(height: AppSpacing.xs),
+              CoachCreatedMark(
+                createdByUserId: s.createdByUserId,
+                updatedByUserId: s.updatedByUserId,
+              ),
+            ],
             if (workout.sets.isNotEmpty) ...[
               const SizedBox(height: AppSpacing.md),
               Column(
@@ -89,9 +98,10 @@ class SessionLogCard extends StatelessWidget {
           : SwipeActions(
               actions: [
                 SwipeAction(
-                  icon: Icons.delete_outline,
-                  
+                  icon: LucideIcons.trash2,
+
                   color: AppColors.danger,
+                  foreground: AppColors.dangerText,
                   onTap: onDelete!,
                 ),
               ],
@@ -105,10 +115,7 @@ class SessionLogCard extends StatelessWidget {
   /// live below it, centered.
   Widget _identityGrid(Session s) {
     return Container(
-      decoration: lambdaBox(
-        ContainerTone.outline,
-        radius: AppRadius.md,
-      ),
+      decoration: lambdaBox(ContainerTone.outline, radius: AppRadius.md),
       clipBehavior: Clip.antiAlias,
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -119,7 +126,13 @@ class SessionLogCard extends StatelessWidget {
                 child: _gridCell(
                   'DATE',
                   Text(
-                    DateFormat('MMM d, yyyy').format(s.createdDatetime),
+                    // The card's day and the detail's date bar are one fact:
+                    // `created_datetime` is UTC, and every date surface
+                    // converts (2026-10-22 — the card and the bar disagreed by
+                    // a day either side of midnight).
+                    DateFormat(
+                      'MMM d, yyyy',
+                    ).format(s.createdDatetime.toLocal()),
                     style: AppFonts.mono(
                       fontSize: AppTextStyles.sm,
                       fontWeight: FontWeight.w700,
@@ -173,14 +186,26 @@ class SessionLogCard extends StatelessWidget {
               Expanded(
                 child: _gridCell(
                   'PRE',
-                  FeelingRating(value: s.preFeeling, size: 14, spacing: 3),
+                  // A glance, not a control — no pill (2026-10-28).
+                  FeelingRating(
+                    value: s.preFeeling,
+                    size: 14,
+                    spacing: 3,
+                    framed: false,
+                  ),
                 ),
               ),
               Container(width: 1, color: AppColors.border),
               Expanded(
                 child: _gridCell(
                   'POST',
-                  FeelingRating(value: s.feeling, size: 14, spacing: 3),
+                  // A glance, not a control — no pill (2026-10-28).
+                  FeelingRating(
+                    value: s.feeling,
+                    size: 14,
+                    spacing: 3,
+                    framed: false,
+                  ),
                 ),
               ),
             ],
@@ -202,9 +227,10 @@ class SessionLogCard extends StatelessWidget {
         Text(
           label,
           style: AppFonts.mono(
-            fontSize: 13,
+            fontSize: AppTextStyles.xs,
+            fontWeight: FontWeight.w600,
             letterSpacing: 0.8,
-            color: AppColors.muted,
+            color: AppColors.primary,
           ),
         ),
         const SizedBox(height: 3),
@@ -249,7 +275,7 @@ class SessionLogCard extends StatelessWidget {
               '$count ${count == 1 ? 'set' : 'sets'}',
               style: AppFonts.mono(
                 fontSize: AppTextStyles.sm,
-                color: AppColors.muted,
+                color: AppColors.inkSecondary,
               ),
             ),
             // The trophy + count after the set summary — accent is the PR
@@ -257,7 +283,7 @@ class SessionLogCard extends StatelessWidget {
             if ((prsByExercise?[exId] ?? 0) > 0) ...[
               const SizedBox(width: AppSpacing.sm),
               Icon(
-                Icons.emoji_events_outlined,
+                LucideIcons.trophy,
                 size: 14,
                 color: AppColors.accent,
               ),

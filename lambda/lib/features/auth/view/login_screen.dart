@@ -1,4 +1,4 @@
-﻿import 'dart:io';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:go_router/go_router.dart';
@@ -18,9 +18,9 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _emailController    = TextEditingController();
+  final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-  final _viewModel          = AuthViewModel();
+  final _viewModel = AuthViewModel();
   String? _emailError;
   String? _passwordError;
 
@@ -41,9 +41,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
   bool _validate() {
     final emailErr = Validators.email(_emailController.text.trim());
-    final passErr  = Validators.password(_passwordController.text);
+    final passErr = Validators.password(_passwordController.text);
     setState(() {
-      _emailError    = emailErr;
+      _emailError = emailErr;
       _passwordError = passErr;
     });
     return emailErr == null && passErr == null;
@@ -80,7 +80,8 @@ class _LoginScreenState extends State<LoginScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 24),
               child: ConstrainedBox(
                 constraints: BoxConstraints(
-                  minHeight: MediaQuery.of(context).size.height -
+                  minHeight:
+                      MediaQuery.of(context).size.height -
                       MediaQuery.of(context).padding.top -
                       MediaQuery.of(context).padding.bottom,
                 ),
@@ -130,7 +131,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             'Sign in',
                             style: TextStyle(
                               fontSize: AppTextStyles.lg,
-                              color: AppColors.muted,
+                              color: AppColors.inkSecondary,
                             ),
                             textAlign: TextAlign.center,
                           ),
@@ -211,7 +212,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             child: Text(
                               'or',
                               style: TextStyle(
-                                color: AppColors.muted,
+                                color: AppColors.inkSecondary,
                                 fontSize: AppTextStyles.sm,
                               ),
                             ),
@@ -227,7 +228,8 @@ class _LoginScreenState extends State<LoginScreen> {
                         children: [
                           _SocialButton(
                             icon: FontAwesomeIcons.google,
-                            loading: state.socialLoading == SocialProvider.google,
+                            loading:
+                                state.socialLoading == SocialProvider.google,
                             disabled: state.isBusy,
                             onTap: _viewModel.signInWithGoogle,
                           ),
@@ -236,7 +238,8 @@ class _LoginScreenState extends State<LoginScreen> {
                             _SocialButton(
                               icon: FontAwesomeIcons.apple,
                               iconSize: 26,
-                              loading: state.socialLoading == SocialProvider.apple,
+                              loading:
+                                  state.socialLoading == SocialProvider.apple,
                               disabled: state.isBusy,
                               onTap: _viewModel.signInWithApple,
                             ),

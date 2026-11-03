@@ -42,7 +42,8 @@ void main() {
     expect(
       Program.fromMap(map).usesBlocks,
       isFalse,
-      reason: 'the local mirror holds a row written before `uses_blocks` '
+      reason:
+          'the local mirror holds a row written before `uses_blocks` '
           'existed, and it reads NULL until a download lands. The two wrong '
           'answers are not equal: a temporary "simple" costs a missing Blocks '
           'tab, while a temporary "blocked" would put block surfacing on every '
@@ -57,7 +58,8 @@ void main() {
     expect(
       Program.fromMap(map).defaultTargetSessions,
       isNull,
-      reason: 'the begin sheet prefills from this. A null that came back as 0 '
+      reason:
+          'the begin sheet prefills from this. A null that came back as 0 '
           'would open every first run on "0 sessions" — a number the program '
           'never remembered and the user never chose',
     );
@@ -65,8 +67,9 @@ void main() {
 
   test('a remembered length round-trips', () {
     expect(
-      Program.fromMap(program(defaultTargetSessions: 12).toMap())
-          .defaultTargetSessions,
+      Program.fromMap(
+        program(defaultTargetSessions: 12).toMap(),
+      ).defaultTargetSessions,
       12,
     );
   });
@@ -76,10 +79,20 @@ void main() {
     // both a num and a string for the same column.
     final map = program(defaultTargetSessions: 12).toMap();
 
-    expect(Program.fromMap({...map, 'default_target_sessions': '12'})
-        .defaultTargetSessions, 12);
-    expect(Program.fromMap({...map, 'default_target_sessions': 12.0})
-        .defaultTargetSessions, 12);
+    expect(
+      Program.fromMap({
+        ...map,
+        'default_target_sessions': '12',
+      }).defaultTargetSessions,
+      12,
+    );
+    expect(
+      Program.fromMap({
+        ...map,
+        'default_target_sessions': 12.0,
+      }).defaultTargetSessions,
+      12,
+    );
   });
 
   test('the shape survives the string and int forms too', () {
@@ -106,8 +119,12 @@ void main() {
   test('a missing updated date falls back to the created one', () {
     final map = program().toMap()..remove('program_updated_date');
 
-    expect(Program.fromMap(map).updatedDate, Program.fromMap(map).createdDate,
-        reason: 'every program is at least as old as it is: a row without an '
-            'update stamp is one that has never been edited');
+    expect(
+      Program.fromMap(map).updatedDate,
+      Program.fromMap(map).createdDate,
+      reason:
+          'every program is at least as old as it is: a row without an '
+          'update stamp is one that has never been edited',
+    );
   });
 }

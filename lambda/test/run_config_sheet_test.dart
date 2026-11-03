@@ -18,32 +18,30 @@ ProgramBlock testBlock({
   int? targetWeeks,
   int? targetDays,
   int? targetSessions,
-}) =>
-    ProgramBlock(
-      blockId: blockId,
-      userId: 'u1',
-      programId: 'p1',
-      name: name,
-      blockOrder: 1,
-      targetWeeks: targetWeeks,
-      targetDays: targetDays,
-      targetSessions: targetSessions,
-    );
+}) => ProgramBlock(
+  blockId: blockId,
+  userId: 'u1',
+  programId: 'p1',
+  name: name,
+  blockOrder: 1,
+  targetWeeks: targetWeeks,
+  targetDays: targetDays,
+  targetSessions: targetSessions,
+);
 
 ProgramRun testRun({
   String programRunId = 'r1',
   String? blockId,
   int? targetSessions,
-}) =>
-    ProgramRun(
-      programRunId: programRunId,
-      programId: 'p1',
-      userId: 'u1',
-      startedDate: DateTime(2026, 2, 1),
-      isCurrent: true,
-      blockId: blockId,
-      targetSessions: targetSessions,
-    );
+}) => ProgramRun(
+  programRunId: programRunId,
+  programId: 'p1',
+  userId: 'u1',
+  startedDate: DateTime(2026, 2, 1),
+  isCurrent: true,
+  blockId: blockId,
+  targetSessions: targetSessions,
+);
 
 void main() {
   late RunConfigRequest? result;
@@ -90,8 +88,9 @@ void main() {
   }
 
   group('a blocked program names the block rather than offering a picker', () {
-    testWidgets('the block and its length are shown, and no count is asked',
-        (tester) async {
+    testWidgets('the block and its length are shown, and no count is asked', (
+      tester,
+    ) async {
       await openSheet(
         tester,
         usesBlocks: true,
@@ -104,13 +103,15 @@ void main() {
       expect(
         find.text('Number of sessions'),
         findsNothing,
-        reason: 'the block owns the length — a count field here would be '
+        reason:
+            'the block owns the length — a count field here would be '
             'overruled the moment the run was read back',
       );
     });
 
-    testWidgets('confirming returns the block and no session count',
-        (tester) async {
+    testWidgets('confirming returns the block and no session count', (
+      tester,
+    ) async {
       await openSheet(tester, usesBlocks: true, block: testBlock());
       await tapBegin(tester);
 
@@ -123,8 +124,9 @@ void main() {
       );
     });
 
-    testWidgets('an open-ended block says so instead of no length',
-        (tester) async {
+    testWidgets('an open-ended block says so instead of no length', (
+      tester,
+    ) async {
       await openSheet(tester, usesBlocks: true, block: testBlock());
       expect(
         find.text('Open-ended — end it by hand when the phase is done.'),
@@ -132,40 +134,48 @@ void main() {
       );
     });
 
-    testWidgets('with no blocks there is nothing to begin and nothing to type',
-        (tester) async {
-      await openSheet(tester, usesBlocks: true);
+    testWidgets(
+      'with no blocks there is nothing to begin and nothing to type',
+      (tester) async {
+        await openSheet(tester, usesBlocks: true);
 
-      expect(
-        find.textContaining('Add a block to run this program'),
-        findsOneWidget,
-      );
-      expect(find.text('Number of sessions'), findsNothing);
+        expect(
+          find.textContaining('Add a block to run this program'),
+          findsOneWidget,
+        );
+        expect(find.text('Number of sessions'), findsNothing);
 
-      await tapBegin(tester);
-      expect(
-        result,
-        isNull,
-        reason: 'the sheet stays open — a blocked program with no block has '
-            'nothing to walk, so there is no run to configure',
-      );
-    });
+        await tapBegin(tester);
+        expect(
+          result,
+          isNull,
+          reason:
+              'the sheet stays open — a blocked program with no block has '
+              'nothing to walk, so there is no run to configure',
+        );
+      },
+    );
 
-    testWidgets('the Confirm button cannot be pressed with no block',
-        (tester) async {
+    testWidgets('the Confirm button cannot be pressed with no block', (
+      tester,
+    ) async {
       await openSheet(tester, usesBlocks: true);
       // Tapping a disabled GlassButton is a no-op; the request staying null is
       // what "cannot be pressed" means here.
       await tapBegin(tester);
       expect(result, isNull);
-      expect(find.text('Begin'), findsOneWidget,
-          reason: 'the sheet is still up, not dismissed');
+      expect(
+        find.text('Begin'),
+        findsOneWidget,
+        reason: 'the sheet is still up, not dismissed',
+      );
     });
   });
 
   group('a simple program is asked for a count and never about blocks', () {
-    testWidgets('no Run section, and the count field is prefilled',
-        (tester) async {
+    testWidgets('no Run section, and the count field is prefilled', (
+      tester,
+    ) async {
       await openSheet(tester, defaultTargetSessions: 12);
 
       expect(find.text('Number of sessions'), findsOneWidget);
@@ -206,7 +216,8 @@ void main() {
       expect(
         find.text('Set by the block this run follows.'),
         findsOneWidget,
-        reason: 'the run is under way — naming its own block is honest, and '
+        reason:
+            'the run is under way — naming its own block is honest, and '
             'offering a different one would silently change what it counts',
       );
       expect(find.text('Run'), findsNothing);
@@ -240,7 +251,11 @@ void main() {
         'editable', (tester) async {
       // A run begun before blocks were the only way in: it has no block, and
       // it still has to be fixable rather than being forced onto one.
-      await openSheet(tester, usesBlocks: true, run: testRun(targetSessions: 5));
+      await openSheet(
+        tester,
+        usesBlocks: true,
+        run: testRun(targetSessions: 5),
+      );
 
       expect(find.text('Number of sessions'), findsOneWidget);
       expect(find.text('Run'), findsNothing);

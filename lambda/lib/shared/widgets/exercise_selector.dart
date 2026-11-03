@@ -1,35 +1,68 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_fonts.dart';
 import '../../core/styles/app_radius.dart';
 import './container_styles.dart';
 import '../../core/styles/app_spacing.dart';
 import '../../core/styles/app_text_styles.dart';
+import './session_chevron_button.dart';
 
-/// How a review's two sides disagree about an exercise, read off its name: a
-/// green **plus** for one the comparison base did not hold (added since it),
-/// a red **minus** for one it did hold and the side on screen does not
-/// (dropped).
+/// What an exercise name wears when it differs from a second reading: a
+/// green **plus** for one the other reading did not hold, a red **minus**
+/// for one it did and the side on screen does not.
 ///
-/// The mark says something about the COMPARISON, not about the workout —
-/// nothing is stored, and where the two sides do not meet the same exercise
-/// wears the plus from one side of the eye and the minus from the other. It
-/// appears nowhere else: a live session, a log, a plan on its own has no
-/// second reading to be a change against.
+/// Two readers: a review's frozen sides (the eye flips, and the same name
+/// can wear the plus from one side and the minus from the other) and a live
+/// session's plan-diff, where an exercise added beyond the plan wears the
+/// plus (2026-10-13). Nothing is stored — the mark is derived wherever a
+/// second reading exists.
 enum ExerciseMark {
-  added(Icons.add_circle),
-  removed(Icons.remove_circle);
+  added(LucideIcons.circlePlus, 14),
+  removed(LucideIcons.circleMinus, 14);
 
-  const ExerciseMark(this.icon);
+  const ExerciseMark(this.icon, this.size);
 
   /// The glyph the name wears — the plus or minus inside a disc, because a
   /// bare stroke at this size reads as a hyphen, or as a smudge, against the
   /// name it is about (2026-10-12). Colour resolves at draw time — the tokens
   /// are getters over the live theme, so no enum constant can hold one — and
-  /// is always [AppColors.success] for [added], [AppColors.danger] for
-  /// [removed].
+  /// is [AppColors.success] for [added], [AppColors.danger] for [removed].
   final IconData icon;
+
+  /// How large the glyph draws — the disc's size.
+  final double size;
 }
+
+/// The selector's chevron recipe (2026-10-22): 40px target, 24px glyph, the
+/// same `chevron_*` the date bar draws — the lab's one chevron species, so
+/// the selector's flanks and the floor's date bar never read as two sizes of
+/// the same control. The field between them stands at the same 40.
+/// [SessionChevronButton] owns the recipe; [kExerciseSelectorArrowSize] is
+/// the name this widget's geometry reads it by.
+const double kExerciseSelectorArrowSize = SessionChevronButton.kSessionChevronSize;
+
+/// The height both exercise pickers cap their scrolling list at — this
+/// selector's popover and the Add/Remove Exercises sheet
+/// (`add_exercise_modal.dart`) read this one value, so the one picker's two
+/// shapes cannot drift (2026-10-26).
+///
+/// Half the screen: the old fixed 260 showed about five rows, which asks the
+/// user to scroll before they can look at their own library. A short screen
+/// (landscape) keeps the old cap rather than shrinking below it.
+double exercisePickerListCap(BuildContext context) {
+  final half = MediaQuery.sizeOf(context).height * 0.5;
+  return half < _kExercisePickerListFloor ? _kExercisePickerListFloor : half;
+}
+
+/// The old fixed cap — now the floor a short screen may not go under.
+const double _kExercisePickerListFloor = 260;
+
+/// The gap the popover hangs under its field, and the margin it keeps from
+/// the screen's bottom edge — the same two numbers the popover's placement
+/// and its height budget are computed from.
+const double _kPopoverGap = 4;
+const double _kPopoverMargin = 8;
 
 /// The workout exercise selector — a field that opens an anchored popover
 /// over the screen: the selected exercise shows highlighted, up/down arrows
@@ -45,6 +78,8 @@ class ExerciseSelector extends StatefulWidget {
     required this.onMove,
     required this.onAdd,
     this.marks = const [],
+    this.deleted = const [],
+    this.planned = false,
   });
 
   /// Display names, in order.
@@ -54,9 +89,21 @@ class ExerciseSelector extends StatefulWidget {
 
   /// One mark per name, parallel to [exercises]. A null entry, a list that
   /// stops short, or no list at all leaves that name bare — an unmarked name
-  /// draws nothing, not even the gap its mark would take. Only a review fills
-  /// these.
+  /// draws nothing, not even the gap its mark would take. Reviews and the
+  /// live session's plan-diff fill these (2026-10-13).
   final List<ExerciseMark?> marks;
+
+  /// One flag per name, parallel to [exercises]: the exercise was deleted
+  /// from the workout (every row it holds is flagged) and its name wears the
+  /// deleted box — the deleted SET row's exact chrome ([deletedBox]), the
+  /// text itself left alone (2026-10-14). A list that stops short leaves the
+  /// rest plain.
+  final List<bool> deleted;
+
+  /// The closed field wears the planned container — the card no longer draws
+  /// a blue rim, so the selector carries the plan's provenance (2026-10-23).
+  /// Deleted still outranks it: a deleted exercise is red, not blue.
+  final bool planned;
 
   /// Reorder: move [index] by [direction] (-1 up, +1 down).
   /// Null greys the reorder arrows (read-only contexts).
@@ -75,6 +122,10 @@ class _ExerciseSelectorState extends State<ExerciseSelector> {
   final _link = LayerLink();
   final _portal = OverlayPortalController();
   double _fieldWidth = 0;
+
+  /// The popover's height when it opens: the picker's cap, narrowed to the
+  /// room the screen has left below the field.
+  double _popoverHeight = 0;
   bool _open = false;
 
   void _close() {
@@ -90,14 +141,40 @@ class _ExerciseSelectorState extends State<ExerciseSelector> {
     final box = _fieldKey.currentContext?.findRenderObject() as RenderBox?;
     setState(() {
       _fieldWidth = box?.size.width ?? 0;
+      // The popover opens downward from the field. Half the screen is the
+      // picker's cap, but the field is not always near the top — the old 260
+      // could not reach the bottom edge, and this can — so it never grows
+      // past the screen below the field (2026-10-26). The 260 floor keeps a
+      // cramped layout as usable as it was before the cap moved.
+      var height = exercisePickerListCap(context);
+      if (box != null) {
+        final fieldBottom = box.localToGlobal(Offset.zero).dy + box.size.height;
+        final room =
+            MediaQuery.sizeOf(context).height -
+            MediaQuery.paddingOf(context).bottom -
+            fieldBottom -
+            _kPopoverGap -
+            _kPopoverMargin;
+        if (room < height) height = room;
+      }
+      _popoverHeight = height < _kExercisePickerListFloor
+          ? _kExercisePickerListFloor
+          : height;
       _open = true;
     });
     _portal.show();
   }
 
+  /// Whether the [i]-th name is a deleted exercise — drawn red wherever the
+  /// name appears.
+  bool _isDeleted(int i) => i < widget.deleted.length && widget.deleted[i];
+
   /// The glyph a marked name wears, riding directly after it: the name
   /// ellipsizes to its left, so a long one narrows rather than pushing its
-  /// mark out of the field. An unmarked name draws nothing at all.
+  /// mark out of the field. An unmarked name draws nothing at all. The field
+  /// and the popover rows draw the same marks (2026-10-23 — the restore dot
+  /// that once waited for the popover is gone: the deleted view lists every
+  /// deleted exercise itself).
   Widget _mark(int i) {
     final mark = i < widget.marks.length ? widget.marks[i] : null;
     if (mark == null) return const SizedBox.shrink();
@@ -105,10 +182,11 @@ class _ExerciseSelectorState extends State<ExerciseSelector> {
       padding: const EdgeInsets.only(left: 6),
       child: Icon(
         mark.icon,
-        size: 14,
-        color: mark == ExerciseMark.added
-            ? AppColors.success
-            : AppColors.danger,
+        size: mark.size,
+        color: switch (mark) {
+          ExerciseMark.added => AppColors.success,
+          ExerciseMark.removed => AppColors.danger,
+        },
       ),
     );
   }
@@ -123,12 +201,15 @@ class _ExerciseSelectorState extends State<ExerciseSelector> {
         Row(
           children: [
             // Left/right flanking arrows — step between exercises without
-            // opening the popover. Greyed at the ends of the list.
+            // opening the popover. Greyed at the ends of the list. The glyph
+            // is the date bar's own (`chevron_*` at 24) in a 40px target
+            // (2026-10-22): one chevron species for the whole session stage.
             _arrow(
-              Icons.keyboard_arrow_left,
+              LucideIcons.chevronLeft,
               widget.exercises.length > 1 && widget.activeIndex > 0,
               () => widget.onSelect(widget.activeIndex - 1),
               key: const ValueKey('exercise-selector-prev'),
+              semanticsLabel: 'Previous exercise',
             ),
             const SizedBox(width: AppSpacing.xs),
             Expanded(
@@ -139,18 +220,30 @@ class _ExerciseSelectorState extends State<ExerciseSelector> {
                   onTap: _toggle,
                   child: Container(
                     key: _fieldKey,
-                    // Glass compact — the neutral translucent treatment.
+                    // One height with the arrows it stands between: the
+                    // field used to be its text's height (~35), leaving the
+                    // 40 boxes beside it standing proud (2026-10-22).
+                    height: kExerciseSelectorArrowSize,
+                    // Glass compact — the neutral translucent treatment,
+                    // swapped for the deleted box while it shows a deleted
+                    // exercise (2026-10-14), and for the planned container
+                    // while the exercise comes from a plan (2026-10-23):
+                    // the plan's own soft highlight, one recipe.
                     padding: const EdgeInsets.symmetric(
                       horizontal: 12,
                       vertical: 8,
                     ),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withAlpha(26),
-                      borderRadius: BorderRadius.circular(AppRadius.md),
-                      border: Border.all(
-                        color: AppColors.primary.withAlpha(77),
-                      ),
-                    ),
+                    decoration: _isDeleted(widget.activeIndex)
+                        ? deletedBox()
+                        : widget.planned
+                        ? lambdaBox(ContainerTone.planned, radius: AppRadius.md)
+                        : BoxDecoration(
+                            color: AppColors.primary.withAlpha(26),
+                            borderRadius: BorderRadius.circular(AppRadius.md),
+                            border: Border.all(
+                              color: AppColors.primary.withAlpha(77),
+                            ),
+                          ),
                     child: Row(
                       children: [
                         Expanded(
@@ -185,7 +278,7 @@ class _ExerciseSelectorState extends State<ExerciseSelector> {
                           turns: _open ? 0.5 : 0,
                           duration: const Duration(milliseconds: 150),
                           child: Icon(
-                            Icons.keyboard_arrow_down,
+                            LucideIcons.chevronDown,
                             size: 16,
                             color: AppColors.primary,
                           ),
@@ -198,11 +291,12 @@ class _ExerciseSelectorState extends State<ExerciseSelector> {
             ),
             const SizedBox(width: AppSpacing.xs),
             _arrow(
-              Icons.keyboard_arrow_right,
+              LucideIcons.chevronRight,
               widget.exercises.length > 1 &&
                   widget.activeIndex < widget.exercises.length - 1,
               () => widget.onSelect(widget.activeIndex + 1),
               key: const ValueKey('exercise-selector-next'),
+              semanticsLabel: 'Next exercise',
             ),
           ],
         ),
@@ -228,11 +322,15 @@ class _ExerciseSelectorState extends State<ExerciseSelector> {
                       link: _link,
                       targetAnchor: Alignment.bottomLeft,
                       followerAnchor: Alignment.topLeft,
-                      offset: const Offset(0, 4),
+                      offset: const Offset(0, _kPopoverGap),
                       child: Container(
+                        key: const ValueKey('exercise-selector-popover'),
                         width: _fieldWidth,
-                        constraints: const BoxConstraints(maxHeight: 260),
-                        decoration: lambdaBox(ContainerTone.surface, radius: AppRadius.md),
+                        constraints: BoxConstraints(maxHeight: _popoverHeight),
+                        decoration: lambdaBox(
+                          ContainerTone.surface,
+                          radius: AppRadius.md,
+                        ),
                         clipBehavior: Clip.antiAlias,
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
@@ -280,15 +378,19 @@ class _ExerciseSelectorState extends State<ExerciseSelector> {
       },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          // The selected exercise shows with the neutral glass highlight.
-          color: selected
-              ? AppColors.primary.withAlpha(26)
-              : Colors.transparent,
-          border: Border(
-            bottom: BorderSide(color: AppColors.border, width: 0.5),
-          ),
-        ),
+        // The selected exercise shows with the neutral glass highlight; a
+        // deleted one wears the deleted box — the set row's exact chrome,
+        // one recipe (2026-10-14).
+        decoration: _isDeleted(i)
+            ? deletedBox()
+            : BoxDecoration(
+                color: selected
+                    ? AppColors.primary.withAlpha(26)
+                    : Colors.transparent,
+                border: Border(
+                  bottom: BorderSide(color: AppColors.border, width: 0.5),
+                ),
+              ),
         child: Row(
           children: [
             Expanded(
@@ -304,7 +406,11 @@ class _ExerciseSelectorState extends State<ExerciseSelector> {
                         fontWeight: selected
                             ? FontWeight.w700
                             : FontWeight.w500,
-                        color: selected ? AppColors.primary : AppColors.muted,
+                        // The container carries the deletion — the name's own
+                        // colour stays the row's reading.
+                        color: selected
+                            ? AppColors.primary
+                            : AppColors.inkSecondary,
                       ),
                     ),
                   ),
@@ -313,19 +419,21 @@ class _ExerciseSelectorState extends State<ExerciseSelector> {
               ),
             ),
             _arrow(
-              Icons.keyboard_arrow_up,
+              LucideIcons.chevronUp,
               widget.onMove != null && i > 0,
               () => widget.onMove!(i, -1),
               size: 28,
               iconSize: 15,
+              semanticsLabel: 'Move up',
             ),
             const SizedBox(width: 2),
             _arrow(
-              Icons.keyboard_arrow_down,
+              LucideIcons.chevronDown,
               widget.onMove != null && i < widget.exercises.length - 1,
               () => widget.onMove!(i, 1),
               size: 28,
               iconSize: 15,
+              semanticsLabel: 'Move down',
             ),
           ],
         ),
@@ -333,37 +441,28 @@ class _ExerciseSelectorState extends State<ExerciseSelector> {
     );
   }
 
-  /// Arrow button — [size] is the full tap target (icon-button 32×32 for the
-  /// flanking field arrows, chevron 28×28 inside the popover rows).
+  /// Arrow button — [size] is the full tap target
+  /// ([kExerciseSelectorArrowSize] for the flanking field arrows, chevron
+  /// 28×28 inside the popover rows). Drawn by the shared
+  /// [SessionChevronButton], so the flanks are one recipe with the date
+  /// bar's session arrows.
   Widget _arrow(
     IconData icon,
     bool enabled,
     VoidCallback onTap, {
     Key? key,
-    double size = 32,
-    double iconSize = 18,
+    double size = kExerciseSelectorArrowSize,
+    double iconSize = SessionChevronButton.kSessionChevronIconSize,
+    required String semanticsLabel,
   }) {
-    return GestureDetector(
+    return SessionChevronButton(
       key: key,
-      onTap: enabled ? onTap : () {},
-      child: Container(
-        width: size,
-        height: size,
-        alignment: Alignment.center,
-        // The glass recipe — the same chrome as every other pressable.
-        decoration: enabled
-            ? glassBox(AppColors.primary, radius: 6)
-            : BoxDecoration(
-                color: Colors.transparent,
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: AppColors.border, width: 0.5),
-              ),
-        child: Icon(
-          icon,
-          size: iconSize,
-          color: enabled ? AppColors.primary : AppColors.muted,
-        ),
-      ),
+      icon: icon,
+      enabled: enabled,
+      onPressed: onTap,
+      size: size,
+      iconSize: iconSize,
+      semanticsLabel: semanticsLabel,
     );
   }
 
@@ -374,7 +473,9 @@ class _ExerciseSelectorState extends State<ExerciseSelector> {
   /// action.
   Widget _addRow() {
     final enabled = widget.onAdd != null;
-    final color = enabled ? AppColors.primary : AppColors.muted.withValues(alpha: 0.4);
+    final color = enabled
+        ? AppColors.primary
+        : AppColors.muted.withValues(alpha: 0.4);
     return GestureDetector(
       onTap: enabled
           ? () {
@@ -388,14 +489,21 @@ class _ExerciseSelectorState extends State<ExerciseSelector> {
         decoration: enabled ? glassBox(AppColors.primary) : null,
         child: Row(
           children: [
-            Icon(Icons.add, size: 16, color: color),
+            Icon(LucideIcons.plus, size: 16, color: color),
             const SizedBox(width: AppSpacing.sm),
-            Text(
-              'Add/Remove Exercises',
-              style: AppFonts.ui(
-                fontSize: AppTextStyles.sm,
-                fontWeight: FontWeight.w700,
-                color: color,
+            // The popover is the field's width, and the field narrows as the
+            // chevrons around it grow (2026-10-22): the label ellipsizes on
+            // the planner's inset card instead of overflowing its row.
+            Expanded(
+              child: Text(
+                'Add/Remove Exercises',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppFonts.ui(
+                  fontSize: AppTextStyles.sm,
+                  fontWeight: FontWeight.w700,
+                  color: color,
+                ),
               ),
             ),
           ],
@@ -404,4 +512,3 @@ class _ExerciseSelectorState extends State<ExerciseSelector> {
     );
   }
 }
-

@@ -45,7 +45,7 @@ class ReviewCheckpointMeta extends StatelessWidget {
             style: AppFonts.mono(
               fontSize: AppTextStyles.xs,
               fontWeight: FontWeight.w700,
-              color: AppColors.accentText,
+              color: AppColors.accent,
               letterSpacing: 0.6,
             ),
           ),
@@ -56,7 +56,7 @@ class ReviewCheckpointMeta extends StatelessWidget {
             DateFormat('MMM d, yyyy').format(review.effectiveDate),
             style: AppFonts.mono(
               fontSize: AppTextStyles.xs,
-              color: AppColors.muted,
+              color: AppColors.inkSecondary,
             ),
           ),
         ),
@@ -65,7 +65,7 @@ class ReviewCheckpointMeta extends StatelessWidget {
             '#${hash.substring(0, hash.length < 8 ? hash.length : 8)}',
             style: AppFonts.mono(
               fontSize: AppTextStyles.xs,
-              color: AppColors.muted,
+              color: AppColors.inkSecondary,
             ),
           ),
       ],

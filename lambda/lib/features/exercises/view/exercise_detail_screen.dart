@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../core/styles/app_colors.dart';
 import '../../../data/cache/past_sets_timeline_cache.dart';
 import '../../../core/styles/app_fonts.dart';
@@ -10,11 +11,15 @@ import '../../../core/styles/app_text_styles.dart';
 import '../../../core/utils/date_range.dart';
 import '../../../core/utils/name_limit.dart';
 import '../../../data/models/session_exercise_set.dart';
-import '../../../data/repositories/lesson_repository.dart';
+import '../../../data/repositories/exercise_note_repository.dart';
+import '../../../data/repositories/exercise_repository.dart';
 import '../../../data/repositories/pr_view_setting_repository.dart';
 import '../../../shared/widgets/glass_button.dart';
+import '../../../shared/widgets/user_name_text.dart';
 import '../../../shared/widgets/lambda_input.dart';
+import '../../../shared/widgets/name_history_sheet.dart';
 import '../../../shared/widgets/name_limit_counter.dart';
+import '../../../shared/widgets/header_icon_button.dart';
 import '../../../shared/widgets/page_header.dart';
 import '../../../shared/widgets/scroll_shrink_nav_bar.dart';
 import '../../../shared/widgets/container_styles.dart';
@@ -35,18 +40,38 @@ class ExerciseDetailScreen extends StatefulWidget {
     super.key,
     required this.exerciseId,
     this.exerciseName,
+    this.userId,
+    this.canDelete = true,
+    this.canEdit = true,
+    this.canEditViewSettings = true,
   });
 
   final String exerciseId;
   final String? exerciseName;
+
+  /// Whose exercise this is; null = the signed-in user. Coach mode passes the
+  /// athlete so the history, notes and PRs are hers (2026-10-28).
+  final String? userId;
+
+  /// Whether the edit menu offers Delete/archive. Coach mode renames only.
+  final bool canDelete;
+
+  /// Whether the rename menu is offered. A coach may rename only the
+  /// exercises they created (2026-10-29).
+  final bool canEdit;
+
+  /// Whether the insights' axis hide/show toggles write the per-exercise
+  /// view settings. Coach mode turns this off: `dim_pr_view_setting` is not
+  /// part of the coach grant, so the write would be refused (2026-10-29).
+  final bool canEditViewSettings;
 
   @override
   State<ExerciseDetailScreen> createState() => _ExerciseDetailScreenState();
 }
 
 class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
-  final _viewModel = ExerciseViewModel();
-  final _lessonRepo = LessonRepository();
+  late final ExerciseViewModel _viewModel;
+  final _noteRepo = ExerciseNoteRepository();
   String? _name;
   List<PastSetRow> _sets = const [];
   bool _loading = true;
@@ -57,8 +82,9 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
 
   /// The active date filter — defaults to ALL (no filtering), the shared
   /// [DateRangeSelection] the Training Logs also use.
-  DateRangeSelection _selection =
-      const DateRangeSelection.preset(DateRangePreset.all);
+  DateRangeSelection _selection = const DateRangeSelection.preset(
+    DateRangePreset.all,
+  );
 
   /// PR Journey mode: false = rep-max axes, true = per-weight max reps.
   bool _weightMode = false;
@@ -67,14 +93,16 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
   Set<int> _hiddenReps = {};
   Set<String> _hiddenWeights = {};
 
-  /// All-time lesson count for this exercise (knowledge isn't windowed).
-  int _lessonsTotal = 0;
+  /// All-time note count for this exercise (knowledge isn't windowed).
+  int _notesTotal = 0;
 
-  String get _userId => Supabase.instance.client.auth.currentUser!.id;
+  String get _userId =>
+      widget.userId ?? Supabase.instance.client.auth.currentUser!.id;
 
   @override
   void initState() {
     super.initState();
+    _viewModel = ExerciseViewModel(userId: widget.userId);
     _name = widget.exerciseName;
     _load();
   }
@@ -99,7 +127,7 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
         _userId,
         widget.exerciseId,
       );
-      final lessons = await _lessonRepo.fetchLessons(
+      final notes = await _noteRepo.fetchNotes(
         _userId,
         widget.exerciseId,
       );
@@ -108,14 +136,13 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
         _sets = sets;
         _hiddenReps = hidden.hiddenReps;
         _hiddenWeights = hidden.hiddenWeights;
-        _lessonsTotal = lessons.length;
+        _notesTotal = notes.length;
         _loading = false;
         // 'No Variation' is the default ONLY when such sets exist —
         // otherwise default to the first variation that has data.
         if (_variationId == null) {
           final exerciseSets = setsForExercise(sets, widget.exerciseId);
-          final hasNoVariation =
-              exerciseSets.any((s) => s.variationId == null);
+          final hasNoVariation = exerciseSets.any((s) => s.variationId == null);
           if (!hasNoVariation) {
             final vs = variationsFor(exerciseSets);
             if (vs.isNotEmpty) _variationId = vs.first.id;
@@ -149,10 +176,7 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
       _selection.window(DateTime.now());
 
   Future<void> _openDateSelector() async {
-    final sel = await showDateRangeSelector(
-      context,
-      initial: _selection,
-    );
+    final sel = await showDateRangeSelector(context, initial: _selection);
     if (sel != null && mounted) {
       setState(() => _selection = sel);
     }
@@ -169,6 +193,7 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
     String axisValue, {
     required bool hide,
   }) async {
+    if (!widget.canEditViewSettings) return;
     final repo = PrViewSettingRepository();
     if (hide) {
       await repo.hideAxis(_userId, widget.exerciseId, axisType, axisValue);
@@ -217,9 +242,26 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
         title: _weightMode ? 'Weights' : 'Rep Maxes',
         options: options,
         isHidden: isHidden,
-        onToggle: (value, hide) =>
-            _toggleAxis(axisType, value, hide: hide),
+        onToggle: (value, hide) => _toggleAxis(axisType, value, hide: hide),
       ),
+    );
+  }
+
+  /// The owner's rename history for this exercise (2026-10-29); restoring a
+  /// name is a normal rename, which records itself.
+  Future<void> _openNameHistory() async {
+    await showNameHistorySheet(
+      context,
+      userId: _userId,
+      entityType: 'exercise',
+      entityId: widget.exerciseId,
+      currentName: _name ?? '',
+      onRestore: (name) async {
+        await ExerciseRepository().updateExercise(widget.exerciseId, name);
+        if (!mounted) return;
+        setState(() => _name = name);
+        await _load();
+      },
     );
   }
 
@@ -240,45 +282,98 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
           children: [
             Padding(
               padding: const EdgeInsets.all(AppSpacing.lg),
-              child: Text(_name ?? 'Exercise',
-                  style: AppFonts.ui(
-                      fontSize: AppTextStyles.lg,
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.primary)),
+              // The menu names the exercise it is about: one line, so a long
+              // name does not push the menu's own rows down the sheet.
+              child: UserNameText(
+                _name ?? 'Exercise',
+                style: AppFonts.ui(
+                  fontSize: AppTextStyles.lg,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.primary,
+                ),
+              ),
             ),
             InkWell(
               onTap: () => Navigator.of(ctx).pop('rename'),
               child: Padding(
                 padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.lg, vertical: AppSpacing.md),
+                  horizontal: AppSpacing.lg,
+                  vertical: AppSpacing.md,
+                ),
                 child: Row(
                   children: [
-                    Icon(Icons.edit_outlined, size: 18, color: AppColors.primary),
+                    Icon(
+                      LucideIcons.pencil,
+                      size: 18,
+                      color: AppColors.primary,
+                    ),
                     const SizedBox(width: AppSpacing.sm),
-                    Text('Rename',
-                        style: AppFonts.ui(
-                            fontSize: AppTextStyles.md,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.primary)),
+                    Text(
+                      'Rename',
+                      style: AppFonts.ui(
+                        fontSize: AppTextStyles.md,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.primary,
+                      ),
+                    ),
                   ],
                 ),
               ),
             ),
-            InkWell(
-              onTap: () => Navigator.of(ctx).pop('delete'),
+            // The owner's own history (2026-10-29) — a coach's device never
+            // receives it, so the row is the owner's alone.
+            if (widget.userId == null)
+              InkWell(
+                onTap: () => Navigator.of(ctx).pop('history'),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.lg,
+                    vertical: AppSpacing.md,
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        LucideIcons.history,
+                        size: 18,
+                        color: AppColors.primary,
+                      ),
+                      const SizedBox(width: AppSpacing.sm),
+                      Text(
+                        'Name history',
+                        style: AppFonts.ui(
+                          fontSize: AppTextStyles.md,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            if (widget.canDelete)
+              InkWell(
+                onTap: () => Navigator.of(ctx).pop('delete'),
               child: Padding(
                 padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.lg, vertical: AppSpacing.md),
+                  horizontal: AppSpacing.lg,
+                  vertical: AppSpacing.md,
+                ),
                 child: Row(
                   children: [
-                    Icon(Icons.delete_outline,
-                        size: 18, color: AppColors.danger),
+                    Icon(
+                      LucideIcons.trash2,
+                      size: 18,
+                      color: AppColors.danger,
+                    ),
                     const SizedBox(width: AppSpacing.sm),
-                    Text('Delete',
-                        style: AppFonts.ui(
-                            fontSize: AppTextStyles.md,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.danger)),
+                    Text(
+                      'Delete',
+                      style: AppFonts.ui(
+                        fontSize: AppTextStyles.md,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.danger,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -289,6 +384,7 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
       ),
     );
     if (action == 'rename') await _rename();
+    if (action == 'history') await _openNameHistory();
     if (action == 'delete') await _archive();
   }
 
@@ -305,33 +401,46 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
   /// Deletes a never-used exercise outright; archives a used one. The dialog
   /// copy follows the usage state so the user always knows which happened.
   Future<void> _archive() async {
-    final used =
-        await _viewModel.exerciseUsageCount(widget.exerciseId) > 0;
+    final used = await _viewModel.exerciseUsageCount(widget.exerciseId) > 0;
     if (!mounted) return;
     final name = _name ?? 'this exercise';
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
-        title: Text(used ? 'Archive exercise' : 'Delete exercise',
-            style: AppFonts.ui(fontWeight: FontWeight.w800, color: AppColors.danger)),
+        title: Text(
+          used ? 'Archive exercise' : 'Delete exercise',
+          style: AppFonts.ui(
+            fontWeight: FontWeight.w800,
+            color: AppColors.danger,
+          ),
+        ),
         content: Text(
-            used
-                ? 'Archive "$name"? It has been used, so it can\'t be fully '
-                  'deleted — it will disappear from pickers, but your logged '
-                  'history keeps its name.'
-                : 'Delete "$name"? This can\'t be undone.',
-            style: AppFonts.ui(color: AppColors.muted)),
+          used
+              ? 'Archive "$name"? It has been used, so it can\'t be fully '
+                    'deleted — it will disappear from pickers, but your logged '
+                    'history keeps its name.'
+              : 'Delete "$name"? This can\'t be undone.',
+          style: AppFonts.ui(color: AppColors.inkSecondary, height: 1.4),
+        ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: Text('Cancel',
-                  style: AppFonts.ui(color: AppColors.muted))),
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(
+              'Cancel',
+              style: AppFonts.ui(color: AppColors.inkSecondary),
+            ),
+          ),
           TextButton(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: Text(used ? 'Archive' : 'Delete',
-                  style: AppFonts.ui(
-                      color: AppColors.danger, fontWeight: FontWeight.w600))),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(
+              used ? 'Archive' : 'Delete',
+              style: AppFonts.ui(
+                color: AppColors.danger,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -345,9 +454,7 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
   String get _headerTitle {
     final name = _name ?? 'Exercise';
     if (_variationId == null) return name;
-    final v = _variations
-        .where((v) => v.id == _variationId)
-        .firstOrNull;
+    final v = _variations.where((v) => v.id == _variationId).firstOrNull;
     return v == null ? name : '$name · ${v.name}';
   }
 
@@ -418,7 +525,7 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
                       ),
                       const SizedBox(width: 4),
                       Icon(
-                        Icons.arrow_drop_down,
+                        LucideIcons.chevronDown,
                         size: 18,
                         color: AppColors.muted,
                       ),
@@ -426,29 +533,26 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
                   ),
                 ),
               ),
-              left: GestureDetector(
-                onTap: () => context.pop(),
-                child: Icon(
-                  Icons.arrow_back_ios_new,
-                  size: 18,
-                  color: AppColors.accent,
-                ),
+              left: HeaderIconButton(
+                icon: LucideIcons.chevronLeft,
+                semanticsLabel: 'Back',
+                glyphSize: 18,
+                onPressed: () => context.pop(),
               ),
-              right: GestureDetector(
-                onTap: _openEditMenu,
-                child: Icon(
-                  Icons.more_horiz,
-                  size: 22,
-                  color: AppColors.accent,
-                ),
+              right: HeaderIconButton(
+                icon: LucideIcons.ellipsis,
+                semanticsLabel: 'Exercise options',
+                glyphSize: 22,
+                // Inert for an exercise the coach did not create (2026-10-29).
+                onPressed: widget.canEdit ? _openEditMenu : null,
               ),
             ),
             Expanded(
               child: _loading
                   ? _Skeleton()
                   : _error != null
-                      ? _ErrorState(onRetry: _load)
-                      : _body(),
+                  ? _ErrorState(onRetry: _load)
+                  : _body(),
             ),
           ],
         ),
@@ -482,9 +586,10 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
       for (final n in kTrackedRepCounts) {
         if (_hiddenReps.contains(n)) continue;
         final endV = endCurve[n];
-        final count = repAxisHistory(_scoped, n)
-            .where((s) => inWindow(s.sessionCreatedDate))
-            .length;
+        final count = repAxisHistory(
+          _scoped,
+          n,
+        ).where((s) => inWindow(s.sessionCreatedDate)).length;
         journeyRows.add(
           _CurveRow(
             label: '${n}RM',
@@ -496,14 +601,16 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
         );
       }
     } else {
-      final windowSets =
-          _scoped.where((s) => inWindow(s.sessionCreatedDate)).toList();
+      final windowSets = _scoped
+          .where((s) => inWindow(s.sessionCreatedDate))
+          .toList();
       for (final weight in weightsByUsage(windowSets)) {
         if (_hiddenWeights.contains(_wfmt(weight))) continue;
         final endReps = maxRepsAtWeight(_scoped, w.to, weight);
-        final count = weightAxisHistory(_scoped, weight)
-            .where((s) => inWindow(s.sessionCreatedDate))
-            .length;
+        final count = weightAxisHistory(
+          _scoped,
+          weight,
+        ).where((s) => inWindow(s.sessionCreatedDate)).length;
         journeyRows.add(
           _CurveRow(
             label: '${_wfmt(weight)}kg',
@@ -529,27 +636,17 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
         GestureDetector(
           onTap: _openDateSelector,
           child: Container(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 12,
-              vertical: 8,
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: glassBox(AppColors.primary),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
                   _selection.label(DateTime.now()),
-                  style: AppFonts.mono(
-                    fontSize: 13,
-                    color: AppColors.primary,
-                  ),
+                  style: AppFonts.mono(fontSize: 13, color: AppColors.primary),
                 ),
                 const SizedBox(width: 4),
-                Icon(
-                  Icons.arrow_drop_down,
-                  size: 16,
-                  color: AppColors.muted,
-                ),
+                Icon(LucideIcons.chevronDown, size: 16, color: AppColors.muted),
               ],
             ),
           ),
@@ -561,16 +658,15 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
         _MetricsCard(
           prsTotal: prs.length,
           prFreq: activeWeeks == 0 ? null : prs.length / activeWeeks,
-          setsPerWeek:
-              activeWeeks == 0 ? null : setsInWindow / activeWeeks,
-          lessonsTotal: _lessonsTotal,
+          setsPerWeek: activeWeeks == 0 ? null : setsInWindow / activeWeeks,
+          notesTotal: _notesTotal,
         ),
         const SizedBox(height: AppSpacing.xs),
         Text(
           'Per-week rates count only weeks where this exercise was trained.',
           style: AppFonts.mono(
-            fontSize: 13,
-            color: AppColors.muted.withValues(alpha: 0.7),
+            fontSize: AppTextStyles.caption,
+            color: AppColors.inkSecondary,
           ),
         ),
         const SizedBox(height: AppSpacing.lg),
@@ -594,7 +690,8 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
             const Spacer(),
             GlassButton(
               label: '',
-              icon: Icons.tune,
+              icon: LucideIcons.slidersHorizontal,
+              semanticsLabel: 'View settings',
               compact: true,
               onPressed: _openViewSettings,
             ),
@@ -617,21 +714,24 @@ class _MetricsCard extends StatelessWidget {
     required this.prsTotal,
     required this.prFreq,
     required this.setsPerWeek,
-    required this.lessonsTotal,
+    required this.notesTotal,
   });
 
   final int prsTotal;
   final double? prFreq;
   final double? setsPerWeek;
-  final int lessonsTotal;
+  final int notesTotal;
 
-  static const _labels = ['PRs Total', 'PRs/Week', 'Sets/Week', 'Lessons'];
+  // "Notes", not "Exercise Notes": the page is the exercise, so the tile
+  // cannot be misread, and the long label does not fit four across
+  // (2026-10-23 — the note → exercise-note rename).
+  static const _labels = ['PRs Total', 'PRs/Week', 'Sets/Week', 'Notes'];
 
   List<String> get _values => [
     '$prsTotal',
     prFreq == null ? '—' : '${prFreq!.round()}',
     setsPerWeek == null ? '—' : '${setsPerWeek!.round()}',
-    '$lessonsTotal',
+    '$notesTotal',
   ];
 
   @override
@@ -659,8 +759,7 @@ class _MetricsCard extends StatelessWidget {
                       _labels[i],
                       textAlign: TextAlign.center,
                       style: AppFonts.mono(
-                        fontSize: 14,
-                        letterSpacing: 0.8,
+                        fontSize: AppTextStyles.sm,
                         color: AppColors.accent.withValues(alpha: 0.85),
                       ),
                     ),
@@ -670,7 +769,7 @@ class _MetricsCard extends StatelessWidget {
                       children: [
                         if (i == 0) ...[
                           Icon(
-                            Icons.emoji_events_outlined,
+                            LucideIcons.trophy,
                             size: 16,
                             color: AppColors.accent,
                           ),
@@ -737,8 +836,10 @@ class _CurveRow extends StatelessWidget {
         ),
         decoration: established
             ? lambdaBox(ContainerTone.surface, radius: AppRadius.md)
-            : lambdaBox(ContainerTone.ghost, radius: AppRadius.md)
-                .copyWith(border: null),
+            : lambdaBox(
+                ContainerTone.ghost,
+                radius: AppRadius.md,
+              ).copyWith(border: null),
         child: Row(
           children: [
             SizedBox(
@@ -746,9 +847,8 @@ class _CurveRow extends StatelessWidget {
               child: Text(
                 label,
                 style: AppFonts.mono(
-                  fontSize: 13,
-                  color: established ? AppColors.muted : AppColors.muted
-                      .withValues(alpha: 0.5),
+                  fontSize: AppTextStyles.caption,
+                  color: AppColors.inkSecondary,
                 ),
               ),
             ),
@@ -756,15 +856,13 @@ class _CurveRow extends StatelessWidget {
               _v(start),
               style: AppFonts.mono(
                 fontSize: AppTextStyles.sm,
-                color: start == null
-                    ? AppColors.muted.withValues(alpha: 0.5)
-                    : AppColors.muted,
+                color: AppColors.inkSecondary,
               ),
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
               child: Icon(
-                Icons.arrow_forward,
+                LucideIcons.arrowRight,
                 size: 14,
                 color: established
                     ? AppColors.accent
@@ -779,33 +877,29 @@ class _CurveRow extends StatelessWidget {
                   fontWeight: FontWeight.w700,
                   color: established
                       ? AppColors.accent
-                      : AppColors.muted.withValues(alpha: 0.6),
+                      : AppColors.inkSecondary,
                 ),
               ),
             ),
             if (prCount != null)
               Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 3,
-                ),
-                decoration: lambdaBox(
-                  prCount! > 0
-                      ? ContainerTone.accent
-                      : ContainerTone.ghost,
-                  radius: 999,
-                ).copyWith(
-                  border: prCount! > 0
-                      ? Border.all(
-                          color: AppColors.accent.withValues(alpha: 0.35),
-                        )
-                      : null,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration:
+                    lambdaBox(
+                      prCount! > 0 ? ContainerTone.accent : ContainerTone.ghost,
+                      radius: 999,
+                    ).copyWith(
+                      border: prCount! > 0
+                          ? Border.all(
+                              color: AppColors.accent.withValues(alpha: 0.35),
+                            )
+                          : null,
+                    ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(
-                      Icons.emoji_events_outlined,
+                      LucideIcons.trophy,
                       size: 12,
                       color: prCount! > 0
                           ? AppColors.accent
@@ -815,11 +909,11 @@ class _CurveRow extends StatelessWidget {
                     Text(
                       '$prCount',
                       style: AppFonts.mono(
-                        fontSize: 14,
+                        fontSize: AppTextStyles.sm,
                         fontWeight: FontWeight.w700,
                         color: prCount! > 0
                             ? AppColors.accent
-                            : AppColors.muted.withValues(alpha: 0.6),
+                            : AppColors.inkSecondary,
                       ),
                     ),
                   ],
@@ -838,13 +932,13 @@ class _Skeleton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     Widget box(double height, [double? width]) => Container(
-          height: height,
-          width: width,
-          decoration: BoxDecoration(
-            color: AppColors.surfaceHigh,
-            borderRadius: BorderRadius.circular(AppRadius.md),
-          ),
-        );
+      height: height,
+      width: width,
+      decoration: BoxDecoration(
+        color: AppColors.surfaceHigh,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+      ),
+    );
     return ListView(
       // Matches the page it stands in for, so nothing jumps when the real
       // one arrives.
@@ -857,12 +951,14 @@ class _Skeleton extends StatelessWidget {
       children: [
         box(40),
         const SizedBox(height: AppSpacing.md),
-        Row(children: [
-          for (var i = 0; i < 5; i++) ...[
-            box(32, 64),
-            if (i < 4) const SizedBox(width: AppSpacing.sm),
+        Row(
+          children: [
+            for (var i = 0; i < 5; i++) ...[
+              box(32, 64),
+              if (i < 4) const SizedBox(width: AppSpacing.sm),
+            ],
           ],
-        ]),
+        ),
         const SizedBox(height: AppSpacing.md),
         box(120),
         const SizedBox(height: AppSpacing.lg),
@@ -951,7 +1047,7 @@ class _ViewSettingsSheetState extends State<_ViewSettingsSheet> {
               'insights page.',
               style: AppFonts.ui(
                 fontSize: AppTextStyles.xs,
-                color: AppColors.muted,
+                color: AppColors.inkSecondary,
               ),
             ),
             const SizedBox(height: AppSpacing.md),
@@ -975,12 +1071,10 @@ class _ViewSettingsSheetState extends State<_ViewSettingsSheet> {
                         children: [
                           Icon(
                             hidden
-                                ? Icons.check_box_outline_blank
-                                : Icons.check_box,
+                                ? LucideIcons.square
+                                : LucideIcons.squareCheck,
                             size: 18,
-                            color: hidden
-                                ? AppColors.muted
-                                : AppColors.accent,
+                            color: hidden ? AppColors.muted : AppColors.accent,
                           ),
                           const SizedBox(width: AppSpacing.md),
                           Text(
@@ -989,7 +1083,7 @@ class _ViewSettingsSheetState extends State<_ViewSettingsSheet> {
                               fontSize: AppTextStyles.md,
                               fontWeight: FontWeight.w600,
                               color: hidden
-                                  ? AppColors.muted.withValues(alpha: 0.7)
+                                  ? AppColors.inkSecondary
                                   : AppColors.primary,
                             ),
                           ),
@@ -1026,11 +1120,14 @@ class _RenameExerciseDialog extends StatefulWidget {
 class _RenameExerciseDialogState extends State<_RenameExerciseDialog> {
   late final TextEditingController _controller;
 
-  /// Whether the field holds a name worth writing: something is there, and it
-  /// is not the name it opened with.
+  /// Whether the field holds a name worth writing: something is there, it is
+  /// not the name it opened with, and the write would not be refused for
+  /// length. The last clause is the one that used to be missing — an
+  /// over-long name left Save enabled, closed the dialog, and wrote nothing.
   bool get _canSave =>
       _controller.text.trim().isNotEmpty &&
-      _controller.text.trim() != (widget.initialName ?? '').trim();
+      _controller.text.trim() != (widget.initialName ?? '').trim() &&
+      !nameTooLong(_controller.text);
 
   @override
   void initState() {
@@ -1053,9 +1150,13 @@ class _RenameExerciseDialogState extends State<_RenameExerciseDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       backgroundColor: AppColors.surface,
-      title: Text('Rename exercise',
-          style: AppFonts.ui(
-              fontWeight: FontWeight.w800, color: AppColors.primary)),
+      title: Text(
+        'Rename exercise',
+        style: AppFonts.ui(
+          fontWeight: FontWeight.w800,
+          color: AppColors.primary,
+        ),
+      ),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1064,7 +1165,8 @@ class _RenameExerciseDialogState extends State<_RenameExerciseDialog> {
             'This updates the name everywhere — all past sessions included.',
             style: AppFonts.ui(
               fontSize: AppTextStyles.sm,
-              color: AppColors.muted,
+              height: 1.4,
+              color: AppColors.inkSecondary,
             ),
           ),
           const SizedBox(height: AppSpacing.sm),
@@ -1094,14 +1196,24 @@ class _RenameExerciseDialogState extends State<_RenameExerciseDialog> {
       ),
       actions: [
         TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text('Cancel', style: AppFonts.ui(color: AppColors.muted))),
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(
+            'Cancel',
+            style: AppFonts.ui(color: AppColors.inkSecondary),
+          ),
+        ),
         TextButton(
-            onPressed:
-                _canSave ? () => Navigator.of(context).pop(_controller.text) : null,
-            child: Text('Save',
-                style: AppFonts.ui(
-                    color: AppColors.accent, fontWeight: FontWeight.w600))),
+          onPressed: _canSave
+              ? () => Navigator.of(context).pop(_controller.text)
+              : null,
+          child: Text(
+            'Save',
+            style: AppFonts.ui(
+              color: AppColors.accent,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
       ],
     );
   }

@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 
 import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_radius.dart';
+import '../../core/styles/app_spacing.dart';
+import '../../core/theme/lambda_theme.dart';
 import 'floating_bar.dart';
 
 /// One destination on a [ScrollShrinkNavBar].
@@ -30,7 +32,10 @@ class ScrollShrinkNavItem {
 /// An Instagram-style floating bar: a rounded, translucent, blurred pill
 /// that hovers inside the screen's edges and above the bottom safe area. It
 /// shrinks while the content scrolls down and springs back the moment the
-/// user scrolls up, keeping its colour throughout — only the size moves.
+/// user scrolls up, in size and transparency together: full size is fully
+/// opaque, and the far end of the shrink rests at one fifth opacity
+/// ([collapsedOpacity]) — 80% transparent — so the bar recedes into the page
+/// instead of sitting on it as a solid slab (2026-11-02).
 ///
 /// The pill itself is [FloatingBar] — the app's bottom chrome, shared with
 /// anything else that sits at the floor of the screen. This widget adds the
@@ -62,6 +67,8 @@ class ScrollShrinkNavBar extends StatefulWidget {
     required this.items,
     required this.child,
     this.aboveBar,
+    this.leading,
+    this.trailing,
   });
 
   final int currentIndex;
@@ -73,10 +80,27 @@ class ScrollShrinkNavBar extends StatefulWidget {
   /// The page body. Painted under the bar, which is what the blur samples.
   final Widget child;
 
-  /// A second bar floating above the nav bar — the editor's counts, which
-  /// stand on the same floor. Only the nav bar shrinks with the scroll; what
-  /// is stacked above it stays put.
+  /// A second bar floating above the nav bar — the editor's counts, or the
+  /// another-device notice the session wizard publishes through
+  /// [sessionAboveBarNotice] (2026-10-27). It stands on the same floor and
+  /// only the nav bar shrinks with the scroll; what is stacked above it stays
+  /// put. Its height is measured rather than assumed: a bar is a bar's fixed
+  /// height, a notice is as tall as its words, and either way
+  /// [contentInset] makes room for all of it.
   final Widget? aboveBar;
+
+  /// A control before the destinations, inside the bar's left half
+  /// (2026-10-28) — coach mode's way out, standing to the left of Session.
+  /// The items divide what remains of the half equally. Null leaves the
+  /// destinations alone.
+  final Widget? leading;
+
+  /// A second half inside the bar, right of a hairline divider (2026-10-28).
+  /// Coach mode puts the athlete's identity here — `COACHING` over the name,
+  /// and the exit control — so the bar carries whose account is on screen
+  /// without a storey above it. Null keeps the bar the destinations' alone;
+  /// when set, the items share the left half equally and this fills the right.
+  final Widget? trailing;
 
   /// Bar height at full size. The geometry lives on [FloatingBar] — the app's
   /// bottom chrome shares one container — and is re-exported here because
@@ -85,6 +109,11 @@ class ScrollShrinkNavBar extends StatefulWidget {
 
   /// Bar height when the page is scrolled down.
   static const double collapsedHeight = 42;
+
+  /// Opacity at the far end of the shrink: one fifth opaque (80%
+  /// transparent), and the most transparent the bar ever gets. Full size is
+  /// fully opaque.
+  static const double collapsedOpacity = 0.2;
 
   /// The bar shrinks as one piece — width and height at the same rate — so
   /// the side margins open up exactly as far as the height drops.
@@ -173,35 +202,49 @@ class _ScrollShrinkNavBarState extends State<ScrollShrinkNavBar>
 
   @override
   Widget build(BuildContext context) {
-    return FloatingBarOverlay(
-      above: widget.aboveBar,
-      bar: AnimatedBuilder(
-        animation: _t,
-        // Built once and handed to the builder: the bar inside does not
-        // change with the animation, only the transform over it does.
-        child: FloatingBar(child: _buildItems()),
-        builder: (context, bar) => Transform.scale(
-          // Uniform, and anchored at the bottom edge so the bar keeps
-          // floating in place while it recedes.
-          scale: ScrollShrinkNavBar.collapsedScale +
-              (1 - ScrollShrinkNavBar.collapsedScale) * _t.value,
-          alignment: Alignment.bottomCenter,
-          child: bar,
+    // The bar outlives the page and, while a pushed page is on top, nothing
+    // above it rebuilds for a palette change. Listening here keeps the bar in
+    // the same theme as the page it floats over (2026-10-22).
+    return ListenableBuilder(
+      listenable: themeNotifier,
+      builder: (context, _) => FloatingBarOverlay(
+        above: widget.aboveBar,
+        bar: AnimatedBuilder(
+          animation: _t,
+          // Built once and handed to the builder: the bar inside does not
+          // change with the animation, only the transform over it does.
+          child: FloatingBar(child: _buildItems()),
+          // Size and transparency are one gesture: the same curved value
+          // drives both, so the bar fades into the page exactly as far as it
+          // recedes — to [ScrollShrinkNavBar.collapsedOpacity] at the far end.
+          builder: (context, bar) => Transform.scale(
+            // Uniform, and anchored at the bottom edge so the bar keeps
+            // floating in place while it recedes.
+            scale:
+                ScrollShrinkNavBar.collapsedScale +
+                (1 - ScrollShrinkNavBar.collapsedScale) * _t.value,
+            alignment: Alignment.bottomCenter,
+            child: Opacity(
+              opacity:
+                  ScrollShrinkNavBar.collapsedOpacity +
+                  (1 - ScrollShrinkNavBar.collapsedOpacity) * _t.value,
+              child: bar,
+            ),
+          ),
         ),
-      ),
-      child: NotificationListener<ScrollNotification>(
-        onNotification: _onScrollNotification,
-        child: widget.child,
+        child: NotificationListener<ScrollNotification>(
+          onNotification: _onScrollNotification,
+          child: widget.child,
+        ),
       ),
     );
   }
 
-  /// The destinations, filling the bar's width. Everything here is a constant
-  /// — the only thing a scroll changes is the [Transform.scale] around the
-  /// bar, so it keeps its full colour and weight as it recedes rather than
-  /// fading out.
+  /// The destinations, filling the bar's width. Everything here is constant —
+  /// a scroll only scales and fades the whole pill around it, so nothing
+  /// inside has to know the bar is moving.
   Widget _buildItems() {
-    return Row(
+    final items = Row(
       children: [
         for (var i = 0; i < widget.items.length; i++)
           Expanded(
@@ -214,6 +257,32 @@ class _ScrollShrinkNavBarState extends State<ScrollShrinkNavBar>
               },
             ),
           ),
+      ],
+    );
+    final leading = widget.leading;
+    final left = leading == null
+        ? items
+        : Row(
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(left: AppSpacing.xs),
+                child: leading,
+              ),
+              Expanded(child: items),
+            ],
+          );
+    final trailing = widget.trailing;
+    if (trailing == null) return left;
+    return Row(
+      children: [
+        Expanded(child: left),
+        // The split's own edge: a hairline, not a filled sliver, centred in
+        // the bar's height so the two halves read as one surface.
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Container(width: 1, color: AppColors.border),
+        ),
+        Expanded(child: trailing),
       ],
     );
   }
@@ -282,8 +351,11 @@ class _NavButton extends StatelessWidget {
                           selected ? item.activeIcon : item.icon,
                           key: ValueKey<bool>(selected),
                           size: 24,
-                          color:
-                              Color.lerp(AppColors.primary, AppColors.accent, t),
+                          color: Color.lerp(
+                            AppColors.primary,
+                            AppColors.accent,
+                            t,
+                          ),
                         ),
                       ),
                       if (item.badge)

@@ -31,9 +31,6 @@ class ExerciseState {
     this.exSortDesc = true,
     this.varSort = ExerciseSortCriterion.lastUsed,
     this.varSortDesc = true,
-    // Edit exercise modal
-    this.editExercise,
-    this.editExName = '',
     // Edit variation modal
     this.editVariation,
     this.editVarName = '',
@@ -64,9 +61,6 @@ class ExerciseState {
   final bool exSortDesc;
   final ExerciseSortCriterion varSort;
   final bool varSortDesc;
-
-  final CustomExercise? editExercise;
-  final String editExName;
 
   final CustomVariation? editVariation;
   final String editVarName;
@@ -182,9 +176,6 @@ class ExerciseState {
     bool? exSortDesc,
     ExerciseSortCriterion? varSort,
     bool? varSortDesc,
-    CustomExercise? editExercise,
-    bool clearEditEx = false,
-    String? editExName,
     CustomVariation? editVariation,
     bool clearEditVar = false,
     String? editVarName,
@@ -211,8 +202,6 @@ class ExerciseState {
     exSortDesc: exSortDesc ?? this.exSortDesc,
     varSort: varSort ?? this.varSort,
     varSortDesc: varSortDesc ?? this.varSortDesc,
-    editExercise: clearEditEx ? null : (editExercise ?? this.editExercise),
-    editExName: clearEditEx ? '' : (editExName ?? this.editExName),
     editVariation: clearEditVar ? null : (editVariation ?? this.editVariation),
     editVarName: clearEditVar ? '' : (editVarName ?? this.editVarName),
     createExName: createExName ?? this.createExName,
@@ -235,7 +224,8 @@ class ExerciseViewModel {
   /// The host-test seam's answer; null reads the live Supabase session.
   final String? _userIdOverride;
 
-  String get _userId => _userIdOverride ?? Supabase.instance.client.auth.currentUser!.id;
+  String get _userId =>
+      _userIdOverride ?? Supabase.instance.client.auth.currentUser!.id;
 
   /// Load-once guard: the hub embeds ONE screen instance now (2026-10-13),
   /// so a second fetch on an already-loaded catalog is a no-op. Mutations
@@ -280,13 +270,17 @@ class ExerciseViewModel {
   /// The light pop-reload the exercise detail's caller needs: renames and
   /// archives made on the detail page show in the list without a full
   /// catalog + timeline rescan (2026-10-13).
+  /// Whose library this VM reads — the athlete's in coach mode (2026-10-29).
+  String get userId => _userId;
+
   Future<void> refreshExercisesOnly() async {
     try {
       final exercises = await _repo.fetchExercises(_userId);
       state.value = state.value.copyWith(
         exercises: exercises,
         exerciseDetailMap: {
-          for (final ex in exercises) ex.exerciseId: ExerciseDetail(exercise: ex),
+          for (final ex in exercises)
+            ex.exerciseId: ExerciseDetail(exercise: ex),
         },
       );
     } catch (e) {
@@ -303,12 +297,10 @@ class ExerciseViewModel {
 
   /// Change a list's ordering; the page resets because page 3 of one
   /// ordering is not page 3 of another.
-  void setExSort(ExerciseSortCriterion c, bool descending) =>
-      state.value =
-          state.value.copyWith(exSort: c, exSortDesc: descending, exPage: 0);
-  void setVarSort(ExerciseSortCriterion c, bool descending) =>
-      state.value =
-          state.value.copyWith(varSort: c, varSortDesc: descending, varPage: 0);
+  void setExSort(ExerciseSortCriterion c, bool descending) => state.value =
+      state.value.copyWith(exSort: c, exSortDesc: descending, exPage: 0);
+  void setVarSort(ExerciseSortCriterion c, bool descending) => state.value =
+      state.value.copyWith(varSort: c, varSortDesc: descending, varPage: 0);
 
   void nextExPage() =>
       state.value = state.value.copyWith(exPage: state.value.exPage + 1);
@@ -319,57 +311,11 @@ class ExerciseViewModel {
   void prevVarPage() =>
       state.value = state.value.copyWith(varPage: state.value.varPage - 1);
 
-  // ── Open edit exercise ─────────────────────────────────────────────────────
-
-  Future<void> openEditExercise(CustomExercise ex) async {
-    state.value = state.value.copyWith(
-      editExercise: ex,
-      editExName: ex.name,
-      clearError: true,
-    );
-  }
-
-  void closeEditExercise() =>
-      state.value = state.value.copyWith(clearEditEx: true);
-
-  void setEditExName(String v) =>
-      state.value = state.value.copyWith(editExName: v);
-
-  Future<void> saveEditExercise() async {
-    final s = state.value;
-    if (s.editExercise == null || s.editExName.trim().isEmpty) return;
-    if (nameTooLong(s.editExName)) return;
-    state.value = s.copyWith(isSaving: true, clearError: true);
-    try {
-      await _repo.updateExercise(
-        s.editExercise!.exerciseId,
-        s.editExName.trim(),
-      );
-      // Patch in place — a rename must not rescan the catalog and the whole
-      // timeline (2026-10-13).
-      final renamed = s.editExercise!.copyWith(name: s.editExName.trim());
-      state.value = s.copyWith(
-        isSaving: false,
-        clearEditEx: true,
-        exercises: [
-          for (final e in s.exercises)
-            if (e.exerciseId == renamed.exerciseId) renamed else e,
-        ],
-        exerciseDetailMap: {
-          ...s.exerciseDetailMap,
-          renamed.exerciseId: ExerciseDetail(exercise: renamed),
-        },
-      );
-    } catch (e) {
-      state.value = state.value.copyWith(isSaving: false, error: e.toString());
-    }
-  }
+  // ── Delete exercise ────────────────────────────────────────────────────────
 
   /// Deletes a never-used exercise outright; archives a used one so history
   /// keeps it. Screens use [exerciseUsageCount] to pick their dialog copy.
   Future<void> deleteExercise(String exerciseId) async {
-    final s = state.value;
-    state.value = s.copyWith(clearEditEx: true);
     if (await _repo.exerciseUsageCount(exerciseId) > 0) {
       await _repo.deactivateExercise(exerciseId);
     } else {
@@ -403,10 +349,14 @@ class ExerciseViewModel {
 
   /// Renames an exercise directly (used by the per-exercise detail page,
   /// which doesn't drive the edit-modal state).
-  Future<void> renameExercise(String exerciseId, String name) async {
+  ///
+  /// Returns whether the write happened. The length guard is a backstop only:
+  /// the rename dialog's Save is gated on the same rule, so the only way to
+  /// reach it is a caller that skipped the field.
+  Future<bool> renameExercise(String exerciseId, String name) async {
     final trimmed = name.trim();
-    if (trimmed.isEmpty) return;
-    if (nameTooLong(trimmed)) return;
+    if (trimmed.isEmpty) return false;
+    if (nameTooLong(trimmed)) return false;
     await _repo.updateExercise(exerciseId, trimmed);
     final s = state.value;
     final renamed = s.exercises
@@ -422,6 +372,7 @@ class ExerciseViewModel {
         exerciseId: ExerciseDetail(exercise: renamed),
       },
     );
+    return true;
   }
 
   // ── Open edit variation ────────────────────────────────────────────────────
@@ -442,10 +393,21 @@ class ExerciseViewModel {
   void setEditVarName(String v) =>
       state.value = state.value.copyWith(editVarName: v);
 
-  Future<void> saveEditVariation() async {
+  /// Saves the variation's new name.
+  ///
+  /// Returns whether anything was written, so the modal can stay open on a
+  /// failure instead of closing on a write that did not happen — the error
+  /// banner lives on the screen beneath the sheet.
+  Future<bool> saveEditVariation() async {
     final s = state.value;
-    if (s.editVariation == null || s.editVarName.trim().isEmpty) return;
-    if (nameTooLong(s.editVarName)) return;
+    if (s.editVariation == null || s.editVarName.trim().isEmpty) return false;
+    if (nameTooLong(s.editVarName)) {
+      // The modal's Save is gated on the same rule; this is the backstop.
+      state.value = s.copyWith(
+        error: nameTooLongMessage(kMaxExerciseNameLength),
+      );
+      return false;
+    }
     state.value = s.copyWith(isSaving: true, clearError: true);
     try {
       await _repo.updateVariation(
@@ -455,8 +417,10 @@ class ExerciseViewModel {
 
       state.value = state.value.copyWith(isSaving: false, clearEditVar: true);
       await fetchAll();
+      return true;
     } catch (e) {
       state.value = state.value.copyWith(isSaving: false, error: e.toString());
+      return false;
     }
   }
 
@@ -490,8 +454,11 @@ class ExerciseViewModel {
 
   // ── Create exercise ────────────────────────────────────────────────────────
 
-  void openCreateExercise() =>
-      state.value = state.value.copyWith(showCreateEx: true, createExName: '');
+  void openCreateExercise() => state.value = state.value.copyWith(
+    showCreateEx: true,
+    createExName: '',
+    clearError: true,
+  );
   void closeCreateExercise() =>
       state.value = state.value.copyWith(showCreateEx: false);
   void setCreateExName(String v) =>
@@ -501,7 +468,15 @@ class ExerciseViewModel {
     final s = state.value;
     final name = s.createExName.trim();
     if (name.isEmpty) return null;
-    if (nameTooLong(name)) return null;
+    if (nameTooLong(name)) {
+      // The field's maxLength stops this at the source; this is the backstop
+      // for a value that arrived some other way. The modal draws state.error,
+      // so the refusal is stated rather than silently ignored.
+      state.value = s.copyWith(
+        error: nameTooLongMessage(kMaxExerciseNameLength),
+      );
+      return null;
+    }
     state.value = s.copyWith(isCreatingEx: true);
     try {
       final existing = await _repo.findExerciseByName(_userId, name);
@@ -547,6 +522,7 @@ class ExerciseViewModel {
   void openCreateVariation() => state.value = state.value.copyWith(
     showCreateVar: true,
     createVarName: '',
+    clearError: true,
   );
   void closeCreateVariation() =>
       state.value = state.value.copyWith(showCreateVar: false);
@@ -557,7 +533,12 @@ class ExerciseViewModel {
     final s = state.value;
     final name = s.createVarName.trim();
     if (name.isEmpty) return null;
-    if (nameTooLong(name)) return null;
+    if (nameTooLong(name)) {
+      state.value = s.copyWith(
+        error: nameTooLongMessage(kMaxExerciseNameLength),
+      );
+      return null;
+    }
     state.value = s.copyWith(isCreatingVar: true);
     try {
       final existing = await _repo.findVariationByName(_userId, name);

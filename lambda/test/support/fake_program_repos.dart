@@ -14,7 +14,7 @@ import 'package:lambda/data/models/program_progress.dart';
 import 'package:lambda/data/models/program_review.dart';
 import 'package:lambda/data/models/program_run.dart';
 import 'package:lambda/data/repositories/exercise_repository.dart';
-import 'package:lambda/data/repositories/lesson_repository.dart';
+import 'package:lambda/data/repositories/exercise_note_repository.dart';
 import 'package:lambda/data/repositories/planned_session_repository.dart';
 import 'package:lambda/data/repositories/program_history_repository.dart';
 import 'package:lambda/data/repositories/program_repository.dart';
@@ -610,14 +610,33 @@ class FakeProgramHistoryRepository implements ProgramHistoryRepository {
   /// DELETE leaves it.
   final deletedReviews = <String>[];
 
-  /// Set to make [deleteReview] throw — the cancel's failure path.
+  /// Set to make either delete throw — the cancel's and the record's failure
+  /// paths.
   bool failDelete = false;
 
   @override
   Future<void> deleteReview(String reviewId) async {
     if (failDelete) throw StateError('delete failed');
     deletedReviews.add(reviewId);
-    reviews = [for (final r in reviews) if (r.reviewId != reviewId) r];
+    reviews = [
+      for (final r in reviews)
+        if (r.reviewId != reviewId) r,
+    ];
+  }
+
+  /// Every completed record a caller asked to delete, in order — kept apart
+  /// from [deletedReviews] so a test can tell the two verbs (and their
+  /// guards) apart.
+  final deletedCompletedReviews = <String>[];
+
+  @override
+  Future<void> deleteCompletedReview(String reviewId) async {
+    if (failDelete) throw StateError('delete failed');
+    deletedCompletedReviews.add(reviewId);
+    reviews = [
+      for (final r in reviews)
+        if (r.reviewId != reviewId) r,
+    ];
   }
 
   @override
@@ -655,7 +674,10 @@ class FakeProgramHistoryRepository implements ProgramHistoryRepository {
   }
 
   @override
-  Future<List<DueItem>> fetchDueItems(String userId) async => due;
+  Future<List<DueItem>> fetchDueItems(
+    String userId, {
+    CurrentRunReading? currentRun,
+  }) async => due;
 
   @override
   Future<List<ProgramReview>> fetchReviews(String programId) async => reviews;
@@ -676,6 +698,37 @@ class FakeProgramHistoryRepository implements ProgramHistoryRepository {
       if (review.reviewId == reviewId) return review;
     }
     return null;
+  }
+
+  /// The workout as it stands today, prepended to [fetchWorkoutVersions]'s
+  /// answer the way the real read's live document is. Null models a workout
+  /// no longer in the plan — which is also the default, because most fixtures
+  /// are about the record and not about what came after it.
+  ContentSession? currentWorkout;
+
+  /// The workouts a caller asked the story of, in order — so a test can
+  /// assert the reader read the workout it was opened on.
+  final versionScopes = <({String userId, String sessionId})>[];
+
+  @override
+  Future<List<WorkoutVersion>> fetchWorkoutVersions({
+    required String userId,
+    required String sessionId,
+  }) async {
+    versionScopes.add((userId: userId, sessionId: sessionId));
+    final versions = assembleWorkoutVersions(reviews, sessionId);
+    final current = currentWorkout;
+    if (current != null) {
+      versions.insert(
+        0,
+        WorkoutVersion(
+          sessionId: sessionId,
+          side: WorkoutVersionSide.current,
+          session: current,
+        ),
+      );
+    }
+    return versions;
   }
 
   @override
@@ -825,10 +878,7 @@ class FakeProgramRepository implements ProgramRepository {
   final goalDescriptionWrites = <({String goalId, String? description})>[];
 
   @override
-  Future<void> updateGoalDescription(
-    String goalId,
-    String? description,
-  ) async {
+  Future<void> updateGoalDescription(String goalId, String? description) async {
     goalDescriptionWrites.add((goalId: goalId, description: description));
     goals = [
       for (final g in goals)
@@ -839,6 +889,124 @@ class FakeProgramRepository implements ProgramRepository {
         else
           g,
     ];
+  }
+
+  /// Every target-date move a view model has made, in order — and applied with
+  /// the same history append the real read-modify-write makes, so a sheet
+  /// re-opened after a move reads the adjustment back, exactly as the real
+  /// row does (2026-10-19).
+  final goalTargetDateWrites = <({String goalId, DateTime? targetDate})>[];
+
+  @override
+  Future<Goal?> updateGoalTargetDate(
+    String goalId,
+    DateTime? targetDate,
+  ) async {
+    goalTargetDateWrites.add((goalId: goalId, targetDate: targetDate));
+    final index = goals.indexWhere((g) => g.goalId == goalId);
+    if (index < 0) return null;
+    final before = goals[index];
+    // Picking the day already stored writes nothing — the real repository
+    // makes the same refusal, and a fake that recorded a no-op would hide a
+    // caller spamming the history.
+    if (_sameGoalDay(before.targetDate, targetDate)) return before;
+    final updated = before.copyWith(
+      targetDate: targetDate,
+      clearTargetDate: targetDate == null,
+      targetDateHistory: [
+        ...before.targetDateHistory,
+        GoalTargetDateChange(
+          from: before.targetDate,
+          to: targetDate,
+          changedAt: DateTime.now(),
+        ),
+      ],
+    );
+    goals = [...goals]..[index] = updated;
+    return updated;
+  }
+
+  /// Every whole-goal rewrite a view model has made, in order — and applied
+  /// with the repository's own normalization: blank notes are none, and a
+  /// moved deadline appends its adjustment, so a sheet that saved reads back
+  /// exactly the row the real UPDATE would leave (2026-10-19).
+  final goalWrites =
+      <
+        ({
+          String goalId,
+          String? exerciseId,
+          String? exerciseName,
+          String? variationId,
+          num? targetWeight,
+          int? targetReps,
+          List<GoalTargetSet>? targets,
+          String? description,
+          DateTime? targetDate,
+        })
+      >[];
+
+  @override
+  Future<Goal?> updateGoal(
+    String goalId, {
+    required String? exerciseId,
+    String? exerciseName,
+    String? variationId,
+    num? targetWeight,
+    int? targetReps,
+    List<GoalTargetSet>? targets,
+    String? description,
+    DateTime? targetDate,
+  }) async {
+    goalWrites.add((
+      goalId: goalId,
+      exerciseId: exerciseId,
+      exerciseName: exerciseName,
+      variationId: variationId,
+      targetWeight: targetWeight,
+      targetReps: targetReps,
+      targets: targets,
+      description: description,
+      targetDate: targetDate,
+    ));
+    final index = goals.indexWhere((g) => g.goalId == goalId);
+    if (index < 0) return null;
+    final before = goals[index];
+    final notes = description?.trim();
+    final next = targetDate == null ? null : dateOnly(targetDate);
+    final updated = Goal(
+      goalId: before.goalId,
+      userId: before.userId,
+      programId: before.programId,
+      blockId: before.blockId,
+      programRunId: before.programRunId,
+      // The name is only replaced when the caller carried one — a goal keeps
+      // the label it was given otherwise, the real repository's rule.
+      text: exerciseName ?? before.text,
+      description: notes == null || notes.isEmpty ? null : notes,
+      exerciseId: exerciseId,
+      variationId: variationId,
+      targetWeight: targetWeight,
+      targetReps: targetReps,
+      // A null list means "no opinion" and keeps the stored requirements, the
+      // same reading the real UPDATE makes (2026-10-26).
+      targets: targets ?? before.targets,
+      targetDate: next,
+      targetDateHistory: _sameGoalDay(before.targetDate, next)
+          ? before.targetDateHistory
+          : [
+              ...before.targetDateHistory,
+              GoalTargetDateChange(
+                from: before.targetDate,
+                to: next,
+                changedAt: DateTime.now(),
+              ),
+            ],
+      // Stamped at insert and never rewritten — the real UPDATE leaves the
+      // column alone.
+      createdDate: before.createdDate,
+    );
+    goals = [...goals]..[index] = updated;
+    return updated;
   }
 
   @override
@@ -968,8 +1136,13 @@ class FakePlannedSessions implements PlannedSessionRepository {
 
   @override
   Future<List<PlannedSessionExercise>> fetchPlannedExercises(
-    String plannedSessionId,
-  ) async => exercises[plannedSessionId] ?? const [];
+    String plannedSessionId, {
+    bool includeArchived = false,
+  }) async => [
+    for (final e
+        in exercises[plannedSessionId] ?? const <PlannedSessionExercise>[])
+      if (includeArchived || !e.isArchived) e,
+  ];
 
   /// One workout by id — what the review landing resolves its cards through.
   Map<String, PlannedSession> byId = const {};
@@ -983,10 +1156,10 @@ class FakePlannedSessions implements PlannedSessionRepository {
 }
 
 /// The one repository that cannot be default-constructed off-device:
-/// `LessonRepository`'s constructor evaluates the global PowerSync database.
+/// `ExerciseNoteRepository`'s constructor evaluates the global PowerSync database.
 /// Any host test that builds a view model hosting a workout editor must pass
 /// this, or construction throws before a single test statement runs.
-class FakeLessons implements LessonRepository {
+class FakeNotes implements ExerciseNoteRepository {
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
@@ -1023,4 +1196,12 @@ class FakeExercises implements ExerciseRepository {
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+/// Whether two goal dates name the same calendar day. Null is "no deadline",
+/// and equals only itself — the real repository's rule, mirrored so a fake
+/// write refuses a no-op the same way.
+bool _sameGoalDay(DateTime? a, DateTime? b) {
+  if (a == null || b == null) return a == null && b == null;
+  return a.year == b.year && a.month == b.month && a.day == b.day;
 }

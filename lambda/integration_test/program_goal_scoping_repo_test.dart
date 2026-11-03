@@ -69,6 +69,7 @@ void main() {
     int? reps,
     String? text,
     String? description,
+    DateTime? targetDate,
   }) async {
     final goal = Goal(
       goalId: id,
@@ -81,61 +82,99 @@ void main() {
       variationId: variationId,
       targetWeight: weight,
       targetReps: reps,
+      targetDate: targetDate,
     );
     await programs.createGoal(userId, goal);
     return goal;
   }
 
-  test('a program query returns both levels, and reads them back intact',
-      () async {
-    await addGoal('g-program',
-        program: programId, blockId: null, exerciseId: 'bench', weight: 100);
+  test(
+    'a program query returns both levels, and reads them back intact',
+    () async {
+      await addGoal(
+        'g-program',
+        program: programId,
+        blockId: null,
+        exerciseId: 'bench',
+        weight: 100,
+      );
+      await addGoal(
+        'g-block',
+        program: programId,
+        blockId: blockA,
+        exerciseId: 'squat',
+        variationId: 'paused',
+        weight: 140,
+        reps: 1,
+      );
+
+      final all = await programs.fetchGoals(userId, programId: programId);
+
+      expect(
+        all.map((g) => g.goalId).toSet(),
+        {'g-program', 'g-block'},
+        reason:
+            'the program query is the union — filtering to one scope is '
+            'the caller\'s job, because "what is in force" is a union',
+      );
+
+      final block = all.firstWhere((g) => g.goalId == 'g-block');
+      expect(
+        block.blockId,
+        blockA,
+        reason:
+            'block_id must survive the round trip through the client '
+            'schema — a column missing from schema.dart writes to nowhere',
+      );
+      expect(
+        block.variationId,
+        'paused',
+        reason: 'the variation narrows what counts as evidence',
+      );
+      expect(block.targetWeight, 140);
+      expect(block.targetReps, 1);
+
+      final program = all.firstWhere((g) => g.goalId == 'g-program');
+      expect(program.blockId, isNull);
+      expect(program.variationId, isNull);
+    },
+  );
+
+  test('a block query narrows to that block, not to its program', () async {
     await addGoal(
-      'g-block',
+      'g-program',
+      program: programId,
+      blockId: null,
+      exerciseId: 'bench',
+      weight: 100,
+    );
+    await addGoal(
+      'g-a',
       program: programId,
       blockId: blockA,
       exerciseId: 'squat',
-      variationId: 'paused',
       weight: 140,
-      reps: 1,
     );
-
-    final all = await programs.fetchGoals(userId, programId: programId);
-
-    expect(all.map((g) => g.goalId).toSet(), {'g-program', 'g-block'},
-        reason: 'the program query is the union — filtering to one scope is '
-            'the caller\'s job, because "what is in force" is a union');
-
-    final block = all.firstWhere((g) => g.goalId == 'g-block');
-    expect(block.blockId, blockA,
-        reason: 'block_id must survive the round trip through the client '
-            'schema — a column missing from schema.dart writes to nowhere');
-    expect(block.variationId, 'paused',
-        reason: 'the variation narrows what counts as evidence');
-    expect(block.targetWeight, 140);
-    expect(block.targetReps, 1);
-
-    final program = all.firstWhere((g) => g.goalId == 'g-program');
-    expect(program.blockId, isNull);
-    expect(program.variationId, isNull);
-  });
-
-  test('a block query narrows to that block, not to its program', () async {
-    await addGoal('g-program',
-        program: programId, blockId: null, exerciseId: 'bench', weight: 100);
-    await addGoal('g-a',
-        program: programId, blockId: blockA, exerciseId: 'squat', weight: 140);
-    await addGoal('g-b',
-        program: programId, blockId: blockB, exerciseId: 'deadlift', weight: 180);
+    await addGoal(
+      'g-b',
+      program: programId,
+      blockId: blockB,
+      exerciseId: 'deadlift',
+      weight: 180,
+    );
 
     final a = await programs.fetchGoals(
       userId,
       programId: programId,
       blockId: blockA,
     );
-    expect(a.map((g) => g.goalId).toList(), ['g-a'],
-        reason: 'blockId is a filter only when paired with programId — here it '
-            'narrows to the one block, excluding the program-level goal');
+    expect(
+      a.map((g) => g.goalId).toList(),
+      ['g-a'],
+      reason:
+          'blockId is a filter only when paired with programId — here it '
+          'narrows to the one block, excluding the program-level goal',
+    );
 
     expect(
       (await programs.fetchGoals(userId, programId: programId)).length,
@@ -145,8 +184,13 @@ void main() {
   });
 
   test('a goal of another program never leaks in', () async {
-    await addGoal('g-mine',
-        program: programId, blockId: null, exerciseId: 'bench', weight: 100);
+    await addGoal(
+      'g-mine',
+      program: programId,
+      blockId: null,
+      exerciseId: 'bench',
+      weight: 100,
+    );
     await addGoal(
       'g-theirs',
       program: otherProgramId,
@@ -157,71 +201,171 @@ void main() {
 
     final mine = await programs.fetchGoals(userId, programId: programId);
 
-    expect(mine.map((g) => g.goalId).toList(), ['g-mine'],
-        reason: 'both programs have a bench goal; the scope is what separates '
-            'them, and a query that forgot program_id would return both');
+    expect(
+      mine.map((g) => g.goalId).toList(),
+      ['g-mine'],
+      reason:
+          'both programs have a bench goal; the scope is what separates '
+          'them, and a query that forgot program_id would return both',
+    );
   });
 
   test('a scope-less goal is standalone, not a program goal', () async {
     await addGoal('g-free', program: null, blockId: null, text: 'get stronger');
-    await addGoal('g-mine',
-        program: programId, blockId: null, exerciseId: 'bench', weight: 100);
+    await addGoal(
+      'g-mine',
+      program: programId,
+      blockId: null,
+      exerciseId: 'bench',
+      weight: 100,
+    );
 
     final standalone = await programs.fetchGoals(userId);
-    expect(standalone.map((g) => g.goalId).toList(), ['g-free'],
-        reason: 'with no scope named, the query asks for goals with no scope '
-            'rather than for everything the user owns');
+    expect(
+      standalone.map((g) => g.goalId).toList(),
+      ['g-free'],
+      reason:
+          'with no scope named, the query asks for goals with no scope '
+          'rather than for everything the user owns',
+    );
 
     expect(
-      (await programs.fetchGoals(userId, programId: programId))
-          .map((g) => g.goalId)
-          .toList(),
+      (await programs.fetchGoals(
+        userId,
+        programId: programId,
+      )).map((g) => g.goalId).toList(),
       ['g-mine'],
     );
   });
 
-  test('a goal\'s notes round-trip, and blank reads as no notes at all',
-      () async {
-    await addGoal(
-      'g-noted',
-      program: null,
-      exerciseId: 'bench',
-      weight: 100,
-      description: 'Beltless, pause on the chest',
-    );
+  test(
+    'a goal\'s notes round-trip, and blank reads as no notes at all',
+    () async {
+      await addGoal(
+        'g-noted',
+        program: null,
+        exerciseId: 'bench',
+        weight: 100,
+        description: 'Beltless, pause on the chest',
+      );
 
-    final read = (await programs.fetchGoals(userId)).single;
-    expect(read.description, 'Beltless, pause on the chest',
-        reason: 'goal_description has to survive the round trip through the '
+      final read = (await programs.fetchGoals(userId)).single;
+      expect(
+        read.description,
+        'Beltless, pause on the chest',
+        reason:
+            'goal_description has to survive the round trip through the '
             'client schema — a column missing from schema.dart writes nowhere, '
-            'and the sheet would read back empty every time');
-    expect(
-      (await programs.fetchGoalOptionsByIds(['g-noted']))
-          .single
-          .goal
-          .description,
-      'Beltless, pause on the chest',
-      reason: 'the review ceremony reads goals by id, and its sheet edits the '
-          'same notes',
-    );
+            'and the sheet would read back empty every time',
+      );
+      expect(
+        (await programs.fetchGoalOptionsByIds([
+          'g-noted',
+        ])).single.goal.description,
+        'Beltless, pause on the chest',
+        reason:
+            'the review ceremony reads goals by id, and its sheet edits the '
+            'same notes',
+      );
 
-    await programs.updateGoalDescription('g-noted', '  Hips slow off the floor ');
-    expect(
-      (await programs.fetchGoals(userId)).single.description,
-      'Hips slow off the floor',
-      reason: 'the update is local-only — PowerSync uploads it — and trims',
-    );
+      await programs.updateGoalDescription(
+        'g-noted',
+        '  Hips slow off the floor ',
+      );
+      expect(
+        (await programs.fetchGoals(userId)).single.description,
+        'Hips slow off the floor',
+        reason: 'the update is local-only — PowerSync uploads it — and trims',
+      );
 
-    await programs.updateGoalDescription('g-noted', '   ');
-    expect((await programs.fetchGoals(userId)).single.description, isNull,
-        reason: 'blank is one spelling of "no notes", never an empty string');
-  });
+      await programs.updateGoalDescription('g-noted', '   ');
+      expect(
+        (await programs.fetchGoals(userId)).single.description,
+        isNull,
+        reason: 'blank is one spelling of "no notes", never an empty string',
+      );
+    },
+  );
+
+  test(
+    'a deadline survives the real insert, and a move keeps its history',
+    () async {
+      final deadline = DateTime(2026, 11, 1);
+      await addGoal(
+        'g-dated',
+        program: null,
+        exerciseId: 'bench',
+        weight: 100,
+        targetDate: deadline,
+      );
+
+      final read = (await programs.fetchGoals(userId)).single;
+      expect(
+        read.targetDate,
+        deadline,
+        reason:
+            'the repository must bind an ISO string, not a DateTime — '
+            'SQLite throws on a raw DateTime and the whole insert vanishes '
+            '(the live ADD failed exactly this way before the fix)',
+      );
+      expect(
+        read.targetDateHistory,
+        isEmpty,
+        reason: 'setting the first deadline is not an adjustment',
+      );
+
+      final moved = await programs.updateGoalTargetDate(
+        'g-dated',
+        DateTime(2026, 12, 1),
+      );
+      expect(moved!.targetDate, DateTime(2026, 12, 1));
+      expect(
+        moved.targetDateHistory,
+        hasLength(1),
+        reason:
+            'the move is recorded on the row itself — a deadline that '
+            'slipped is a fact, not an overwrite',
+      );
+      expect(moved.targetDateHistory.single.from, deadline);
+      expect(moved.targetDateHistory.single.to, DateTime(2026, 12, 1));
+      expect(moved.targetDateHistory.single.changedAt, isNotNull);
+
+      // Re-picking the day already stored is not an adjustment, so the history
+      // must not collect no-ops.
+      await programs.updateGoalTargetDate('g-dated', DateTime(2026, 12, 1));
+      expect(
+        (await programs.fetchGoals(userId)).single.targetDateHistory,
+        hasLength(1),
+      );
+
+      // Clearing the deadline records the move to "no deadline" like any other.
+      final cleared = await programs.updateGoalTargetDate('g-dated', null);
+      expect(cleared!.targetDate, isNull);
+      expect(cleared.targetDateHistory, hasLength(2));
+      expect(cleared.targetDateHistory.last.from, DateTime(2026, 12, 1));
+      expect(
+        cleared.targetDateHistory.last.to,
+        isNull,
+        reason: 'a NULL side is "there was no deadline", and reads as itself',
+      );
+    },
+  );
 
   test('the derivation reports the goals in force for a block run', () async {
-    await addGoal('g-program',
-        program: programId, blockId: null, exerciseId: 'bench', weight: 100);
-    await addGoal('g-a',
-        program: programId, blockId: blockA, exerciseId: 'squat', weight: 140);
+    await addGoal(
+      'g-program',
+      program: programId,
+      blockId: null,
+      exerciseId: 'bench',
+      weight: 100,
+    );
+    await addGoal(
+      'g-a',
+      program: programId,
+      blockId: blockA,
+      exerciseId: 'squat',
+      weight: 140,
+    );
 
     // A blockless read: only the program-level goal is being chased.
     final blockless = await derivation.derive(
@@ -229,9 +373,13 @@ void main() {
       from: DateTime(2000),
       programId: programId,
     );
-    expect(blockless.goals.map((g) => g.goal.goalId).toList(), ['g-program'],
-        reason: 'a blockless run is not running b1, so its goals are not in '
-            'force — the behaviour of every program before blocks existed');
+    expect(
+      blockless.goals.map((g) => g.goal.goalId).toList(),
+      ['g-program'],
+      reason:
+          'a blockless run is not running b1, so its goals are not in '
+          'force — the behaviour of every program before blocks existed',
+    );
 
     // Inside block A: the union.
     final inA = await derivation.derive(
@@ -243,7 +391,8 @@ void main() {
     expect(
       inA.goals.map((g) => g.goal.goalId).toSet(),
       {'g-program', 'g-a'},
-      reason: 'a program-level target is chased inside every one of its '
+      reason:
+          'a program-level target is chased inside every one of its '
           'blocks — a union with the block\'s own, never a filter',
     );
 
@@ -297,7 +446,21 @@ Future<void> _insertBlock(
        created_date, updated_date)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ''',
-    [blockId, blockId, userId, programId, name, null, order, null, null, null,
-     null, null, now, now],
+    [
+      blockId,
+      blockId,
+      userId,
+      programId,
+      name,
+      null,
+      order,
+      null,
+      null,
+      null,
+      null,
+      null,
+      now,
+      now,
+    ],
   );
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
 import '../../../core/styles/app_spacing.dart';
@@ -13,12 +14,14 @@ import '../../../shared/widgets/app_card.dart';
 import '../../../shared/widgets/archived_sheet.dart';
 import '../../../shared/widgets/glass_button.dart';
 import '../../../shared/widgets/lambda_search_field.dart';
+import '../../../shared/widgets/header_icon_button.dart';
 import '../../../shared/widgets/page_header.dart';
 import '../../../shared/widgets/scroll_shrink_nav_bar.dart';
 import '../../../shared/widgets/slide_up_modal.dart';
 import '../../../shared/widgets/sort_button.dart';
 import '../../../shared/widgets/status_chip.dart';
 import '../../../shared/widgets/swipe_actions.dart';
+import '../../../shared/widgets/user_name_text.dart';
 import 'run_confirm_dialog.dart';
 import 'program_wizard_screen.dart';
 import 'run_config_sheet.dart';
@@ -100,9 +103,10 @@ class _ProgramLibraryScreenState extends State<ProgramLibraryScreen> {
   /// wizard that is backed out of half-way still made one, and the list behind
   /// it has to show what is really there.
   Future<void> _openCreate() async {
-    await Navigator.of(context, rootNavigator: true).push(
-      MaterialPageRoute(builder: (_) => const ProgramWizardScreen()),
-    );
+    await Navigator.of(
+      context,
+      rootNavigator: true,
+    ).push(MaterialPageRoute(builder: (_) => const ProgramWizardScreen()));
     if (mounted) await _viewModel.fetchAll();
   }
 
@@ -134,28 +138,41 @@ class _ProgramLibraryScreenState extends State<ProgramLibraryScreen> {
     final consequence = sessions == 0
         ? "This can't be undone."
         : '$sessions logged ${sessions == 1 ? "session stays" : "sessions stay"}'
-            ' in Training Logs, unlinked from the run.';
+              ' in Training Logs, unlinked from the run.';
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
-        title: Text('Delete Program',
-            style: AppFonts.ui(
-                fontWeight: FontWeight.w800, color: AppColors.danger)),
+        title: Text(
+          'Delete Program',
+          style: AppFonts.ui(
+            fontWeight: FontWeight.w800,
+            color: AppColors.danger,
+          ),
+        ),
         content: Text(
-            'Delete "$name" permanently? Its runs and revision history go '
-            'with it. $consequence',
-            style: AppFonts.ui(color: AppColors.muted)),
+          'Delete "$name" permanently? Its runs and revision history go '
+          'with it. $consequence',
+          style: AppFonts.ui(color: AppColors.inkSecondary, height: 1.4),
+        ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child:
-                  Text('Cancel', style: AppFonts.ui(color: AppColors.muted))),
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(
+              'Cancel',
+              style: AppFonts.ui(color: AppColors.inkSecondary),
+            ),
+          ),
           TextButton(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: Text('Delete',
-                  style: AppFonts.ui(
-                      color: AppColors.danger, fontWeight: FontWeight.w600))),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(
+              'Delete',
+              style: AppFonts.ui(
+                color: AppColors.danger,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -175,34 +192,48 @@ class _ProgramLibraryScreenState extends State<ProgramLibraryScreen> {
     final runNote = isCurrent
         ? 'Archiving it will also end your current run.'
         : isPaused
-            ? 'Archiving it will also end its paused run.'
-            : null;
+        ? 'Archiving it will also end its paused run.'
+        : null;
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
-        title: Text('Archive Program',
-            style: AppFonts.ui(fontWeight: FontWeight.w800, color: AppColors.danger)),
+        title: Text(
+          'Archive Program',
+          style: AppFonts.ui(
+            fontWeight: FontWeight.w800,
+            color: AppColors.danger,
+          ),
+        ),
         content: Text(
-            runNote == null
-                ? 'Archive "${toProperCase(p.name)}"? It will disappear from '
+          runNote == null
+              ? 'Archive "${toProperCase(p.name)}"? It will disappear from '
                     'this list, but the sessions logged from it stay intact.'
-                : '${toProperCase(p.name)} is your ${isCurrent ? 'active' : 'paused'} program. '
+              : '${toProperCase(p.name)} is your ${isCurrent ? 'active' : 'paused'} program. '
                     '$runNote Sessions logged from it stay intact.',
-            style: AppFonts.ui(color: AppColors.muted)),
+          style: AppFonts.ui(color: AppColors.inkSecondary, height: 1.4),
+        ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child:
-                  Text('Cancel', style: AppFonts.ui(color: AppColors.muted))),
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(
+              'Cancel',
+              style: AppFonts.ui(color: AppColors.inkSecondary),
+            ),
+          ),
           TextButton(
-              onPressed: () {
-                Navigator.of(ctx).pop();
-                _viewModel.deleteProgram(p.programId);
-              },
-              child: Text('Archive',
-                  style: AppFonts.ui(
-                      color: AppColors.danger, fontWeight: FontWeight.w600))),
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              _viewModel.deleteProgram(p.programId);
+            },
+            child: Text(
+              'Archive',
+              style: AppFonts.ui(
+                color: AppColors.danger,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -340,24 +371,32 @@ class _ProgramLibraryScreenState extends State<ProgramLibraryScreen> {
               if (widget.showHeader)
                 PageHeader(
                   title: 'Programs',
-                  left: GestureDetector(
-                    onTap: () => context.pop(),
-                    child: Icon(Icons.arrow_back_ios_new,
-                        size: 18, color: AppColors.accent),
+                  left: HeaderIconButton(
+                    icon: LucideIcons.chevronLeft,
+                    semanticsLabel: 'Back',
+                    glyphSize: 18,
+                    onPressed: () => context.pop(),
                   ),
                   right: GlassButton(
-                      label: '', icon: Icons.add, onPressed: _openCreate, compact: true),
+                    label: '',
+                    icon: LucideIcons.plus,
+                    semanticsLabel: 'New program',
+                    onPressed: _openCreate,
+                    compact: true,
+                  ),
                 ),
               if (!widget.showHeader)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(
-                      AppSpacing.lg, AppSpacing.lg, AppSpacing.lg, 0),
+                    AppSpacing.lg,
+                    AppSpacing.lg,
+                    AppSpacing.lg,
+                    0,
+                  ),
                   child: Row(
                     children: [
                       Expanded(
-                        child: LambdaSearchField(
-                          controller: _searchController,
-                        ),
+                        child: LambdaSearchField(controller: _searchController),
                       ),
                       const SizedBox(width: AppSpacing.sm),
                       SortButton<ProgramSortCriterion>(
@@ -369,14 +408,16 @@ class _ProgramLibraryScreenState extends State<ProgramLibraryScreen> {
                       const SizedBox(width: AppSpacing.sm),
                       GlassButton(
                         label: '',
-                        icon: Icons.add,
+                        icon: LucideIcons.plus,
+                        semanticsLabel: 'New program',
                         onPressed: _openCreate,
                         compact: true,
                       ),
                       const SizedBox(width: AppSpacing.sm),
                       GlassButton(
                         label: '',
-                        icon: Icons.archive_outlined,
+                        icon: LucideIcons.archive,
+                        semanticsLabel: 'Archived programs',
                         onPressed: _openArchived,
                         compact: true,
                       ),
@@ -388,10 +429,16 @@ class _ProgramLibraryScreenState extends State<ProgramLibraryScreen> {
                   width: double.infinity,
                   color: AppColors.dangerBg,
                   padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
-                  child: Text(state.error!,
-                      style: AppFonts.ui(
-                          color: AppColors.danger, fontSize: AppTextStyles.sm)),
+                    horizontal: AppSpacing.lg,
+                    vertical: AppSpacing.sm,
+                  ),
+                  child: Text(
+                    state.error!,
+                    style: AppFonts.ui(
+                      color: AppColors.danger,
+                      fontSize: AppTextStyles.sm,
+                    ),
+                  ),
                 ),
               // Archiving a program ends whatever run it had open — current or
               // paused; when that run's closing record fails to write, this is
@@ -401,87 +448,104 @@ class _ProgramLibraryScreenState extends State<ProgramLibraryScreen> {
                   width: double.infinity,
                   color: AppColors.dangerBg,
                   padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
-                  child: Text(state.historyWarning!,
-                      style: AppFonts.ui(
-                          color: AppColors.danger, fontSize: AppTextStyles.sm)),
+                    horizontal: AppSpacing.lg,
+                    vertical: AppSpacing.sm,
+                  ),
+                  child: Text(
+                    state.historyWarning!,
+                    style: AppFonts.ui(
+                      color: AppColors.danger,
+                      fontSize: AppTextStyles.sm,
+                    ),
+                  ),
                 ),
               Expanded(
                 child: state.isLoading
                     ? Center(
-                        child: CircularProgressIndicator(color: AppColors.accent))
+                        child: CircularProgressIndicator(
+                          color: AppColors.accent,
+                        ),
+                      )
                     : state.programs.isEmpty
-                        ? Center(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text('No programs yet',
-                                    style: AppFonts.ui(
-                                        fontSize: AppTextStyles.md,
-                                        fontWeight: FontWeight.w800,
-                                        color: AppColors.primary)),
-                                const SizedBox(height: AppSpacing.sm),
-                                Text('Tap + to plan your first program.',
-                                    style: AppFonts.ui(
-                                        fontSize: AppTextStyles.sm,
-                                        color: AppColors.muted)),
-                              ],
+                    ? Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'No programs yet',
+                              style: AppFonts.ui(
+                                fontSize: AppTextStyles.md,
+                                fontWeight: FontWeight.w800,
+                                color: AppColors.primary,
+                              ),
                             ),
-                          )
-                        : programs.isEmpty
-                            ? Center(
-                                child: Text(
-                                  'No matches for "$_query".',
-                                  style: AppFonts.ui(
-                                    fontSize: AppTextStyles.sm,
-                                    color: AppColors.muted,
-                                  ),
-                                ),
-                              )
-                            : ListView.separated(
-                            // The shell's bar floats over this page, so the
-                            // last card has to be able to scroll clear of it.
-                            padding: EdgeInsets.fromLTRB(
-                              AppSpacing.lg,
-                              AppSpacing.lg,
-                              AppSpacing.lg,
-                              ScrollShrinkNavBar.contentInset(context),
+                            const SizedBox(height: AppSpacing.sm),
+                            Text(
+                              'Tap + to plan your first program.',
+                              style: AppFonts.ui(
+                                fontSize: AppTextStyles.sm,
+                                color: AppColors.inkSecondary,
+                              ),
                             ),
-                            itemCount: programs.length,
-                            separatorBuilder: (_, _) =>
-                                const SizedBox(height: AppSpacing.md),
-                            itemBuilder: (context, i) {
-                              final p = programs[i];
-                              final isCurrent = p.programId == state.currentProgramId;
-                              final settingCurrent =
-                                  state.settingCurrentId == p.programId;
-                              return _ProgramCard(
-                                program: p,
-                                isCurrent: isCurrent,
-                                // Never both: a run that is current is not
-                                // paused, and the card must not have to decide
-                                // which badge wins.
-                                isPaused: !isCurrent && state.isPaused(p.programId),
-                                settingCurrent: settingCurrent,
-                                // A current or paused program is not asking to
-                                // be begun, so the shape rule has nothing to
-                                // say about it.
-                                nothingToRun: !isCurrent &&
-                                    !state.isPaused(p.programId) &&
-                                    state.hasNothingToRun(p.programId),
-                                progress: isCurrent ? state.currentProgress : null,
-                                due: state.dueFor(p.programId),
-                                onOpen: () => context.push(
-                                    '/exercises/programs/${p.programId}'),
-                                onSetCurrent: () =>
-                                    _beginProgram(p),
-                                onResume: () => _resumeProgram(p),
-                                onDuplicate: () =>
-                                    _viewModel.duplicateProgram(p.programId),
-                                onDelete: () => _confirmDelete(p),
-                              );
-                            },
+                          ],
+                        ),
+                      )
+                    : programs.isEmpty
+                    ? Center(
+                        child: Text(
+                          'No matches for "$_query".',
+                          style: AppFonts.ui(
+                            fontSize: AppTextStyles.sm,
+                            color: AppColors.inkSecondary,
                           ),
+                        ),
+                      )
+                    : ListView.separated(
+                        // The shell's bar floats over this page, so the
+                        // last card has to be able to scroll clear of it.
+                        padding: EdgeInsets.fromLTRB(
+                          AppSpacing.lg,
+                          AppSpacing.lg,
+                          AppSpacing.lg,
+                          ScrollShrinkNavBar.contentInset(context),
+                        ),
+                        itemCount: programs.length,
+                        separatorBuilder: (_, _) =>
+                            const SizedBox(height: AppSpacing.md),
+                        itemBuilder: (context, i) {
+                          final p = programs[i];
+                          final isCurrent =
+                              p.programId == state.currentProgramId;
+                          final settingCurrent =
+                              state.settingCurrentId == p.programId;
+                          return _ProgramCard(
+                            program: p,
+                            isCurrent: isCurrent,
+                            // Never both: a run that is current is not
+                            // paused, and the card must not have to decide
+                            // which badge wins.
+                            isPaused: !isCurrent && state.isPaused(p.programId),
+                            settingCurrent: settingCurrent,
+                            // A current or paused program is not asking to
+                            // be begun, so the shape rule has nothing to
+                            // say about it.
+                            nothingToRun:
+                                !isCurrent &&
+                                !state.isPaused(p.programId) &&
+                                state.hasNothingToRun(p.programId),
+                            progress: isCurrent ? state.currentProgress : null,
+                            due: state.dueFor(p.programId),
+                            onOpen: () => context.push(
+                              '/exercises/programs/${p.programId}',
+                            ),
+                            onSetCurrent: () => _beginProgram(p),
+                            onResume: () => _resumeProgram(p),
+                            onDuplicate: () =>
+                                _viewModel.duplicateProgram(p.programId),
+                            onDelete: () => _confirmDelete(p),
+                          );
+                        },
+                      ),
               ),
             ],
           );
@@ -539,178 +603,207 @@ class _ProgramCard extends StatelessWidget {
     return SwipeActions(
       actions: [
         SwipeAction(
-          icon: Icons.copy_rounded,
-          
+          icon: LucideIcons.copy,
+
           color: AppColors.accent,
+          foreground: AppColors.accentText,
           onTap: onDuplicate,
         ),
         SwipeAction(
-          icon: Icons.delete_outline,
-          
+          icon: LucideIcons.trash2,
+
           color: AppColors.danger,
+          foreground: AppColors.dangerText,
           onTap: onDelete,
         ),
       ],
       child: AppCard(
-      onTap: onOpen,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Flexible(
-                          child: Text(toProperCase(program.name),
+        onTap: onOpen,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Flexible(
+                            // One line, ellipsized: without a maxLines the
+                            // name wraps and pushes the card's badges around
+                            // (2026-10-20).
+                            child: UserNameText(
+                              toProperCase(program.name),
+                              tooltip: true,
                               style: AppFonts.ui(
-                                  fontSize: AppTextStyles.md,
-                                  fontWeight: FontWeight.w800,
-                                  color: AppColors.primary),
-                              overflow: TextOverflow.ellipsis),
-                        ),
-                        if (isCurrent) ...[
-                          const SizedBox(width: AppSpacing.xs),
-                          const StatusChip(label: 'Active'),
-                        ],
-                        if (isPaused) ...[
-                          const SizedBox(width: AppSpacing.xs),
-                          const StatusChip(label: 'Paused', muted: true),
-                        ],
-                        if (due != null) ...[
-                          const SizedBox(width: AppSpacing.xs),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: AppColors.accentBg,
-                              borderRadius: BorderRadius.circular(999),
-                              border: Border.all(
-                                color: AppColors.accent.withValues(
-                                  alpha: 0.35,
-                                ),
+                                fontSize: AppTextStyles.md,
+                                fontWeight: FontWeight.w800,
+                                color: AppColors.primary,
                               ),
                             ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.flag_outlined,
-                                    size: 12, color: AppColors.accent),
-                                const SizedBox(width: 4),
-                                Text(due!.label,
-                                    style: AppFonts.ui(
-                                        fontSize: 14,
-                                        letterSpacing: 0.5,
-                                        fontWeight: FontWeight.w800,
-                                        color: AppColors.accent)),
-                              ],
-                            ),
                           ),
+                          if (isCurrent) ...[
+                            const SizedBox(width: AppSpacing.xs),
+                            const StatusChip(label: 'Active'),
+                          ],
+                          if (isPaused) ...[
+                            const SizedBox(width: AppSpacing.xs),
+                            const StatusChip(label: 'Paused', muted: true),
+                          ],
+                          if (due != null) ...[
+                            const SizedBox(width: AppSpacing.xs),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppColors.accentBg,
+                                borderRadius: BorderRadius.circular(999),
+                                border: Border.all(
+                                  color: AppColors.accent.withValues(
+                                    alpha: 0.35,
+                                  ),
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    LucideIcons.flag,
+                                    size: 12,
+                                    color: AppColors.accent,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    due!.label,
+                                    style: AppFonts.ui(
+                                      fontSize: AppTextStyles.sm,
+                                      fontWeight: FontWeight.w800,
+                                      color: AppColors.accent,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                         ],
-                      ],
-                    ),
-                    if (program.description?.isNotEmpty == true) ...[
-                      const SizedBox(height: 2),
-                      Text(program.description!,
+                      ),
+                      if (program.description?.isNotEmpty == true) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          program.description!,
                           style: AppFonts.ui(
-                              fontSize: AppTextStyles.sm,
-                              color: AppColors.muted),
+                            fontSize: AppTextStyles.sm,
+                            color: AppColors.inkSecondary,
+                          ),
                           maxLines: 1,
-                          overflow: TextOverflow.ellipsis),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
                     ],
-                  ],
-                ),
-              ),
-            ],
-          ),
-          if (progress != null) ...[
-            const SizedBox(height: AppSpacing.sm),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(999),
-              child: LinearProgressIndicator(
-                value: progress!.progress,
-                minHeight: 6,
-                backgroundColor: AppColors.surfaceHigh,
-                valueColor: AlwaysStoppedAnimation<Color>(AppColors.accent),
-              ),
-            ),
-            const SizedBox(height: AppSpacing.xs),
-            // A block run's numbers are already block-relative, so the only
-            // thing this line has to add is which block they belong to.
-            if (progress!.blockLabel != null)
-              Padding(
-                padding: const EdgeInsets.only(top: AppSpacing.xs),
-                child: Text(
-                  progress!.blockLabel!,
-                  style: AppFonts.ui(
-                    fontSize: AppTextStyles.sm,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.primary,
                   ),
                 ),
-              ),
-            const SizedBox(height: AppSpacing.xs),
-            Text(
-              // "Ready to end", not "Finished": the length is met, and the run
-              // is still current until the user says otherwise. Saying
-              // "Finished" over a row that still offers to continue is the
-              // exact confusion this rename exists to remove.
-              progress!.isLengthReached
-                  ? 'Ready to end'
-                  : !progress!.boundedBySessions
-                      ? 'Week ${progress!.weekNumber} of ${progress!.totalWeeks ?? '?'} · ${progress!.remainingLabel}'
-                      : '${progress!.workoutsCompletedInCycle}/${progress!.totalWorkoutsInCycle} sessions · ${progress!.remainingLabel}',
-              style: AppFonts.mono(fontSize: 13, color: AppColors.muted),
+              ],
             ),
-          ],
-          if (nothingToRun) ...[
-            const SizedBox(height: AppSpacing.sm),
-            Text(
-              'Add a block to run this program.',
-              style: AppFonts.ui(
-                fontSize: AppTextStyles.sm,
-                color: AppColors.muted,
-              ),
-            ),
-          ],
-          const SizedBox(height: AppSpacing.sm),
-          Divider(color: AppColors.border, height: 1),
-          const SizedBox(height: AppSpacing.sm),
-          Row(
-            children: [
-              // Resume before Begin: a paused program already has a run and a
-              // config, so the shortest path back to it is the one this card
-              // should offer. Beginning a fresh attempt over the top of a
-              // paused one is restarting, which lives on the program screen
-              // where its consequences can be spelled out.
-              if (isPaused)
-                GlassButton(
-                  label: 'Resume',
-                  icon: Icons.play_circle_outline,
-                  compact: true,
-                  loading: settingCurrent,
-                  disabled: settingCurrent,
-                  onPressed: onResume,
-                )
-              else if (!isCurrent)
-                GlassButton(
-                  label: 'Begin Program',
-                  icon: Icons.play_circle_outline,
-                  compact: true,
-                  loading: settingCurrent,
-                  disabled: settingCurrent || nothingToRun,
-                  onPressed: onSetCurrent,
+            if (progress != null) ...[
+              const SizedBox(height: AppSpacing.sm),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(999),
+                child: LinearProgressIndicator(
+                  value: progress!.progress,
+                  minHeight: 6,
+                  backgroundColor: AppColors.surfaceHigh,
+                  valueColor: AlwaysStoppedAnimation<Color>(AppColors.accent),
                 ),
-              const Spacer(),
-              GlassButton(
-                  label: '', icon: Icons.copy, compact: true, onPressed: onDuplicate),
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              // A block run's numbers are already block-relative, so the only
+              // thing this line has to add is which block they belong to.
+              if (progress!.blockLabel != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: AppSpacing.xs),
+                  // A block name is the user's, so it holds to one line like
+                  // every other name on the card.
+                  child: UserNameText(
+                    progress!.blockLabel!,
+                    tooltip: true,
+                    style: AppFonts.ui(
+                      fontSize: AppTextStyles.sm,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                ),
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                // "Ready to end", not "Finished": the length is met, and the run
+                // is still current until the user says otherwise. Saying
+                // "Finished" over a row that still offers to continue is the
+                // exact confusion this rename exists to remove.
+                progress!.isLengthReached
+                    ? 'Ready to end'
+                    : !progress!.boundedBySessions
+                    ? 'Week ${progress!.weekNumber} of ${progress!.totalWeeks ?? '?'} · ${progress!.remainingLabel}'
+                    : '${progress!.workoutsCompletedInCycle}/${progress!.totalWorkoutsInCycle} sessions · ${progress!.remainingLabel}',
+                style: AppFonts.mono(
+                  fontSize: AppTextStyles.caption,
+                  color: AppColors.inkSecondary,
+                ),
+              ),
             ],
-          ),
-        ],
-      ),
+            if (nothingToRun) ...[
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                'Add a block to run this program.',
+                style: AppFonts.ui(
+                  fontSize: AppTextStyles.sm,
+                  color: AppColors.inkSecondary,
+                ),
+              ),
+            ],
+            const SizedBox(height: AppSpacing.sm),
+            Divider(color: AppColors.border, height: 1),
+            const SizedBox(height: AppSpacing.sm),
+            Row(
+              children: [
+                // Resume before Begin: a paused program already has a run and a
+                // config, so the shortest path back to it is the one this card
+                // should offer. Beginning a fresh attempt over the top of a
+                // paused one is restarting, which lives on the program screen
+                // where its consequences can be spelled out.
+                if (isPaused)
+                  GlassButton(
+                    label: 'Resume',
+                    icon: LucideIcons.circlePlay,
+                    compact: true,
+                    loading: settingCurrent,
+                    disabled: settingCurrent,
+                    onPressed: onResume,
+                  )
+                else if (!isCurrent)
+                  GlassButton(
+                    label: 'Begin Program',
+                    icon: LucideIcons.circlePlay,
+                    compact: true,
+                    loading: settingCurrent,
+                    disabled: settingCurrent || nothingToRun,
+                    onPressed: onSetCurrent,
+                  ),
+                const Spacer(),
+                GlassButton(
+                  label: '',
+                  icon: LucideIcons.copy,
+                  semanticsLabel: 'Duplicate program',
+                  compact: true,
+                  onPressed: onDuplicate,
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

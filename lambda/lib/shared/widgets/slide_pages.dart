@@ -11,8 +11,8 @@ class SlidePagesController extends ChangeNotifier {
   PageController? _pageController;
 
   PageController get pageController {
-    _pageController ??=
-        PageController(initialPage: _initialPage)..addListener(_onPageChanged);
+    _pageController ??= PageController(initialPage: _initialPage)
+      ..addListener(_onPageChanged);
     return _pageController!;
   }
 

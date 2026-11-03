@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
 import '../../../core/styles/app_radius.dart';
@@ -94,11 +95,14 @@ class _NotesModalContentState extends State<_NotesModalContent> {
                   ),
                 ),
                 GlassButton(
-                  label: widget.readOnly ? 'Done' : 'Save',
+                  label: '',
+                  icon: LucideIcons.check,
+                  semanticsLabel: widget.readOnly ? 'Done' : 'Save note',
                   compact: true,
                   // Done dismisses whatever the state; Save has nothing to
                   // write until the note differs from the one it opened with.
-                  disabled: !widget.readOnly && _ctrl.text == widget.initialValue,
+                  disabled:
+                      !widget.readOnly && _ctrl.text == widget.initialValue,
                   onPressed: widget.readOnly
                       ? () => Navigator.of(context, rootNavigator: true).pop()
                       : _save,
@@ -131,8 +135,9 @@ class _NotesModalContentState extends State<_NotesModalContent> {
                       child: Text(
                         widget.plannedNote!,
                         style: AppFonts.ui(
-                          fontSize: 13,
-                          color: AppColors.muted,
+                          fontSize: AppTextStyles.caption,
+                          height: 1.4,
+                          color: AppColors.inkSecondary,
                         ),
                       ),
                     ),
@@ -147,11 +152,24 @@ class _NotesModalContentState extends State<_NotesModalContent> {
                   widget.plannedNote ?? 'Form cues, how it felt, adjustments…',
                   style: AppFonts.ui(
                     fontSize: AppTextStyles.sm,
-                    color: AppColors.muted,
+                    height: 1.4,
+                    color: AppColors.inkSecondary,
                   ),
                 )
               else
-                LambdaReadout(value: widget.initialValue)
+                // The field's own sizing (2 × 5 below), so read and edit
+                // are the same box with the fill moved (2026-10-28).
+                LambdaReadout(
+                  value: widget.initialValue,
+                  minLines: 2,
+                  maxLines: 5,
+                  // The field below reserves its prompt's height even when
+                  // the note is short; the read box does the same so the
+                  // sheet's two states are one box (2026-10-28).
+                  fieldHint:
+                      widget.plannedNote ??
+                      'Form cues, how it felt, adjustments…',
+                )
             else
               LambdaInput(
                 controller: _ctrl,
@@ -159,7 +177,8 @@ class _NotesModalContentState extends State<_NotesModalContent> {
                 minLines: 2,
                 maxLines: 5,
                 placeholder:
-                    widget.plannedNote ?? 'Form cues, how it felt, adjustments…',
+                    widget.plannedNote ??
+                    'Form cues, how it felt, adjustments…',
                 // The sheet's default background is a surface ground.
                 elevated: true,
               ),

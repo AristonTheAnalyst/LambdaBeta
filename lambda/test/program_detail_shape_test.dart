@@ -3,7 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lambda/data/models/program.dart';
 import 'package:lambda/data/models/program_block.dart';
 import 'package:lambda/data/models/program_run.dart';
-import 'package:lambda/data/repositories/lesson_repository.dart';
+import 'package:lambda/data/repositories/exercise_note_repository.dart';
 import 'package:lambda/features/programs/view/program_detail_screen.dart';
 import 'package:lambda/features/programs/viewmodel/program_detail_viewmodel.dart';
 
@@ -46,16 +46,15 @@ ProgramRun testRun({
   String? blockId,
   bool isCurrent = false,
   DateTime? endedDate,
-}) =>
-    ProgramRun(
-      programRunId: id,
-      programId: 'p1',
-      userId: 'u1',
-      startedDate: DateTime(2026, 2, 1),
-      isCurrent: isCurrent,
-      endedDate: endedDate,
-      blockId: blockId,
-    );
+}) => ProgramRun(
+  programRunId: id,
+  programId: 'p1',
+  userId: 'u1',
+  startedDate: DateTime(2026, 2, 1),
+  isCurrent: isCurrent,
+  endedDate: endedDate,
+  blockId: blockId,
+);
 
 void main() {
   Future<void> pumpScreen(
@@ -69,7 +68,7 @@ void main() {
     FakeProgramRunRepository? runRepo,
   }) async {
     final vm = ProgramDetailViewModel(
-      lessonRepo: _FakeLessons(),
+      noteRepo: _FakeNotes(),
       // Null is fine for the tests that only look: nothing on a rendered row
       // reaches a repository. The one test that taps Begin must pass a fake,
       // or the write would go to the PowerSync database this host has not got.
@@ -105,7 +104,8 @@ void main() {
       expect(
         find.text('Blocks'),
         findsNothing,
-        reason: 'a simple program has no phases, so the tab would be an empty '
+        reason:
+            'a simple program has no phases, so the tab would be an empty '
             'room with an "add a block" button that makes it something else',
       );
     });
@@ -119,7 +119,8 @@ void main() {
       expect(
         find.text('Workouts'),
         findsNothing,
-        reason: 'a blocked program\'s workouts only exist inside its blocks — '
+        reason:
+            'a blocked program\'s workouts only exist inside its blocks — '
             'a second list of them would be a second ordering to disagree with',
       );
     });
@@ -137,8 +138,9 @@ void main() {
       expect(find.text('Goals'), findsNothing);
     });
 
-    testWidgets('a blocked program with no blocks still lands on Blocks',
-        (tester) async {
+    testWidgets('a blocked program with no blocks still lands on Blocks', (
+      tester,
+    ) async {
       // Shape is `uses_blocks`, never the emptiness of the list: this is the
       // program that has to ask for its first block, so it opens where the
       // asking happens.
@@ -159,12 +161,16 @@ void main() {
   });
 
   group('the block sequence decides which block can be begun', () {
-    testWidgets('nothing run yet: the first block is the one offered Begin',
-        (tester) async {
+    testWidgets('nothing run yet: the first block is the one offered Begin', (
+      tester,
+    ) async {
       await pumpScreen(
         tester,
         usesBlocks: true,
-        blocks: [testBlock('b1', name: 'Accumulation'), testBlock('b2')],
+        blocks: [
+          testBlock('b1', name: 'Accumulation'),
+          testBlock('b2'),
+        ],
       );
 
       expect(find.text('Begin'), findsOneWidget);
@@ -184,7 +190,10 @@ void main() {
         tester,
         usesBlocks: true,
         isCurrent: true,
-        blocks: [testBlock('b1', name: 'Accumulation'), testBlock('b2')],
+        blocks: [
+          testBlock('b1', name: 'Accumulation'),
+          testBlock('b2'),
+        ],
         runs: [testRun(blockId: 'b1', isCurrent: true)],
         activeRun: testRun(blockId: 'b1', isCurrent: true),
       );
@@ -193,17 +202,22 @@ void main() {
       expect(
         find.text('Begin'),
         findsNothing,
-        reason: 'mid-phase the affordance is Resume (above), and beginning '
+        reason:
+            'mid-phase the affordance is Resume (above), and beginning '
             'over it is Restart — neither is a second Begin button',
       );
     });
 
-    testWidgets('a finished block moves the Begin to the next one',
-        (tester) async {
+    testWidgets('a finished block moves the Begin to the next one', (
+      tester,
+    ) async {
       await pumpScreen(
         tester,
         usesBlocks: true,
-        blocks: [testBlock('b1', name: 'Accumulation'), testBlock('b2')],
+        blocks: [
+          testBlock('b1', name: 'Accumulation'),
+          testBlock('b2'),
+        ],
         runs: [testRun(blockId: 'b1', endedDate: DateTime(2026, 3, 1))],
       );
 
@@ -216,7 +230,10 @@ void main() {
       await pumpScreen(
         tester,
         usesBlocks: true,
-        blocks: [testBlock('b1', name: 'Accumulation'), testBlock('b2')],
+        blocks: [
+          testBlock('b1', name: 'Accumulation'),
+          testBlock('b2'),
+        ],
         runs: [testRun(blockId: 'b1')],
         pausedRun: testRun(blockId: 'b1'),
       );
@@ -225,8 +242,9 @@ void main() {
       expect(find.text('Begin'), findsNothing);
     });
 
-    testWidgets('the Begin it offers starts a run of that block',
-        (tester) async {
+    testWidgets('the Begin it offers starts a run of that block', (
+      tester,
+    ) async {
       final runs = FakeProgramRunRepository();
       await pumpScreen(
         tester,
@@ -253,21 +271,25 @@ void main() {
       expect(
         runs.starts.single.blockId,
         'b2',
-        reason: 'the run records the block that was begun — a run begun from '
+        reason:
+            'the run records the block that was begun — a run begun from '
             'block 2 whose row says block 1 would scope its goals and its '
             'closing record to the wrong phase',
       );
-      expect(runs.starts.single.targetSessions, isNull,
-          reason: 'the block owns the length; a run of it carries no count of '
-              'its own');
+      expect(
+        runs.starts.single.targetSessions,
+        isNull,
+        reason:
+            'the block owns the length; a run of it carries no count of '
+            'its own',
+      );
     });
   });
 }
 
-/// Only here because `LessonRepository`'s constructor evaluates the global
+/// Only here because `ExerciseNoteRepository`'s constructor evaluates the global
 /// `ps.db` — the one repository that cannot be default-constructed off-device.
-class _FakeLessons implements LessonRepository {
+class _FakeNotes implements ExerciseNoteRepository {
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

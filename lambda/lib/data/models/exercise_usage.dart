@@ -1,3 +1,4 @@
+import 'planned_session.dart';
 import 'session_exercise_set.dart';
 
 /// exerciseId/variationId → most recent sessionCreatedDate seen for it.
@@ -19,6 +20,60 @@ Map<String, DateTime> lastUsedByEntity(List<PastSetRow> sets) {
   }
   return last;
 }
+
+/// plannedSessionId → the most recent sessionCreatedDate logged from that
+/// template, over the one timeline (2026-10-26).
+///
+/// The sibling of [lastUsedByEntity] for workout templates: the same source
+/// (the shared past-sets read) answers "which workout did I train last", so a
+/// picker never needs its own `fact_session` query to know.
+Map<String, DateTime> lastUsedByPlannedSession(List<PastSetRow> sets) {
+  final last = <String, DateTime>{};
+  for (final s in sets) {
+    final id = s.plannedSessionId;
+    if (id == null) continue;
+    final d = s.sessionCreatedDate;
+    final previous = last[id];
+    if (previous == null || d.isAfter(previous)) last[id] = d;
+  }
+  return last;
+}
+
+/// The app's one workout-template recency order (2026-10-26): most recently
+/// logged first, a never-logged workout below every logged one, then newest
+/// created, then id descending — a full deterministic order, because Dart's
+/// sort is not stable and two rows can share both dates.
+int compareByLastLogged(
+  PlannedSession a,
+  PlannedSession b,
+  Map<String, DateTime> lastLogged,
+) {
+  final aLogged = lastLogged[a.sessionId];
+  final bLogged = lastLogged[b.sessionId];
+  if ((aLogged != null) != (bLogged != null)) {
+    return aLogged != null ? -1 : 1;
+  }
+  if (aLogged != null && bLogged != null) {
+    final byLogged = bLogged.compareTo(aLogged);
+    if (byLogged != 0) return byLogged;
+  }
+  final aCreated = a.createdDate;
+  final bCreated = b.createdDate;
+  if ((aCreated != null) != (bCreated != null)) {
+    return aCreated != null ? -1 : 1;
+  }
+  if (aCreated != null && bCreated != null) {
+    final byCreated = bCreated.compareTo(aCreated);
+    if (byCreated != 0) return byCreated;
+  }
+  return b.sessionId.compareTo(a.sessionId);
+}
+
+/// [sessions] in [compareByLastLogged] order, sorted in place and returned.
+List<PlannedSession> sortByLastLogged(
+  List<PlannedSession> sessions,
+  Map<String, DateTime> lastLogged,
+) => sessions..sort((a, b) => compareByLastLogged(a, b, lastLogged));
 
 /// Aggregate usage of an exercise or variation across the user's history —
 /// computed from fact_workout_set (joined to fact_workout) so the exercise

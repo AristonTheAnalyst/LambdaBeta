@@ -1,23 +1,29 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lambda/core/styles/app_spacing.dart';
+import 'package:lambda/core/theme/lambda_theme.dart';
+import 'package:lambda/shared/widgets/floating_bar.dart';
 import 'package:lambda/shared/widgets/scroll_shrink_nav_bar.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 /// The scroll-driven half of [ScrollShrinkNavBar]. In tests the bottom safe
 /// area is zero, so the bar's painted height is exactly its box height.
 void main() {
   const items = [
     ScrollShrinkNavItem(
-      icon: Icons.home_outlined,
-      activeIcon: Icons.home,
+      icon: LucideIcons.house,
+      activeIcon: LucideIcons.house,
       label: 'Home',
     ),
     ScrollShrinkNavItem(
-      icon: Icons.search,
-      activeIcon: Icons.search,
+      icon: LucideIcons.search,
+      activeIcon: LucideIcons.search,
       label: 'Search',
     ),
   ];
+
+  setUp(() => themeNotifier.value = LambdaThemeVariant.primary);
+  tearDown(() => themeNotifier.value = LambdaThemeVariant.primary);
 
   /// The bar takes no controller — it follows the list's scroll
   /// notifications. The test keeps one only so it can drive the scroll.
@@ -61,6 +67,16 @@ void main() {
 
   double barHeight(WidgetTester tester) => barRect(tester).height;
 
+  /// The opacity layer the bar shrinks behind — full size is fully opaque,
+  /// and the far end rests at [ScrollShrinkNavBar.collapsedOpacity].
+  double barOpacity(WidgetTester tester) {
+    final layer = find.ancestor(
+      of: find.byType(FloatingBar),
+      matching: find.byType(Opacity),
+    );
+    return tester.widget<Opacity>(layer.first).opacity;
+  }
+
   /// A jump is what a real scroll produces, minus the gesture. The first jump
   /// only primes the direction — the bar needs two samples to see one.
   Future<void> scrollTo(
@@ -72,9 +88,23 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('starts at full size', (tester) async {
+  testWidgets('starts at full size, fully opaque', (tester) async {
     await pumpBar(tester);
     expect(barHeight(tester), ScrollShrinkNavBar.expandedHeight);
+    expect(barOpacity(tester), 1.0);
+  });
+
+  testWidgets('fades as it shrinks, to one fifth opacity at the far end', (
+    tester,
+  ) async {
+    final controller = await pumpBar(tester);
+
+    await scrollTo(tester, controller, 50);
+    await scrollTo(tester, controller, 400);
+
+    expect(barHeight(tester), ScrollShrinkNavBar.collapsedHeight);
+    expect(barOpacity(tester), ScrollShrinkNavBar.collapsedOpacity);
+    expect(ScrollShrinkNavBar.collapsedOpacity, 0.2);
   });
 
   testWidgets('shrinks when the page scrolls down', (tester) async {
@@ -141,8 +171,26 @@ void main() {
     int? tapped;
     await pumpBar(tester, onTap: (i) => tapped = i);
 
-    await tester.tap(find.byIcon(Icons.search));
+    await tester.tap(find.byIcon(LucideIcons.search));
     expect(tapped, 1);
+  });
+
+  testWidgets('repaints when the palette changes under it', (tester) async {
+    // The bar outlives the page it floats over: in the shell, a pushed page
+    // sits on top of it and nothing above the bar rebuilds for a palette
+    // change. It has to listen for itself or it keeps the old theme while
+    // every page around it changes (2026-10-22).
+    await pumpBar(tester);
+    await tester.pumpAndSettle();
+
+    Color? selectedInk() => tester.widget<Icon>(find.byIcon(LucideIcons.house)).color;
+
+    expect(selectedInk(), LambdaColors.dark.accent);
+
+    themeNotifier.value = LambdaThemeVariant.ruby;
+    await tester.pump();
+
+    expect(selectedInk(), LambdaColors.ruby.accent);
   });
 
   testWidgets('drives from a list inside a horizontal pager', (tester) async {
@@ -236,8 +284,9 @@ void main() {
     expect(barHeight(tester), ScrollShrinkNavBar.collapsedHeight);
   });
 
-  testWidgets('contentInset answers for the bar, and only under one',
-      (tester) async {
+  testWidgets('contentInset answers for the bar, and only under one', (
+    tester,
+  ) async {
     double? beside;
     double? under;
 
@@ -265,6 +314,100 @@ void main() {
     );
 
     expect(beside, 0);
-    expect(under, ScrollShrinkNavBar.expandedHeight + AppSpacing.sm + AppSpacing.lg);
+    expect(
+      under,
+      ScrollShrinkNavBar.expandedHeight + AppSpacing.sm + AppSpacing.lg,
+    );
+  });
+
+  /// A storey above the bar is not necessarily a bar (2026-10-27): the
+  /// another-device notice is as tall as its words, and the page below has to
+  /// clear all of it, not a bar's assumed 56.
+  testWidgets('a storey above the bar is measured, not assumed', (
+    tester,
+  ) async {
+    double? under;
+    const aboveHeight = 132.0;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ScrollShrinkNavBar(
+            currentIndex: 0,
+            onTap: (_) {},
+            items: items,
+            aboveBar: const SizedBox(height: aboveHeight),
+            child: Builder(
+              builder: (context) {
+                under = ScrollShrinkNavBar.contentInset(context);
+                return const SizedBox.shrink();
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+    // The storey's size exists only once it is laid out — the frame after
+    // carries it into the page's inset.
+    await tester.pump();
+
+    expect(
+      under,
+      ScrollShrinkNavBar.expandedHeight +
+          aboveHeight +
+          ScrollShrinkNavBar.floatGap * 2 +
+          AppSpacing.lg,
+    );
+  });
+
+  testWidgets('the inset follows a storey that re-words itself taller', (
+    tester,
+  ) async {
+    double? under;
+    final height = ValueNotifier<double>(80);
+    addTearDown(height.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ScrollShrinkNavBar(
+            currentIndex: 0,
+            onTap: (_) {},
+            items: items,
+            // Only the storey rebuilds — the overlay around it does not, so
+            // the change can only be caught by its own layout notification.
+            aboveBar: ValueListenableBuilder<double>(
+              valueListenable: height,
+              builder: (context, h, _) => SizedBox(height: h),
+            ),
+            child: Builder(
+              builder: (context) {
+                under = ScrollShrinkNavBar.contentInset(context);
+                return const SizedBox.shrink();
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      under,
+      ScrollShrinkNavBar.expandedHeight +
+          80 +
+          ScrollShrinkNavBar.floatGap * 2 +
+          AppSpacing.lg,
+    );
+
+    height.value = 130;
+    await tester.pumpAndSettle();
+    expect(
+      under,
+      ScrollShrinkNavBar.expandedHeight +
+          130 +
+          ScrollShrinkNavBar.floatGap * 2 +
+          AppSpacing.lg,
+      reason: 'the page below is told as soon as the storey grows',
+    );
   });
 }

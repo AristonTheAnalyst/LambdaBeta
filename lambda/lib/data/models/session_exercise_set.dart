@@ -10,6 +10,7 @@ class SessionExerciseSet {
     required this.sessionExerciseId,
     required this.sessionId,
     required this.userId,
+    this.createdByUserId,
     required this.setNumber,
     required this.reps,
     this.exerciseId,
@@ -19,12 +20,14 @@ class SessionExerciseSet {
     this.exerciseName,
     this.variationName,
     this.plannedSetId,
+    this.isDeleted = false,
   });
 
   final String sessionExerciseSetId;
   final String sessionExerciseId;
   final String sessionId;
   final String userId;
+  final String? createdByUserId;
   final String? exerciseId;
   final String? variationId;
   final int setNumber;
@@ -38,23 +41,30 @@ class SessionExerciseSet {
   /// set was materialized from — the ghost-hint anchor.
   final String? plannedSetId;
 
+  /// Soft-deleted inside an ACTIVE session (2026-10-13): a planned row the
+  /// user deleted is flagged instead of removed, so the exercise can be
+  /// restored and wears the minus mark. Flagged rows are hard-deleted at
+  /// endSession's prune; completed-history reads never see them.
+  final bool isDeleted;
+
   /// The same set, renumbered. Everything but the row's position is
   /// untouched — a reorder moves sets, it never edits them.
   SessionExerciseSet copyWith({int? setNumber}) => SessionExerciseSet(
-        sessionExerciseSetId: sessionExerciseSetId,
-        sessionExerciseId: sessionExerciseId,
-        sessionId: sessionId,
-        userId: userId,
-        setNumber: setNumber ?? this.setNumber,
-        reps: reps,
-        exerciseId: exerciseId,
-        variationId: variationId,
-        weight: weight,
-        notes: notes,
-        exerciseName: exerciseName,
-        variationName: variationName,
-        plannedSetId: plannedSetId,
-      );
+    sessionExerciseSetId: sessionExerciseSetId,
+    sessionExerciseId: sessionExerciseId,
+    sessionId: sessionId,
+    userId: userId,
+    setNumber: setNumber ?? this.setNumber,
+    reps: reps,
+    exerciseId: exerciseId,
+    variationId: variationId,
+    weight: weight,
+    notes: notes,
+    exerciseName: exerciseName,
+    variationName: variationName,
+    plannedSetId: plannedSetId,
+    isDeleted: isDeleted,
+  );
 
   factory SessionExerciseSet.fromMap(Map<String, dynamic> map) =>
       SessionExerciseSet(
@@ -62,6 +72,7 @@ class SessionExerciseSet {
         sessionExerciseId: map['session_exercise_id'] as String,
         sessionId: map['session_id'] as String,
         userId: map['user_id'] as String,
+        createdByUserId: map['created_by_user_id'] as String?,
         exerciseId: map['custom_exercise_id'] as String?,
         variationId: map['custom_variation_id'] as String?,
         setNumber: map['set_number'] as int,
@@ -71,23 +82,26 @@ class SessionExerciseSet {
         exerciseName: map['exercise_name'] as String?,
         variationName: map['variation_name'] as String?,
         plannedSetId: map['planned_set_id'] as String?,
+        isDeleted: map['is_deleted'] == 1 || map['is_deleted'] == true,
       );
 
   Map<String, dynamic> toMap() => {
-        'session_exercise_set_id': sessionExerciseSetId,
-        'session_exercise_id': sessionExerciseId,
-        'session_id': sessionId,
-        'user_id': userId,
-        'custom_exercise_id': exerciseId,
-        'custom_variation_id': variationId,
-        'set_number': setNumber,
-        'weight': weight,
-        'reps': reps,
-        'notes': notes,
-        'exercise_name': exerciseName,
-        'variation_name': variationName,
-        'planned_set_id': plannedSetId,
-      };
+    'session_exercise_set_id': sessionExerciseSetId,
+    'session_exercise_id': sessionExerciseId,
+    'session_id': sessionId,
+    'user_id': userId,
+    'created_by_user_id': createdByUserId,
+    'custom_exercise_id': exerciseId,
+    'custom_variation_id': variationId,
+    'set_number': setNumber,
+    'weight': weight,
+    'reps': reps,
+    'notes': notes,
+    'exercise_name': exerciseName,
+    'variation_name': variationName,
+    'planned_set_id': plannedSetId,
+    'is_deleted': isDeleted ? 1 : 0,
+  };
 
   static double? _toDouble(dynamic v) {
     if (v == null) return null;
@@ -118,6 +132,7 @@ class PastSetRow extends SessionExerciseSet {
     required super.sessionExerciseId,
     required super.sessionId,
     required super.userId,
+    super.createdByUserId,
     required super.setNumber,
     required super.reps,
     required this.sessionCreatedDate,
@@ -128,24 +143,33 @@ class PastSetRow extends SessionExerciseSet {
     super.exerciseName,
     super.variationName,
     super.plannedSetId,
+    this.plannedSessionId,
   });
 
   final DateTime sessionCreatedDate;
 
+  /// The template this session was started from
+  /// (`fact_session.planned_session_id`), NULL for a freestyle session.
+  /// Carried so workout recency derives from the one timeline source rather
+  /// than a second read of `fact_session` (2026-10-26).
+  final String? plannedSessionId;
+
   factory PastSetRow.fromMap(Map<String, dynamic> map) => PastSetRow(
-        sessionExerciseSetId: map['session_exercise_set_id'] as String,
-        sessionExerciseId: map['session_exercise_id'] as String,
-        sessionId: map['session_id'] as String,
-        userId: map['user_id'] as String,
-        exerciseId: map['custom_exercise_id'] as String?,
-        variationId: map['custom_variation_id'] as String?,
-        setNumber: map['set_number'] as int,
-        weight: SessionExerciseSet._toDouble(map['weight']),
-        reps: SessionExerciseSet._toNumList(map['reps']),
-        notes: map['notes'] as String?,
-        sessionCreatedDate: DateTime.parse(map['created_datetime'] as String),
-        exerciseName: map['exercise_name'] as String?,
-        variationName: map['variation_name'] as String?,
-        plannedSetId: map['planned_set_id'] as String?,
-      );
+    sessionExerciseSetId: map['session_exercise_set_id'] as String,
+    sessionExerciseId: map['session_exercise_id'] as String,
+    sessionId: map['session_id'] as String,
+    userId: map['user_id'] as String,
+    createdByUserId: map['created_by_user_id'] as String?,
+    exerciseId: map['custom_exercise_id'] as String?,
+    variationId: map['custom_variation_id'] as String?,
+    setNumber: map['set_number'] as int,
+    weight: SessionExerciseSet._toDouble(map['weight']),
+    reps: SessionExerciseSet._toNumList(map['reps']),
+    notes: map['notes'] as String?,
+    sessionCreatedDate: DateTime.parse(map['created_datetime'] as String),
+    exerciseName: map['exercise_name'] as String?,
+    variationName: map['variation_name'] as String?,
+    plannedSetId: map['planned_set_id'] as String?,
+    plannedSessionId: map['planned_session_id'] as String?,
+  );
 }

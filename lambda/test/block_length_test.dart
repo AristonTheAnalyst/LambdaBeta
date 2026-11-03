@@ -19,12 +19,15 @@ void main() {
       );
     });
 
-    test('weeks when neither is set — a new block has to open on something', () {
-      expect(
-        blockLengthModeOf(targetWeeks: null, targetSessions: null),
-        BlockLengthMode.weeks,
-      );
-    });
+    test(
+      'weeks when neither is set — a new block has to open on something',
+      () {
+        expect(
+          blockLengthModeOf(targetWeeks: null, targetSessions: null),
+          BlockLengthMode.weeks,
+        );
+      },
+    );
 
     test('sessions wins the legacy both-set shape, deterministically', () {
       expect(
@@ -36,17 +39,11 @@ void main() {
 
   group('endDateFor', () {
     test('adds whole weeks to the calendar date', () {
-      expect(
-        endDateFor(DateTime(2026, 3, 3), 8),
-        DateTime(2026, 4, 28),
-      );
+      expect(endDateFor(DateTime(2026, 3, 3), 8), DateTime(2026, 4, 28));
     });
 
     test('rolls across a year boundary', () {
-      expect(
-        endDateFor(DateTime(2026, 11, 12), 8),
-        DateTime(2027, 1, 7),
-      );
+      expect(endDateFor(DateTime(2026, 11, 12), 8), DateTime(2027, 1, 7));
     });
 
     test('adds the days remainder on top of the weeks', () {
@@ -87,8 +84,15 @@ void main() {
       // range, a week-only length, and a long one. Together they are the claim
       // that the two fields are one value — pick an end, read the length back,
       // get the same end.
-      for (final (weeks, days) in const [(0, 1), (0, 6), (1, 0), (1, 1),
-        (8, 0), (8, 3), (52, 6)]) {
+      for (final (weeks, days) in const [
+        (0, 1),
+        (0, 6),
+        (1, 0),
+        (1, 1),
+        (8, 0),
+        (8, 3),
+        (52, 6),
+      ]) {
         expect(
           lengthBetween(
             startDate: start,
@@ -161,7 +165,10 @@ void main() {
     });
 
     test('a whole number of weeks names only weeks', () {
-      expect(blockLengthPhrase(targetWeeks: 8, targetSessions: null), '8 weeks');
+      expect(
+        blockLengthPhrase(targetWeeks: 8, targetSessions: null),
+        '8 weeks',
+      );
       expect(
         blockLengthPhrase(targetWeeks: 8, targetSessions: null, targetDays: 0),
         '8 weeks',
@@ -175,8 +182,10 @@ void main() {
         blockLengthPhrase(targetWeeks: 1, targetSessions: null, targetDays: 1),
         '1 week 1 day',
       );
-      expect(blockLengthPhrase(targetWeeks: null, targetSessions: 1),
-          '1 session');
+      expect(
+        blockLengthPhrase(targetWeeks: null, targetSessions: 1),
+        '1 session',
+      );
     });
 
     test('a sub-week block drops the weeks entirely', () {
@@ -195,7 +204,10 @@ void main() {
     });
 
     test('null when the block declares no length', () {
-      expect(blockLengthPhrase(targetWeeks: null, targetSessions: null), isNull);
+      expect(
+        blockLengthPhrase(targetWeeks: null, targetSessions: null),
+        isNull,
+      );
       expect(
         blockLengthPhrase(targetWeeks: 0, targetSessions: null, targetDays: 0),
         isNull,
@@ -210,7 +222,10 @@ void main() {
         sameCalendarDay(DateTime(2026, 3, 3, 23), DateTime.utc(2026, 3, 3, 1)),
         isTrue,
       );
-      expect(sameCalendarDay(DateTime(2026, 3, 3), DateTime(2026, 3, 4)), isFalse);
+      expect(
+        sameCalendarDay(DateTime(2026, 3, 3), DateTime(2026, 3, 4)),
+        isFalse,
+      );
     });
 
     test('nulls are equal only to nulls', () {

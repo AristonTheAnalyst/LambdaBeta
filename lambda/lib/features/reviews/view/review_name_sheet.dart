@@ -1,21 +1,24 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
 import '../../../core/styles/app_spacing.dart';
 import '../../../core/styles/app_text_styles.dart';
+import '../../../core/utils/name_limit.dart';
 import '../../../shared/widgets/glass_button.dart';
 import '../../../shared/widgets/lambda_input.dart';
+import '../../../shared/widgets/name_limit_counter.dart';
 import '../../../shared/widgets/slide_up_modal.dart';
 
-/// What the pass is called — the first question the + button asks.
+/// What the pass is called — the whole of the + button's question since
+/// 2026-10-27, when the create-review picker was cut.
 ///
-/// Name first, then what to review: the name is how the pass is found
-/// afterwards, and asking it up front lets the selection screen carry it as its
-/// title, so the set is picked under the name it will be filed as. Required
-/// here — Next stays disabled until there is one — because an unnamed review
-/// falls back to a run of workout names in the list, which is not what a review
-/// is for.
+/// The name is how the pass is found afterwards, and it is asked before
+/// anything else is: the pass opens on its own landing named by it, and the
+/// scope is built there. Required — Start stays disabled until there is one —
+/// because an unnamed review falls back to a run of workout names in the list,
+/// which is not what a review is for.
 ///
 /// Returns the trimmed name, or null when the sheet was dismissed.
 Future<String?> showReviewNameSheet(BuildContext context) =>
@@ -39,7 +42,7 @@ class _ReviewNameSheetState extends State<_ReviewNameSheet> {
   @override
   void initState() {
     super.initState();
-    // The Next button's enabled state is derived from the text, so the header
+    // The Start button's enabled state is derived from the text, so the header
     // has to repaint as the user types.
     _ctrl.addListener(() => setState(() {}));
   }
@@ -52,7 +55,7 @@ class _ReviewNameSheetState extends State<_ReviewNameSheet> {
 
   bool get _hasName => _ctrl.text.trim().isNotEmpty;
 
-  void _next() {
+  void _start() {
     if (!_hasName) return;
     Navigator.of(context, rootNavigator: true).pop(_ctrl.text.trim());
   }
@@ -79,10 +82,12 @@ class _ReviewNameSheetState extends State<_ReviewNameSheet> {
                   ),
                 ),
                 GlassButton(
-                  label: 'Next',
+                  label: '',
+                  icon: LucideIcons.chevronRight,
+                  semanticsLabel: 'Start review',
                   compact: true,
                   disabled: !_hasName,
-                  onPressed: _next,
+                  onPressed: _start,
                 ),
               ],
             ),
@@ -94,9 +99,19 @@ class _ReviewNameSheetState extends State<_ReviewNameSheet> {
               placeholder: 'End of block 1',
               textCapitalization: TextCapitalization.sentences,
               textInputAction: TextInputAction.done,
+              maxLength: kMaxReviewTitleLength,
               // The sheet's default background is a surface ground.
               elevated: true,
-              onSubmitted: (_) => _next(),
+              onSubmitted: (_) => _start(),
+            ),
+            // The title is drawn on a list card and in the history panel —
+            // one line, so the field says where the line ends.
+            Align(
+              alignment: Alignment.centerRight,
+              child: NameLimitCounter(
+                length: _ctrl.text.trim().length,
+                max: kMaxReviewTitleLength,
+              ),
             ),
             const SizedBox(height: AppSpacing.md),
             Text(
@@ -105,7 +120,8 @@ class _ReviewNameSheetState extends State<_ReviewNameSheet> {
               'finish it and it is kept here.',
               style: AppFonts.ui(
                 fontSize: AppTextStyles.xs,
-                color: AppColors.muted,
+                color: AppColors.inkSecondary,
+                height: 1.4,
               ),
             ),
           ],

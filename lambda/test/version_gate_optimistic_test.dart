@@ -48,7 +48,8 @@ class _FakeService extends VersionCheckService {
   Future<VersionCheckResult> check() async {
     final c = completer;
     if (c != null) return c.future;
-    return _result ?? const VersionCheckResult(status: VersionCheckStatus.unknown);
+    return _result ??
+        const VersionCheckResult(status: VersionCheckStatus.unknown);
   }
 }
 
@@ -73,15 +74,20 @@ void main() {
   ) async {
     bool? nudge;
     final completer = Completer<VersionCheckResult>();
-    await tester.pumpWidget(gate(
-      service: _FakeService.pending(completer),
-      store: _FakeStore(),
-      onApp: (n) => nudge = n,
-    ));
+    await tester.pumpWidget(
+      gate(
+        service: _FakeService.pending(completer),
+        store: _FakeStore(),
+        onApp: (n) => nudge = n,
+      ),
+    );
     await tester.pump();
 
-    expect(find.text('app:false'), findsOneWidget,
-        reason: 'the first frame is the app, not a network spinner');
+    expect(
+      find.text('app:false'),
+      findsOneWidget,
+      reason: 'the first frame is the app, not a network spinner',
+    );
     expect(nudge, isFalse);
 
     // Settle the check so its timeout timer doesn't outlive the test.
@@ -93,18 +99,23 @@ void main() {
 
   testWidgets('a cached required blocks immediately', (tester) async {
     final completer = Completer<VersionCheckResult>();
-    await tester.pumpWidget(gate(
-      service: _FakeService.pending(completer),
-      store: _FakeStore()
-        ..cached = const VersionCheckResult(
-          status: VersionCheckStatus.updateRequired,
-        ),
-      onApp: (_) {},
-    ));
+    await tester.pumpWidget(
+      gate(
+        service: _FakeService.pending(completer),
+        store: _FakeStore()
+          ..cached = const VersionCheckResult(
+            status: VersionCheckStatus.updateRequired,
+          ),
+        onApp: (_) {},
+      ),
+    );
     await tester.pump();
 
-    expect(find.byType(UpdateRequiredScreen), findsOneWidget,
-        reason: 'the persisted answer gates the first frame — no network');
+    expect(
+      find.byType(UpdateRequiredScreen),
+      findsOneWidget,
+      reason: 'the persisted answer gates the first frame — no network',
+    );
 
     completer.complete(
       const VersionCheckResult(status: VersionCheckStatus.unknown),
@@ -116,11 +127,13 @@ void main() {
     tester,
   ) async {
     final completer = Completer<VersionCheckResult>();
-    await tester.pumpWidget(gate(
-      service: _FakeService.pending(completer),
-      store: _FakeStore(),
-      onApp: (_) {},
-    ));
+    await tester.pumpWidget(
+      gate(
+        service: _FakeService.pending(completer),
+        store: _FakeStore(),
+        onApp: (_) {},
+      ),
+    );
     await tester.pump();
     expect(find.byType(UpdateRequiredScreen), findsNothing);
 
@@ -135,20 +148,25 @@ void main() {
   testWidgets('a cached required self-heals when the live check clears', (
     tester,
   ) async {
-    await tester.pumpWidget(gate(
-      service: _FakeService(
-        result: const VersionCheckResult(status: VersionCheckStatus.upToDate),
-      ),
-      store: _FakeStore()
-        ..cached = const VersionCheckResult(
-          status: VersionCheckStatus.updateRequired,
+    await tester.pumpWidget(
+      gate(
+        service: _FakeService(
+          result: const VersionCheckResult(status: VersionCheckStatus.upToDate),
         ),
-      onApp: (_) {},
-    ));
+        store: _FakeStore()
+          ..cached = const VersionCheckResult(
+            status: VersionCheckStatus.updateRequired,
+          ),
+        onApp: (_) {},
+      ),
+    );
     await tester.pumpAndSettle();
 
-    expect(find.byType(UpdateRequiredScreen), findsNothing,
-        reason: 'a post-update false-block must clear in one check round');
+    expect(
+      find.byType(UpdateRequiredScreen),
+      findsNothing,
+      reason: 'a post-update false-block must clear in one check round',
+    );
     expect(find.text('app:false'), findsOneWidget);
   });
 
@@ -156,15 +174,17 @@ void main() {
     tester,
   ) async {
     bool? nudge;
-    await tester.pumpWidget(gate(
-      service: _FakeService(
-        result: const VersionCheckResult(
-          status: VersionCheckStatus.updateRecommended,
+    await tester.pumpWidget(
+      gate(
+        service: _FakeService(
+          result: const VersionCheckResult(
+            status: VersionCheckStatus.updateRecommended,
+          ),
         ),
+        store: _FakeStore(),
+        onApp: (n) => nudge = n,
       ),
-      store: _FakeStore(),
-      onApp: (n) => nudge = n,
-    ));
+    );
     await tester.pumpAndSettle();
 
     expect(nudge, isTrue);

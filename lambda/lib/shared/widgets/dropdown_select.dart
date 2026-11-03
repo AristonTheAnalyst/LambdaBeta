@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_fonts.dart';
 import '../../core/styles/app_radius.dart';
@@ -7,6 +8,7 @@ import '../../core/styles/app_spacing.dart';
 import '../../core/styles/app_text_styles.dart';
 import 'lambda_search_field.dart';
 import 'slide_up_modal.dart';
+import 'user_name_text.dart';
 
 class DropdownOption<T> {
   const DropdownOption({required this.label, required this.value});
@@ -76,7 +78,8 @@ class DropdownSelect<T> extends StatelessWidget {
   final String placeholder;
 
   /// Color for the placeholder text when [value] is null — the set row's
-  /// variation cell passes planned color to ghost the planned variation.
+  /// variation cell passes `primary`, because a planned variation is a real
+  /// value the row adopts, not a guide (2026-10-23).
   final Color? placeholderColor;
   final bool searchable;
   // Called with whatever the user had typed in the search box (empty string
@@ -110,6 +113,11 @@ class DropdownSelect<T> extends StatelessWidget {
   Widget build(BuildContext context) {
     final hasValue = value != null;
     return GestureDetector(
+      // The whole field is the target, not just the glyphs it draws: the
+      // compact row's padding either side of the label is empty space that
+      // still reads as part of the field, and the boxes that host a compact
+      // dropdown are full-width cells (2026-10-25).
+      behavior: HitTestBehavior.opaque,
       onTap: () {
         final host = DropdownSheetHost.maybeOf(context);
         if (host != null) {
@@ -156,23 +164,31 @@ class DropdownSelect<T> extends StatelessWidget {
       child: compact
           ? Row(
               mainAxisSize: MainAxisSize.min,
+              // A compact field stretched to its host (a full-width cell)
+              // keeps the label and chevron centred; where the row is its own
+              // min size this alignment has no free space to spend and draws
+              // exactly as before (2026-10-25).
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Text(
-                  // Ellipsized to fit the cell — the picker and the cell's
-                  // tooltip show the full name.
-                  _displayLabel,
-                  maxLines: 1,
-                  style: AppFonts.ui(
-                    fontSize: AppTextStyles.sm,
-                    fontWeight: FontWeight.w500,
-                    color: hasValue
-                        ? (valueColor ?? AppColors.primary)
-                        : (placeholderColor ?? AppColors.muted),
+                // Flexible, or the ellipsis never engages: with no flex the
+                // label takes its full intrinsic width and the row overflows
+                // its cell instead of shortening the name (2026-10-20). The
+                // name is a user-created one, so it draws through the shared
+                // renderer; the caller's tooltip names it in full.
+                Flexible(
+                  child: UserNameText(
+                    _displayLabel,
+                    style: AppFonts.ui(
+                      fontSize: AppTextStyles.sm,
+                      fontWeight: FontWeight.w500,
+                      color: hasValue
+                          ? (valueColor ?? AppColors.primary)
+                          : (placeholderColor ?? AppColors.inkSecondary),
+                    ),
                   ),
-                  overflow: TextOverflow.ellipsis,
                 ),
                 Icon(
-                  Icons.keyboard_arrow_down,
+                  LucideIcons.chevronDown,
                   size: 14,
                   color: AppColors.muted,
                 ),
@@ -180,23 +196,25 @@ class DropdownSelect<T> extends StatelessWidget {
             )
           : Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              decoration: lambdaBox(ContainerTone.surface, radius: AppRadius.md),
+              decoration: lambdaBox(
+                ContainerTone.surface,
+                radius: AppRadius.md,
+              ),
               child: Row(
                 children: [
                   Expanded(
-                    child: Text(
+                    child: UserNameText(
                       _displayLabel,
                       style: AppFonts.ui(
                         fontSize: AppTextStyles.md,
                         color: hasValue
                             ? AppColors.primary
-                            : (placeholderColor ?? AppColors.muted),
+                            : (placeholderColor ?? AppColors.inkSecondary),
                       ),
-                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                   Icon(
-                    Icons.keyboard_arrow_down,
+                    LucideIcons.chevronDown,
                     size: 18,
                     color: AppColors.muted,
                   ),
@@ -222,6 +240,8 @@ void showDropdownPickerSheet<T>(
   ValueChanged<String>? onCreateNew,
   String createNewLabel = 'Create new',
   String title = 'Choose variation',
+  String searchHint = 'Search variations…',
+  String emptyLabel = 'No variations found',
 }) {
   showLambdaModal<T>(
     context,
@@ -234,6 +254,8 @@ void showDropdownPickerSheet<T>(
       onCreateNew: onCreateNew,
       createNewLabel: createNewLabel,
       title: title,
+      searchHint: searchHint,
+      emptyLabel: emptyLabel,
       fillHeight: false,
       onClose: () => Navigator.of(context, rootNavigator: true).pop(),
       onSelect: onSelect,
@@ -251,6 +273,8 @@ class _DropdownSheetContent<T> extends StatefulWidget {
     required this.onClose,
     required this.fillHeight,
     required this.title,
+    this.searchHint = 'Search variations…',
+    this.emptyLabel = 'No variations found',
     this.onCreateNew,
   });
 
@@ -270,6 +294,12 @@ class _DropdownSheetContent<T> extends StatefulWidget {
 
   /// Header title — mirrors the add-exercise sheet ("Choose variation").
   final String title;
+
+  /// The search hint and the empty note follow [title]'s kind (2026-10-23):
+  /// the picker also serves the browse's exercise and workout filters, which
+  /// must not read as variations.
+  final String searchHint;
+  final String emptyLabel;
 
   @override
   State<_DropdownSheetContent<T>> createState() =>
@@ -319,8 +349,11 @@ class _DropdownSheetContentState<T> extends State<_DropdownSheetContent<T>> {
             padding: const EdgeInsets.symmetric(vertical: AppSpacing.lg),
             child: Center(
               child: Text(
-                'No variations found',
-                style: AppFonts.ui(fontSize: 13, color: AppColors.muted),
+                widget.emptyLabel,
+                style: AppFonts.ui(
+                  fontSize: AppTextStyles.caption,
+                  color: AppColors.inkSecondary,
+                ),
               ),
             ),
           ),
@@ -341,14 +374,14 @@ class _DropdownSheetContentState<T> extends State<_DropdownSheetContent<T>> {
         ),
         GestureDetector(
           onTap: widget.onClose,
-          child: Icon(Icons.close, size: 20, color: AppColors.muted),
+          child: Icon(LucideIcons.x, size: 20, color: AppColors.muted),
         ),
       ],
     );
     final search = LambdaSearchField(
       autofocus: true,
       showIcon: true,
-      hint: 'Search variations…',
+      hint: widget.searchHint,
       // The picker's ground is a surface: the standalone sheet's default
       // background, or the in-modal overlay's own surface container.
       elevated: true,
@@ -397,9 +430,17 @@ class _DropdownSheetContentState<T> extends State<_DropdownSheetContent<T>> {
               const SizedBox(height: AppSpacing.lg),
               search,
               const SizedBox(height: AppSpacing.sm),
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 260),
-                child: list,
+              // Flexible, not a bare ConstrainedBox: the list's fixed cap
+              // (260) plus the header and search can exceed the sheet's own
+              // 60% ceiling whenever the keyboard is up — which it always is,
+              // because the search field autofocuses — and a non-flex child
+              // would then overflow the column. Loose fit: it still shrinks
+              // to its content when there are only a few options (2026-10-20).
+              Flexible(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 260),
+                  child: list,
+                ),
               ),
             ],
           ),
@@ -439,19 +480,18 @@ class _DropdownSheetContentState<T> extends State<_DropdownSheetContent<T>> {
           child: Row(
             children: [
               Expanded(
-                child: Text(
+                child: UserNameText(
                   opt.label,
                   style: AppFonts.ui(
                     fontSize: 14,
                     fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
                     color: AppColors.primary,
                   ),
-                  overflow: TextOverflow.ellipsis,
                 ),
               ),
               if (selected) ...[
                 const SizedBox(width: AppSpacing.sm),
-                Icon(Icons.check, size: 18, color: AppColors.primary),
+                Icon(LucideIcons.check, size: 18, color: AppColors.primary),
               ],
             ],
           ),
@@ -521,7 +561,7 @@ class DropdownLoadingField extends StatelessWidget {
               'Creating…',
               style: AppFonts.ui(
                 fontSize: AppTextStyles.md,
-                color: AppColors.muted,
+                color: AppColors.inkSecondary,
               ),
               overflow: TextOverflow.ellipsis,
             ),

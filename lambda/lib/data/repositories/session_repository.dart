@@ -22,15 +22,17 @@ class SessionRepository {
     String? plannedSessionId,
     String? plannedSessionName,
     int? preFeeling,
+    String? deviceId,
   }) async {
-_invalidateTimeline();
+    _invalidateTimeline();
     final sessionId = _uuid.v4();
     await ps.db.execute(
       '''
       INSERT INTO fact_session
         (id, session_id, user_id, pre_notes, created_datetime,
-         program_run_id, planned_session_id, planned_session_name, pre_feeling)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         program_run_id, planned_session_id, planned_session_name, pre_feeling,
+         device_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ''',
       [
         sessionId,
@@ -42,48 +44,31 @@ _invalidateTimeline();
         plannedSessionId,
         plannedSessionName,
         preFeeling,
+        // Which device made it (2026-10-15) — what the foreign-session watch
+        // compares against. Null (a caller that didn't resolve it) reads as
+        // "another device", the safe reading.
+        deviceId,
       ],
     );
     return sessionId;
   }
 
-  /// Stamps the end time only — the post-session questionnaire lands
-  /// separately via [updatePostQuestionnaire] after the session ends.
+  /// Stamps the end time only — the questionnaire answers land separately
+  /// via [updateSessionNotes] after the session ends (the post-questionnaire
+  /// page's Done writes both bookends in one go, 2026-10-22).
   Future<void> endSession(String sessionId) async {
     _invalidateTimeline();
     await ps.db.execute(
       'UPDATE fact_session SET end_datetime = ? WHERE session_id = ?',
-      [
-        DateTime.now().toUtc().toIso8601String(),
-        sessionId,
-      ],
-    );
-  }
-
-  /// Writes the post-session questionnaire AFTER [endSession] (wizard
-  /// page 4) — the two steps are separate so the post answers never have
-  /// to be present at the moment the session ends.
-  Future<void> updatePostQuestionnaire(
-    String sessionId, {
-    int? feeling,
-    String? notes,
-  }) async {
-    _invalidateTimeline();
-    await ps.db.execute(
-      'UPDATE fact_session SET post_notes = ?, post_feeling = ? WHERE session_id = ?',
-      [
-        notes?.isNotEmpty == true ? notes : null,
-        feeling,
-        sessionId,
-      ],
+      [DateTime.now().toUtc().toIso8601String(), sessionId],
     );
   }
 
   /// Updates a completed session's pre/post notes and feeling ratings
-  /// without touching end_datetime — the past-session editor's save path
-  /// (distinct from the live [endSession] flow). Empty strings clear the
-  /// note; null feelings clear the rating (the editor always sends the full
-  /// draft state).
+  /// without touching end_datetime — the past-session editor's save path,
+  /// and (since 2026-10-22) the live post-questionnaire Done, which writes
+  /// both bookends at once. Empty strings clear the note; null feelings
+  /// clear the rating (the editor always sends the full draft state).
   Future<void> updateSessionNotes(
     String sessionId, {
     String? preNotes,
@@ -130,8 +115,8 @@ _invalidateTimeline();
   /// derived on read so there is nothing else to clean up. Children go
   /// first and the parent last — `fact_session_exercise.session_id` is a
   /// NO ACTION FK on the server, and the upload queue replays these in the
-  /// order they were written. `dim_lesson.session_id` is ON DELETE SET
-  /// NULL, so lessons logged during the session survive it.
+  /// order they were written. `dim_exercise_note.session_id` is ON DELETE SET
+  /// NULL, so notes logged during the session survive it.
   Future<void> deleteSession(String sessionId) async {
     _invalidateTimeline();
     await ps.db.execute(
@@ -155,13 +140,41 @@ _invalidateTimeline();
   /// Discards an in-progress session — same cascade as [deleteSession].
   Future<void> cancelSession(String sessionId) => deleteSession(sessionId);
 
-  Future<String?> getActiveSessionId(String userId) async {
+  /// The ACTIVE session THIS device owns (2026-10-15) — what the app
+  /// resumes at launch. [deviceId] filters to this install's own rows, so a
+  /// session running on another device (which syncs down like any other row)
+  /// is never silently adopted; a null [deviceId] (prefs unavailable) falls
+  /// back to the old any-active pick, because crash recovery matters more
+  /// than the distinction there.
+  Future<String?> getActiveSessionId(String userId, {String? deviceId}) async {
     final rows = await ps.db.getAll(
-      'SELECT session_id FROM fact_session WHERE user_id = ? AND end_datetime IS NULL LIMIT 1',
-      [userId],
+      deviceId == null
+          ? 'SELECT session_id FROM fact_session WHERE user_id = ? AND end_datetime IS NULL LIMIT 1'
+          : 'SELECT session_id FROM fact_session WHERE user_id = ? AND end_datetime IS NULL AND device_id = ? LIMIT 1',
+      deviceId == null ? [userId] : [userId, deviceId],
     );
     if (rows.isEmpty) return null;
     return rows.first['session_id'] as String?;
+  }
+
+  /// Every active session for the user, live (2026-10-15). The VM filters
+  /// this to the ones that are NOT its own — the foreign-session notice.
+  Stream<List<Session>> watchActiveSessions(String userId) => ps.db
+      .watch(
+        'SELECT * FROM fact_session WHERE user_id = ? AND end_datetime IS NULL',
+        parameters: [userId],
+      )
+      .map((rows) => rows.map(Session.fromMap).toList());
+
+  /// Claims an active session for this device (2026-10-15) — the switch's
+  /// last move: the row this device now logs into must carry THIS device's
+  /// id, or the next launch would read its own session as foreign.
+  Future<void> claimSession(String sessionId, String deviceId) async {
+    _invalidateTimeline();
+    await ps.db.execute(
+      'UPDATE fact_session SET device_id = ? WHERE session_id = ?',
+      [deviceId, sessionId],
+    );
   }
 
   // ── Session exercises (the tab layer) ──────────────────────────────────────
@@ -182,15 +195,7 @@ _invalidateTimeline();
          exercise_order, planned_exercise_id)
       VALUES (?, ?, ?, ?, ?, ?, ?)
       ''',
-      [
-        id,
-        id,
-        sessionId,
-        userId,
-        exerciseId,
-        exerciseOrder,
-        plannedExerciseId,
-      ],
+      [id, id, sessionId, userId, exerciseId, exerciseOrder, plannedExerciseId],
     );
     return SessionExercise(
       sessionExerciseId: id,
@@ -264,8 +269,8 @@ _invalidateTimeline();
       '''
       INSERT INTO fact_session_exercise_set
         (id, session_exercise_set_id, session_exercise_id, user_id, custom_variation_id,
-         set_number, weight, reps, notes, planned_set_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         set_number, weight, reps, notes, planned_set_id, is_deleted)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
       ''',
       [
         setId,
@@ -294,6 +299,16 @@ _invalidateTimeline();
     );
   }
 
+  /// The soft-delete API's write half (2026-10-13). [isDeleted]/[clearIsDeleted]
+  /// flip the `is_deleted` flag — deleting a planned set flags it instead of
+  /// removing it, so the exercise can be restored and wear the minus mark.
+  /// Flagged rows live on in COMPLETED sessions too (they survive
+  /// endSession's prune since 2026-10-14), so the derived reads — the
+  /// timeline ([loadPastSetsTimeline]) and the all-sessions list
+  /// ([loadSessionsWithSets]) — filter them out at the SQL level, while
+  /// [loadSetsForSession] deliberately returns them so a viewer can show and
+  /// restore them. [deleteSet] stays a hard delete for rows that were never
+  /// part of a plan.
   Future<void> updateSet(
     String setId, {
     String? variationId,
@@ -304,11 +319,20 @@ _invalidateTimeline();
     bool clearWeight = false,
     bool clearReps = false,
     bool clearNotes = false,
+    bool isDeleted = false,
+    bool clearIsDeleted = false,
   }) async {
     _invalidateTimeline();
     final setClauses = <String>[];
     final params = <Object?>[];
 
+    if (clearIsDeleted) {
+      setClauses.add('is_deleted = ?');
+      params.add(0);
+    } else if (isDeleted) {
+      setClauses.add('is_deleted = ?');
+      params.add(1);
+    }
     if (clearVariation) {
       setClauses.add('custom_variation_id = ?');
       params.add(null);
@@ -382,30 +406,29 @@ _invalidateTimeline();
   /// whenever the tables behind them change, locally or from sync. The live
   /// session subscribes instead of pulling per edit: a debounced write lands
   /// and the stream delivers what the DB actually holds (2026-10-13).
-  Stream<List<SessionExerciseSet>> watchSetsForSession(String sessionId) =>
-      ps.db
-          .watch(
-            _sessionSetsQuery,
-            parameters: [sessionId],
-            triggerOnTables: const [
-              'fact_session_exercise_set',
-              'fact_session_exercise',
-              'dim_exercise',
-              'dim_variation',
-            ],
-          )
-          .map((rs) => rs.map(SessionExerciseSet.fromMap).toList());
+  Stream<List<SessionExerciseSet>> watchSetsForSession(String sessionId) => ps
+      .db
+      .watch(
+        _sessionSetsQuery,
+        parameters: [sessionId],
+        triggerOnTables: const [
+          'fact_session_exercise_set',
+          'fact_session_exercise',
+          'dim_exercise',
+          'dim_variation',
+        ],
+      )
+      .map((rs) => rs.map(SessionExerciseSet.fromMap).toList());
 
   /// The session's exercise rows as a live stream — same contract as
   /// [watchSetsForSession], for the tab-layer rows.
-  Stream<List<SessionExercise>> watchSessionExercises(String sessionId) =>
-      ps.db
-          .watch(
-            'SELECT * FROM fact_session_exercise WHERE session_id = ? ORDER BY exercise_order',
-            parameters: [sessionId],
-            triggerOnTables: const ['fact_session_exercise'],
-          )
-          .map((rs) => rs.map(SessionExercise.fromMap).toList());
+  Stream<List<SessionExercise>> watchSessionExercises(String sessionId) => ps.db
+      .watch(
+        'SELECT * FROM fact_session_exercise WHERE session_id = ? ORDER BY exercise_order',
+        parameters: [sessionId],
+        triggerOnTables: const ['fact_session_exercise'],
+      )
+      .map((rs) => rs.map(SessionExercise.fromMap).toList());
 
   Future<void> reorderSets(String sessionId, List<String> orderedSetIds) async {
     _invalidateTimeline();
@@ -417,12 +440,32 @@ _invalidateTimeline();
     }
   }
 
+  /// Completed sessions with their sets, for the logs list and the
+  /// all-sessions picker. Soft-deleted (flagged) rows are filtered out — a
+  /// deleted set is not performed work and must not inflate the list's
+  /// counts or filters (2026-10-14). The session VIEWER reads
+  /// [loadSetsForSession] instead, which returns them.
+  ///
+  /// A session with no performed work has no card either (2026-10-25): it
+  /// carries no set, so it holds nothing to show and nothing to open — the
+  /// logs list skips it by construction (its filter tests the sets), and the
+  /// all-sessions picker drew a row that could not be selected. The row
+  /// stays; [loadCompletedSessionStamps] applies the same rule to the date
+  /// bar's walk.
   Future<List<SessionWithSets>> loadSessionsWithSets(String userId) async {
     final sessionRows = await ps.db.getAll(
       '''
-      SELECT * FROM fact_session
-      WHERE user_id = ? AND end_datetime IS NOT NULL
-      ORDER BY created_datetime DESC
+      SELECT w.* FROM fact_session w
+      WHERE w.user_id = ? AND w.end_datetime IS NOT NULL
+        AND EXISTS (
+          SELECT 1
+          FROM fact_session_exercise fe
+          JOIN fact_session_exercise_set s
+            ON s.session_exercise_id = fe.session_exercise_id
+          WHERE fe.session_id = w.session_id
+            AND COALESCE(s.is_deleted, 0) = 0
+        )
+      ORDER BY w.created_datetime DESC
       ''',
       [userId],
     );
@@ -444,6 +487,7 @@ _invalidateTimeline();
       WHERE fe.session_id IN (
         SELECT session_id FROM fact_session WHERE user_id = ? AND end_datetime IS NOT NULL
       )
+        AND COALESCE(s.is_deleted, 0) = 0
       ORDER BY fe.session_id, fe.exercise_order, s.set_number
       ''',
       [userId],
@@ -465,10 +509,56 @@ _invalidateTimeline();
         .toList();
   }
 
+  /// The user's completed sessions — id and start time only, newest first —
+  /// the date bar's walk (2026-10-22). Two columns and no joins: stepping the
+  /// floor's arrows needs neighbours, not rows; the logs list's whole-row
+  /// read is [loadSessionsWithSets]. Ordered exactly as that list orders, so
+  /// the bar and the list walk the same sequence.
+  ///
+  /// A completed session with no performed work is not part of that sequence
+  /// (2026-10-25). The list only draws a card for a session carrying at least
+  /// one non-flagged set, so an empty record must not be a neighbour either:
+  /// the live floor's older step would land on a record the list refuses to
+  /// show, and the viewer's arrows would point at a page that cannot exist —
+  /// then dead-end, because nothing else is newer. The row stays in the
+  /// database — restoring a flagged set brings it back onto both reads —
+  /// and only the walk skips it.
+  Future<List<({String sessionId, DateTime createdDatetime})>>
+  loadCompletedSessionStamps(String userId) async {
+    final rows = await ps.db.getAll(
+      '''
+      SELECT w.session_id, w.created_datetime FROM fact_session w
+      WHERE w.user_id = ? AND w.end_datetime IS NOT NULL
+        AND EXISTS (
+          SELECT 1
+          FROM fact_session_exercise fe
+          JOIN fact_session_exercise_set s
+            ON s.session_exercise_id = fe.session_exercise_id
+          WHERE fe.session_id = w.session_id
+            AND COALESCE(s.is_deleted, 0) = 0
+        )
+      ORDER BY w.created_datetime DESC
+      ''',
+      [userId],
+    );
+    return [
+      for (final r in rows)
+        (
+          sessionId: r['session_id'] as String,
+          createdDatetime: DateTime.parse(r['created_datetime'] as String),
+        ),
+    ];
+  }
+
+  /// Every completed set, oldest of the derivation reads. This is the single
+  /// choke point behind PRs, goals, achievements, usage counts and history
+  /// pickers, so the soft-delete filter lives here: a flagged row is not a
+  /// performed set and never earns a PR (2026-10-14).
   Future<List<PastSetRow>> loadPastSetsTimeline(String userId) async {
     final rows = await ps.db.getAll(
       '''
       SELECT s.*, w.created_datetime,
+             w.planned_session_id,
              fe.custom_exercise_id,
              fe.session_id,
              e.exercise_name,
@@ -479,6 +569,7 @@ _invalidateTimeline();
       LEFT JOIN dim_exercise e ON e.custom_exercise_id = fe.custom_exercise_id
       LEFT JOIN dim_variation v ON v.custom_variation_id = s.custom_variation_id
       WHERE w.user_id = ? AND w.end_datetime IS NOT NULL
+        AND COALESCE(s.is_deleted, 0) = 0
       ORDER BY w.created_datetime DESC, fe.exercise_order, s.set_number
       ''',
       [userId],
@@ -509,6 +600,7 @@ _invalidateTimeline();
       JOIN fact_session_exercise fe ON fe.session_exercise_id = s.session_exercise_id
       INNER JOIN fact_session w ON w.session_id = fe.session_id
       WHERE w.user_id = ? AND fe.custom_exercise_id = ?
+        AND COALESCE(s.is_deleted, 0) = 0
       ORDER BY w.created_datetime DESC, s.set_number DESC
       LIMIT 1
       ''',
@@ -535,6 +627,7 @@ _invalidateTimeline();
       JOIN fact_session_exercise fe ON fe.session_exercise_id = s.session_exercise_id
       INNER JOIN fact_session w ON w.session_id = fe.session_id
       WHERE w.user_id = ? AND fe.custom_exercise_id = ? AND s.custom_variation_id IS ?
+        AND COALESCE(s.is_deleted, 0) = 0
       ORDER BY w.created_datetime DESC, s.set_number DESC
       LIMIT 1
       ''',

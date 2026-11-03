@@ -12,7 +12,7 @@ import '../../core/styles/app_fonts.dart';
 ///   bool get hasUnsavedChanges => _hasDirtyFields;
 ///
 ///   Future<void> onSave() async { ... }
-///   void onDiscard() { ... }
+///   Future<void> onDiscard() async { ... }
 ///
 ///   Widget build(BuildContext context) {
 ///     return buildGuardedScaffold(scaffold: Scaffold(...));
@@ -28,7 +28,13 @@ mixin UnsavedChangesGuard<T extends StatefulWidget> on State<T> {
 
   /// Override to perform cleanup after discard. Called when the user
   /// taps "Discard" — e.g., reset editing state.
-  void onDiscard() {}
+  ///
+  /// Awaited before the guard decides the pop (2026-10-26): the decision is a
+  /// re-read of [hasUnsavedChanges] once the dialog closes, and a rollback
+  /// still in flight reads as "still dirty" — the guard then declines to
+  /// leave the screen it just said it would leave. Whatever this does must be
+  /// finished by the time it returns.
+  Future<void> onDiscard() async {}
 
   /// Wraps [scaffold] in a [PopScope] that intercepts back navigation
   /// when there are unsaved changes. After save/discard, pops the screen.
@@ -92,25 +98,51 @@ mixin UnsavedChangesGuard<T extends StatefulWidget> on State<T> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
-        title: Text('Unsaved Changes',
-            style: AppFonts.ui(fontWeight: FontWeight.w800, color: AppColors.primary)),
+        title: Text(
+          'Unsaved Changes',
+          style: AppFonts.ui(
+            fontWeight: FontWeight.w800,
+            color: AppColors.primary,
+          ),
+        ),
         content: Text(
-            includeDiscard
-                ? 'You have unsaved changes. What would you like to do?'
-                : 'The review finishes on what is saved. Save these changes first?',
-            style: AppFonts.ui(color: AppColors.muted)),
+          includeDiscard
+              ? 'You have unsaved changes. What would you like to do?'
+              : 'The review finishes on what is saved. Save these changes first?',
+          style: AppFonts.ui(color: AppColors.inkSecondary, height: 1.4),
+        ),
+        // Two verbs, never three (2026-10-23): the back door's warning is a
+        // discard-or-stay decision. Save is the screen's own button — a
+        // warning that can write on the way out puts an accidental commit
+        // one tap from a back gesture. The review settle keeps its save
+        // because there is no Discard side there, only "save first?".
         actions: [
           if (includeDiscard)
             TextButton(
-                onPressed: () => Navigator.of(ctx).pop('discard'),
-                child: Text('Discard', style: AppFonts.ui(color: AppColors.danger))),
-          TextButton(
+              onPressed: () => Navigator.of(ctx).pop('discard'),
+              child: Text(
+                'Discard',
+                style: AppFonts.ui(color: AppColors.danger),
+              ),
+            )
+          else
+            TextButton(
               onPressed: () => Navigator.of(ctx).pop('save'),
-              child: Text(includeDiscard ? 'Save' : 'Save and finish',
-                  style: AppFonts.ui(color: AppColors.accent, fontWeight: FontWeight.w600))),
+              child: Text(
+                'Save and finish',
+                style: AppFonts.ui(
+                  color: AppColors.accent,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
           TextButton(
-              onPressed: () => Navigator.of(ctx).pop('cancel'),
-              child: Text('Stay', style: AppFonts.ui(color: AppColors.muted))),
+            onPressed: () => Navigator.of(ctx).pop('cancel'),
+            child: Text(
+              'Stay',
+              style: AppFonts.ui(color: AppColors.inkSecondary),
+            ),
+          ),
         ],
       ),
     );
@@ -120,6 +152,10 @@ mixin UnsavedChangesGuard<T extends StatefulWidget> on State<T> {
       await onSave();
       return;
     }
-    onDiscard();
+    // Awaited, and that is the whole fix (2026-10-26): the callers re-read
+    // [hasUnsavedChanges] after this returns, so a rollback that is still
+    // running makes the guard refuse the pop it just offered — and the screen
+    // is left on whatever the rollback leaves behind.
+    await onDiscard();
   }
 }

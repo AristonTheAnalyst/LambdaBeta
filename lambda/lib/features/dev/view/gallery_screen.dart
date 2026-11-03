@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../../core/styles/app_fonts.dart';
 import '../../../../core/styles/app_radius.dart';
 import '../../../../core/styles/app_spacing.dart';
@@ -10,6 +11,7 @@ import '../../../../shared/widgets/dropdown_select.dart';
 import '../../../../shared/widgets/exercise_tab_chip.dart';
 import '../../../../shared/widgets/feeling_rating.dart';
 import '../../../../shared/widgets/glass_button.dart';
+import '../../../../shared/widgets/header_icon_button.dart';
 import '../../../../shared/widgets/lambda_input.dart';
 import '../../../../shared/widgets/lambda_readout.dart';
 import '../../../../shared/widgets/lambda_search_field.dart';
@@ -18,6 +20,7 @@ import '../../../../shared/widgets/scroll_shrink_nav_bar.dart';
 import '../../../../shared/widgets/segmented_control.dart';
 import '../../../../shared/widgets/stats_row.dart';
 import '../../../../shared/widgets/swipe_actions.dart';
+import '../../../../shared/widgets/user_name_text.dart';
 
 /// The living style catalog — every design token, translucent recipe, and
 /// shared component in one scrollable reference. Dev-tab only.
@@ -62,7 +65,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
                 title: 'Style Gallery',
                 left: IconButton(
                   icon: Icon(
-                    Icons.arrow_back_ios_new,
+                    LucideIcons.chevronLeft,
                     size: 18,
                     color: c.primary,
                   ),
@@ -86,6 +89,33 @@ class _GalleryScreenState extends State<GalleryScreen> {
                       label: 'Colors',
                       c: c,
                       children: [_ColorGrid(c: c, entries: _allColors(c))],
+                    ),
+                    const SizedBox(height: AppSpacing.xl),
+                    _Section(
+                      label: 'Ink Roles',
+                      c: c,
+                      children: [
+                        _InkRoleRow(
+                          'primary',
+                          'content — anything the user is reading',
+                          c.primary,
+                          c,
+                        ),
+                        _InkRoleRow(
+                          'inkSecondary',
+                          'secondary text that must still be read — '
+                              'dates, counts, captions, placeholders',
+                          c.inkSecondary,
+                          c,
+                        ),
+                        _InkRoleRow(
+                          'muted',
+                          'decoration / disabled only — never informational '
+                              'text',
+                          c.muted,
+                          c,
+                        ),
+                      ],
                     ),
                     const SizedBox(height: AppSpacing.xl),
                     _Section(
@@ -145,25 +175,28 @@ class _GalleryScreenState extends State<GalleryScreen> {
                       label: 'Typography',
                       c: c,
                       children: [
-                        _TypeRow('xxl · 28', AppTextStyles.xxl, c),
-                        _TypeRow('xl · 20', AppTextStyles.xl, c),
-                        _TypeRow('lg · 17', AppTextStyles.lg, c),
-                        _TypeRow('md · 15', AppTextStyles.md, c),
-                        _TypeRow('sm · 13', AppTextStyles.sm, c),
-                        _TypeRow('xs · 11', AppTextStyles.xs, c),
+                        _TypeRow('xxl · 30', AppTextStyles.xxl, c),
+                        _TypeRow('xl · 22', AppTextStyles.xl, c),
+                        _TypeRow('lg · 18', AppTextStyles.lg, c),
+                        _TypeRow('md · 16', AppTextStyles.md, c),
+                        _TypeRow('body · 15', AppTextStyles.body, c),
+                        _TypeRow('sm · 14', AppTextStyles.sm, c),
+                        _TypeRow('caption · 13', AppTextStyles.caption, c),
+                        _TypeRow('xs · 12', AppTextStyles.xs, c),
                         _MonoRow(
-                          label: 'mono · 12',
+                          label: 'mono · data',
                           sample: '105kg × 5 @ 8 RPE',
                           style: AppFonts.mono(fontSize: 14, color: c.primary),
                           c: c,
                         ),
                         _MonoRow(
-                          label: 'micro · 9',
+                          label: 'mono · label',
                           sample: 'SECTION LABEL',
                           style: AppFonts.mono(
-                            fontSize: 13,
+                            fontSize: AppTextStyles.xs,
+                            fontWeight: FontWeight.w600,
                             letterSpacing: 0.8,
-                            color: c.muted,
+                            color: c.primary,
                           ),
                           c: c,
                         ),
@@ -246,6 +279,124 @@ class _GalleryScreenState extends State<GalleryScreen> {
                                 loading: true,
                                 onPressed: () {},
                               ),
+                              // Glyph-only (2026-10-20): the frame's controls.
+                              // The word is not drawn, so it must be stated —
+                              // `semanticsLabel` is both the screen reader's
+                              // reading and the tooltip a sighted user learns
+                              // the shape from. `compact` is the toolbar size;
+                              // the plain form is a header's.
+                              GlassButton(
+                                label: '',
+                                icon: LucideIcons.plus,
+                                semanticsLabel: 'Add',
+                                compact: true,
+                                onPressed: () {},
+                              ),
+                              GlassButton(
+                                label: '',
+                                icon: LucideIcons.arrowUpDown,
+                                semanticsLabel: 'Sort',
+                                compact: true,
+                                onPressed: () {},
+                              ),
+                              GlassButton(
+                                label: '',
+                                icon: LucideIcons.check,
+                                semanticsLabel: 'Save',
+                                color: c.success,
+                                onPressed: () {},
+                              ),
+                              GlassButton(
+                                label: '',
+                                icon: LucideIcons.x,
+                                semanticsLabel: 'Cancel',
+                                color: c.danger,
+                                compact: true,
+                                onPressed: () {},
+                              ),
+                              GlassButton(
+                                label: '',
+                                icon: LucideIcons.undo2,
+                                semanticsLabel: 'Undo',
+                                compact: true,
+                                disabled: true,
+                                onPressed: () {},
+                              ),
+                            ],
+                          ),
+                        ),
+                        // The header's own two shapes: a bare glyph on a 44
+                        // target (nav), and the glass square in a toolbar.
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppSpacing.lg,
+                          ),
+                          child: Row(
+                            children: [
+                              HeaderIconButton(
+                                icon: LucideIcons.chevronLeft,
+                                semanticsLabel: 'Back',
+                                glyphSize: 18,
+                                onPressed: () {},
+                              ),
+                              GlassButton(
+                                label: '',
+                                icon: LucideIcons.pencil,
+                                semanticsLabel: 'Edit',
+                                compact: true,
+                                onPressed: () {},
+                              ),
+                              const SizedBox(width: AppSpacing.sm),
+                              HeaderIconButton(
+                                icon: LucideIcons.arrowUpDown,
+                                semanticsLabel: 'Sort',
+                                variant: HeaderIconVariant.boxed,
+                                onPressed: () {},
+                              ),
+                              const Spacer(),
+                              HeaderIconButton(
+                                icon: LucideIcons.pencil,
+                                semanticsLabel: 'Edit (inert)',
+                                onPressed: null,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: AppSpacing.xl),
+                    _Section(
+                      label: 'Names',
+                      c: c,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.all(AppSpacing.lg),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Every user-created name draws through this —
+                              // one line, ellipsized, tooltip where the name
+                              // is the thing being chosen (2026-10-20).
+                              UserNameText(
+                                'Incline Bench Press',
+                                style: AppFonts.ui(
+                                  fontSize: AppTextStyles.md,
+                                  color: c.primary,
+                                ),
+                              ),
+                              const SizedBox(height: AppSpacing.xs),
+                              SizedBox(
+                                width: 220,
+                                child: UserNameText(
+                                  'Elevated Unilateral Deficit Split Squat '
+                                  'With A Paused Eccentric',
+                                  tooltip: true,
+                                  style: AppFonts.ui(
+                                    fontSize: AppTextStyles.md,
+                                    color: c.primary,
+                                  ),
+                                ),
+                              ),
                             ],
                           ),
                         ),
@@ -296,7 +447,8 @@ class _GalleryScreenState extends State<GalleryScreen> {
                               const SizedBox(height: AppSpacing.md),
                               const LambdaReadout(
                                 label: 'Read-only box',
-                                value: 'Text that is shown rather than '
+                                value:
+                                    'Text that is shown rather than '
                                     'written wears this.',
                               ),
                               // The ground rule: the fill is always one tier
@@ -406,7 +558,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     Icon(
-                                      Icons.history,
+                                      LucideIcons.history,
                                       size: 11,
                                       color: c.accent,
                                     ),
@@ -467,8 +619,17 @@ class _GalleryScreenState extends State<GalleryScreen> {
                                 ),
                               ),
                               const SizedBox(height: AppSpacing.md),
-                              // Read-only — fills cumulatively up to the value.
+                              // Read-only — fills cumulatively up to the value;
+                              // the pill is hollow (C · Hollow, 2026-10-28).
                               FeelingRating(value: 4),
+                              const SizedBox(height: AppSpacing.md),
+                              // The glance: inline summary stars take no pill.
+                              FeelingRating(
+                                value: 3,
+                                size: 14,
+                                spacing: 3,
+                                framed: false,
+                              ),
                             ],
                           ),
                         ),
@@ -607,7 +768,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
                               _Banner(
-                                icon: Icons.check_circle_outline,
+                                icon: LucideIcons.circleCheck,
                                 text:
                                     'Session complete, rest well and see you soon',
                                 fill: c.successBg,
@@ -616,7 +777,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
                               ),
                               const SizedBox(height: AppSpacing.sm),
                               _Banner(
-                                icon: Icons.event_outlined,
+                                icon: LucideIcons.calendar,
                                 text: 'Chest Day — planned session',
                                 fill: c.plannedBg,
                                 border: c.planned,
@@ -624,7 +785,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
                               ),
                               const SizedBox(height: AppSpacing.sm),
                               _Banner(
-                                icon: Icons.error_outline,
+                                icon: LucideIcons.circleAlert,
                                 text: 'Something went wrong',
                                 fill: c.dangerBg,
                                 border: c.dangerBorder,
@@ -637,7 +798,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
                     ),
                     const SizedBox(height: AppSpacing.xl),
                     _Section(
-                      label: 'PR Card & Lesson Row',
+                      label: 'PR Card & ExerciseNote Row',
                       c: c,
                       children: [
                         Padding(
@@ -665,7 +826,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
                                 child: Row(
                                   children: [
                                     Icon(
-                                      Icons.emoji_events_outlined,
+                                      LucideIcons.trophy,
                                       size: 16,
                                       color: c.accent,
                                     ),
@@ -684,7 +845,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
                                 ),
                               ),
                               const SizedBox(height: AppSpacing.sm),
-                              // Lesson row: surfaceHigh fill + hairline border.
+                              // ExerciseNote row: surfaceHigh fill + hairline border.
                               Container(
                                 padding: const EdgeInsets.all(AppSpacing.sm),
                                 decoration: BoxDecoration(
@@ -698,7 +859,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Icon(
-                                      Icons.menu_book_outlined,
+                                      LucideIcons.bookOpen,
                                       size: 16,
                                       color: c.primary,
                                     ),
@@ -731,15 +892,17 @@ class _GalleryScreenState extends State<GalleryScreen> {
                             borderRadius: AppRadius.md,
                             actions: [
                               SwipeAction(
-                                icon: Icons.copy_rounded,
-                                
+                                icon: LucideIcons.copy,
+
                                 color: c.accent,
+                                foreground: c.accentText,
                                 onTap: () {},
                               ),
                               SwipeAction(
-                                icon: Icons.delete_outline,
-                                
+                                icon: LucideIcons.trash2,
+
                                 color: c.danger,
+                                foreground: c.dangerText,
                                 onTap: () {},
                               ),
                             ],
@@ -763,8 +926,8 @@ class _GalleryScreenState extends State<GalleryScreen> {
                                       '1',
                                       textAlign: TextAlign.center,
                                       style: AppFonts.mono(
-                                        fontSize: 13,
-                                        color: c.muted,
+                                        fontSize: AppTextStyles.caption,
+                                        color: c.inkSecondary,
                                       ),
                                     ),
                                   ),
@@ -817,7 +980,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
                                       ),
                                     ),
                                     child: Icon(
-                                      Icons.sticky_note_2_outlined,
+                                      LucideIcons.stickyNote,
                                       size: 15,
                                       color: c.primary,
                                     ),
@@ -845,6 +1008,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
 
 List<(String, Color)> _allColors(LambdaColors c) => [
   ('primary', c.primary),
+  ('inkSecondary', c.inkSecondary),
   ('muted', c.muted),
   ('accent', c.accent),
   ('accentText', c.accentText),
@@ -855,11 +1019,14 @@ List<(String, Color)> _allColors(LambdaColors c) => [
   ('border', c.border),
   ('planned', c.planned),
   ('plannedBg', c.plannedBg),
+  ('plannedFill', c.plannedFill),
+  ('plannedText', c.plannedText),
   ('success', c.success),
   ('successBg', c.successBg),
   ('danger', c.danger),
   ('dangerBg', c.dangerBg),
   ('dangerBorder', c.dangerBorder),
+  ('dangerText', c.dangerText),
   ('accentBg', c.accentBg),
 ];
 
@@ -882,9 +1049,9 @@ class _Section extends StatelessWidget {
           label,
           style: TextStyle(
             fontSize: AppTextStyles.xs,
-            fontWeight: FontWeight.w700,
-            color: c.muted,
-            letterSpacing: 1.2,
+            fontWeight: FontWeight.w600,
+            color: c.primary,
+            letterSpacing: 0.8,
           ),
         ),
         const SizedBox(height: AppSpacing.sm),
@@ -901,6 +1068,59 @@ class _Section extends StatelessWidget {
   }
 }
 
+/// One ink token and the job it does — the gallery states the role, not just
+/// the colour, so a caller picks by meaning (2026-10-22).
+class _InkRoleRow extends StatelessWidget {
+  const _InkRoleRow(this.label, this.role, this.color, this.c);
+  final String label;
+  final String role;
+  final Color color;
+  final LambdaColors c;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.lg,
+        vertical: AppSpacing.sm,
+      ),
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: c.border, width: 0.5)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 20,
+            height: 20,
+            decoration: BoxDecoration(
+              color: color,
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(color: c.border),
+            ),
+          ),
+          const SizedBox(width: AppSpacing.md),
+          SizedBox(
+            width: 96,
+            child: Text(
+              label,
+              style: TextStyle(fontSize: AppTextStyles.sm, color: c.primary),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              role,
+              style: TextStyle(
+                fontSize: AppTextStyles.sm,
+                color: c.inkSecondary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _ColorGrid extends StatelessWidget {
   const _ColorGrid({required this.c, required this.entries});
   final LambdaColors c;
@@ -912,13 +1132,16 @@ class _ColorGrid extends StatelessWidget {
       padding: const EdgeInsets.all(AppSpacing.md),
       child: Column(
         children: [
-          for (var row = 0; row * 4 < entries.length; row++)
+          // Three across: `inkSecondary` and `dangerBorder` must stand on one
+          // line, and a token name broken mid-word is the opposite of a
+          // reference (2026-10-22).
+          for (var row = 0; row * 3 < entries.length; row++)
             Padding(
               padding: const EdgeInsets.only(bottom: AppSpacing.sm),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  for (final (label, color) in entries.skip(row * 4).take(4))
+                  for (final (label, color) in entries.skip(row * 3).take(3))
                     Expanded(
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -937,7 +1160,7 @@ class _ColorGrid extends StatelessWidget {
                               label,
                               style: TextStyle(
                                 fontSize: AppTextStyles.xs,
-                                color: c.muted,
+                                color: c.inkSecondary,
                               ),
                               textAlign: TextAlign.center,
                             ),
@@ -976,7 +1199,10 @@ class _TypeRow extends StatelessWidget {
             width: 76,
             child: Text(
               label,
-              style: TextStyle(fontSize: AppTextStyles.xs, color: c.muted),
+              style: TextStyle(
+                fontSize: AppTextStyles.xs,
+                color: c.inkSecondary,
+              ),
             ),
           ),
           Expanded(
@@ -1023,7 +1249,10 @@ class _MonoRow extends StatelessWidget {
             width: 76,
             child: Text(
               label,
-              style: TextStyle(fontSize: AppTextStyles.xs, color: c.muted),
+              style: TextStyle(
+                fontSize: AppTextStyles.xs,
+                color: c.inkSecondary,
+              ),
             ),
           ),
           Expanded(child: Text(sample, style: style)),
@@ -1055,7 +1284,10 @@ class _SpacingRow extends StatelessWidget {
             width: 76,
             child: Text(
               label,
-              style: TextStyle(fontSize: AppTextStyles.xs, color: c.muted),
+              style: TextStyle(
+                fontSize: AppTextStyles.xs,
+                color: c.inkSecondary,
+              ),
             ),
           ),
           Container(
@@ -1099,7 +1331,10 @@ class _RadiusRow extends StatelessWidget {
             width: 76,
             child: Text(
               label,
-              style: TextStyle(fontSize: AppTextStyles.xs, color: c.muted),
+              style: TextStyle(
+                fontSize: AppTextStyles.xs,
+                color: c.inkSecondary,
+              ),
             ),
           ),
           Container(
@@ -1157,7 +1392,7 @@ class _SurfaceRow extends StatelessWidget {
             hex,
             style: TextStyle(
               fontSize: AppTextStyles.xs,
-              color: c.muted,
+              color: c.inkSecondary,
               fontFamily: 'monospace',
             ),
           ),
@@ -1197,7 +1432,10 @@ class _GlassRecipeRow extends StatelessWidget {
           Expanded(
             child: Text(
               label,
-              style: TextStyle(fontSize: AppTextStyles.xs, color: c.muted),
+              style: TextStyle(
+                fontSize: AppTextStyles.xs,
+                color: c.inkSecondary,
+              ),
             ),
           ),
           const SizedBox(width: AppSpacing.md),

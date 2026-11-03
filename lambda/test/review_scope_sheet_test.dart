@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lambda/features/reviews/view/review_scope_sheet.dart';
 import 'package:lambda/features/reviews/viewmodel/reviews_viewmodel.dart';
 import 'package:lambda/shared/widgets/glass_button.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'support/fake_program_repos.dart';
 
@@ -30,11 +31,7 @@ void main() {
       finished: 3,
       lastReview: lastReview,
     ),
-    ReviewableWorkout(
-      sessionId: 'w3',
-      label: 'Legs',
-      lastReview: lastReview,
-    ),
+    ReviewableWorkout(sessionId: 'w3', label: 'Legs', lastReview: lastReview),
   ];
   final goals = [
     const ReviewableGoal(
@@ -169,11 +166,7 @@ void main() {
   ) async {
     // The dash is gone: the exercise is the title and the target is its own
     // right-aligned element, so the values line up down the list (2026-10-10).
-    await openSheet(
-      tester,
-      goalIds: ['g1'],
-      section: ReviewScopeSection.goals,
-    );
+    await openSheet(tester, goalIds: ['g1'], section: ReviewScopeSection.goals);
 
     expect(find.text('Bench Press'), findsOneWidget);
     expect(find.text('100 kg × 5'), findsOneWidget);
@@ -185,14 +178,14 @@ void main() {
     // that are in, nothing at all on the rows that are not.
     await openSheet(tester, sessionIds: ['w1']);
 
-    expect(find.byIcon(Icons.check_circle), findsOneWidget);
-    expect(find.byIcon(Icons.circle_outlined), findsNothing);
+    expect(find.byIcon(LucideIcons.circleCheck), findsOneWidget);
+    expect(find.byIcon(LucideIcons.circle), findsNothing);
 
     await tester.tap(find.text('Pull Day'));
     await tester.pumpAndSettle();
 
-    expect(find.byIcon(Icons.check_circle), findsNWidgets(2));
-    expect(find.byIcon(Icons.circle_outlined), findsNothing);
+    expect(find.byIcon(LucideIcons.circleCheck), findsNWidgets(2));
+    expect(find.byIcon(LucideIcons.circle), findsNothing);
   });
 
   testWidgets('the last workout cannot be taken out, and the sheet says why', (
@@ -214,7 +207,10 @@ void main() {
     // The refusal is a state, not a dead end: adding one lifts it.
     await tester.tap(find.text('Pull Day'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('A review needs at least one workout'), findsNothing);
+    expect(
+      find.textContaining('A review needs at least one workout'),
+      findsNothing,
+    );
   });
 
   testWidgets('goals can all be taken out — only workouts are load-bearing', (
@@ -259,11 +255,8 @@ void main() {
 
     // The row did not take the tick, so the sheet must not keep it either:
     // a tick the pass does not have is a lie the landing would keep showing.
-    expect(find.byIcon(Icons.check_circle), findsOneWidget);
-    expect(
-      find.textContaining('Could not update the review'),
-      findsOneWidget,
-    );
+    expect(find.byIcon(LucideIcons.circleCheck), findsOneWidget);
+    expect(find.textContaining('Could not update the review'), findsOneWidget);
   });
 
   testWidgets('the search narrows the goals list to what it names', (
@@ -271,11 +264,7 @@ void main() {
   ) async {
     // A goal list can run long enough that finding one is the visit's real
     // work — the sheet carries its own search for that (2026-10-10).
-    await openSheet(
-      tester,
-      goalIds: ['g1'],
-      section: ReviewScopeSection.goals,
-    );
+    await openSheet(tester, goalIds: ['g1'], section: ReviewScopeSection.goals);
 
     expect(find.text('Bench Press'), findsOneWidget);
     expect(find.text('Squat'), findsOneWidget);
@@ -326,7 +315,7 @@ void main() {
       lessThan(tester.getTopLeft(find.text('Pull Day')).dy),
     );
 
-    await tester.tap(find.byIcon(Icons.sort));
+    await tester.tap(find.byIcon(LucideIcons.arrowUpDown));
     await tester.pumpAndSettle();
     await tester.tap(find.text('A–Z'));
     await tester.pumpAndSettle();
@@ -354,14 +343,10 @@ void main() {
   testWidgets('the filter splits the goals by whether the pass holds them', (
     tester,
   ) async {
-    await openSheet(
-      tester,
-      goalIds: ['g1'],
-      section: ReviewScopeSection.goals,
-    );
+    await openSheet(tester, goalIds: ['g1'], section: ReviewScopeSection.goals);
 
     // "In this review" is what the pass already holds.
-    await tester.tap(find.byIcon(Icons.filter_list));
+    await tester.tap(find.byIcon(LucideIcons.listFilter));
     await tester.pumpAndSettle();
     await tester.tap(find.text('In this review'));
     await tester.pumpAndSettle();
@@ -369,7 +354,7 @@ void main() {
     expect(find.text('Squat'), findsNothing);
 
     // "Not in this review" is what is still to add...
-    await tester.tap(find.byIcon(Icons.filter_list));
+    await tester.tap(find.byIcon(LucideIcons.listFilter));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Not in this review'));
     await tester.pumpAndSettle();
@@ -394,7 +379,7 @@ void main() {
       lessThan(tester.getTopLeft(find.text('Squat')).dy),
     );
 
-    await tester.tap(find.byIcon(Icons.sort));
+    await tester.tap(find.byIcon(LucideIcons.arrowUpDown));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Heaviest target'));
     await tester.pumpAndSettle();
@@ -417,7 +402,8 @@ void main() {
     expect(
       tester.widget<EditableText>(find.byType(EditableText)).focusNode.hasFocus,
       isTrue,
-      reason: 'a search box nothing can focus is not a search box — the '
+      reason:
+          'a search box nothing can focus is not a search box — the '
           'keyboard is what focus summons',
     );
   });
@@ -429,7 +415,7 @@ void main() {
     await tester.tap(find.text('Legs'));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.widgetWithText(GlassButton, 'Done'));
+    await tester.tap(find.widgetWithIcon(GlassButton, LucideIcons.check));
     await tester.pumpAndSettle();
 
     expect(result!.sessionIds, ['w1', 'w3']);
@@ -439,7 +425,7 @@ void main() {
     // claimed — the caller must not read null as an empty scope.
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(GlassButton, 'Done'));
+    await tester.tap(find.widgetWithIcon(GlassButton, LucideIcons.check));
     await tester.pumpAndSettle();
     expect(result, isNull);
   });

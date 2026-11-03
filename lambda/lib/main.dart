@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'core/powersync/database.dart';
 import 'core/powersync/secure_local_storage.dart';
 import 'core/styles/app_fonts.dart';
+import 'core/theme/lambda_theme.dart';
 import 'features/programs/view/review_container.dart';
 import 'version_gate_app.dart';
 
@@ -21,11 +22,12 @@ Future<void> main() async {
           'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR5Ymx1YWVvd21wZHdzd2Vhd2NxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI4MTA1MzcsImV4cCI6MjA4ODM4NjUzN30.rjzDqKQJT3giqZ4o7-8oRHaGw1IujnOQVzKINJDjWBg',
       // Persist the session (incl. refresh token) in the OS keychain/keystore
       // instead of supabase_flutter's plaintext SharedPreferences default.
-      authOptions: FlutterAuthClientOptions(
-        localStorage: SecureLocalStorage(),
-      ),
+      authOptions: FlutterAuthClientOptions(localStorage: SecureLocalStorage()),
     ),
     initializeDateFormatting('en_GB'),
+    // The palette is a preference: restore it before the first frame so the
+    // app never flashes the default theme (2026-10-22).
+    themeNotifier.restore(),
   ]);
   await openDatabase();
 

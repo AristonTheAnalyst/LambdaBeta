@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lambda/shared/widgets/sort_button.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 /// The shared sort control behind every library list's toolbar. It is generic
 /// on purpose — the lists own their criteria — so the test drives it with
@@ -37,7 +38,7 @@ Future<List<(String, bool)>> _open(
       ),
     ),
   );
-  await tester.tap(find.byIcon(Icons.sort));
+  await tester.tap(find.byIcon(LucideIcons.arrowUpDown));
   await tester.pumpAndSettle();
   return calls;
 }
@@ -53,11 +54,11 @@ void main() {
     // The active row wears the direction arrow in place of the tick — the
     // sheet and its Ascending/Descending switch are gone, not hidden.
     expect(
-      find.byIcon(Icons.arrow_upward),
+      find.byIcon(LucideIcons.arrowUp),
       findsOneWidget,
       reason: '"A–Z" is active and reads ascending',
     );
-    expect(find.byIcon(Icons.check), findsNothing);
+    expect(find.byIcon(LucideIcons.check), findsNothing);
     expect(find.text('Sort by'), findsNothing);
     expect(find.text('Ascending'), findsNothing);
   });
@@ -69,9 +70,13 @@ void main() {
     await tester.tap(find.text('Last used'));
     await tester.pumpAndSettle();
 
-    expect(calls, [('last', true)], reason:
-        '"Last used" reads newest-first — picking it must not land in its '
-        'upside-down reading');
+    expect(
+      calls,
+      [('last', true)],
+      reason:
+          '"Last used" reads newest-first — picking it must not land in its '
+          'upside-down reading',
+    );
     expect(
       find.text('A–Z'),
       findsNothing,
@@ -84,12 +89,13 @@ void main() {
   ) async {
     final calls = await _open(tester, value: 'last', descending: true);
 
-    expect(find.byIcon(Icons.arrow_downward), findsOneWidget);
+    expect(find.byIcon(LucideIcons.arrowDown), findsOneWidget);
     await tester.tap(find.text('Last used'));
     await tester.pumpAndSettle();
 
-    expect(calls, [('last', false)],
-        reason: 'the criterion is untouched — only the direction flips');
+    expect(calls, [
+      ('last', false),
+    ], reason: 'the criterion is untouched — only the direction flips');
     expect(find.text('A–Z'), findsNothing, reason: 'the pick closed it');
   });
 

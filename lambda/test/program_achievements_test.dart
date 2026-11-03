@@ -12,19 +12,18 @@ PastSetRow _set(
   required int reps,
   required DateTime date,
   int setNumber = 1,
-}) =>
-    PastSetRow(
-      sessionExerciseSetId: id,
-      sessionExerciseId: id,
-      sessionId: 'sess-$id',
-      userId: 'u1',
-      exerciseId: exerciseId,
-      variationId: variationId,
-      setNumber: setNumber,
-      reps: [reps],
-      weight: weight,
-      sessionCreatedDate: date,
-    );
+}) => PastSetRow(
+  sessionExerciseSetId: id,
+  sessionExerciseId: id,
+  sessionId: 'sess-$id',
+  userId: 'u1',
+  exerciseId: exerciseId,
+  variationId: variationId,
+  setNumber: setNumber,
+  reps: [reps],
+  weight: weight,
+  sessionCreatedDate: date,
+);
 
 Goal _goal({
   required String id,
@@ -34,18 +33,17 @@ Goal _goal({
   int? reps,
   String? blockId,
   String? variationId,
-}) =>
-    Goal(
-      goalId: id,
-      userId: 'u1',
-      programId: 'p1',
-      blockId: blockId,
-      text: text,
-      exerciseId: exerciseId,
-      variationId: variationId,
-      targetWeight: weight,
-      targetReps: reps,
-    );
+}) => Goal(
+  goalId: id,
+  userId: 'u1',
+  programId: 'p1',
+  blockId: blockId,
+  text: text,
+  exerciseId: exerciseId,
+  variationId: variationId,
+  targetWeight: weight,
+  targetReps: reps,
+);
 
 final _jan10 = DateTime(2026, 1, 10);
 final _feb10 = DateTime(2026, 2, 10);
@@ -59,8 +57,7 @@ void main() {
       final out = evaluateGoals(
         goals: [_goal(id: 'g1', exerciseId: 'bench', weight: 100, reps: 1)],
         sets: [
-          _set('s1',
-              exerciseId: 'bench', weight: 100, reps: 1, date: _feb10),
+          _set('s1', exerciseId: 'bench', weight: 100, reps: 1, date: _feb10),
         ],
         from: _jan10,
         to: _mar10,
@@ -72,23 +69,27 @@ void main() {
       expect(out.single.evidenceDate, _feb10);
     });
 
-    test('one rep short at the same weight does not count, but is reported',
-        () {
-      final out = evaluateGoals(
-        goals: [_goal(id: 'g1', exerciseId: 'bench', weight: 100, reps: 5)],
-        sets: [
-          _set('s1',
-              exerciseId: 'bench', weight: 100, reps: 4, date: _feb10),
-        ],
-        from: _jan10,
-        to: _mar10,
-      );
+    test(
+      'one rep short at the same weight does not count, but is reported',
+      () {
+        final out = evaluateGoals(
+          goals: [_goal(id: 'g1', exerciseId: 'bench', weight: 100, reps: 5)],
+          sets: [
+            _set('s1', exerciseId: 'bench', weight: 100, reps: 4, date: _feb10),
+          ],
+          from: _jan10,
+          to: _mar10,
+        );
 
-      expect(out.single.achieved, isFalse);
-      expect(out.single.evidenceWeight, 100,
-          reason: 'a missed goal still reports how close it came');
-      expect(out.single.evidenceReps, 4);
-    });
+        expect(out.single.achieved, isFalse);
+        expect(
+          out.single.evidenceWeight,
+          100,
+          reason: 'a missed goal still reports how close it came',
+        );
+        expect(out.single.evidenceReps, 4);
+      },
+    );
 
     test('reps and weight must be reached IN THE SAME set', () {
       // 110x3 is heavy enough but short; 100x5 has the reps but was lighter.
@@ -96,33 +97,37 @@ void main() {
       final out = evaluateGoals(
         goals: [_goal(id: 'g1', exerciseId: 'bench', weight: 100, reps: 5)],
         sets: [
-          _set('s1',
-              exerciseId: 'bench', weight: 110, reps: 3, date: _feb10),
-          _set('s2',
-              exerciseId: 'bench', weight: 100, reps: 5, date: _feb11),
+          _set('s1', exerciseId: 'bench', weight: 110, reps: 3, date: _feb10),
+          _set('s2', exerciseId: 'bench', weight: 100, reps: 5, date: _feb11),
         ],
         from: _jan10,
         to: _mar10,
       );
 
-      expect(out.single.achieved, isTrue,
-          reason: 'the second set is exactly 100x5 and does satisfy it');
+      expect(
+        out.single.achieved,
+        isTrue,
+        reason: 'the second set is exactly 100x5 and does satisfy it',
+      );
     });
 
     test('a set before the window does not satisfy it', () {
       final out = evaluateGoals(
         goals: [_goal(id: 'g1', exerciseId: 'bench', weight: 100, reps: 1)],
         sets: [
-          _set('s1',
-              exerciseId: 'bench', weight: 120, reps: 1, date: _jan10),
+          _set('s1', exerciseId: 'bench', weight: 120, reps: 1, date: _jan10),
         ],
         from: _feb10,
         to: _mar10,
       );
 
-      expect(out.single.achieved, isFalse,
-          reason: 'the window opens AFTER that set — a goal met last month '
-              'belongs to the review that saw it');
+      expect(
+        out.single.achieved,
+        isFalse,
+        reason:
+            'the window opens AFTER that set — a goal met last month '
+            'belongs to the review that saw it',
+      );
       expect(out.single.evidenceWeight, isNull);
     });
 
@@ -148,20 +153,28 @@ void main() {
       final pausedOnly = evaluateGoals(
         goals: goals,
         sets: [
-          _set('s1',
-              exerciseId: 'bench',
-              variationId: 'paused',
-              weight: 120,
-              reps: 1,
-              date: _feb10),
+          _set(
+            's1',
+            exerciseId: 'bench',
+            variationId: 'paused',
+            weight: 120,
+            reps: 1,
+            date: _feb10,
+          ),
         ],
         from: _jan10,
         to: _mar10,
       );
-      expect(pausedOnly.single.achieved, isFalse,
-          reason: 'a paused set is not the plain bench the goal names');
-      expect(pausedOnly.single.evidenceWeight, isNull,
-          reason: 'out of scope is not evidence for a near miss either');
+      expect(
+        pausedOnly.single.achieved,
+        isFalse,
+        reason: 'a paused set is not the plain bench the goal names',
+      );
+      expect(
+        pausedOnly.single.evidenceWeight,
+        isNull,
+        reason: 'out of scope is not evidence for a near miss either',
+      );
 
       final plain = evaluateGoals(
         goals: goals,
@@ -175,93 +188,134 @@ void main() {
       expect(plain.single.evidenceVariationId, isNull);
     });
 
-    test('a variation-scoped goal ignores other variations of the same lift',
-        () {
-      final goals = [
-        _goal(
-          id: 'g1',
-          exerciseId: 'bench',
-          weight: 100,
-          reps: 1,
-          variationId: 'paused',
-        ),
-      ];
+    test(
+      'a variation-scoped goal ignores other variations of the same lift',
+      () {
+        final goals = [
+          _goal(
+            id: 'g1',
+            exerciseId: 'bench',
+            weight: 100,
+            reps: 1,
+            variationId: 'paused',
+          ),
+        ];
 
-      final onlyPlain = evaluateGoals(
-        goals: goals,
-        sets: [
-          _set('s1', exerciseId: 'bench', weight: 150, reps: 1, date: _feb10),
-        ],
-        from: _jan10,
-        to: _mar10,
-      );
-      expect(onlyPlain.single.achieved, isFalse,
-          reason: 'the 150 single was a plain bench set; the goal is paused');
-      expect(onlyPlain.single.evidenceWeight, isNull);
+        final onlyPlain = evaluateGoals(
+          goals: goals,
+          sets: [
+            _set('s1', exerciseId: 'bench', weight: 150, reps: 1, date: _feb10),
+          ],
+          from: _jan10,
+          to: _mar10,
+        );
+        expect(
+          onlyPlain.single.achieved,
+          isFalse,
+          reason: 'the 150 single was a plain bench set; the goal is paused',
+        );
+        expect(onlyPlain.single.evidenceWeight, isNull);
 
-      final withPaused = evaluateGoals(
-        goals: goals,
-        sets: [
-          _set('s1', exerciseId: 'bench', weight: 150, reps: 1, date: _feb10),
-          _set('s2',
+        final withPaused = evaluateGoals(
+          goals: goals,
+          sets: [
+            _set('s1', exerciseId: 'bench', weight: 150, reps: 1, date: _feb10),
+            _set(
+              's2',
               exerciseId: 'bench',
               variationId: 'paused',
               weight: 105,
               reps: 1,
-              date: _feb11),
-        ],
-        from: _jan10,
-        to: _mar10,
-      );
-      expect(withPaused.single.achieved, isTrue);
-      expect(withPaused.single.evidenceWeight, 105,
-          reason: 'the heavier 150 is out of scope — not even evidence');
-    });
+              date: _feb11,
+            ),
+          ],
+          from: _jan10,
+          to: _mar10,
+        );
+        expect(withPaused.single.achieved, isTrue);
+        expect(
+          withPaused.single.evidenceWeight,
+          105,
+          reason: 'the heavier 150 is out of scope — not even evidence',
+        );
+      },
+    );
 
-    test('the heaviest qualifying set is the evidence', () {
+    test('the earliest qualifying set is the evidence', () {
       final out = evaluateGoals(
         goals: [_goal(id: 'g1', exerciseId: 'bench', weight: 100, reps: 3)],
         sets: [
-          _set('s1',
-              exerciseId: 'bench', weight: 100, reps: 3, date: _feb10),
-          _set('s2',
-              exerciseId: 'bench', weight: 115, reps: 3, date: _feb11),
+          _set('s1', exerciseId: 'bench', weight: 100, reps: 3, date: _feb10),
+          _set('s2', exerciseId: 'bench', weight: 115, reps: 3, date: _feb11),
         ],
         from: _jan10,
         to: _mar10,
       );
 
       expect(out.single.achieved, isTrue);
-      expect(out.single.evidenceWeight, 115,
-          reason: 'a goal is reviewed for how far past it the user went');
-      expect(out.single.evidenceDate, _feb11);
+      expect(
+        out.single.evidenceWeight,
+        100,
+        reason:
+            'a goal is achieved once — the first set that met it, not '
+            'the best one since (2026-10-20)',
+      );
+      expect(out.single.evidenceDate, _feb10);
+    });
+
+    test('inside one session the lower set number is the earlier set', () {
+      final out = evaluateGoals(
+        goals: [_goal(id: 'g1', exerciseId: 'bench', weight: 100, reps: 3)],
+        sets: [
+          // Both rows share the session's timestamp — the number is the only
+          // tie-break there is.
+          _set(
+            's1',
+            exerciseId: 'bench',
+            weight: 100,
+            reps: 3,
+            date: _feb10,
+            setNumber: 1,
+          ),
+          _set(
+            's2',
+            exerciseId: 'bench',
+            weight: 100,
+            reps: 3,
+            date: _feb10,
+            setNumber: 2,
+          ),
+        ],
+        from: _jan10,
+        to: _mar10,
+      );
+
+      expect(out.single.evidenceDate, _feb10);
     });
 
     test('a free-text goal is carried through unachieved', () {
       final out = evaluateGoals(
         goals: [_goal(id: 'g1', text: 'Get stronger')],
         sets: [
-          _set('s1',
-              exerciseId: 'bench', weight: 200, reps: 1, date: _feb10),
+          _set('s1', exerciseId: 'bench', weight: 200, reps: 1, date: _feb10),
         ],
         from: _jan10,
         to: _mar10,
       );
 
       expect(out.single.achieved, isFalse);
-      expect(out.single.evidenceWeight, isNull,
-          reason: 'nothing to measure, so nothing is claimed');
+      expect(
+        out.single.evidenceWeight,
+        isNull,
+        reason: 'nothing to measure, so nothing is claimed',
+      );
     });
 
     test('bodyweight is weight 0, not "no evidence"', () {
       final out = evaluateGoals(
         goals: [_goal(id: 'g1', exerciseId: 'dips', weight: 0, reps: 12)],
         sets: [
-          _set('s1',
-              exerciseId: 'dips',
-              weight: 0,
-              reps: 12,
-              date: _feb10),
+          _set('s1', exerciseId: 'dips', weight: 0, reps: 12, date: _feb10),
         ],
         from: _jan10,
         to: _mar10,
@@ -273,13 +327,157 @@ void main() {
     });
   });
 
+  group('earliestSetReaching', () {
+    test('the first set to meet the target wins, not the best', () {
+      final set = earliestSetReaching(
+        sets: [
+          _set('s1', exerciseId: 'bench', weight: 100, reps: 5, date: _feb10),
+          _set('s2', exerciseId: 'bench', weight: 120, reps: 8, date: _feb11),
+        ],
+        exerciseId: 'bench',
+        variationId: null,
+        weight: 100,
+        reps: 3,
+      );
+
+      expect(set?.sessionExerciseSetId, 's1');
+    });
+
+    test('same-session rows fall back to the set number', () {
+      final set = earliestSetReaching(
+        sets: [
+          _set(
+            's2',
+            exerciseId: 'bench',
+            weight: 100,
+            reps: 5,
+            date: _feb10,
+            setNumber: 2,
+          ),
+          _set(
+            's1',
+            exerciseId: 'bench',
+            weight: 100,
+            reps: 5,
+            date: _feb10,
+            setNumber: 1,
+          ),
+        ],
+        exerciseId: 'bench',
+        variationId: null,
+        weight: 100,
+        reps: 3,
+      );
+
+      expect(set?.sessionExerciseSetId, 's1');
+    });
+
+    test('variation is an exact scope, null included', () {
+      final sets = [
+        _set(
+          'paused',
+          exerciseId: 'bench',
+          variationId: 'v-paused',
+          weight: 200,
+          reps: 5,
+          date: _feb10,
+        ),
+        _set('plain', exerciseId: 'bench', weight: 100, reps: 5, date: _feb11),
+      ];
+
+      expect(
+        earliestSetReaching(
+          sets: sets,
+          exerciseId: 'bench',
+          variationId: null,
+          weight: 100,
+          reps: 3,
+        )?.sessionExerciseSetId,
+        'plain',
+        reason: 'a paused 200 does not answer a plain-bench goal',
+      );
+      expect(
+        earliestSetReaching(
+          sets: sets,
+          exerciseId: 'bench',
+          variationId: 'v-paused',
+          weight: 100,
+          reps: 3,
+        )?.sessionExerciseSetId,
+        'paused',
+      );
+    });
+
+    test('a target nothing met has no set', () {
+      expect(
+        earliestSetReaching(
+          sets: [
+            _set('s1', exerciseId: 'bench', weight: 100, reps: 2, date: _feb10),
+          ],
+          exerciseId: 'bench',
+          variationId: null,
+          weight: 100,
+          reps: 3,
+        ),
+        isNull,
+      );
+    });
+  });
+
+  group('goalAchievingSetIds', () {
+    test('one id per goal — only the earliest set that met it', () {
+      final ids = goalAchievingSetIds(
+        goals: [_goal(id: 'g1', exerciseId: 'bench', weight: 100, reps: 3)],
+        sets: [
+          _set('s1', exerciseId: 'bench', weight: 100, reps: 3, date: _feb10),
+          _set('s2', exerciseId: 'bench', weight: 100, reps: 5, date: _feb11),
+        ],
+      );
+
+      expect(ids, {
+        's1',
+      }, reason: 'later sets that also reach the target are repeats');
+    });
+
+    test('a set achieving two goals is marked once', () {
+      final ids = goalAchievingSetIds(
+        goals: [
+          _goal(id: 'g1', exerciseId: 'bench', weight: 100, reps: 3),
+          _goal(id: 'g2', exerciseId: 'bench', weight: 95, reps: 5),
+        ],
+        sets: [
+          _set('s1', exerciseId: 'bench', weight: 100, reps: 5, date: _feb10),
+        ],
+      );
+
+      expect(ids, {'s1'});
+    });
+
+    test('unmet and free-text goals mark nothing', () {
+      final ids = goalAchievingSetIds(
+        goals: [
+          _goal(id: 'g1', exerciseId: 'bench', weight: 200, reps: 10),
+          _goal(id: 'g2', text: 'Get stronger'),
+        ],
+        sets: [
+          _set('s1', exerciseId: 'bench', weight: 100, reps: 5, date: _feb10),
+        ],
+      );
+
+      expect(ids, isEmpty);
+    });
+  });
+
   group('Goal.appliesDuring', () {
     test('a program-level goal is chased inside every block', () {
       final goal = _goal(id: 'g1', exerciseId: 'bench', weight: 100, reps: 1);
 
       expect(goal.appliesDuring('b1'), isTrue);
-      expect(goal.appliesDuring('b2'), isTrue,
-          reason: 'the target is on the program, not on one of its phases');
+      expect(
+        goal.appliesDuring('b2'),
+        isTrue,
+        reason: 'the target is on the program, not on one of its phases',
+      );
     });
 
     test('a block-level goal waits for its own block', () {
@@ -293,8 +491,11 @@ void main() {
 
       expect(goal.appliesDuring('b1'), isTrue);
       expect(goal.appliesDuring('b2'), isFalse);
-      expect(goal.appliesDuring(null), isFalse,
-          reason: 'a blockless run is not running b1');
+      expect(
+        goal.appliesDuring(null),
+        isFalse,
+        reason: 'a blockless run is not running b1',
+      );
     });
 
     test('a blockless run sees exactly the program-level goals', () {
@@ -309,11 +510,13 @@ void main() {
         ),
       ];
 
-      final inForce =
-          goals.where((g) => g.appliesDuring(null)).map((g) => g.goalId);
+      final inForce = goals
+          .where((g) => g.appliesDuring(null))
+          .map((g) => g.goalId);
 
-      expect(inForce, ['program'],
-          reason: 'what a blockless program has always shown — unchanged');
+      expect(inForce, [
+        'program',
+      ], reason: 'what a blockless program has always shown — unchanged');
     });
   });
 
@@ -357,28 +560,29 @@ void main() {
     test('merges every exercise and variation into one newest-first list', () {
       final prs = prsAcrossScopes(
         [
-          _set('s1',
-              exerciseId: 'bench', weight: 100, reps: 1, date: _feb10),
-          _set('s2',
-              exerciseId: 'squat', weight: 150, reps: 1, date: _feb12),
-          _set('s3',
-              exerciseId: 'bench',
-              variationId: 'paused',
-              weight: 80,
-              reps: 1,
-              date: _feb11),
+          _set('s1', exerciseId: 'bench', weight: 100, reps: 1, date: _feb10),
+          _set('s2', exerciseId: 'squat', weight: 150, reps: 1, date: _feb12),
+          _set(
+            's3',
+            exerciseId: 'bench',
+            variationId: 'paused',
+            weight: 80,
+            reps: 1,
+            date: _feb11,
+          ),
         ],
         _jan10,
         _mar10,
       );
 
-      expect(prs.length, 3,
-          reason: 'each (exercise, variation) pair has its own frontier, so '
-              'each of these is a first PR for its scope');
       expect(
-        prs.map((p) => p.achievedDate).toList(),
-        [_feb12, _feb11, _feb10],
+        prs.length,
+        3,
+        reason:
+            'each (exercise, variation) pair has its own frontier, so '
+            'each of these is a first PR for its scope',
       );
+      expect(prs.map((p) => p.achievedDate).toList(), [_feb12, _feb11, _feb10]);
     });
 
     test('a window filters events, it does not reset the frontier', () {
@@ -391,11 +595,15 @@ void main() {
         _mar10,
       );
 
-      expect(prs, isEmpty,
-          reason: 'the January 200 IS this scope\'s frontier, so February\'s '
-              'lighter single extended nothing and was never a PR. A window '
-              'shows which PRs happened, not "best set logged inside it" — '
-              'reporting 100kg as an achievement would be a lie');
+      expect(
+        prs,
+        isEmpty,
+        reason:
+            'the January 200 IS this scope\'s frontier, so February\'s '
+            'lighter single extended nothing and was never a PR. A window '
+            'shows which PRs happened, not "best set logged inside it" — '
+            'reporting 100kg as an achievement would be a lie',
+      );
     });
 
     test('only events inside the window are listed', () {
@@ -410,9 +618,13 @@ void main() {
 
       expect(prs.length, 1);
       expect(prs.single.weight, 120);
-      expect(prs.single.beforeWeight, 100,
-          reason: 'the "was" fact still reaches back before the window — the '
-              'frontier is global even when the report is not');
+      expect(
+        prs.single.beforeWeight,
+        100,
+        reason:
+            'the "was" fact still reaches back before the window — the '
+            'frontier is global even when the report is not',
+      );
     });
   });
 
@@ -424,11 +636,7 @@ void main() {
         weightStart: 82.5,
         weightEnd: 80.25,
         sessions: [
-          AchievementSession(
-            sessionId: 'sess-1',
-            name: 'Push',
-            date: _feb10,
-          ),
+          AchievementSession(sessionId: 'sess-1', name: 'Push', date: _feb10),
         ],
         prs: prsAcrossScopes(
           [_set('s1', exerciseId: 'bench', weight: 100, reps: 1, date: _feb10)],
@@ -470,8 +678,11 @@ void main() {
       expect(ProgramAchievements.decode(null), isNull);
       expect(ProgramAchievements.decode(''), isNull);
       expect(ProgramAchievements.decode('not json'), isNull);
-      expect(ProgramAchievements.decode('[]'), isNull,
-          reason: 'an array is not a document');
+      expect(
+        ProgramAchievements.decode('[]'),
+        isNull,
+        reason: 'an array is not a document',
+      );
       expect(
         ProgramAchievements.decode(
           '{"from":"2026-01-01T00:00:00.000Z","goals":[{"text":null}]}',

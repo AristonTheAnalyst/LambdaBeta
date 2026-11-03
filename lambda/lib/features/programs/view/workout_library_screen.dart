@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../../core/styles/app_colors.dart';
 import '../../../../core/styles/app_fonts.dart';
 import '../../../../core/styles/app_spacing.dart';
@@ -12,21 +13,43 @@ import '../../../../shared/widgets/app_card.dart';
 import '../../../../shared/widgets/archived_sheet.dart';
 import '../../../../shared/widgets/slide_up_modal.dart';
 import '../../../../shared/widgets/swipe_actions.dart';
+import '../../../../shared/widgets/user_name_text.dart';
 import '../../../../shared/widgets/glass_button.dart';
 import '../../../../shared/widgets/lambda_search_field.dart';
 import '../../../../shared/widgets/page_header.dart';
 import '../../../../shared/widgets/scroll_shrink_nav_bar.dart';
+import '../../../shared/widgets/coach_created_mark.dart';
+import '../../../shared/widgets/name_history_sheet.dart';
 import '../viewmodel/workout_editor_viewmodel.dart';
 import 'plan_session_screen.dart';
 
 /// Library of standalone planned workouts (a single session, no program).
 class WorkoutLibraryScreen extends StatefulWidget {
-  const WorkoutLibraryScreen({super.key, this.showHeader = true});
+  const WorkoutLibraryScreen({
+    super.key,
+    this.showHeader = true,
+    this.userId,
+    this.readOnly = false,
+    this.canDelete = true,
+  });
 
   /// When embedded in a tab (Exercises hub), render content only — the hub
   /// owns the header, so a nested PageHeader would add empty top space and a
   /// dead back button.
   final bool showHeader;
+
+  /// Whose workouts to read. Null = the signed-in user (the normal mount); a
+  /// coach's read of an athlete's passes their id (2026-10-28).
+  final String? userId;
+
+  /// Browse only (2026-10-28): no +, no archived sheet, no swipe drawer and
+  /// a card that does not open the editor — coach mode reads, it never
+  /// writes.
+  final bool readOnly;
+
+  /// Whether a workout's swipe offers Delete. Coach mode creates, edits and
+  /// duplicates as the athlete and never removes (2026-10-28).
+  final bool canDelete;
 
   @override
   State<WorkoutLibraryScreen> createState() => _WorkoutLibraryScreenState();
@@ -40,7 +63,8 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
   String? _error;
   String _query = '';
 
-  String get _userId => Supabase.instance.client.auth.currentUser!.id;
+  String get _userId =>
+      widget.userId ?? Supabase.instance.client.auth.currentUser!.id;
 
   /// Search-filtered view of the loaded workouts.
   List<PlannedSession> get _filtered => _query.isEmpty
@@ -88,24 +112,57 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
   }
 
   Future<void> _create() async {
-    final vm = WorkoutEditorViewModel();
+    // The editor writes as the library's owner — the athlete in coach mode
+    // (2026-10-28); the server stamps the author.
+    final vm = WorkoutEditorViewModel(userId: widget.userId, canDelete: widget.canDelete);
     await Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(
-          builder: (_) => PlanSessionScreen(viewModel: vm, standalone: true)),
+        builder: (_) => PlanSessionScreen(
+          viewModel: vm,
+          standalone: true,
+          canDelete: widget.canDelete,
+          // The editor disposes it, after its own dispose has committed the
+          // name and notes (2026-10-28).
+          ownsViewModel: true,
+        ),
+      ),
     );
-    vm.dispose();
     await _load();
   }
 
   Future<void> _edit(PlannedSession w) async {
-    final vm = WorkoutEditorViewModel();
+    final vm = WorkoutEditorViewModel(userId: widget.userId, canDelete: widget.canDelete);
     await Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(
-          builder: (_) => PlanSessionScreen(
-              viewModel: vm, standaloneWorkoutId: w.sessionId)),
+        builder: (_) => PlanSessionScreen(
+          viewModel: vm,
+          standaloneWorkoutId: w.sessionId,
+          canDelete: widget.canDelete,
+          ownsViewModel: true,
+        ),
+      ),
     );
-    vm.dispose();
     await _load();
+  }
+
+  /// The owner's rename history for this workout (2026-10-29); restoring a
+  /// name is a normal rename, which records itself.
+  Future<void> _openNameHistory(PlannedSession w) async {
+    await showNameHistorySheet(
+      context,
+      userId: _userId,
+      entityType: 'workout',
+      entityId: w.sessionId,
+      currentName: w.name,
+      onRestore: (name) async {
+        await _repo.updatePlannedSession(
+          w.sessionId,
+          name: name,
+          userId: _userId,
+        );
+        await _load();
+      },
+    );
   }
 
   Future<void> _duplicate(PlannedSession w) async {
@@ -142,24 +199,39 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
-        title: Text(used ? 'Archive Session' : 'Delete Session',
-            style: AppFonts.ui(fontWeight: FontWeight.w800, color: AppColors.danger)),
+        title: Text(
+          used ? 'Archive Session' : 'Delete Session',
+          style: AppFonts.ui(
+            fontWeight: FontWeight.w800,
+            color: AppColors.danger,
+          ),
+        ),
         content: Text(
-            used
-                ? 'Archive "$name"? It has been used, so it can\'t be fully '
-                  'deleted — it will disappear from this list, but the '
-                  'sessions logged from it stay intact.'
-                : 'Delete "$name"? This can\'t be undone.',
-            style: AppFonts.ui(color: AppColors.muted)),
+          used
+              ? 'Archive "$name"? It has been used, so it can\'t be fully '
+                    'deleted — it will disappear from this list, but the '
+                    'sessions logged from it stay intact.'
+              : 'Delete "$name"? This can\'t be undone.',
+          style: AppFonts.ui(color: AppColors.inkSecondary, height: 1.4),
+        ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: Text('Cancel', style: AppFonts.ui(color: AppColors.muted))),
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(
+              'Cancel',
+              style: AppFonts.ui(color: AppColors.inkSecondary),
+            ),
+          ),
           TextButton(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: Text(used ? 'Archive' : 'Delete',
-                  style: AppFonts.ui(
-                      color: AppColors.danger, fontWeight: FontWeight.w600))),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(
+              used ? 'Archive' : 'Delete',
+              style: AppFonts.ui(
+                color: AppColors.danger,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -173,6 +245,61 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
     }
   }
 
+  /// One workout's card, the list's only row shape.
+  ///
+  /// A read-only surface draws it bare (2026-10-28): the tap opens the
+  /// editor, so it is spent on nothing, and the drawer that duplicates and
+  /// deletes is not wrapped around it.
+  Widget _card(PlannedSession w) => AppCard(
+    // Her own workouts are read-only to the coach; the ones this coach
+    // created are theirs to edit (2026-10-29).
+    onTap: widget.readOnly || (widget.userId != null && w.createdByUserId == null)
+        ? null
+        : () => _edit(w),
+    background: AppColors.plannedBg,
+    borderColor: AppColors.planned.withValues(alpha: 0.35),
+    child: Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // One line, ellipsized — the notes under it already hold
+              // their own, and a wrapping name moves the card's shape
+              // (2026-10-20).
+              UserNameText(
+                toProperCase(w.name),
+                tooltip: true,
+                style: AppFonts.ui(
+                  fontSize: AppTextStyles.md,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.primary,
+                ),
+              ),
+              if (w.notes?.isNotEmpty == true)
+                Text(
+                  w.notes!,
+                  style: AppFonts.ui(
+                    fontSize: AppTextStyles.xs,
+                    color: AppColors.inkSecondary,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              if (w.createdByUserId != null || w.updatedByUserId != null) ...[
+                const SizedBox(height: 2),
+                CoachCreatedMark(
+                  createdByUserId: w.createdByUserId,
+                  updatedByUserId: w.updatedByUserId,
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -182,48 +309,60 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
           if (widget.showHeader)
             PageHeader(
               title: 'Workouts',
-              right: GlassButton(
-                label: '',
-                icon: Icons.add,
-                compact: true,
-                onPressed: _create,
-              ),
+              // Coach mode browses only (2026-10-28): the + is absent when
+              // nothing may be created.
+              right: widget.readOnly
+                  ? null
+                  : GlassButton(
+                      label: '',
+                      icon: LucideIcons.plus,
+                      semanticsLabel: 'New workout',
+                      compact: true,
+                      onPressed: _create,
+                    ),
             ),
           Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
                 : _error != null
-                    ? Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(AppSpacing.xl),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text('Could not load workouts.',
-                                  style: AppFonts.ui(
-                                      fontSize: AppTextStyles.md,
-                                      color: AppColors.danger)),
-                              const SizedBox(height: AppSpacing.sm),
-                              Text(_error!,
-                                  textAlign: TextAlign.center,
-                                  style: AppFonts.ui(
-                                      fontSize: AppTextStyles.xs,
-                                      color: AppColors.muted)),
-                              const SizedBox(height: AppSpacing.lg),
-                              GlassButton(
-                                label: 'Retry',
-                                onPressed: _load,
-                              ),
-                            ],
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(AppSpacing.xl),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'Could not load workouts.',
+                            style: AppFonts.ui(
+                              fontSize: AppTextStyles.md,
+                              color: AppColors.danger,
+                            ),
                           ),
-                        ),
-                      )
-                    : Column(
+                          const SizedBox(height: AppSpacing.sm),
+                          Text(
+                            _error!,
+                            textAlign: TextAlign.center,
+                            style: AppFonts.ui(
+                              fontSize: AppTextStyles.xs,
+                              color: AppColors.danger,
+                            ),
+                          ),
+                          const SizedBox(height: AppSpacing.lg),
+                          GlassButton(label: 'Retry', onPressed: _load),
+                        ],
+                      ),
+                    ),
+                  )
+                : Column(
                     children: [
                       if (!widget.showHeader)
                         Padding(
                           padding: const EdgeInsets.fromLTRB(
-                              AppSpacing.lg, AppSpacing.lg, AppSpacing.lg, 0),
+                            AppSpacing.lg,
+                            AppSpacing.lg,
+                            AppSpacing.lg,
+                            0,
+                          ),
                           child: Row(
                             children: [
                               Expanded(
@@ -231,102 +370,101 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
                                   controller: _searchController,
                                 ),
                               ),
-                              const SizedBox(width: AppSpacing.sm),
-                              GlassButton(
-                                label: '',
-                                icon: Icons.add,
-                                onPressed: _create,
-                                compact: true,
-                              ),
-                              const SizedBox(width: AppSpacing.sm),
-                              GlassButton(
-                                label: '',
-                                icon: Icons.archive_outlined,
-                                onPressed: _openArchived,
-                                compact: true,
-                              ),
+                              // Coach mode browses only (2026-10-28): no +,
+                              // and no archived sheet — restoring writes.
+                              if (!widget.readOnly) ...[
+                                const SizedBox(width: AppSpacing.sm),
+                                GlassButton(
+                                  label: '',
+                                  icon: LucideIcons.plus,
+                                  semanticsLabel: 'New workout',
+                                  onPressed: _create,
+                                  compact: true,
+                                ),
+                                const SizedBox(width: AppSpacing.sm),
+                                GlassButton(
+                                  label: '',
+                                  icon: LucideIcons.archive,
+                                  semanticsLabel: 'Archived workouts',
+                                  onPressed: _openArchived,
+                                  compact: true,
+                                ),
+                              ],
                             ],
                           ),
                         ),
                       Expanded(
                         child: _workouts.isEmpty
                             ? Center(
-                                child: Text('No workouts yet — create one to get started.',
-                                    style: AppFonts.ui(
-                                        fontSize: AppTextStyles.md, color: AppColors.muted)),
-                              )
-                            : _filtered.isEmpty
-                                ? Center(
-                                    child: Text(
-                                      'No matches for "$_query".',
-                                      style: AppFonts.ui(
-                                        fontSize: AppTextStyles.sm,
-                                        color: AppColors.muted,
-                                      ),
-                                    ),
-                                  )
-                                : ListView.separated(
-                        // Zero unless the shell's bar is floating over this
-                        // list, which is where the Library's Workouts tab
-                        // lives.
-                        padding: EdgeInsets.fromLTRB(
-                          AppSpacing.lg,
-                          AppSpacing.lg,
-                          AppSpacing.lg,
-                          AppSpacing.lg +
-                              ScrollShrinkNavBar.contentInset(context),
-                        ),
-                        itemCount: _filtered.length,
-                        separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.md),
-                        itemBuilder: (context, i) {
-                          final w = _filtered[i];
-                          return SwipeActions(
-                            actions: [
-                              SwipeAction(
-                                icon: Icons.copy_rounded,
-                                
-                                color: AppColors.accent,
-                                onTap: () => _duplicate(w),
-                              ),
-                              SwipeAction(
-                                icon: Icons.delete_outline,
-                                
-                                color: AppColors.danger,
-                                onTap: () => _delete(w),
-                              ),
-                            ],
-                            child: AppCard(
-                            onTap: () => _edit(w),
-                            background: AppColors.plannedBg,
-                            borderColor:
-                                AppColors.planned.withValues(alpha: 0.35),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(toProperCase(w.name),
-                                          style: AppFonts.ui(
-                                              fontSize: AppTextStyles.md,
-                                              fontWeight: FontWeight.w600,
-                                              color: AppColors.primary)),
-                                      if (w.notes?.isNotEmpty == true)
-                                        Text(w.notes!,
-                                            style: AppFonts.ui(
-                                                fontSize: AppTextStyles.xs,
-                                                color: AppColors.muted),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis),
-                                    ],
+                                child: Text(
+                                  'No workouts yet — create one to get started.',
+                                  style: AppFonts.ui(
+                                    fontSize: AppTextStyles.md,
+                                    color: AppColors.inkSecondary,
                                   ),
                                 ),
-                              ],
-                            ),
-                            ),
-                          );
-                        },
-                      ),
+                              )
+                            : _filtered.isEmpty
+                            ? Center(
+                                child: Text(
+                                  'No matches for "$_query".',
+                                  style: AppFonts.ui(
+                                    fontSize: AppTextStyles.sm,
+                                    color: AppColors.inkSecondary,
+                                  ),
+                                ),
+                              )
+                            : ListView.separated(
+                                // Zero unless the shell's bar is floating over this
+                                // list, which is where the Library's Workouts tab
+                                // lives.
+                                padding: EdgeInsets.fromLTRB(
+                                  AppSpacing.lg,
+                                  AppSpacing.lg,
+                                  AppSpacing.lg,
+                                  AppSpacing.lg +
+                                      ScrollShrinkNavBar.contentInset(context),
+                                ),
+                                itemCount: _filtered.length,
+                                separatorBuilder: (_, _) =>
+                                    const SizedBox(height: AppSpacing.md),
+                                itemBuilder: (context, i) {
+                                  final w = _filtered[i];
+                                  final card = _card(w);
+                                  // Coach mode edits and duplicates as the
+                                  // athlete and never deletes (2026-10-28):
+                                  // the drawer keeps its copy, loses its trash.
+                                  if (widget.readOnly) return card;
+                                  return SwipeActions(
+                                    actions: [
+                                      // The owner's rename history
+                                      // (2026-10-29); a coach's device never
+                                      // receives it.
+                                      if (widget.userId == null)
+                                        SwipeAction(
+                                          icon: LucideIcons.history,
+                                          color: AppColors.primary,
+                                          foreground: AppColors.bg,
+                                          onTap: () => _openNameHistory(w),
+                                        ),
+                                      SwipeAction(
+                                        icon: LucideIcons.copy,
+                                        color: AppColors.accent,
+                                        foreground: AppColors.accentText,
+                                        onTap: () => _duplicate(w),
+                                      ),
+                                      if (widget.canDelete)
+                                        SwipeAction(
+                                          icon: LucideIcons.trash2,
+                                          color: AppColors.danger,
+                                          foreground: AppColors.dangerText,
+                                          onTap: () => _delete(w),
+                                        ),
+                                    ],
+                                    child: card,
+                                  );
+                                },
+                              ),
                       ),
                     ],
                   ),

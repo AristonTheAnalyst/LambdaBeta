@@ -59,7 +59,8 @@ class ContentChange {
   final String? plannedExerciseId;
 
   @override
-  String toString() => '${kind.name} ${entity.name} $label'
+  String toString() =>
+      '${kind.name} ${entity.name} $label'
       '${detail != null ? ' ($detail)' : ''}';
 }
 
@@ -245,12 +246,14 @@ ContentDiff diffContent(
   final afterBlockById = {for (final b in after.blocks) b.blockId: b};
 
   // ── Blocks ────────────────────────────────────────────────────────────────
-  changes.addAll(_compareBlocks(
-    before: beforeBlockById,
-    after: afterBlockById,
-    beforeOrder: before.blocks.map((b) => b.blockId).toList(),
-    afterOrder: after.blocks.map((b) => b.blockId).toList(),
-  ));
+  changes.addAll(
+    _compareBlocks(
+      before: beforeBlockById,
+      after: afterBlockById,
+      beforeOrder: before.blocks.map((b) => b.blockId).toList(),
+      afterOrder: after.blocks.map((b) => b.blockId).toList(),
+    ),
+  );
 
   // ── Workouts ──────────────────────────────────────────────────────────────
   final beforeById = {for (final s in before.sessions) s.sessionId: s};
@@ -261,9 +264,13 @@ ContentDiff diffContent(
       .where(beforeById.containsKey)
       .toList(growable: false);
   final beforePositions = _positionsAmong(
-      surviving, before.sessions.map((s) => s.sessionId).toList());
+    surviving,
+    before.sessions.map((s) => s.sessionId).toList(),
+  );
   final afterPositions = _positionsAmong(
-      surviving, after.sessions.map((s) => s.sessionId).toList());
+    surviving,
+    after.sessions.map((s) => s.sessionId).toList(),
+  );
   final movedSessions = _movedAmong(
     before.sessions.map((s) => s.sessionId).toList(),
     after.sessions.map((s) => s.sessionId).toList(),
@@ -275,113 +282,133 @@ ContentDiff diffContent(
     final prior = beforeById[session.sessionId];
 
     if (prior == null) {
-      changes.add(ContentChange(
-        entity: ContentEntity.session,
-        kind: ContentChangeKind.added,
-        id: session.sessionId,
-        label: session.name,
-        sessionId: session.sessionId,
-        sessionName: session.name,
-      ));
+      changes.add(
+        ContentChange(
+          entity: ContentEntity.session,
+          kind: ContentChangeKind.added,
+          id: session.sessionId,
+          label: session.name,
+          sessionId: session.sessionId,
+          sessionName: session.name,
+        ),
+      );
       continue;
     }
 
     if (movedSessions.contains(session.sessionId)) {
-      changes.add(ContentChange(
-        entity: ContentEntity.session,
-        kind: ContentChangeKind.moved,
-        id: session.sessionId,
-        label: session.name,
-        detail: 'position ${beforePositions[session.sessionId]} → '
-            '${afterPositions[session.sessionId]}',
-        sessionId: session.sessionId,
-        sessionName: session.name,
-      ));
+      changes.add(
+        ContentChange(
+          entity: ContentEntity.session,
+          kind: ContentChangeKind.moved,
+          id: session.sessionId,
+          label: session.name,
+          detail:
+              'position ${beforePositions[session.sessionId]} → '
+              '${afterPositions[session.sessionId]}',
+          sessionId: session.sessionId,
+          sessionName: session.name,
+        ),
+      );
     }
 
     if (prior.name != session.name) {
-      changes.add(ContentChange(
-        entity: ContentEntity.session,
-        kind: ContentChangeKind.edited,
-        id: session.sessionId,
-        label: session.name,
-        detail: 'renamed: ${prior.name} → ${session.name}',
-        sessionId: session.sessionId,
-        sessionName: session.name,
-      ));
+      changes.add(
+        ContentChange(
+          entity: ContentEntity.session,
+          kind: ContentChangeKind.edited,
+          id: session.sessionId,
+          label: session.name,
+          detail: 'renamed: ${prior.name} → ${session.name}',
+          sessionId: session.sessionId,
+          sessionName: session.name,
+        ),
+      );
     }
 
     if ((prior.notes ?? '') != (session.notes ?? '')) {
-      changes.add(ContentChange(
-        entity: ContentEntity.session,
-        kind: ContentChangeKind.edited,
-        id: session.sessionId,
-        label: session.name,
-        detail: _noteChange(prior.notes, session.notes),
-        oldText: prior.notes,
-        newText: session.notes,
-        sessionId: session.sessionId,
-        sessionName: session.name,
-      ));
+      changes.add(
+        ContentChange(
+          entity: ContentEntity.session,
+          kind: ContentChangeKind.edited,
+          id: session.sessionId,
+          label: session.name,
+          detail: _noteChange(prior.notes, session.notes),
+          oldText: prior.notes,
+          newText: session.notes,
+          sessionId: session.sessionId,
+          sessionName: session.name,
+        ),
+      );
     }
 
     if (prior.blockId != session.blockId) {
-      changes.add(ContentChange(
-        entity: ContentEntity.session,
-        kind: ContentChangeKind.edited,
-        id: session.sessionId,
-        label: session.name,
-        detail: 'block: ${_blockLabel(prior.blockId, blockNames)} → '
-            '${_blockLabel(session.blockId, blockNames)}',
-        sessionId: session.sessionId,
-        sessionName: session.name,
-      ));
+      changes.add(
+        ContentChange(
+          entity: ContentEntity.session,
+          kind: ContentChangeKind.edited,
+          id: session.sessionId,
+          label: session.name,
+          detail:
+              'block: ${_blockLabel(prior.blockId, blockNames)} → '
+              '${_blockLabel(session.blockId, blockNames)}',
+          sessionId: session.sessionId,
+          sessionName: session.name,
+        ),
+      );
     }
 
     if (prior.dayOfWeek != session.dayOfWeek ||
         prior.weekOffset != session.weekOffset) {
-      changes.add(ContentChange(
-        entity: ContentEntity.session,
-        kind: ContentChangeKind.edited,
-        id: session.sessionId,
-        label: session.name,
-        detail: 'schedule changed',
-        sessionId: session.sessionId,
-        sessionName: session.name,
-      ));
+      changes.add(
+        ContentChange(
+          entity: ContentEntity.session,
+          kind: ContentChangeKind.edited,
+          id: session.sessionId,
+          label: session.name,
+          detail: 'schedule changed',
+          sessionId: session.sessionId,
+          sessionName: session.name,
+        ),
+      );
     }
 
-    changes.addAll(_compareExercises(
-      session: session,
-      prior: prior,
-      exerciseNames: exerciseNames,
-      variationNames: variationNames,
-    ));
+    changes.addAll(
+      _compareExercises(
+        session: session,
+        prior: prior,
+        exerciseNames: exerciseNames,
+        variationNames: variationNames,
+      ),
+    );
   }
 
   // Removed workouts last — they have no place in the new ordering.
   for (final session in before.sessions) {
     if (afterById.containsKey(session.sessionId)) continue;
-    changes.add(ContentChange(
-      entity: ContentEntity.session,
-      kind: ContentChangeKind.removed,
-      id: session.sessionId,
-      label: session.name,
-      sessionId: session.sessionId,
-      sessionName: session.name,
-    ));
+    changes.add(
+      ContentChange(
+        entity: ContentEntity.session,
+        kind: ContentChangeKind.removed,
+        id: session.sessionId,
+        label: session.name,
+        sessionId: session.sessionId,
+        sessionName: session.name,
+      ),
+    );
   }
 
   // ── Goals ─────────────────────────────────────────────────────────────────
   // Last, and in the document's own order at each scope: a goal is a target
   // rather than a step, so it has no position to move from and every change to
   // one is added, removed or edited.
-  changes.addAll(_compareGoals(
-    before: before,
-    after: after,
-    exerciseNames: exerciseNames,
-    blockNames: blockNames,
-  ));
+  changes.addAll(
+    _compareGoals(
+      before: before,
+      after: after,
+      exerciseNames: exerciseNames,
+      blockNames: blockNames,
+    ),
+  );
 
   return ContentDiff(List.unmodifiable(changes));
 }
@@ -399,62 +426,73 @@ List<ContentChange> _compareGoals({
   for (final goal in after.goals) {
     final prior = beforeById[goal.goalId];
     if (prior == null) {
-      changes.add(ContentChange(
-        entity: ContentEntity.goal,
-        kind: ContentChangeKind.added,
-        id: goal.goalId,
-        label: _goalLabel(goal, exerciseNames),
-        detail: _goalTarget(goal),
-      ));
+      changes.add(
+        ContentChange(
+          entity: ContentEntity.goal,
+          kind: ContentChangeKind.added,
+          id: goal.goalId,
+          label: _goalLabel(goal, exerciseNames),
+          detail: _goalTarget(goal),
+        ),
+      );
       continue;
     }
 
     // Scope first: "this target now belongs to Block 2" is a different claim
     // from "the target moved from 100 to 110", and a goal can do both at once.
     if (prior.blockId != goal.blockId) {
-      changes.add(ContentChange(
-        entity: ContentEntity.goal,
-        kind: ContentChangeKind.edited,
-        id: goal.goalId,
-        label: _goalLabel(goal, exerciseNames),
-        detail: 'scope: ${_goalScopeLabel(prior.blockId, blockNames)} → '
-            '${_goalScopeLabel(goal.blockId, blockNames)}',
-      ));
+      changes.add(
+        ContentChange(
+          entity: ContentEntity.goal,
+          kind: ContentChangeKind.edited,
+          id: goal.goalId,
+          label: _goalLabel(goal, exerciseNames),
+          detail:
+              'scope: ${_goalScopeLabel(prior.blockId, blockNames)} → '
+              '${_goalScopeLabel(goal.blockId, blockNames)}',
+        ),
+      );
     }
 
     if (prior.targetWeight != goal.targetWeight ||
         prior.targetReps != goal.targetReps) {
-      changes.add(ContentChange(
-        entity: ContentEntity.goal,
-        kind: ContentChangeKind.edited,
-        id: goal.goalId,
-        label: _goalLabel(goal, exerciseNames),
-        detail: 'target: ${_goalTarget(prior)} → ${_goalTarget(goal)}',
-      ));
+      changes.add(
+        ContentChange(
+          entity: ContentEntity.goal,
+          kind: ContentChangeKind.edited,
+          id: goal.goalId,
+          label: _goalLabel(goal, exerciseNames),
+          detail: 'target: ${_goalTarget(prior)} → ${_goalTarget(goal)}',
+        ),
+      );
     }
 
     if ((prior.text ?? '') != (goal.text ?? '') ||
         prior.exerciseId != goal.exerciseId ||
         prior.variationId != goal.variationId) {
-      changes.add(ContentChange(
-        entity: ContentEntity.goal,
-        kind: ContentChangeKind.edited,
-        id: goal.goalId,
-        label: _goalLabel(goal, exerciseNames),
-        detail: 'reworded',
-      ));
+      changes.add(
+        ContentChange(
+          entity: ContentEntity.goal,
+          kind: ContentChangeKind.edited,
+          id: goal.goalId,
+          label: _goalLabel(goal, exerciseNames),
+          detail: 'reworded',
+        ),
+      );
     }
   }
 
   for (final goal in before.goals) {
     if (afterById.containsKey(goal.goalId)) continue;
-    changes.add(ContentChange(
-      entity: ContentEntity.goal,
-      kind: ContentChangeKind.removed,
-      id: goal.goalId,
-      label: _goalLabel(goal, exerciseNames),
-      detail: _goalTarget(goal),
-    ));
+    changes.add(
+      ContentChange(
+        entity: ContentEntity.goal,
+        kind: ContentChangeKind.removed,
+        id: goal.goalId,
+        label: _goalLabel(goal, exerciseNames),
+        detail: _goalTarget(goal),
+      ),
+    );
   }
 
   return changes;
@@ -486,8 +524,7 @@ String _goalTarget(ContentGoal goal) {
   return parts.isEmpty ? 'no target' : parts.join(' × ');
 }
 
-String _trim(num n) =>
-    n == n.roundToDouble() ? '${n.round()}' : n.toString();
+String _trim(num n) => n == n.roundToDouble() ? '${n.round()}' : n.toString();
 
 List<ContentChange> _compareBlocks({
   required Map<String, ContentBlock> before,
@@ -496,8 +533,9 @@ List<ContentChange> _compareBlocks({
   required List<String> afterOrder,
 }) {
   final changes = <ContentChange>[];
-  final surviving =
-      afterOrder.where(before.containsKey).toList(growable: false);
+  final surviving = afterOrder
+      .where(before.containsKey)
+      .toList(growable: false);
   final beforePositions = _positionsAmong(surviving, beforeOrder);
   final afterPositions = _positionsAmong(surviving, afterOrder);
   final movedBlocks = _movedAmong(beforeOrder, afterOrder);
@@ -506,31 +544,37 @@ List<ContentChange> _compareBlocks({
     final prior = before[id];
     final block = after[id]!;
     if (prior == null) {
-      changes.add(ContentChange(
-        entity: ContentEntity.block,
-        kind: ContentChangeKind.added,
-        id: id,
-        label: block.name,
-      ));
+      changes.add(
+        ContentChange(
+          entity: ContentEntity.block,
+          kind: ContentChangeKind.added,
+          id: id,
+          label: block.name,
+        ),
+      );
       continue;
     }
     if (movedBlocks.contains(id)) {
-      changes.add(ContentChange(
-        entity: ContentEntity.block,
-        kind: ContentChangeKind.moved,
-        id: id,
-        label: block.name,
-        detail: 'position ${beforePositions[id]} → ${afterPositions[id]}',
-      ));
+      changes.add(
+        ContentChange(
+          entity: ContentEntity.block,
+          kind: ContentChangeKind.moved,
+          id: id,
+          label: block.name,
+          detail: 'position ${beforePositions[id]} → ${afterPositions[id]}',
+        ),
+      );
     }
     if (prior.name != block.name) {
-      changes.add(ContentChange(
-        entity: ContentEntity.block,
-        kind: ContentChangeKind.edited,
-        id: id,
-        label: block.name,
-        detail: 'renamed: ${prior.name} → ${block.name}',
-      ));
+      changes.add(
+        ContentChange(
+          entity: ContentEntity.block,
+          kind: ContentChangeKind.edited,
+          id: id,
+          label: block.name,
+          detail: 'renamed: ${prior.name} → ${block.name}',
+        ),
+      );
     }
     // The days remainder is compared too, and it has to be: a block that gained
     // three days kept the same weeks, so a two-field comparison would report no
@@ -539,24 +583,28 @@ List<ContentChange> _compareBlocks({
     if (prior.targetWeeks != block.targetWeeks ||
         prior.targetDays != block.targetDays ||
         prior.targetSessions != block.targetSessions) {
-      changes.add(ContentChange(
-        entity: ContentEntity.block,
-        kind: ContentChangeKind.edited,
-        id: id,
-        label: block.name,
-        detail: 'targets changed',
-      ));
+      changes.add(
+        ContentChange(
+          entity: ContentEntity.block,
+          kind: ContentChangeKind.edited,
+          id: id,
+          label: block.name,
+          detail: 'targets changed',
+        ),
+      );
     }
   }
 
   for (final id in beforeOrder) {
     if (after.containsKey(id)) continue;
-    changes.add(ContentChange(
-      entity: ContentEntity.block,
-      kind: ContentChangeKind.removed,
-      id: id,
-      label: before[id]!.name,
-    ));
+    changes.add(
+      ContentChange(
+        entity: ContentEntity.block,
+        kind: ContentChangeKind.removed,
+        id: id,
+        label: before[id]!.name,
+      ),
+    );
   }
 
   return changes;
@@ -580,9 +628,13 @@ List<ContentChange> _compareExercises({
       .where(beforeById.containsKey)
       .toList(growable: false);
   final beforePositions = _positionsAmong(
-      surviving, prior.exercises.map((e) => e.plannedExerciseId).toList());
+    surviving,
+    prior.exercises.map((e) => e.plannedExerciseId).toList(),
+  );
   final afterPositions = _positionsAmong(
-      surviving, session.exercises.map((e) => e.plannedExerciseId).toList());
+    surviving,
+    session.exercises.map((e) => e.plannedExerciseId).toList(),
+  );
   final movedExercises = _movedAmong(
     prior.exercises.map((e) => e.plannedExerciseId).toList(),
     session.exercises.map((e) => e.plannedExerciseId).toList(),
@@ -594,18 +646,20 @@ List<ContentChange> _compareExercises({
     final name = _exerciseLabel(exercise.exerciseId, exerciseNames);
 
     if (priorExercise == null) {
-      changes.add(ContentChange(
-        entity: ContentEntity.exercise,
-        kind: ContentChangeKind.added,
-        id: id,
-        label: name,
-        detail: '${exercise.sets.length} sets',
-        sessionId: session.sessionId,
-        sessionName: session.name,
-        exerciseId: exercise.exerciseId,
-        exerciseName: name,
-        plannedExerciseId: id,
-      ));
+      changes.add(
+        ContentChange(
+          entity: ContentEntity.exercise,
+          kind: ContentChangeKind.added,
+          id: id,
+          label: name,
+          detail: '${exercise.sets.length} sets',
+          sessionId: session.sessionId,
+          sessionName: session.name,
+          exerciseId: exercise.exerciseId,
+          exerciseName: name,
+          plannedExerciseId: id,
+        ),
+      );
       continue;
     }
 
@@ -614,71 +668,81 @@ List<ContentChange> _compareExercises({
     // two unrelated exercises.
     if (priorExercise.exerciseId != exercise.exerciseId) {
       final priorName = _exerciseLabel(priorExercise.exerciseId, exerciseNames);
-      changes.add(ContentChange(
-        entity: ContentEntity.exercise,
-        kind: ContentChangeKind.removed,
-        id: id,
-        label: priorName,
-        sessionId: session.sessionId,
-        sessionName: session.name,
-        exerciseId: priorExercise.exerciseId,
-        exerciseName: priorName,
-        plannedExerciseId: id,
-      ));
-      changes.add(ContentChange(
-        entity: ContentEntity.exercise,
-        kind: ContentChangeKind.added,
-        id: id,
-        label: name,
-        detail: 'replaced $priorName',
-        sessionId: session.sessionId,
-        sessionName: session.name,
-        exerciseId: exercise.exerciseId,
-        exerciseName: name,
-        plannedExerciseId: id,
-      ));
+      changes.add(
+        ContentChange(
+          entity: ContentEntity.exercise,
+          kind: ContentChangeKind.removed,
+          id: id,
+          label: priorName,
+          sessionId: session.sessionId,
+          sessionName: session.name,
+          exerciseId: priorExercise.exerciseId,
+          exerciseName: priorName,
+          plannedExerciseId: id,
+        ),
+      );
+      changes.add(
+        ContentChange(
+          entity: ContentEntity.exercise,
+          kind: ContentChangeKind.added,
+          id: id,
+          label: name,
+          detail: 'replaced $priorName',
+          sessionId: session.sessionId,
+          sessionName: session.name,
+          exerciseId: exercise.exerciseId,
+          exerciseName: name,
+          plannedExerciseId: id,
+        ),
+      );
       continue;
     }
 
     if (movedExercises.contains(id)) {
-      changes.add(ContentChange(
-        entity: ContentEntity.exercise,
-        kind: ContentChangeKind.moved,
-        id: id,
-        label: name,
-        detail: 'position ${beforePositions[id]} → ${afterPositions[id]}',
-        sessionId: session.sessionId,
-        sessionName: session.name,
-        exerciseId: exercise.exerciseId,
-        exerciseName: name,
-        plannedExerciseId: id,
-      ));
+      changes.add(
+        ContentChange(
+          entity: ContentEntity.exercise,
+          kind: ContentChangeKind.moved,
+          id: id,
+          label: name,
+          detail: 'position ${beforePositions[id]} → ${afterPositions[id]}',
+          sessionId: session.sessionId,
+          sessionName: session.name,
+          exerciseId: exercise.exerciseId,
+          exerciseName: name,
+          plannedExerciseId: id,
+        ),
+      );
     }
 
-    changes.addAll(_compareSets(
-      exercise: exercise,
-      prior: priorExercise,
-      session: session,
-      exerciseName: name,
-      variationNames: variationNames,
-    ));
+    changes.addAll(
+      _compareSets(
+        exercise: exercise,
+        prior: priorExercise,
+        session: session,
+        exerciseName: name,
+        variationNames: variationNames,
+      ),
+    );
   }
 
   for (final exercise in prior.exercises) {
     final id = exercise.plannedExerciseId;
     if (afterById.containsKey(id)) continue;
     final name = _exerciseLabel(exercise.exerciseId, exerciseNames);
-    changes.add(ContentChange(
-      entity: ContentEntity.exercise,
-      kind: ContentChangeKind.removed,
-      id: id,
-      label: name,
-      sessionId: session.sessionId,
-      sessionName: session.name,
-      exerciseId: exercise.exerciseId,
-      exerciseName: name,
-      plannedExerciseId: id,
-    ));
+    changes.add(
+      ContentChange(
+        entity: ContentEntity.exercise,
+        kind: ContentChangeKind.removed,
+        id: id,
+        label: name,
+        sessionId: session.sessionId,
+        sessionName: session.name,
+        exerciseId: exercise.exerciseId,
+        exerciseName: name,
+        plannedExerciseId: id,
+      ),
+    );
   }
 
   return changes;
@@ -701,9 +765,13 @@ List<ContentChange> _compareSets({
       .where(beforeById.containsKey)
       .toList(growable: false);
   final beforePositions = _positionsAmong(
-      surviving, prior.sets.map((s) => s.plannedSetId).toList());
+    surviving,
+    prior.sets.map((s) => s.plannedSetId).toList(),
+  );
   final afterPositions = _positionsAmong(
-      surviving, exercise.sets.map((s) => s.plannedSetId).toList());
+    surviving,
+    exercise.sets.map((s) => s.plannedSetId).toList(),
+  );
   final movedSets = _movedAmong(
     prior.sets.map((s) => s.plannedSetId).toList(),
     exercise.sets.map((s) => s.plannedSetId).toList(),
@@ -716,21 +784,20 @@ List<ContentChange> _compareSets({
     String? detail,
     String? oldText,
     String? newText,
-  }) =>
-      ContentChange(
-        entity: ContentEntity.set,
-        kind: kind,
-        id: set.plannedSetId,
-        label: label,
-        detail: detail,
-        oldText: oldText,
-        newText: newText,
-        sessionId: session.sessionId,
-        sessionName: session.name,
-        exerciseId: exercise.exerciseId,
-        exerciseName: exerciseName,
-        plannedExerciseId: exercise.plannedExerciseId,
-      );
+  }) => ContentChange(
+    entity: ContentEntity.set,
+    kind: kind,
+    id: set.plannedSetId,
+    label: label,
+    detail: detail,
+    oldText: oldText,
+    newText: newText,
+    sessionId: session.sessionId,
+    sessionName: session.name,
+    exerciseId: exercise.exerciseId,
+    exerciseName: exerciseName,
+    plannedExerciseId: exercise.plannedExerciseId,
+  );
 
   for (var i = 0; i < exercise.sets.length; i++) {
     final set = exercise.sets[i];
@@ -738,57 +805,82 @@ List<ContentChange> _compareSets({
     final label = 'Set ${i + 1}';
 
     if (priorSet == null) {
-      changes.add(build(ContentChangeKind.added, set, label,
-          detail: _setDetail(set, variationNames)));
+      changes.add(
+        build(
+          ContentChangeKind.added,
+          set,
+          label,
+          detail: _setDetail(set, variationNames),
+        ),
+      );
       continue;
     }
 
     if (movedSets.contains(set.plannedSetId)) {
-      changes.add(build(ContentChangeKind.moved, set, label,
-          detail: 'position ${beforePositions[set.plannedSetId]} → '
-              '${afterPositions[set.plannedSetId]}'));
+      changes.add(
+        build(
+          ContentChangeKind.moved,
+          set,
+          label,
+          detail:
+              'position ${beforePositions[set.plannedSetId]} → '
+              '${afterPositions[set.plannedSetId]}',
+        ),
+      );
     }
 
     if (priorSet.targetWeight != set.targetWeight ||
         priorSet.targetReps != set.targetReps) {
-      changes.add(build(
-        ContentChangeKind.edited,
-        set,
-        label,
-        detail: '${_setSummary(priorSet)} → ${_setSummary(set)}',
-      ));
+      changes.add(
+        build(
+          ContentChangeKind.edited,
+          set,
+          label,
+          detail: '${_setSummary(priorSet)} → ${_setSummary(set)}',
+        ),
+      );
     }
 
     if (priorSet.variationId != set.variationId) {
       final from = _variationName(priorSet.variationId, variationNames);
       final to = _variationName(set.variationId, variationNames);
-      changes.add(build(
-        ContentChangeKind.edited,
-        set,
-        label,
-        detail: from == 'a variation' && to == 'a variation'
-            ? 'variation changed'
-            : 'variation: $from → $to',
-      ));
+      changes.add(
+        build(
+          ContentChangeKind.edited,
+          set,
+          label,
+          detail: from == 'a variation' && to == 'a variation'
+              ? 'variation changed'
+              : 'variation: $from → $to',
+        ),
+      );
     }
 
     if ((priorSet.targetNotes ?? '') != (set.targetNotes ?? '')) {
-      changes.add(build(
-        ContentChangeKind.edited,
-        set,
-        label,
-        detail: _noteChange(priorSet.targetNotes, set.targetNotes),
-        oldText: priorSet.targetNotes,
-        newText: set.targetNotes,
-      ));
+      changes.add(
+        build(
+          ContentChangeKind.edited,
+          set,
+          label,
+          detail: _noteChange(priorSet.targetNotes, set.targetNotes),
+          oldText: priorSet.targetNotes,
+          newText: set.targetNotes,
+        ),
+      );
     }
   }
 
   for (var i = 0; i < prior.sets.length; i++) {
     final set = prior.sets[i];
     if (afterById.containsKey(set.plannedSetId)) continue;
-    changes.add(build(ContentChangeKind.removed, set, 'Set ${i + 1}',
-        detail: _setDetail(set, variationNames)));
+    changes.add(
+      build(
+        ContentChangeKind.removed,
+        set,
+        'Set ${i + 1}',
+        detail: _setDetail(set, variationNames),
+      ),
+    );
   }
 
   return changes;
@@ -817,8 +909,9 @@ String _setSummary(ContentSet set) {
   final weight = (set.targetWeight?.trim().isNotEmpty ?? false)
       ? set.targetWeight!.trim()
       : '—';
-  final reps =
-      (set.targetReps?.trim().isNotEmpty ?? false) ? set.targetReps!.trim() : '—';
+  final reps = (set.targetReps?.trim().isNotEmpty ?? false)
+      ? set.targetReps!.trim()
+      : '—';
   if (weight == '—' && reps == '—') return 'empty';
   return '$weight × $reps';
 }

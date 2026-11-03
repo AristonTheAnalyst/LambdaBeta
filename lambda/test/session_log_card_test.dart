@@ -5,6 +5,7 @@ import 'package:lambda/data/models/session_exercise_set.dart';
 import 'package:lambda/shared/widgets/confirm_delete_session_dialog.dart';
 import 'package:lambda/shared/widgets/session_log_card.dart';
 import 'package:lambda/shared/widgets/swipe_actions.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 /// A completed session with [setCount] logged sets — nothing else about the
 /// rows matters to the card's chrome.
@@ -72,7 +73,7 @@ void main() {
 
     // At rest the drawer sits behind the card at zero opacity: its delete
     // button is in the tree, but the card owns that hit area.
-    await tester.tap(find.byIcon(Icons.delete_outline), warnIfMissed: false);
+    await tester.tap(find.byIcon(LucideIcons.trash2), warnIfMissed: false);
     await tester.pumpAndSettle();
     expect(tapped, 1, reason: 'the card owns the hit area while shut');
     expect(deleted, 0, reason: 'the drawer stays shut until swiped');
@@ -82,7 +83,7 @@ void main() {
 
     // Drop the at-rest tap so the assertions below read against the swipe.
     tapped = 0;
-    await tester.tap(find.byIcon(Icons.delete_outline));
+    await tester.tap(find.byIcon(LucideIcons.trash2));
     await tester.pumpAndSettle();
 
     expect(deleted, 1, reason: 'the drawer action runs onDelete');
@@ -111,8 +112,9 @@ void main() {
     expect(deleted, 0);
   });
 
-  testWidgets('the confirmation warns with the set count and defaults to no',
-      (tester) async {
+  testWidgets('the confirmation warns with the set count and defaults to no', (
+    tester,
+  ) async {
     bool? result;
 
     await tester.pumpWidget(
@@ -134,7 +136,8 @@ void main() {
     expect(find.text('Delete Session'), findsOneWidget);
     expect(
       find.text(
-          "Delete this session and its 3 logged sets? This can't be undone."),
+        "Delete this session and its 3 logged sets? This can't be undone.",
+      ),
       findsOneWidget,
     );
 
@@ -165,7 +168,8 @@ void main() {
 
     expect(
       find.text(
-          "Delete this session and its 1 logged set? This can't be undone."),
+        "Delete this session and its 1 logged set? This can't be undone.",
+      ),
       findsOneWidget,
     );
 
@@ -174,8 +178,7 @@ void main() {
     expect(result, isTrue);
   });
 
-  testWidgets('an empty session drops the set clause entirely',
-      (tester) async {
+  testWidgets('an empty session drops the set clause entirely', (tester) async {
     await tester.pumpWidget(
       _host(
         Builder(

@@ -17,23 +17,36 @@ Future<bool> confirmDeleteSession(
     context: context,
     builder: (ctx) => AlertDialog(
       backgroundColor: AppColors.surface,
-      title: Text('Delete Session',
-          style: AppFonts.ui(
-              fontWeight: FontWeight.w800, color: AppColors.danger)),
+      title: Text(
+        'Delete Session',
+        style: AppFonts.ui(
+          fontWeight: FontWeight.w800,
+          color: AppColors.danger,
+        ),
+      ),
       content: Text(
-          'Delete this session${setCount > 0 ? ' and its $setCount logged set${setCount == 1 ? '' : 's'}' : ''}? '
-          'This can\'t be undone.',
-          style: AppFonts.ui(color: AppColors.muted)),
+        'Delete this session${setCount > 0 ? ' and its $setCount logged set${setCount == 1 ? '' : 's'}' : ''}? '
+        'This can\'t be undone.',
+        style: AppFonts.ui(color: AppColors.inkSecondary, height: 1.4),
+      ),
       actions: [
         TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child:
-                Text('Cancel', style: AppFonts.ui(color: AppColors.muted))),
+          onPressed: () => Navigator.of(ctx).pop(false),
+          child: Text(
+            'Cancel',
+            style: AppFonts.ui(color: AppColors.inkSecondary),
+          ),
+        ),
         TextButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text('Delete',
-                style: AppFonts.ui(
-                    color: AppColors.danger, fontWeight: FontWeight.w600))),
+          onPressed: () => Navigator.of(ctx).pop(true),
+          child: Text(
+            'Delete',
+            style: AppFonts.ui(
+              color: AppColors.danger,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
       ],
     ),
   );

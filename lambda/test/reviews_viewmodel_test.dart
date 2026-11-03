@@ -47,8 +47,7 @@ void main() {
     reviewedSessionsJson: reviewed.isEmpty
         ? null
         : jsonEncode({
-            for (final e in reviewed.entries)
-              e.key: e.value.toIso8601String(),
+            for (final e in reviewed.entries) e.key: e.value.toIso8601String(),
           }),
     createdDate: DateTime(2026, 1, 1),
   );
@@ -60,8 +59,6 @@ void main() {
     userId: 'u1',
     historyRepository: history,
     plannedRepository: planned,
-    programRepository: programs,
-    exerciseRepository: exercises,
   );
 
   setUp(() {
@@ -116,37 +113,39 @@ void main() {
     expect(vm.state.value.completed.length, 2);
   });
 
-  test('an untitled open review is named by its workouts, and ticks count',
-      () async {
-    history.reviews = [
-      review(
-        id: 'open',
-        sessionIdsJson: '["s1","s2"]',
-        reviewed: {'s1': DateTime(2026, 2, 7)},
-      ),
-    ];
-    planned.reviewableRows = [
-      (
-        session: workout('s1', 'Legs'),
-        lastLogged: null,
-        finished: 0,
-        lastReview: null,
-      ),
-      (
-        session: workout('s2', 'Push'),
-        lastLogged: null,
-        finished: 0,
-        lastReview: null,
-      ),
-    ];
+  test(
+    'an untitled open review is named by its workouts, and ticks count',
+    () async {
+      history.reviews = [
+        review(
+          id: 'open',
+          sessionIdsJson: '["s1","s2"]',
+          reviewed: {'s1': DateTime(2026, 2, 7)},
+        ),
+      ];
+      planned.reviewableRows = [
+        (
+          session: workout('s1', 'Legs'),
+          lastLogged: null,
+          finished: 0,
+          lastReview: null,
+        ),
+        (
+          session: workout('s2', 'Push'),
+          lastLogged: null,
+          finished: 0,
+          lastReview: null,
+        ),
+      ];
 
-    final vm = build();
-    await vm.load();
+      final vm = build();
+      await vm.load();
 
-    final entry = vm.state.value.entries.single;
-    expect(entry.label, 'Legs · Push');
-    expect(entry.reviewedCount, 1);
-  });
+      final entry = vm.state.value.entries.single;
+      expect(entry.label, 'Legs · Push');
+      expect(entry.reviewedCount, 1);
+    },
+  );
 
   test('a program review resolves its set through the program links', () async {
     history.reviews = [
@@ -210,40 +209,75 @@ void main() {
     expect(history.setScopes.single, ['s1', 's2']);
   });
 
-  test('a failed start reports the error rather than a half-open pass',
-      () async {
-    history.failBegin = true;
+  test(
+    'a pass begins empty — its landing is where the scope is built',
+    () async {
+      // The + asks for a name and nothing else (2026-10-27): the row is written
+      // with an empty scope, and the landing's add tiles fill it in through
+      // `setReviewScope`. A start that refused the empty set would make the
+      // landing unreachable, which is the whole point of the change.
+      final vm = build();
 
-    final vm = build();
-    final started = await vm.startReview(sessionIds: ['s1']);
+      final started = await vm.startReview(
+        sessionIds: const [],
+        goalIds: const [],
+        title: 'End of block 1',
+      );
 
-    expect(started, isNull);
-    expect(vm.state.value.error, 'Could not start the review.');
-    expect(vm.state.value.entries, isEmpty);
-  });
+      final call = history.beginCalls.single;
+      expect(call.programId, isNull);
+      expect(call.sessionIds, isEmpty);
+      expect(call.goalIds, isEmpty);
+      expect(call.title, 'End of block 1');
+      expect(started!.sessionIds, isEmpty);
+      // The row stores the empty array, and an empty array reads back as "no
+      // set" — the same null every caller `?? const []`s.
+      expect(started.review.storedSessionIds ?? const [], isEmpty);
+      // The open card it reloads into names the pass by its title, not by
+      // workouts it does not cover yet.
+      expect(vm.state.value.open.single.label, 'End of block 1');
+      expect(vm.state.value.open.single.total, 0);
+    },
+  );
 
-  test('resuming opens the pass that exists without beginning a second one',
-      () async {
-    history.reviews = [
-      review(
-        id: 'open',
-        sessionIdsJson: '["s1","s2"]',
-        goalIdsJson: '["g1"]',
-        title: 'Mid block',
-      ),
-    ];
-    history.setCheckpoint = DateTime(2026, 2, 1);
+  test(
+    'a failed start reports the error rather than a half-open pass',
+    () async {
+      history.failBegin = true;
 
-    final vm = build();
-    await vm.load();
-    final started = await vm.resumeReview(history.reviews.single);
+      final vm = build();
+      final started = await vm.startReview(sessionIds: ['s1']);
 
-    expect(history.beginCalls, isEmpty);
-    expect(history.baselineCalls, ['open']);
-    expect(started!.review.reviewId, 'open');
-    expect(started.sessionIds, ['s1', 's2']);
-    expect(started.sinceDate, DateTime(2026, 2, 1));
-  });
+      expect(started, isNull);
+      expect(vm.state.value.error, 'Could not start the review.');
+      expect(vm.state.value.entries, isEmpty);
+    },
+  );
+
+  test(
+    'resuming opens the pass that exists without beginning a second one',
+    () async {
+      history.reviews = [
+        review(
+          id: 'open',
+          sessionIdsJson: '["s1","s2"]',
+          goalIdsJson: '["g1"]',
+          title: 'Mid block',
+        ),
+      ];
+      history.setCheckpoint = DateTime(2026, 2, 1);
+
+      final vm = build();
+      await vm.load();
+      final started = await vm.resumeReview(history.reviews.single);
+
+      expect(history.beginCalls, isEmpty);
+      expect(history.baselineCalls, ['open']);
+      expect(started!.review.reviewId, 'open');
+      expect(started.sessionIds, ['s1', 's2']);
+      expect(started.sinceDate, DateTime(2026, 2, 1));
+    },
+  );
 
   test('the picker is dressed in the loader order, never re-sorted', () async {
     planned.reviewableRows = [
@@ -261,7 +295,10 @@ void main() {
       ),
     ];
 
-    final rows = await build().reviewableWorkouts();
+    final rows = await fetchReviewableWorkouts(
+      userId: 'u1',
+      plannedRepository: planned,
+    );
 
     // The loader's order is the answer's order — the picker never re-sorts —
     // and each row states the loader's count in the one wording the picker
@@ -307,7 +344,10 @@ void main() {
       ),
     ];
 
-    final rows = await build().reviewableWorkouts();
+    final rows = await fetchReviewableWorkouts(
+      userId: 'u1',
+      plannedRepository: planned,
+    );
 
     expect(rows[0].sinceReviewLabel, '12 days since last review');
     expect(rows[1].sinceReviewLabel, 'Last review today');
@@ -340,11 +380,15 @@ void main() {
       ),
     };
 
-    final goals = await build().reviewableGoals();
+    final goals = await fetchReviewableGoals(
+      userId: 'u1',
+      programRepository: programs,
+      exerciseRepository: exercises,
+    );
 
     expect(goals.single.goalId, 'g1');
     expect(goals.single.exerciseName, 'Bench Press');
-    expect(goals.single.target, '100 kg × 5 reps');
+    expect(goals.single.target, '100 kg × 5');
   });
 
   test('cancel deletes the open row and reloads without it', () async {
@@ -394,5 +438,53 @@ void main() {
     expect(cancelled, isFalse);
     expect(vm.state.value.error, 'Could not cancel the review.');
     expect(vm.state.value.open, hasLength(1));
+  });
+
+  test('deleting a completed record removes it and reloads', () async {
+    history.reviews = [
+      review(id: 'open', sessionIdsJson: '["s1"]'),
+      review(
+        id: 'done',
+        sessionIdsJson: '["s2"]',
+        completedDate: DateTime(2026, 2, 5),
+      ),
+    ];
+
+    final vm = build();
+    await vm.load();
+    expect(vm.state.value.completed, hasLength(1));
+
+    final deleted = await vm.deleteCompletedReview('done');
+
+    expect(deleted, isTrue);
+    expect(history.deletedCompletedReviews, ['done']);
+    // The record verb is not the cancel verb: the open pass's delete is a
+    // different statement with the opposite guard.
+    expect(history.deletedReviews, isEmpty);
+    expect(
+      [for (final e in vm.state.value.entries) e.review.reviewId],
+      ['open'],
+    );
+    expect(vm.state.value.completed, isEmpty);
+  });
+
+  test('a failed completed delete keeps the record and says so', () async {
+    history.reviews = [
+      review(
+        id: 'done',
+        sessionIdsJson: '["s1"]',
+        completedDate: DateTime(2026, 2, 5),
+      ),
+    ];
+
+    final vm = build();
+    await vm.load();
+    history.failDelete = true;
+
+    final deleted = await vm.deleteCompletedReview('done');
+
+    expect(deleted, isFalse);
+    expect(vm.state.value.error, 'Could not delete the review.');
+    expect(vm.state.value.completed, hasLength(1));
   });
 }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
@@ -18,9 +19,10 @@ import 'review_picker_rows.dart';
 ///
 /// The sheet shows that half and only that half: one tile, one job. The other
 /// half is untouched by the visit — the write hands it back exactly as the
-/// pass held it, order and all. (Noted when the split landed, 2026-10-08: the
-/// goals tile lives on the goals list, which only exists once a pass has
-/// goals, so a pass with none still has no way in to add its first.)
+/// pass held it, order and all. Both tiles are reachable from the first frame
+/// since 2026-10-27: an open pass always carries its Goals tab, so a pass with
+/// none has a way in to add its first (before that, the goals tile lived on a
+/// list that only existed once the pass already had goals).
 enum ReviewScopeSection { workouts, goals }
 
 /// What the sheet leaves behind: the pass's scope as it now stands, in the
@@ -38,9 +40,9 @@ class ReviewScopeEdit {
 /// Edits what an **open** pass covers: tick a workout or a goal to add it to
 /// the review, untick one to take it out.
 ///
-/// The same tick-row interaction as the selection screen, on the same rows, for
-/// the same reason: building the set is one gesture whether it is being built
-/// for the first time or changed halfway through. Every tick writes through to
+/// One tick-row interaction, on the same rows, for the same reason: building
+/// the set is one gesture whether it is being built for the first time or
+/// changed halfway through. Every tick writes through to
 /// the row as it is made — the scope is what the pass *is*, and an edit that
 /// lived only in a sheet would go with it — and the sheet stays open, so the
 /// set is edited in one visit rather than one visit per tick.
@@ -253,10 +255,11 @@ class _ReviewScopeSheetState extends State<_ReviewScopeSheet> {
         if (y == null) return -1;
         return x.compareTo(y) * direction;
       },
-      _WorkoutSort.finished => (a, b) =>
-          a.finished.compareTo(b.finished) * direction,
-      _WorkoutSort.name => (a, b) =>
-          a.label.toLowerCase().compareTo(b.label.toLowerCase()) * direction,
+      _WorkoutSort.finished =>
+        (a, b) => a.finished.compareTo(b.finished) * direction,
+      _WorkoutSort.name =>
+        (a, b) =>
+            a.label.toLowerCase().compareTo(b.label.toLowerCase()) * direction,
     };
   }
 
@@ -266,9 +269,12 @@ class _ReviewScopeSheetState extends State<_ReviewScopeSheet> {
   int Function(ReviewableGoal, ReviewableGoal) get _goalCompare {
     final direction = _goalSortDesc ? -1 : 1;
     return switch (_goalSort) {
-      _GoalSort.name => (a, b) =>
-          a.exerciseName.toLowerCase().compareTo(b.exerciseName.toLowerCase()) *
-          direction,
+      _GoalSort.name =>
+        (a, b) =>
+            a.exerciseName.toLowerCase().compareTo(
+              b.exerciseName.toLowerCase(),
+            ) *
+            direction,
       _GoalSort.target => (a, b) {
         final x = a.targetWeight;
         final y = b.targetWeight;
@@ -304,8 +310,7 @@ class _ReviewScopeSheetState extends State<_ReviewScopeSheet> {
     final term = _workoutQuery.trim().toLowerCase();
     final shown = [
       for (final workout in _workoutsInOrder)
-        if (term.isEmpty || workout.label.toLowerCase().contains(term))
-          workout,
+        if (term.isEmpty || workout.label.toLowerCase().contains(term)) workout,
     ];
     return [
       if (shown.isEmpty && _workouts!.isNotEmpty)
@@ -313,7 +318,7 @@ class _ReviewScopeSheetState extends State<_ReviewScopeSheet> {
           'No workouts match “${_workoutQuery.trim()}”.',
           style: AppFonts.ui(
             fontSize: AppTextStyles.xs,
-            color: AppColors.muted,
+            color: AppColors.inkSecondary,
           ),
         )
       else
@@ -347,7 +352,8 @@ class _ReviewScopeSheetState extends State<_ReviewScopeSheet> {
           'can be reviewed here.',
           style: AppFonts.ui(
             fontSize: AppTextStyles.xs,
-            color: AppColors.muted,
+            color: AppColors.inkSecondary,
+            height: 1.4,
           ),
         )
       else if (goals.isEmpty)
@@ -357,7 +363,7 @@ class _ReviewScopeSheetState extends State<_ReviewScopeSheet> {
               : 'No goals with this filter.',
           style: AppFonts.ui(
             fontSize: AppTextStyles.xs,
-            color: AppColors.muted,
+            color: AppColors.inkSecondary,
           ),
         )
       else
@@ -379,9 +385,19 @@ class _ReviewScopeSheetState extends State<_ReviewScopeSheet> {
   /// workout deleted since the pass began stays in the scope. The scope is
   /// edited, not rebuilt from today's picker, and the order it stores is the
   /// list's own, sort included.
-  List<String> _ordered(List<String> ordered, Set<String> picked, List<String> original) {
-    final ids = [for (final id in ordered) if (picked.contains(id)) id];
-    ids.addAll([for (final id in original) if (!ordered.contains(id)) id]);
+  List<String> _ordered(
+    List<String> ordered,
+    Set<String> picked,
+    List<String> original,
+  ) {
+    final ids = [
+      for (final id in ordered)
+        if (picked.contains(id)) id,
+    ];
+    ids.addAll([
+      for (final id in original)
+        if (!ordered.contains(id)) id,
+    ]);
     return ids;
   }
 
@@ -564,7 +580,13 @@ class _ReviewScopeSheetState extends State<_ReviewScopeSheet> {
                     _showsWorkouts ? 'WORKOUTS' : 'GOALS',
                   ),
                 ),
-                GlassButton(label: 'Done', compact: true, onPressed: _done),
+                GlassButton(
+                  label: '',
+                  icon: LucideIcons.check,
+                  semanticsLabel: 'Done',
+                  compact: true,
+                  onPressed: _done,
+                ),
               ],
             ),
             // Both refusals sit here, under the heading they explain, rather
@@ -578,7 +600,8 @@ class _ReviewScopeSheetState extends State<_ReviewScopeSheet> {
                 'taking this one out.',
                 style: AppFonts.ui(
                   fontSize: AppTextStyles.xs,
-                  color: AppColors.muted,
+                  color: AppColors.inkSecondary,
+                  height: 1.4,
                 ),
               ),
             ],
@@ -624,10 +647,7 @@ class _ReviewScopeSheetState extends State<_ReviewScopeSheet> {
                           MediaQuery.viewInsetsOf(context).bottom) *
                       0.55,
                 ),
-                child: ListView(
-                  shrinkWrap: true,
-                  children: _rows,
-                ),
+                child: ListView(shrinkWrap: true, children: _rows),
               ),
           ],
         ),

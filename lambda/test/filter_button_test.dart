@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lambda/shared/widgets/filter_button.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 /// The shared filter control — the sort control's sibling. Its contract
 /// (2026-10-10): the menu opens on the narrowing in force ticked, a pick
@@ -26,7 +27,7 @@ Future<List<String>> _open(WidgetTester tester, {String value = 'all'}) async {
       ),
     ),
   );
-  await tester.tap(find.byIcon(Icons.filter_list));
+  await tester.tap(find.byIcon(LucideIcons.listFilter));
   await tester.pumpAndSettle();
   return calls;
 }
@@ -38,8 +39,11 @@ void main() {
     expect(find.text('All'), findsOneWidget);
     expect(find.text('In this review'), findsOneWidget);
     expect(find.text('Not in this review'), findsOneWidget);
-    expect(find.byIcon(Icons.check), findsOneWidget,
-        reason: 'the narrowing in force is the one ticked');
+    expect(
+      find.byIcon(LucideIcons.check),
+      findsOneWidget,
+      reason: 'the narrowing in force is the one ticked',
+    );
   });
 
   testWidgets('a pick applies and closes', (tester) async {

@@ -36,7 +36,10 @@ class SlideTabBar extends StatelessWidget {
             child: GestureDetector(
               onTap: () => onTap(i),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 12,
+                ),
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
                   border: Border(
@@ -62,7 +65,9 @@ class SlideTabBar extends StatelessWidget {
                         style: TextStyle(
                           fontSize: AppTextStyles.sm,
                           fontWeight: FontWeight.w600,
-                          color: isActive ? AppColors.primary : AppColors.muted,
+                          color: isActive
+                              ? AppColors.primary
+                              : AppColors.inkSecondary,
                         ),
                       ),
                       if (dotTabs.contains(i)) ...[
@@ -80,6 +85,80 @@ class SlideTabBar extends StatelessWidget {
                         ),
                       ],
                     ],
+                  ),
+                ),
+              ),
+            ),
+          );
+        }),
+      ),
+    );
+  }
+}
+
+/// One glyph in a [SlideIconTabBar] — the icon and the word it stands for,
+/// which rides only the semantics (the header above names the active tab).
+class SlideIconTab {
+  const SlideIconTab({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+}
+
+/// The icon half of the strip (2026-10-31): the same even split, hairline
+/// base and active underline as [SlideTabBar], with glyphs in place of the
+/// words. The Library uses it so five tabs fit without shrinking their
+/// labels — and the page header names whichever tab is open, so nothing is
+/// lost when the words come off the strip.
+class SlideIconTabBar extends StatelessWidget {
+  const SlideIconTabBar({
+    super.key,
+    required this.tabs,
+    required this.activeIndex,
+    required this.onTap,
+  });
+
+  final List<SlideIconTab> tabs;
+  final int activeIndex;
+  final ValueChanged<int> onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: AppColors.border, width: 1)),
+      ),
+      child: Row(
+        children: List.generate(tabs.length, (i) {
+          final isActive = i == activeIndex;
+          final tab = tabs[i];
+          return Expanded(
+            child: GestureDetector(
+              onTap: () => onTap(i),
+              behavior: HitTestBehavior.opaque,
+              child: Semantics(
+                button: true,
+                selected: isActive,
+                label: tab.label,
+                child: Container(
+                  // 22 + 11 × 2 = the 44pt target floor.
+                  padding: const EdgeInsets.symmetric(vertical: 11),
+                  decoration: BoxDecoration(
+                    border: Border(
+                      bottom: BorderSide(
+                        color: isActive
+                            ? AppColors.primary
+                            : Colors.transparent,
+                        width: 2,
+                      ),
+                    ),
+                  ),
+                  child: Icon(
+                    tab.icon,
+                    size: 22,
+                    color: isActive
+                        ? AppColors.primary
+                        : AppColors.inkSecondary,
                   ),
                 ),
               ),

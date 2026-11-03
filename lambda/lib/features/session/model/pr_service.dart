@@ -12,7 +12,7 @@ import 'pr_engine.dart';
 /// write), so repeat reads are free.
 class PrService {
   PrService({SessionRepository? sessionRepo})
-      : _sessionRepo = sessionRepo ?? SessionRepository();
+    : _sessionRepo = sessionRepo ?? SessionRepository();
 
   final SessionRepository _sessionRepo;
 
@@ -53,10 +53,15 @@ class PrService {
   /// PR events whose source sets are in [setIds].
   Future<List<PrEvent>> forSets(String userId, List<String> setIds) async {
     final all = await timeline(userId);
-    return all.where((e) => e.sessionExerciseSetId != null && setIds.contains(e.sessionExerciseSetId)).toList();
+    return all
+        .where(
+          (e) =>
+              e.sessionExerciseSetId != null &&
+              setIds.contains(e.sessionExerciseSetId),
+        )
+        .toList();
   }
 
   /// The achievement count — one per PR event.
-  Future<int> count(String userId) async =>
-      (await timeline(userId)).length;
+  Future<int> count(String userId) async => (await timeline(userId)).length;
 }

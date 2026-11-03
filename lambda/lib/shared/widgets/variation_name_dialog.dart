@@ -59,13 +59,22 @@ class _VariationNameDialogState extends State<VariationNameDialog> {
       ),
       actions: [
         TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text('Cancel', style: TextStyle(color: AppColors.muted))),
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(
+            'Cancel',
+            style: TextStyle(color: AppColors.inkSecondary),
+          ),
+        ),
         TextButton(
-            onPressed: _submit,
-            child: Text('Create',
-                style: TextStyle(
-                    color: AppColors.accent, fontWeight: FontWeight.w600))),
+          onPressed: _submit,
+          child: Text(
+            'Create',
+            style: TextStyle(
+              color: AppColors.accent,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
       ],
     );
   }

@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_fonts.dart';
 import '../../core/styles/app_text_styles.dart';
@@ -83,11 +83,14 @@ class LambdaInput extends StatelessWidget {
               ),
               if (required) ...[
                 const SizedBox(width: 2),
-                Text('*',
-                    style: AppFonts.ui(
-                        fontSize: AppTextStyles.sm,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.accent)),
+                Text(
+                  '*',
+                  style: AppFonts.ui(
+                    fontSize: AppTextStyles.sm,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.accent,
+                  ),
+                ),
               ],
             ],
           ),
@@ -120,14 +123,18 @@ class LambdaInput extends StatelessWidget {
             // Material's counter only appears when a cap is set; the screens
             // draw NameLimitCounter instead.
             counterText: maxLength == null ? null : '',
+            // Placeholder copy is read, so it takes the secondary ink, not
+            // muted (2026-10-22).
             hintStyle: AppFonts.ui(
-              color: AppColors.muted,
+              color: AppColors.inkSecondary,
               fontSize: AppTextStyles.md,
             ),
             filled: true,
             fillColor: elevated ? AppColors.surfaceHigh : AppColors.surface,
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 14,
+            ),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
               borderSide: BorderSide(color: AppColors.border),
@@ -135,7 +142,9 @@ class LambdaInput extends StatelessWidget {
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
               borderSide: BorderSide(
-                color: error != null ? AppColors.dangerBorder : AppColors.border,
+                color: error != null
+                    ? AppColors.dangerBorder
+                    : AppColors.border,
               ),
             ),
             focusedBorder: OutlineInputBorder(

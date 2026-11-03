@@ -19,17 +19,16 @@ class OnboardingState {
     bool? success,
     String? error,
     bool clearError = false,
-  }) =>
-      OnboardingState(
-        isLoading: isLoading ?? this.isLoading,
-        success: success ?? this.success,
-        error: clearError ? null : error ?? this.error,
-      );
+  }) => OnboardingState(
+    isLoading: isLoading ?? this.isLoading,
+    success: success ?? this.success,
+    error: clearError ? null : error ?? this.error,
+  );
 }
 
 class OnboardingViewModel {
   OnboardingViewModel({UserRepository? userRepository})
-      : _repo = userRepository ?? UserRepository();
+    : _repo = userRepository ?? UserRepository();
 
   final UserRepository _repo;
   final state = ValueNotifier(const OnboardingState());
@@ -38,17 +37,11 @@ class OnboardingViewModel {
     state.value = state.value.copyWith(isLoading: true, clearError: true);
     try {
       final userId = Supabase.instance.client.auth.currentUser!.id;
-      final profile = UserProfile(
-        userId: userId,
-        onboarded: true,
-      );
+      final profile = UserProfile(userId: userId, onboarded: true);
       await _repo.upsertProfile(profile);
       state.value = state.value.copyWith(isLoading: false, success: true);
     } catch (e) {
-      state.value = state.value.copyWith(
-        isLoading: false,
-        error: e.toString(),
-      );
+      state.value = state.value.copyWith(isLoading: false, error: e.toString());
     }
   }
 

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_spacing.dart';
@@ -63,7 +64,7 @@ class FilterButton<T> extends StatelessWidget {
       tone: elevated ? ContainerTone.ghost : ContainerTone.surface,
       trigger: (context, open) => GlassButton(
         label: '',
-        icon: Icons.filter_list,
+        icon: LucideIcons.listFilter,
         compact: true,
         color: active ? AppColors.accent : null,
         onPressed: open,

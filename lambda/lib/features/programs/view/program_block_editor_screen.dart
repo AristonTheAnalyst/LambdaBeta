@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
 import '../../../core/styles/app_radius.dart';
@@ -8,6 +9,7 @@ import '../../../core/styles/app_spacing.dart';
 import '../../../core/styles/app_text_styles.dart';
 import '../../../core/utils/block_length.dart';
 import '../../../core/utils/session_format.dart';
+import '../../../core/utils/name_limit.dart';
 import '../../../data/models/planned_session.dart';
 import '../../../data/models/program_block.dart';
 import '../../../shared/mixins/unsaved_changes_guard.dart';
@@ -15,7 +17,9 @@ import '../../../shared/router/app_router.dart';
 import '../../../shared/widgets/container_styles.dart';
 import '../../../shared/widgets/date_picker_sheet.dart';
 import '../../../shared/widgets/glass_button.dart';
+import '../../../shared/widgets/header_icon_button.dart';
 import '../../../shared/widgets/lambda_input.dart';
+import '../../../shared/widgets/name_limit_counter.dart';
 import '../../../shared/widgets/option_picker_sheet.dart';
 import '../../../shared/widgets/page_header.dart';
 import '../../../shared/widgets/scroll_shrink_nav_bar.dart';
@@ -142,7 +146,7 @@ class _ProgramBlockEditorScreenState extends State<ProgramBlockEditorScreen>
   Future<void> onSave() async => await _save();
 
   @override
-  void onDiscard() {
+  Future<void> onDiscard() async {
     final b = widget.block;
     setState(() {
       _nameCtrl.text = b?.name ?? '';
@@ -174,8 +178,8 @@ class _ProgramBlockEditorScreenState extends State<ProgramBlockEditorScreen>
   /// `Ends`. Null when the fields declare nothing, or a total of zero days —
   /// which is not a length, and would project an end *on* the start.
   int? get _totalDays {
-    final total = (_parse(_weeksCtrl.text) ?? 0) * 7 +
-        (_parse(_daysCtrl.text) ?? 0);
+    final total =
+        (_parse(_weeksCtrl.text) ?? 0) * 7 + (_parse(_daysCtrl.text) ?? 0);
     return total > 0 ? total : null;
   }
 
@@ -246,8 +250,9 @@ class _ProgramBlockEditorScreenState extends State<ProgramBlockEditorScreen>
     // remainder is stored as null — the column's null means "no remainder", not
     // "zero days".
     final targetWeeks = totalDays == null ? null : totalDays ~/ 7;
-    final targetDays =
-        totalDays == null || totalDays % 7 == 0 ? null : totalDays % 7;
+    final targetDays = totalDays == null || totalDays % 7 == 0
+        ? null
+        : totalDays % 7;
 
     final bool ok;
     if (_isNew) {
@@ -377,10 +382,7 @@ class _ProgramBlockEditorScreenState extends State<ProgramBlockEditorScreen>
   void _snack(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(
-          message,
-          style: AppFonts.ui(fontSize: AppTextStyles.sm),
-        ),
+        content: Text(message, style: AppFonts.ui(fontSize: AppTextStyles.sm)),
       ),
     );
   }
@@ -439,299 +441,319 @@ class _ProgramBlockEditorScreenState extends State<ProgramBlockEditorScreen>
 
   @override
   Widget build(BuildContext context) {
-    return _navBar(buildGuardedScaffold(
-      scaffold: Scaffold(
-        backgroundColor: AppColors.bg,
-        // This editor is pushed over the tab shell, so it draws the app's
-        // floating bar itself — or, while a review runs, the pass's own bar in
-        // the same container.
-        body: ValueListenableBuilder<ProgramDetailState>(
-          valueListenable: _vm.state,
-          builder: (context, state, _) => Column(
-            children: [
-              PageHeader(
-                title: _isNew ? 'New Block' : widget.block!.name,
-                left: IconButton(
-                  icon: Icon(Icons.arrow_back, color: AppColors.primary),
-                  onPressed: () => Navigator.of(context).pop(),
-                ),
-                right: _isNew
-                    ? null
-                    : Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            icon: Icon(
-                              Icons.history,
-                              color: AppColors.accent,
-                            ),
-                            tooltip: 'This block\'s history',
-                            onPressed: _openHistory,
-                          ),
-                          IconButton(
-                            icon: Icon(
-                              Icons.delete_outline,
-                              color: AppColors.danger,
-                            ),
-                            onPressed: _confirmArchive,
-                          ),
-                        ],
-                      ),
-              ),
-              Expanded(
-                child: SingleChildScrollView(
-                  padding: EdgeInsets.fromLTRB(
-                    AppSpacing.lg,
-                    AppSpacing.lg,
-                    AppSpacing.lg,
-                    // The page scrolls under the floating bar; its end has to
-                    // clear it. The inset answers zero where nothing floats,
-                    // so a full-screen reader of this page needs no flag.
-                    AppSpacing.lg + ScrollShrinkNavBar.contentInset(context),
+    return _navBar(
+      buildGuardedScaffold(
+        scaffold: Scaffold(
+          backgroundColor: AppColors.bg,
+          // This editor is pushed over the tab shell, so it draws the app's
+          // floating bar itself — or, while a review runs, the pass's own bar in
+          // the same container.
+          body: ValueListenableBuilder<ProgramDetailState>(
+            valueListenable: _vm.state,
+            builder: (context, state, _) => Column(
+              children: [
+                PageHeader(
+                  title: _isNew ? 'New Block' : widget.block!.name,
+                  left: HeaderIconButton(
+                    icon: LucideIcons.chevronLeft,
+                    semanticsLabel: 'Back',
+                    glyphSize: 18,
+                    color: AppColors.primary,
+                    onPressed: () => Navigator.of(context).pop(),
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      LambdaInput(
-                        controller: _nameCtrl,
-                        label: 'Name',
-                        placeholder: 'e.g. Accumulation',
-                        textCapitalization: TextCapitalization.sentences,
-                        required: true,
-                        // Save draws its visibility from `hasUnsavedChanges`,
-                        // so these two fields have to rebuild the editor as
-                        // they are typed into. `LambdaInput` owns the text;
-                        // this is only the rebuild signal.
-                        onChanged: (_) => setState(() {}),
-                      ),
-                      const SizedBox(height: AppSpacing.md),
-                      LambdaInput(
-                        controller: _notesCtrl,
-                        label: 'Notes',
-                        placeholder: 'What is this phase for?',
-                        textCapitalization: TextCapitalization.sentences,
-                        minLines: 2,
-                        maxLines: 5,
-                        onChanged: (_) => setState(() {}),
-                      ),
-                      const SizedBox(height: AppSpacing.md),
-                      // One length, chosen once. The block is measured in weeks
-                      // or in sessions — never both, because two answers to
-                      // "is this phase over?" is one answer too many.
-                      SegmentedControl<BlockLengthMode>(
-                        value: _mode,
-                        onChange: _setMode,
-                        options: const [
-                          SegmentOption(
-                            label: 'Weeks',
-                            value: BlockLengthMode.weeks,
-                          ),
-                          SegmentOption(
-                            label: 'Sessions',
-                            value: BlockLengthMode.sessions,
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: AppSpacing.md),
-                      // Anchor first, then the length. Read in that order and
-                      // the third field — the end date — is just the first two
-                      // multiplied out, which is exactly what it is.
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            flex: 3,
-                            child: _DateField(
-                              label: 'Starts',
-                              date: _startDate,
-                              onTap: _pickStart,
-                              onClear: _startDate == null ? null : _clearStart,
+                  right: _isNew
+                      ? null
+                      : Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            HeaderIconButton(
+                              icon: LucideIcons.history,
+                              semanticsLabel: "This block's history",
+                              color: AppColors.accent,
+                              onPressed: _openHistory,
                             ),
+                            HeaderIconButton(
+                              icon: LucideIcons.trash2,
+                              semanticsLabel: 'Archive block',
+                              color: AppColors.danger,
+                              onPressed: _confirmArchive,
+                            ),
+                          ],
+                        ),
+                ),
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: EdgeInsets.fromLTRB(
+                      AppSpacing.lg,
+                      AppSpacing.lg,
+                      AppSpacing.lg,
+                      // The page scrolls under the floating bar; its end has to
+                      // clear it. The inset answers zero where nothing floats,
+                      // so a full-screen reader of this page needs no flag.
+                      AppSpacing.lg + ScrollShrinkNavBar.contentInset(context),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        LambdaInput(
+                          controller: _nameCtrl,
+                          label: 'Name',
+                          placeholder: 'e.g. Accumulation',
+                          textCapitalization: TextCapitalization.sentences,
+                          maxLength: kMaxBlockNameLength,
+                          required: true,
+                          // Save draws its visibility from `hasUnsavedChanges`,
+                          // so these two fields have to rebuild the editor as
+                          // they are typed into. `LambdaInput` owns the text;
+                          // this is only the rebuild signal.
+                          onChanged: (_) => setState(() {}),
+                        ),
+                        // A block name is drawn on a filter chip and a
+                        // section header — the shortest name in the app, and
+                        // the field says so while it is being typed.
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: NameLimitCounter(
+                            length: _nameCtrl.text.trim().length,
+                            max: kMaxBlockNameLength,
                           ),
-                          const SizedBox(width: AppSpacing.md),
-                          Expanded(
-                            flex: 2,
-                            child: _mode == BlockLengthMode.weeks
-                                // Two narrow boxes, because a calendar length is
-                                // weeks *plus* a remainder of days and the pair
-                                // has to read as one number. Neither takes a
-                                // placeholder: at this width the hint would clip,
-                                // and the labels above them already do the
-                                // naming. Each rebuilds so Ends re-renders the
-                                // new projection as the numbers are typed — this
-                                // is what makes the fill live rather than a
-                                // surprise on save.
-                                ? Row(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Expanded(
-                                        child: LambdaInput(
-                                          controller: _weeksCtrl,
-                                          label: 'Weeks',
-                                          keyboardType:
-                                              TextInputType.number,
-                                          onChanged: (_) => setState(() {}),
-                                        ),
-                                      ),
-                                      const SizedBox(width: AppSpacing.sm),
-                                      Expanded(
-                                        child: LambdaInput(
-                                          controller: _daysCtrl,
-                                          label: 'Days',
-                                          keyboardType:
-                                              TextInputType.number,
-                                          onChanged: (_) => setState(() {}),
-                                        ),
-                                      ),
-                                    ],
-                                  )
-                                : LambdaInput(
-                                    controller: _sessionsCtrl,
-                                    label: 'Sessions',
-                                    placeholder: 'e.g. 24',
-                                    keyboardType: TextInputType.number,
-                                  ),
-                          ),
-                        ],
-                      ),
-                      // Weeks mode only: a sessions block has no calendar end
-                      // at all, so the field is absent rather than empty.
-                      if (_mode == BlockLengthMode.weeks) ...[
+                        ),
                         const SizedBox(height: AppSpacing.md),
-                        _DateField(
-                          label: 'Ends',
-                          date: _projectedEnd,
-                          // Inert without an anchor: it is derived from Starts
-                          // and Weeks, so with no Starts there is nothing for a
-                          // pick to mean.
-                          onTap: _startDate == null ? null : _pickEnd,
-                          hint: _startDate == null
-                              ? 'Set Starts first'
-                              : 'Pick a date…',
-                          onClear: null,
+                        LambdaInput(
+                          controller: _notesCtrl,
+                          label: 'Notes',
+                          placeholder: 'What is this phase for?',
+                          textCapitalization: TextCapitalization.sentences,
+                          minLines: 2,
+                          maxLines: 5,
+                          onChanged: (_) => setState(() {}),
                         ),
-                      ],
-                      const SizedBox(height: AppSpacing.sm),
-                      Text(
-                        _mode == BlockLengthMode.weeks
-                            ? 'Ends is Starts plus the weeks and days. Pick an '
-                                'end and the length is worked out for you.'
-                            : 'The block ends when you have done this many '
-                                'sessions. You will be asked to end it.',
-                        style: AppFonts.ui(
-                          fontSize: AppTextStyles.xs,
-                          color: AppColors.muted,
+                        const SizedBox(height: AppSpacing.md),
+                        // One length, chosen once. The block is measured in weeks
+                        // or in sessions — never both, because two answers to
+                        // "is this phase over?" is one answer too many.
+                        SegmentedControl<BlockLengthMode>(
+                          value: _mode,
+                          onChange: _setMode,
+                          options: const [
+                            SegmentOption(
+                              label: 'Weeks',
+                              value: BlockLengthMode.weeks,
+                            ),
+                            SegmentOption(
+                              label: 'Sessions',
+                              value: BlockLengthMode.sessions,
+                            ),
+                          ],
                         ),
-                      ),
-                      const SizedBox(height: AppSpacing.lg),
-                      // Always present for a new block — Save is how the block
-                      // comes into being, and its name may be left to the
-                      // generated one. For an existing block it appears once
-                      // something would actually be written.
-                      if (_isNew || hasUnsavedChanges)
-                        GlassButton(
-                          label: _saving ? 'Saving…' : 'Save',
-                          icon: Icons.check,
-                          onPressed: _saveAndClose,
-                        ),
-                      const SizedBox(height: AppSpacing.xl),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              'Workouts',
-                              style: AppFonts.ui(
-                                fontSize: AppTextStyles.md,
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.primary,
+                        const SizedBox(height: AppSpacing.md),
+                        // Anchor first, then the length. Read in that order and
+                        // the third field — the end date — is just the first two
+                        // multiplied out, which is exactly what it is.
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              flex: 3,
+                              child: _DateField(
+                                label: 'Starts',
+                                date: _startDate,
+                                onTap: _pickStart,
+                                onClear: _startDate == null
+                                    ? null
+                                    : _clearStart,
                               ),
                             ),
-                          ),
-                          // The program's only way to make a workout, for a
-                          // blocked one: there is no Workouts tab, so this
-                          // button is where "add/create workouts from within
-                          // each block" actually lives.
-                          if (!_isNew)
-                            GlassButton(
-                              label: '',
-                              icon: Icons.add,
-                              compact: true,
-                              onPressed: _openAddMenu,
-                            ),
-                        ],
-                      ),
-                      const SizedBox(height: AppSpacing.sm),
-                      if (_isNew)
-                        Text(
-                          'Save the block first, then add workouts to it.',
-                          style: AppFonts.ui(
-                            color: AppColors.muted,
-                            fontSize: AppTextStyles.sm,
-                          ),
-                        )
-                      else if (_workouts.isEmpty)
-                        Text(
-                          'No workouts in this block yet.',
-                          style: AppFonts.ui(
-                            color: AppColors.muted,
-                            fontSize: AppTextStyles.sm,
-                          ),
-                        )
-                      else
-                        ReorderableListView(
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          buildDefaultDragHandles: false,
-                          onReorderItem: (oldIndex, newIndex) {
-                            final updated = List<PlannedSession>.from(_workouts);
-                            final item = updated.removeAt(oldIndex);
-                            updated.insert(newIndex, item);
-                            _vm.reorderBlockWorkouts(
-                              widget.block!.blockId,
-                              updated.map((w) => w.sessionId).toList(),
-                            );
-                          },
-                          children: [
-                            for (var i = 0; i < _workouts.length; i++)
-                              ProgramWorkoutRow(
-                                key: ValueKey(_workouts[i].sessionId),
-                                workout: _workouts[i],
-                                dragIndex: i,
-                                // The way into a workout's contents, now that
-                                // there is no Workouts tab to open it from.
-                                onTap: () => _openEditWorkout(_workouts[i]),
-                                swipeActions: [
-                                  SwipeAction(
-                                    icon: Icons.copy_rounded,
-                                    
-                                    color: AppColors.accent,
-                                    onTap: () => _duplicateWorkout(_workouts[i]),
-                                  ),
-                                  SwipeAction(
-                                    icon: Icons.remove_circle_outline,
-                                    
-                                    color: AppColors.danger,
-                                    onTap: () => _vm.assignWorkoutToBlock(
-                                      _workouts[i].sessionId,
-                                      null,
+                            const SizedBox(width: AppSpacing.md),
+                            Expanded(
+                              flex: 2,
+                              child: _mode == BlockLengthMode.weeks
+                                  // Two narrow boxes, because a calendar length is
+                                  // weeks *plus* a remainder of days and the pair
+                                  // has to read as one number. Neither takes a
+                                  // placeholder: at this width the hint would clip,
+                                  // and the labels above them already do the
+                                  // naming. Each rebuilds so Ends re-renders the
+                                  // new projection as the numbers are typed — this
+                                  // is what makes the fill live rather than a
+                                  // surprise on save.
+                                  ? Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Expanded(
+                                          child: LambdaInput(
+                                            controller: _weeksCtrl,
+                                            label: 'Weeks',
+                                            keyboardType: TextInputType.number,
+                                            onChanged: (_) => setState(() {}),
+                                          ),
+                                        ),
+                                        const SizedBox(width: AppSpacing.sm),
+                                        Expanded(
+                                          child: LambdaInput(
+                                            controller: _daysCtrl,
+                                            label: 'Days',
+                                            keyboardType: TextInputType.number,
+                                            onChanged: (_) => setState(() {}),
+                                          ),
+                                        ),
+                                      ],
+                                    )
+                                  : LambdaInput(
+                                      controller: _sessionsCtrl,
+                                      label: 'Sessions',
+                                      placeholder: 'e.g. 24',
+                                      keyboardType: TextInputType.number,
                                     ),
-                                  ),
-                                ],
+                            ),
+                          ],
+                        ),
+                        // Weeks mode only: a sessions block has no calendar end
+                        // at all, so the field is absent rather than empty.
+                        if (_mode == BlockLengthMode.weeks) ...[
+                          const SizedBox(height: AppSpacing.md),
+                          _DateField(
+                            label: 'Ends',
+                            date: _projectedEnd,
+                            // Inert without an anchor: it is derived from Starts
+                            // and Weeks, so with no Starts there is nothing for a
+                            // pick to mean.
+                            onTap: _startDate == null ? null : _pickEnd,
+                            hint: _startDate == null
+                                ? 'Set Starts first'
+                                : 'Pick a date…',
+                            onClear: null,
+                          ),
+                        ],
+                        const SizedBox(height: AppSpacing.sm),
+                        Text(
+                          _mode == BlockLengthMode.weeks
+                              ? 'Ends is Starts plus the weeks and days. Pick an '
+                                    'end and the length is worked out for you.'
+                              : 'The block ends when you have done this many '
+                                    'sessions. You will be asked to end it.',
+                          style: AppFonts.ui(
+                            fontSize: AppTextStyles.xs,
+                            color: AppColors.inkSecondary,
+                            height: 1.4,
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.lg),
+                        // Always present for a new block — Save is how the block
+                        // comes into being, and its name may be left to the
+                        // generated one. For an existing block it appears once
+                        // something would actually be written.
+                        if (_isNew || hasUnsavedChanges)
+                          GlassButton(
+                            label: _saving ? 'Saving…' : 'Save',
+                            icon: LucideIcons.check,
+                            onPressed: _saveAndClose,
+                          ),
+                        const SizedBox(height: AppSpacing.xl),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                'Workouts',
+                                style: AppFonts.ui(
+                                  fontSize: AppTextStyles.md,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.primary,
+                                ),
+                              ),
+                            ),
+                            // The program's only way to make a workout, for a
+                            // blocked one: there is no Workouts tab, so this
+                            // button is where "add/create workouts from within
+                            // each block" actually lives.
+                            if (!_isNew)
+                              GlassButton(
+                                label: '',
+                                icon: LucideIcons.plus,
+                                semanticsLabel: 'Add workout',
+                                compact: true,
+                                onPressed: _openAddMenu,
                               ),
                           ],
                         ),
-                      const SizedBox(height: AppSpacing.lg),
-                      const SizedBox(height: AppSpacing.xxl),
-                    ],
+                        const SizedBox(height: AppSpacing.sm),
+                        if (_isNew)
+                          Text(
+                            'Save the block first, then add workouts to it.',
+                            style: AppFonts.ui(
+                              color: AppColors.inkSecondary,
+                              fontSize: AppTextStyles.sm,
+                            ),
+                          )
+                        else if (_workouts.isEmpty)
+                          Text(
+                            'No workouts in this block yet.',
+                            style: AppFonts.ui(
+                              color: AppColors.inkSecondary,
+                              fontSize: AppTextStyles.sm,
+                            ),
+                          )
+                        else
+                          ReorderableListView(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            buildDefaultDragHandles: false,
+                            onReorderItem: (oldIndex, newIndex) {
+                              final updated = List<PlannedSession>.from(
+                                _workouts,
+                              );
+                              final item = updated.removeAt(oldIndex);
+                              updated.insert(newIndex, item);
+                              _vm.reorderBlockWorkouts(
+                                widget.block!.blockId,
+                                updated.map((w) => w.sessionId).toList(),
+                              );
+                            },
+                            children: [
+                              for (var i = 0; i < _workouts.length; i++)
+                                ProgramWorkoutRow(
+                                  key: ValueKey(_workouts[i].sessionId),
+                                  workout: _workouts[i],
+                                  dragIndex: i,
+                                  // The way into a workout's contents, now that
+                                  // there is no Workouts tab to open it from.
+                                  onTap: () => _openEditWorkout(_workouts[i]),
+                                  swipeActions: [
+                                    SwipeAction(
+                                      icon: LucideIcons.copy,
+
+                                      color: AppColors.accent,
+                                      foreground: AppColors.accentText,
+                                      onTap: () =>
+                                          _duplicateWorkout(_workouts[i]),
+                                    ),
+                                    SwipeAction(
+                                      icon: LucideIcons.circleMinus,
+
+                                      color: AppColors.danger,
+                                      foreground: AppColors.dangerText,
+                                      onTap: () => _vm.assignWorkoutToBlock(
+                                        _workouts[i].sessionId,
+                                        null,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                            ],
+                          ),
+                        const SizedBox(height: AppSpacing.lg),
+                        const SizedBox(height: AppSpacing.xxl),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
-    ));
+    );
   }
 
   /// The block's `+`: the three ways a block gains a workout.
@@ -766,7 +788,7 @@ class _ProgramBlockEditorScreenState extends State<ProgramBlockEditorScreen>
               ),
             ),
             ListTile(
-              leading: Icon(Icons.add, color: AppColors.accent),
+              leading: Icon(LucideIcons.plus, color: AppColors.accent),
               title: Text(
                 'New workout',
                 style: AppFonts.ui(
@@ -777,7 +799,10 @@ class _ProgramBlockEditorScreenState extends State<ProgramBlockEditorScreen>
               onTap: () => Navigator.of(ctx).pop('new'),
             ),
             ListTile(
-              leading: Icon(Icons.library_add_outlined, color: AppColors.accent),
+              leading: Icon(
+                LucideIcons.libraryBig,
+                color: AppColors.accent,
+              ),
               title: Text(
                 'From library',
                 style: AppFonts.ui(
@@ -789,7 +814,7 @@ class _ProgramBlockEditorScreenState extends State<ProgramBlockEditorScreen>
             ),
             ListTile(
               leading: Icon(
-                Icons.drive_file_move_outline,
+                LucideIcons.folderInput,
                 color: AppColors.accent,
               ),
               title: Text(
@@ -846,7 +871,8 @@ class _ProgramBlockEditorScreenState extends State<ProgramBlockEditorScreen>
       context,
       title: 'From your library',
       options: [
-        for (final w in workouts) (id: w.sessionId, label: toProperCase(w.name)),
+        for (final w in workouts)
+          (id: w.sessionId, label: toProperCase(w.name)),
       ],
     );
     if (chosen == null || !mounted) return;
@@ -924,12 +950,15 @@ class _ProgramBlockEditorScreenState extends State<ProgramBlockEditorScreen>
         content: Text(
           'This block is removed from the program. Its workouts stay in the '
           'program, unassigned — nothing is deleted.',
-          style: AppFonts.ui(color: AppColors.muted),
+          style: AppFonts.ui(color: AppColors.inkSecondary, height: 1.4),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text('Cancel', style: AppFonts.ui(color: AppColors.muted)),
+            child: Text(
+              'Cancel',
+              style: AppFonts.ui(color: AppColors.inkSecondary),
+            ),
           ),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(true),
@@ -993,10 +1022,7 @@ class _DateField extends StatelessWidget {
           child: Opacity(
             opacity: enabled ? 1 : 0.5,
             child: Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 14,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               decoration: glassBox(AppColors.primary, radius: AppRadius.md),
               child: Row(
                 children: [
@@ -1006,9 +1032,11 @@ class _DateField extends StatelessWidget {
                           ? hint
                           : DateFormat('d MMM yyyy').format(date!),
                       style: AppFonts.ui(
-                        color: date != null && enabled
-                            ? AppColors.primary
-                            : AppColors.muted,
+                        // The hint is read; the disabled branch keeps its
+                        // dimmed chrome (the whole row also fades to 0.5).
+                        color: date == null
+                            ? AppColors.inkSecondary
+                            : (enabled ? AppColors.primary : AppColors.muted),
                       ),
                     ),
                   ),
@@ -1016,7 +1044,7 @@ class _DateField extends StatelessWidget {
                     GestureDetector(
                       onTap: onClear,
                       child: Icon(
-                        Icons.close,
+                        LucideIcons.x,
                         size: 16,
                         color: AppColors.muted,
                       ),

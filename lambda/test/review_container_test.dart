@@ -14,10 +14,11 @@ import 'package:lambda/data/models/goal.dart';
 import 'package:lambda/data/models/planned_session.dart';
 import 'package:lambda/data/models/program_content.dart';
 import 'package:lambda/data/models/program_review.dart';
-import 'package:lambda/features/goals/view/goal_row.dart';
 import 'package:lambda/features/programs/view/content_diff_sheet.dart';
 import 'package:lambda/features/programs/view/record_workout_screen.dart';
 import 'package:lambda/features/programs/view/review_container.dart';
+import 'package:lambda/features/session/view/session_stats_bar.dart';
+import 'package:lambda/shared/widgets/bar_icon_button.dart';
 import 'package:lambda/shared/widgets/container_styles.dart';
 import 'package:lambda/shared/widgets/exercise_selector.dart';
 import 'package:lambda/shared/widgets/floating_bar.dart';
@@ -25,9 +26,12 @@ import 'package:lambda/shared/widgets/glass_button.dart';
 import 'package:lambda/shared/widgets/lambda_input.dart';
 import 'package:lambda/shared/widgets/lambda_readout.dart';
 import 'package:lambda/shared/widgets/scroll_shrink_nav_bar.dart';
+import 'package:lambda/shared/widgets/session_chevron_button.dart';
 import 'package:lambda/shared/widgets/session_exercise_card.dart';
 import 'package:lambda/shared/widgets/session_set_row.dart';
 import 'package:lambda/shared/widgets/swipe_actions.dart';
+import 'package:lambda/shared/widgets/undo_redo_buttons.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'support/fake_program_repos.dart';
 
@@ -58,11 +62,11 @@ import 'support/fake_program_repos.dart';
 /// The eye has two halves, because the toggle wears its state: outlined at
 /// rest, filled while the record is up. Tests name the half they expect
 /// instead of asking only that an eye exists.
-const kNoteGlyph = Icons.sticky_note_2_outlined;
-const kCompareGlyph = Icons.visibility_outlined;
-const kCompareGlyphOn = Icons.visibility;
-const kChangesGlyph = Icons.difference_outlined;
-const kDoneGlyph = Icons.check;
+const kNoteGlyph = LucideIcons.stickyNote;
+const kCompareGlyph = LucideIcons.eyeDashed;
+const kCompareGlyphOn = LucideIcons.eye;
+const kChangesGlyph = LucideIcons.gitCompare;
+const kDoneGlyph = LucideIcons.check;
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -111,7 +115,9 @@ void main() {
     WidgetTester tester,
     Widget Function(BuildContext context) build,
   ) => tester.pumpWidget(
-    ReviewScope(child: MaterialApp(home: Builder(builder: build))),
+    ReviewScope(
+      child: MaterialApp(home: Builder(builder: build)),
+    ),
   );
 
   /// The real stack in miniature: a base page with a route named
@@ -174,9 +180,13 @@ void main() {
         findsOneWidget,
         reason: 'with no workout open the bar reads the pass, not the workout',
       );
-      expect(find.text('page'), findsOneWidget,
-          reason: 'the page is still there — the bar is painted over it, not '
-              'instead of it');
+      expect(
+        find.text('page'),
+        findsOneWidget,
+        reason:
+            'the page is still there — the bar is painted over it, not '
+            'instead of it',
+      );
     });
 
     testWidgets('hides Done when the editor behind it cannot settle, and '
@@ -196,25 +206,29 @@ void main() {
       expect(
         find.byIcon(kDoneGlyph),
         findsNothing,
-        reason: 'a tick over an editor that cannot save would say "finished '
+        reason:
+            'a tick over an editor that cannot save would say "finished '
             'with this one" about a change that never landed',
       );
       expect(
         find.text('Finish'),
         findsNothing,
-        reason: 'the editor\'s bar carries the workout\'s verbs — the pass is '
+        reason:
+            'the editor\'s bar carries the workout\'s verbs — the pass is '
             'finished from the landing',
       );
       expect(
-        find.byIcon(Icons.close),
+        find.byIcon(LucideIcons.x),
         findsNothing,
-        reason: 'the bar carries decisions about the review, not navigation — '
+        reason:
+            'the bar carries decisions about the review, not navigation — '
             'there is no × on it',
       );
     });
 
-    testWidgets('shows Done once a workout is open and the editor can settle',
-        (tester) async {
+    testWidgets('shows Done once a workout is open and the editor can settle', (
+      tester,
+    ) async {
       reviewSessionNotifier.value = session(activeSessionId: 's1');
       await pumpScaffold(
         tester,
@@ -268,13 +282,63 @@ void main() {
       expect(
         find.byType(ScrollShrinkNavBar),
         findsNothing,
-        reason: 'two bars at the floor is worse than either alone — the pass '
+        reason:
+            'two bars at the floor is worse than either alone — the pass '
             'owns the bottom of the screen while it runs',
       );
       expect(
         find.byType(FloatingBar),
         findsOneWidget,
         reason: 'and the bar it owns is the same container the nav bar wears',
+      );
+    });
+
+    testWidgets('wears the review bar off the session the ROUTE carries, with '
+        'no scope anywhere above it', (tester) async {
+      // The bug this pins (2026-10-25): a workout opened inside a review came
+      // up wearing the app's tab bar, because the bar was found through the
+      // ambient scope and the scope was empty where that page was built (a
+      // record, a cleared notifier, a reload). A route that was opened under
+      // a review carries it, and the floor says so.
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) => editorNavBar(
+              context,
+              session: session(activeSessionId: 's1'),
+              onTap: (_) {},
+              settle: () async => true,
+              settleForCompare: () async => true,
+              onComparison: (_) {},
+              child: const Text('page'),
+            ),
+          ),
+        ),
+      );
+
+      expect(
+        find.text('In Review'),
+        findsOneWidget,
+        reason:
+            'no ReviewScope above, and the bar is still the pass\'s — the '
+            'session came from the route',
+      );
+      expect(
+        find.byIcon(kDoneGlyph),
+        findsOneWidget,
+        reason: 'with the workout verbs wired through, like any in-pass bar',
+      );
+      expect(
+        find.byType(ScrollShrinkNavBar),
+        findsNothing,
+        reason:
+            'the app\'s tab bar is what a workout inside a review must never '
+            'stand on — it reads as "you left the review"',
+      );
+      expect(
+        find.text('page'),
+        findsOneWidget,
+        reason: 'the page is still there under the bar',
       );
     });
   });
@@ -297,7 +361,8 @@ void main() {
       expect(
         find.text('In Review · 1 of 2'),
         findsOneWidget,
-        reason: 'the overview answers "how far through am I" at a glance — '
+        reason:
+            'the overview answers "how far through am I" at a glance — '
             'that is what the ticks are for',
       );
       expect(find.text('Finish'), findsOneWidget);
@@ -322,7 +387,8 @@ void main() {
       expect(
         find.text('In Review · 1 of 3'),
         findsOneWidget,
-        reason: 'the tally handed in is the whole pass, so the count and the '
+        reason:
+            'the tally handed in is the whole pass, so the count and the '
             'gate always speak for the same work',
       );
       expect(
@@ -330,7 +396,8 @@ void main() {
             .widget<GlassButton>(find.widgetWithText(GlassButton, 'Finish'))
             .disabled,
         isTrue,
-        reason: 'a pass with work left in it is not finished, and the bar says '
+        reason:
+            'a pass with work left in it is not finished, and the bar says '
             'so by refusing the button rather than by asking afterwards — the '
             'tabs say which half is holding it up',
       );
@@ -355,7 +422,8 @@ void main() {
             .widget<GlassButton>(find.widgetWithText(GlassButton, 'Finish'))
             .disabled,
         isFalse,
-        reason: 'every workout walked and every goal reported — the pass is '
+        reason:
+            'every workout walked and every goal reported — the pass is '
             'finished, and Finish is the way to say it',
       );
     });
@@ -380,7 +448,8 @@ void main() {
       expect(
         find.text('Finish'),
         findsNothing,
-        reason: 'finishing the pass is a decision about the whole set, and it '
+        reason:
+            'finishing the pass is a decision about the whole set, and it '
             'is taken on the landing, where the set is',
       );
     });
@@ -408,7 +477,8 @@ void main() {
       expect(
         find.byIcon(kNoteGlyph),
         findsOneWidget,
-        reason: 'the glyph a set\'s own note wears, so one note reads the same '
+        reason:
+            'the glyph a set\'s own note wears, so one note reads the same '
             'wherever it is reached from',
       );
       expect(find.byIcon(kCompareGlyph), findsOneWidget);
@@ -416,7 +486,8 @@ void main() {
       expect(
         tester.widget<Icon>(find.byIcon(kNoteGlyph)).color,
         AppColors.muted,
-        reason: 'the workout has no note yet, so the glyph sits back — the '
+        reason:
+            'the workout has no note yet, so the glyph sits back — the '
             'other two are quiet chrome for verbs, this one is a state',
       );
     });
@@ -448,13 +519,15 @@ void main() {
       expect(
         tester.widget<Icon>(find.byIcon(kDoneGlyph)).color,
         AppColors.primary,
-        reason: 'unticked, the tick is an ordinary control: the answer has not '
+        reason:
+            'unticked, the tick is an ordinary control: the answer has not '
             'been given, so the colour is not on it yet',
       );
       expect(
         tester.widget<Icon>(find.byIcon(kCompareGlyph)).color,
         AppColors.primary,
-        reason: 'Compare is a lens, not an answer: it keeps the page\'s own '
+        reason:
+            'Compare is a lens, not an answer: it keeps the page\'s own '
             'ink — white on the dark theme — never the review\'s colours',
       );
 
@@ -474,7 +547,8 @@ void main() {
       expect(
         tester.widget<Icon>(find.byIcon(kDoneGlyph)).color,
         AppColors.success,
-        reason: 'the mark made, the tick turns green — the one button that '
+        reason:
+            'the mark made, the tick turns green — the one button that '
             'puts the colour on is the one that takes it off',
       );
     });
@@ -496,14 +570,16 @@ void main() {
       expect(
         find.text('Previously'),
         findsOneWidget,
-        reason: 'the flip is values only, so the label is what reads out that '
+        reason:
+            'the flip is values only, so the label is what reads out that '
             'the record is on screen, not the plan',
       );
       expect(find.text('In Review'), findsNothing);
       expect(
         find.byIcon(kCompareGlyphOn),
         findsOneWidget,
-        reason: 'and the button says the same thing as the words: filled while '
+        reason:
+            'and the button says the same thing as the words: filled while '
             'the record is up, so the toggle reads pressed',
       );
       expect(find.byIcon(kCompareGlyph), findsNothing);
@@ -541,19 +617,22 @@ void main() {
       expect(
         buttonOf(kNoteGlyph).disabled,
         isTrue,
-        reason: 'the workout note is the pass\'s, and the pass is not what is '
+        reason:
+            'the workout note is the pass\'s, and the pass is not what is '
             'on screen — the card below reads the RECORD\'s note instead',
       );
       expect(
         buttonOf(kDoneGlyph).disabled,
         isTrue,
-        reason: 'the tick is the pass\'s verdict on the plan, and the plan is '
+        reason:
+            'the tick is the pass\'s verdict on the plan, and the plan is '
             'not what is up',
       );
       expect(
         buttonOf(kCompareGlyphOn).disabled,
         isFalse,
-        reason: 'the eye is the way back — locking it would strand the user on '
+        reason:
+            'the eye is the way back — locking it would strand the user on '
             'the record',
       );
 
@@ -605,7 +684,8 @@ void main() {
       expect(
         find.text('In Review · 0 of 2'),
         findsNothing,
-        reason: 'the replaced line does not exit — it is dropped on the frame '
+        reason:
+            'the replaced line does not exit — it is dropped on the frame '
             'the swap starts. A label that is one line of text cannot be two, '
             'and any exit at all is a second line for as long as it lasts',
       );
@@ -619,7 +699,8 @@ void main() {
         expect(
           arriving.top,
           greaterThanOrEqualTo(landing.top),
-          reason: 'the arriving line rises into place from below and never '
+          reason:
+              'the arriving line rises into place from below and never '
               'overshoots the line it comes to rest on',
         );
         final opacity = tester
@@ -641,7 +722,8 @@ void main() {
           expect(
             arriving.top,
             greaterThan(landing.top + 1),
-            reason: 'halfway through, the line has actually moved: it is '
+            reason:
+                'halfway through, the line has actually moved: it is '
                 'rising, not stacked still',
           );
         }
@@ -724,10 +806,7 @@ void main() {
       // home indicator under it, and a base gap so content does not touch it.
       expect(
         inset,
-        FloatingBar.barHeight +
-            FloatingBar.floatGap +
-            34 +
-            AppSpacing.lg,
+        FloatingBar.barHeight + FloatingBar.floatGap + 34 + AppSpacing.lg,
       );
     });
 
@@ -786,12 +865,13 @@ void main() {
       // rather than the plan: the border is the one thing on that screen
       // saying which of the two the numbers belong to.
       Color? rimOf() {
-        for (final element in find
-            .descendant(
-              of: find.byType(FloatingBar),
-              matching: find.byType(DecoratedBox),
-            )
-            .evaluate()) {
+        for (final element
+            in find
+                .descendant(
+                  of: find.byType(FloatingBar),
+                  matching: find.byType(DecoratedBox),
+                )
+                .evaluate()) {
           final decoration = (element.widget as DecoratedBox).decoration;
           if (decoration is BoxDecoration && decoration.border != null) {
             return (decoration.border! as Border).top.color;
@@ -801,7 +881,9 @@ void main() {
       }
 
       await tester.pumpWidget(
-        MaterialApp(home: Scaffold(body: FloatingBar(child: SizedBox()))),
+        MaterialApp(
+          home: Scaffold(body: FloatingBar(child: SizedBox())),
+        ),
       );
       expect(
         rimOf(),
@@ -853,9 +935,7 @@ void main() {
       // label came out underlined.
       await tester.pumpWidget(
         ReviewScope(
-          child: MaterialApp(
-            home: ReviewBar(session: session()),
-          ),
+          child: MaterialApp(home: ReviewBar(session: session())),
         ),
       );
 
@@ -1032,13 +1112,15 @@ void main() {
       expect(
         reviewSessionNotifier.value?.activeSessionId,
         's1',
-        reason: 'the workout stays open: the tick is read back off the session '
+        reason:
+            'the workout stays open: the tick is read back off the session '
             'the bar is showing, so clearing it would take the answer away',
       );
       expect(
         find.byIcon(kCompareGlyph),
         findsOneWidget,
-        reason: 'the bar keeps the workout it just finished: the workout is '
+        reason:
+            'the bar keeps the workout it just finished: the workout is '
             'still the page under the bar, and a bar shedding its verbs from '
             'under the words answering them would read as the screen falling '
             'apart at the moment it says done',
@@ -1046,7 +1128,8 @@ void main() {
       expect(
         tester.widget<FloatingBar>(find.byType(FloatingBar)).rimColor,
         AppColors.success,
-        reason: 'the floor turns green with the words: done is one colour in '
+        reason:
+            'the floor turns green with the words: done is one colour in '
             'this app, and the bar says it in both places at once',
       );
 
@@ -1056,7 +1139,8 @@ void main() {
       expect(
         find.text('base page'),
         findsNothing,
-        reason: 'the answer is the bar staying, not the route going — nothing '
+        reason:
+            'the answer is the bar staying, not the route going — nothing '
             'is waiting to take the workout down behind it',
       );
       expect(left, isFalse);
@@ -1084,7 +1168,8 @@ void main() {
       expect(
         find.text(kReviewCompleteLabel),
         findsOneWidget,
-        reason: 'the answer outranks the record: flipping to it does not '
+        reason:
+            'the answer outranks the record: flipping to it does not '
             'retract a tick that already landed',
       );
       expect(find.text('Previously'), findsNothing);
@@ -1140,7 +1225,8 @@ void main() {
       expect(
         find.text(kReviewCompleteLabel),
         findsNothing,
-        reason: 'the bar says what the record says — and the record no longer '
+        reason:
+            'the bar says what the record says — and the record no longer '
             'has this workout marked',
       );
       expect(find.text('In Review'), findsOneWidget);
@@ -1235,7 +1321,8 @@ void main() {
       expect(
         find.textContaining('saved with the review as they stand'),
         findsOneWidget,
-        reason: 'the question says what happens to the unticked workouts — '
+        reason:
+            'the question says what happens to the unticked workouts — '
             'they are recorded as they are, not dropped',
       );
 
@@ -1292,7 +1379,8 @@ void main() {
       expect(
         find.byIcon(kDoneGlyph),
         findsOneWidget,
-        reason: 'the two callbacks are wired separately — dropping '
+        reason:
+            'the two callbacks are wired separately — dropping '
             'onComparison must not take Done with it',
       );
     });
@@ -1339,13 +1427,15 @@ void main() {
       expect(
         shown?.before?.sessions.single.name,
         'Push Day',
-        reason: 'the surface that can show the record is handed it — the '
+        reason:
+            'the surface that can show the record is handed it — the '
             'editor flips its own sets rather than opening something over them',
       );
       expect(
         find.text(kReviewChangesTitle),
         findsNothing,
-        reason: 'the diff sheet is off: the comparison renders IN the editor, '
+        reason:
+            'the diff sheet is off: the comparison renders IN the editor, '
             'not over it',
       );
     });
@@ -1383,9 +1473,7 @@ void main() {
       expect(find.text('In Review'), findsOneWidget);
     });
 
-    testWidgets('says so when the comparison cannot be read', (
-      tester,
-    ) async {
+    testWidgets('says so when the comparison cannot be read', (tester) async {
       await pumpScaffold(
         tester,
         (context) => Scaffold(
@@ -1448,7 +1536,8 @@ void main() {
       expect(
         loads,
         0,
-        reason: 'the editor already holds the record — leaving it is not a '
+        reason:
+            'the editor already holds the record — leaving it is not a '
             'second read',
       );
       expect(
@@ -1485,7 +1574,8 @@ void main() {
       expect(
         shown,
         isNull,
-        reason: 'flipping to nothing would show the plan back under a heading '
+        reason:
+            'flipping to nothing would show the plan back under a heading '
             'claiming it is the record — worse than saying there is none',
       );
     });
@@ -1518,7 +1608,8 @@ void main() {
       expect(
         find.byIcon(kCompareGlyph),
         findsNothing,
-        reason: 'and the two gates really are separate — this is the same bar '
+        reason:
+            'and the two gates really are separate — this is the same bar '
             'that dropped Compare',
       );
     });
@@ -1536,7 +1627,8 @@ void main() {
       expect(
         find.byIcon(kChangesGlyph),
         findsNothing,
-        reason: 'the landing is the pass, not one workout — there is nothing '
+        reason:
+            'the landing is the pass, not one workout — there is nothing '
             'on screen for the sheet to describe',
       );
     });
@@ -1564,7 +1656,8 @@ void main() {
       expect(
         changes,
         lessThan(note),
-        reason: 'the lens pair reads together — showing the record, then '
+        reason:
+            'the lens pair reads together — showing the record, then '
             'telling it — with the note and its claim further along',
       );
     });
@@ -1603,7 +1696,8 @@ void main() {
       expect(
         flips,
         isEmpty,
-        reason: 'a flip here would put the record in the editor behind a '
+        reason:
+            'a flip here would put the record in the editor behind a '
             'sheet that is describing the current state',
       );
     });
@@ -1639,7 +1733,8 @@ void main() {
       expect(
         flips,
         [null],
-        reason: 'the sheet always answers new vs old, so the screen must be '
+        reason:
+            'the sheet always answers new vs old, so the screen must be '
             'back on the current before it opens',
       );
       expect(order, ['settle', 'load']);
@@ -1672,7 +1767,8 @@ void main() {
       expect(
         find.byType(SnackBar),
         findsNothing,
-        reason: 'the save failed and said so itself; the bar does not add a '
+        reason:
+            'the save failed and said so itself; the bar does not add a '
             'second voice to it',
       );
     });
@@ -1791,7 +1887,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Exercise'), findsOneWidget);
-      expect(find.byIcon(Icons.chevron_right), findsNothing);
+      expect(find.byIcon(LucideIcons.chevronRight), findsNothing);
     });
 
     testWidgets('says so when the changes cannot be read', (tester) async {
@@ -1855,14 +1951,16 @@ void main() {
       expect(
         tester.getSize(find.byType(AnimatedSwitcher)).width,
         greaterThanOrEqualTo(_labelLineWidth(kReviewCompleteLabel)),
-        reason: 'the label slot is what four 48pt glyphs leave of the bar — '
+        reason:
+            'the label slot is what four 48pt glyphs leave of the bar — '
             'the longest line must fit whole, or the state is up with nothing '
             'saying so',
       );
       expect(
         tester.getCenter(find.text('Previously')).dx,
         tester.getCenter(find.byType(AnimatedSwitcher)).dx,
-        reason: 'the line sits centred in the room the glyphs leave it: a '
+        reason:
+            'the line sits centred in the room the glyphs leave it: a '
             'line pinned to the slot\'s left edge reads as a bar with a gap, '
             'not a bar with a label',
       );
@@ -1876,7 +1974,8 @@ void main() {
       expect(
         ((label.left - bar.left) - (eye.left - label.right)).abs(),
         lessThan(2),
-        reason: 'the gaps it leaves on either side must read the same, or the '
+        reason:
+            'the gaps it leaves on either side must read the same, or the '
             'bar looks like it lost the label\'s place',
       );
       // The glyph row above is the shape the plan tightens: this fails the
@@ -1885,6 +1984,119 @@ void main() {
       expect(find.byIcon(kChangesGlyph), findsOneWidget);
       expect(find.byIcon(kNoteGlyph), findsOneWidget);
       expect(find.byIcon(kDoneGlyph), findsOneWidget);
+    });
+  });
+
+  // ── A pass begun empty ────────────────────────────────────────────────────
+  //
+  // The + on the Reviews tab asks for a name and nothing else (2026-10-27):
+  // the landing is where the scope is built, so a pass opens covering no
+  // workout and grows from its own add tiles. The two rules that make that
+  // landing work are pinned here — it must not be mistaken for the "workouts
+  // are gone" state, and the finish must not close an empty pass.
+  group('a pass begun empty', () {
+    late FakePlannedSessions planned;
+    late FakeProgramRepository programs;
+    late FakeExercises exercises;
+    late FakeProgramHistoryRepository history;
+
+    setUp(() {
+      planned = FakePlannedSessions();
+      programs = FakeProgramRepository();
+      exercises = FakeExercises();
+      history = FakeProgramHistoryRepository();
+    });
+
+    /// The Reviews tab's own route: a live pass (not a record), opened over a
+    /// base page with nothing yet in its scope.
+    Future<Future<bool?>> pumpEmptyPass(
+      WidgetTester tester, {
+      List<String> goalIds = const [],
+    }) async {
+      late BuildContext root;
+      await tester.pumpWidget(
+        ReviewScope(
+          child: MaterialApp(
+            home: Builder(
+              builder: (context) {
+                root = context;
+                return const Scaffold(body: Text('base page'));
+              },
+            ),
+          ),
+        ),
+      );
+      final result = Navigator.of(root, rootNavigator: true).push<bool>(
+        MaterialPageRoute(
+          settings: const RouteSettings(name: kReviewRouteName),
+          builder: (_) => ReviewRoute(
+            session: ReviewSession(
+              reviewId: 'rev1',
+              programId: null,
+              sessionIds: const [],
+              goalIds: goalIds,
+              title: 'End of block',
+            ),
+            userId: 'u1',
+            plannedRepository: planned,
+            programRepository: programs,
+            exerciseRepository: exercises,
+            historyRepository: history,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      return result;
+    }
+
+    testWidgets('opens on the landing — both tabs, the add tiles waiting', (
+      tester,
+    ) async {
+      await pumpEmptyPass(tester);
+
+      // The "set is gone" page is for a set that WAS. An empty scope is the
+      // state a pass starts in, and the landing is what a start must show.
+      expect(
+        find.text('The workouts in this review are no longer available.'),
+        findsNothing,
+      );
+      expect(find.text('End of block'), findsOneWidget);
+      // Goals is the second tab from the first frame: a strip that appeared
+      // only once a goal was picked could never be used to pick one.
+      expect(find.text('Workouts'), findsOneWidget);
+      expect(find.text('Goals'), findsOneWidget);
+      // Nothing to count yet, so the bar says the plain words rather than
+      // "In Review · 0 of 0".
+      expect(find.text('In Review'), findsOneWidget);
+      expect(find.textContaining('0 of 0'), findsNothing);
+      // Both halves are addable — each tile is the way into its half of the
+      // scope sheet.
+      expect(find.text('Add workouts to review'), findsOneWidget);
+      await tester.tap(find.text('Goals'));
+      await tester.pumpAndSettle();
+      expect(find.text('Add goals to review'), findsOneWidget);
+    });
+
+    testWidgets('cannot be finished until it covers a workout — said where '
+        'the finish was asked for', (tester) async {
+      final result = await pumpEmptyPass(tester);
+      bool? finished;
+      result.then((value) => finished = value);
+
+      await tester.tap(find.text('Finish'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text(
+          'Add a workout before finishing — a review has to cover at least '
+          'one.',
+        ),
+        findsOneWidget,
+      );
+      // The route is still up: the finish was refused, not half-done. The
+      // repository's own rail backs this up for a caller that skips the bar.
+      expect(finished, isNull);
+      expect(find.text('base page'), findsNothing);
     });
   });
 
@@ -1939,7 +2151,11 @@ void main() {
         ),
       };
       // What the reader resolves its nouns from — the record stores ids.
-      exercises.exerciseNames = {'e1': 'Bench Press', 'e2': 'Row', 'e3': 'Curl'};
+      exercises.exerciseNames = {
+        'e1': 'Bench Press',
+        'e2': 'Row',
+        'e3': 'Curl',
+      };
     }
 
     ReviewSession recordSession({
@@ -2026,6 +2242,11 @@ void main() {
     );
 
     ProgramReview completedRow({
+      String id = 'rec1',
+      DateTime? started,
+      DateTime? completed,
+      String beforeWeight = '70',
+      String afterWeight = '80',
       String? exerciseNote,
       String? workoutNote,
       bool reviewed = false,
@@ -2096,7 +2317,7 @@ void main() {
       final snapshot = ProgramContent(
         sessions: [
           side(
-            '80',
+            afterWeight,
             withExercises,
             extra: [if (addedAfter != null) solo(addedAfter, 2)],
           ),
@@ -2105,26 +2326,28 @@ void main() {
       final baseline = ProgramContent(
         sessions: [
           side(
-            '70',
+            beforeWeight,
             withBeforeExercises,
             extra: [if (droppedAfter != null) solo(droppedAfter, 2)],
           ),
         ],
       );
       return ProgramReview(
-        reviewId: 'rec1',
+        reviewId: id,
         userId: 'u1',
         sessionIdsJson: jsonEncode(const ['s1']),
         goalIdsJson: jsonEncode(const ['g1']),
         kind: kReviewKindReview,
         title: 'End of block',
-        createdDate: DateTime(2026, 10, 1),
-        completedDate: DateTime(2026, 10, 9),
+        createdDate: started ?? DateTime(2026, 10, 1),
+        completedDate: completed ?? DateTime(2026, 10, 9),
         outcome: kOutcomeReviewed,
         // The ticks as the pass recorded them — what the reader's bar reads
         // the workout's answer off, the way the landing's does.
         reviewedSessionsJson: jsonEncode(
-          reviewed ? {'s1': DateTime(2026, 10, 9).toIso8601String()} : {},
+          reviewed
+              ? {'s1': (completed ?? DateTime(2026, 10, 9)).toIso8601String()}
+              : {},
         ),
         snapshotContent: withSnapshot ? snapshot.encode() : null,
         baselineContent: withBaseline ? baseline.encode() : null,
@@ -2151,7 +2374,7 @@ void main() {
       expect(find.text('Summary'), findsOneWidget);
       expect(find.text('Push Day'), findsOneWidget);
       expect(
-        find.byIcon(Icons.check_circle),
+        find.byIcon(LucideIcons.circleCheck),
         findsOneWidget,
         reason: 'the tick is the record of what the pass walked, kept whole',
       );
@@ -2168,11 +2391,12 @@ void main() {
       expect(
         find.byType(SwipeActions),
         findsNothing,
-        reason: 'the swipe takes a workout out of the pass, and the pass is '
+        reason:
+            'the swipe takes a workout out of the pass, and the pass is '
             'over',
       );
       expect(
-        find.byIcon(Icons.add),
+        find.byIcon(LucideIcons.plus),
         findsNothing,
         reason: 'the add tiles put more in the set, and the set is what it was',
       );
@@ -2228,9 +2452,12 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(RecordWorkoutScreen), findsOneWidget);
-      // The side this opens on, named on the page: the review's completion.
-      expect(find.text('AFTER · 9 Oct 2026'), findsOneWidget);
-      expect(find.text('BEFORE · 1 Oct 2026'), findsNothing);
+      // The version this opens on, named on the walker above the bar: the
+      // review's completion, the side it left.
+      expect(find.text('END OF REVIEW -'), findsOneWidget);
+      expect(find.text('9 Oct 2026'), findsOneWidget);
+      expect(find.text('START OF REVIEW -'), findsNothing);
+      expect(find.text('1 Oct 2026'), findsNothing);
       // The two altitudes of note, each where its owner is: the workout's
       // above the card, the exercise's under the exercise it is about.
       expect(find.text('Moved well today'), findsOneWidget);
@@ -2243,6 +2470,122 @@ void main() {
       expect(find.text('+ ADD SET'), findsNothing);
       expect(
         tester.widget<SessionSetRow>(find.byType(SessionSetRow)).readOnly,
+        isTrue,
+      );
+    });
+
+    testWidgets('the workout a record opens is a page of the record — named '
+        'for it, and standing on its bar with no pass in the scope', (
+      tester,
+    ) async {
+      seed();
+      history.reviews = [completedRow()];
+      await pumpRecord(tester, subject: recordSession());
+
+      await tester.tap(find.text('Push Day'));
+      await tester.pumpAndSettle();
+
+      // The route names itself. It is deliberately not `kReviewRouteName`: a
+      // record is never what a live pass unwinds into — this name says which
+      // ceremony the page belongs to without claiming to be its root.
+      expect(
+        ModalRoute.of(
+          tester.element(find.byType(RecordWorkoutScreen)),
+        )!.settings.name,
+        kReviewRouteNameRecord,
+        reason:
+            'an unnamed route is a page nobody can place — every route in '
+            'this ceremony carries its name',
+      );
+      // And the bar is the record's, from the session the route carries — no
+      // notifier is running under a record at all, so an ambient lookup here
+      // would have nothing to find and would hand the page the app's tab bar
+      // (the 2026-10-25 bug: a workout opened inside a review came up on the
+      // PR home's bottom bar).
+      expect(reviewSessionNotifier.value, isNull);
+      expect(find.text(kReviewAfterLabel), findsOneWidget);
+      expect(find.byType(ReviewBar), findsOneWidget);
+      expect(
+        find.byType(ScrollShrinkNavBar),
+        findsNothing,
+        reason: 'the app tab bar under a record workout reads as "you left"',
+      );
+    });
+
+    testWidgets('a record wears the pass editor\'s whole floor — the version '
+        'bar, the spent actions row and the doors', (tester) async {
+      seed();
+      history.reviews = [completedRow()];
+      await pumpRecord(tester, subject: recordSession());
+
+      await tester.tap(find.text('Push Day'));
+      await tester.pumpAndSettle();
+
+      final bar = find.byKey(const ValueKey('record-workout-bar'));
+      expect(bar, findsOneWidget);
+      // The version walker stands INSIDE the floor, in the date bar's
+      // furniture — the pass editor's reading, not a floating caption
+      // (2026-10-27).
+      expect(
+        find.descendant(
+          of: bar,
+          matching: find.byKey(const ValueKey('record-version-bar')),
+        ),
+        findsOneWidget,
+      );
+
+      // The actions row is the planner's, spent where a record cannot act.
+      final undo = tester.widget<UndoRedoButtons>(
+        find.descendant(of: bar, matching: find.byType(UndoRedoButtons)),
+      );
+      expect(undo.canUndo, isFalse);
+      expect(undo.canRedo, isFalse);
+      final star = tester.widget<BarIconButton>(
+        find.descendant(
+          of: bar,
+          matching: find.byKey(const ValueKey('record-ratings-button')),
+        ),
+      );
+      expect(
+        star.enabled,
+        isFalse,
+        reason: 'a version never had a feeling to rate',
+      );
+
+      // The three doors are drawn — trophy, bullseye, notes — and none is
+      // dead: a count of 0 still opens the exercise's whole story.
+      for (final key in const [
+        'session-prs-tile',
+        'session-goals-button',
+        'session-notes-tile',
+      ]) {
+        expect(
+          find.descendant(of: bar, matching: find.byKey(ValueKey(key))),
+          findsOneWidget,
+          reason: '$key is a door on every session floor',
+        );
+      }
+      final tiles = tester.widget<SessionStatsTiles>(
+        find.descendant(of: bar, matching: find.byType(SessionStatsTiles)),
+      );
+      expect(tiles.onPrTap, isNotNull);
+      expect(tiles.onGoalTap, isNotNull);
+      expect(tiles.onNoteTap, isNotNull);
+      expect(
+        tiles.gain,
+        isFalse,
+        reason: 'a record gained nothing — the counts are the whole shelves',
+      );
+
+      // The bar at the bottom is the review's, unchanged.
+      expect(find.byType(ReviewBar), findsOneWidget);
+
+      // And the card is the session card, not the boxed editor card: the
+      // doors moved to the floor, so the pill row is gone.
+      expect(
+        tester
+            .widget<SessionExerciseCard>(find.byType(SessionExerciseCard))
+            .flat,
         isTrue,
       );
     });
@@ -2260,7 +2603,8 @@ void main() {
       expect(
         find.text(kReviewNoteLabel),
         findsOneWidget,
-        reason: 'the box is furniture on the card the pass drew, so it is '
+        reason:
+            'the box is furniture on the card the pass drew, so it is '
             'here whether or not the review typed into it',
       );
       expect(
@@ -2280,10 +2624,7 @@ void main() {
         'left behind — before it began, and as it completed', (tester) async {
       seed();
       history.reviews = [
-        completedRow(
-          exerciseNote: 'Elbows tucked',
-          reviewed: true,
-        ),
+        completedRow(exerciseNote: 'Elbows tucked', reviewed: true),
       ];
       await pumpRecord(
         tester,
@@ -2309,24 +2650,33 @@ void main() {
         tester.widget<Text>(find.text(kReviewAfterLabel)).style?.color,
         AppColors.success,
       );
-      expect(
-        tester.widget<FloatingBar>(find.byType(FloatingBar)).rimColor,
-        AppColors.success,
+      // The review's bar is the lower storey; the walker rides above it, so
+      // the rim being read is the review's own FloatingBar.
+      FloatingBar reviewBar() => tester.widget<FloatingBar>(
+        find.descendant(
+          of: find.byType(ReviewBar),
+          matching: find.byType(FloatingBar),
+        ),
       );
+      expect(reviewBar().rimColor, AppColors.success);
 
       await tester.tap(find.byIcon(kCompareGlyph));
       await tester.pumpAndSettle();
 
       expect(
-        find.text('BEFORE · 1 Oct 2026'),
+        find.text('START OF REVIEW -'),
         findsOneWidget,
-        reason: 'the side on screen is named on the page and on the bar, '
-            'which flip together',
+        reason: 'the eye steps to the other version of the same review',
+      );
+      expect(
+        find.text('1 Oct 2026'),
+        findsOneWidget,
+        reason: 'and the walker names the date that version was taken',
       );
       expect(
         find.text(kReviewBeforeLabel),
         findsOneWidget,
-        reason: 'the label swaps to the side the eye turned to',
+        reason: 'the bar\'s words swap to the side the eye turned to',
       );
       expect(find.text(kReviewAfterLabel), findsNothing);
       // The earlier side is not the answer, it is a reading — so the colours
@@ -2335,35 +2685,37 @@ void main() {
         tester.widget<Text>(find.text(kReviewBeforeLabel)).style?.color,
         AppColors.accent,
       );
-      expect(
-        tester.widget<FloatingBar>(find.byType(FloatingBar)).rimColor,
-        AppColors.accent,
-      );
-      expect(find.text('AFTER · 9 Oct 2026'), findsNothing);
+      expect(reviewBar().rimColor, AppColors.accent);
+      expect(find.text('END OF REVIEW -'), findsNothing);
       expect(
         find.text('70'),
         findsOneWidget,
         reason: 'the same card, the same row, the other side\'s value',
       );
       expect(find.text('80'), findsNothing);
+      // Notes are the pass's product, so they belong to the version it
+      // produced (2026-10-26): the start is what the review FOUND, and what
+      // it thought about the exercise reads on the end.
+      expect(find.text('Elbows tucked'), findsNothing);
       expect(
-        find.text('Elbows tucked'),
+        find.text(kNoNoteText),
         findsOneWidget,
-        reason: 'the review\'s note is about the exercise, so it reads over '
-            'either side of it',
+        reason: 'the box holds its place on either side, answering empty',
       );
       expect(
         find.byIcon(kCompareGlyphOn),
         findsOneWidget,
-        reason: 'the toggle wears its state: filled while the earlier side is '
+        reason:
+            'the toggle wears its state: filled while the earlier side is '
             'on screen',
       );
 
       await tester.tap(find.byIcon(kCompareGlyphOn));
       await tester.pumpAndSettle();
 
-      expect(find.text('AFTER · 9 Oct 2026'), findsOneWidget);
+      expect(find.text('END OF REVIEW -'), findsOneWidget);
       expect(find.text('80'), findsOneWidget);
+      expect(find.text('Elbows tucked'), findsOneWidget);
       expect(
         find.text(kReviewAfterLabel),
         findsOneWidget,
@@ -2371,7 +2723,153 @@ void main() {
       );
     });
 
-    testWidgets('the sides\' disagreement rides on the names — a green plus '
+    testWidgets('the walker steps the workout\'s whole story — every '
+        'completed review\'s end and start, newest first — with the plan '
+        'waiting at the top', (tester) async {
+      seed();
+      // Three passes over the same workout, each starting where the last one
+      // left it — plus the plan as it stands today, which belongs to none.
+      history.reviews = [
+        completedRow(
+          id: 'rec3',
+          started: DateTime(2026, 10, 8),
+          completed: DateTime(2026, 10, 9),
+          beforeWeight: '80',
+          afterWeight: '85',
+        ),
+        completedRow(
+          id: 'rec2',
+          started: DateTime(2026, 10, 5),
+          completed: DateTime(2026, 10, 6),
+          beforeWeight: '75',
+          afterWeight: '80',
+        ),
+        completedRow(
+          id: 'rec1',
+          started: DateTime(2026, 10, 1),
+          completed: DateTime(2026, 10, 2),
+          beforeWeight: '70',
+          afterWeight: '75',
+        ),
+      ];
+      history.currentWorkout = ContentSession(
+        sessionId: 's1',
+        userId: 'u1',
+        name: 'Push Day',
+        exercises: [
+          ContentExercise(
+            plannedExerciseId: 'pe1',
+            plannedSessionId: 's1',
+            userId: 'u1',
+            exerciseId: 'e1',
+            exerciseOrder: 0,
+            sets: [
+              ContentSet(
+                plannedSetId: 'ps1',
+                plannedExerciseId: 'pe1',
+                plannedSessionId: 's1',
+                userId: 'u1',
+                setNumber: 1,
+                targetWeight: '90',
+                targetReps: '5',
+              ),
+            ],
+          ),
+        ],
+      );
+      await pumpRecord(tester, subject: recordSession());
+
+      await tester.tap(find.text('Push Day'));
+      await tester.pumpAndSettle();
+
+      // The card is rec1's, so the page opens on that review's end — the
+      // workout as it left the pass it was opened from, not the newest one.
+      expect(history.versionScopes.single.sessionId, 's1');
+      expect(find.text('END OF REVIEW -'), findsOneWidget);
+      expect(find.text('2 Oct 2026'), findsOneWidget);
+      expect(find.text('75'), findsOneWidget);
+
+      // Older is one step and the floor stops: rec1's start is the bottom of
+      // the stack. A single frame after the tap — a walk is a repaint, never
+      // a read, so there is no spinner to wait through.
+      await tester.tap(find.byKey(const ValueKey('record-version-bar-older')));
+      await tester.pump();
+      expect(find.text('START OF REVIEW -'), findsOneWidget);
+      expect(find.text('1 Oct 2026'), findsOneWidget);
+      expect(find.text('70'), findsOneWidget);
+      expect(
+        tester
+            .widget<SessionChevronButton>(
+              find.byKey(const ValueKey('record-version-bar-older')),
+            )
+            .enabled,
+        isFalse,
+        reason: 'the oldest version is the end of the stack',
+      );
+
+      // Newer walks the stack back up: rec1's end, rec2's start and end,
+      // rec3's start and end, then the plan.
+      Future<void> newer() async {
+        await tester.tap(
+          find.byKey(const ValueKey('record-version-bar-newer')),
+        );
+        await tester.pump();
+      }
+
+      await newer();
+      expect(find.text('END OF REVIEW -'), findsOneWidget);
+      expect(find.text('2 Oct 2026'), findsOneWidget);
+
+      await newer();
+      expect(find.text('START OF REVIEW -'), findsOneWidget);
+      expect(find.text('5 Oct 2026'), findsOneWidget);
+      expect(find.text('75'), findsOneWidget);
+
+      await newer();
+      expect(find.text('END OF REVIEW -'), findsOneWidget);
+      expect(find.text('6 Oct 2026'), findsOneWidget);
+      expect(find.text('80'), findsOneWidget);
+
+      await newer();
+      expect(find.text('START OF REVIEW -'), findsOneWidget);
+      expect(find.text('8 Oct 2026'), findsOneWidget);
+      expect(find.text('80'), findsOneWidget);
+
+      await newer();
+      expect(find.text('END OF REVIEW -'), findsOneWidget);
+      expect(find.text('9 Oct 2026'), findsOneWidget);
+      expect(find.text('85'), findsOneWidget);
+
+      // The plan itself: the top of the stack, outside any review. The
+      // walker names it, the bar says so too — a record's words would be a
+      // wrong reading over a document no review wrote — and there is no
+      // pair to flip across, so the eye is gone.
+      await newer();
+      expect(find.text('CURRENT PLAN'), findsOneWidget);
+      expect(find.text('9 Oct 2026'), findsNothing);
+      expect(find.text('90'), findsOneWidget);
+      expect(find.text('Current Plan'), findsOneWidget);
+      expect(find.byIcon(kCompareGlyph), findsNothing);
+      expect(
+        tester
+            .widget<SessionChevronButton>(
+              find.byKey(const ValueKey('record-version-bar-newer')),
+            )
+            .enabled,
+        isFalse,
+        reason: 'the plan is the newest thing there is',
+      );
+
+      // And a step back down lands on the newest record's end, its own pair
+      // intact.
+      await tester.tap(find.byKey(const ValueKey('record-version-bar-older')));
+      await tester.pump();
+      expect(find.text('END OF REVIEW -'), findsOneWidget);
+      expect(find.text('9 Oct 2026'), findsOneWidget);
+      expect(find.byIcon(kCompareGlyph), findsOneWidget);
+    });
+
+    testWidgets('the sides\' disagreement reads off the end — a green plus '
         'for what the review added, a red minus for what it dropped', (
       tester,
     ) async {
@@ -2409,10 +2907,11 @@ void main() {
         return icon;
       }
 
-      // The side it opens on is the record's own, and it holds the exercise
-      // the baseline never had. The mark is the eye's reading of the OTHER
-      // side, so it is asked for through the list — the field holds only the
-      // open exercise.
+      // The side it opens on is the record's own. Its marks are the eye's
+      // reading of the OTHER side: what the baseline lacked is what the pass
+      // ADDED, and what it held and the end does not is what the pass
+      // REMOVED — drawn here, on the end, from the start's frozen copy,
+      // because the snapshot drops the removed group (2026-10-27).
       await tester.tap(find.byKey(const ValueKey('exercise-selector-field')));
       await tester.pumpAndSettle();
 
@@ -2427,24 +2926,11 @@ void main() {
         reason: 'and a plus is green, the review\'s own word for more',
       );
       expect(
-        markOf('Bench Press'),
-        isNull,
-        reason: 'both sides hold it: an edit neither made is not a mark',
-      );
-      // Back through the field, so the popover is not what is being read next.
-      await tester.tap(find.byKey(const ValueKey('exercise-selector-field')));
-      await tester.pumpAndSettle();
-
-      await tester.tap(find.byIcon(kCompareGlyph));
-      await tester.pumpAndSettle();
-
-      await tester.tap(find.byKey(const ValueKey('exercise-selector-field')));
-      await tester.pumpAndSettle();
-
-      expect(
         markOf('Curl')?.icon,
         ExerciseMark.removed.icon,
-        reason: 'the baseline held what the record does not — dropped since it',
+        reason:
+            'the baseline held what the end does not — the pass removed it, '
+            'and the end is where the removal happened',
       );
       expect(
         markOf('Curl')?.color,
@@ -2452,12 +2938,55 @@ void main() {
         reason: 'and a minus is red, the review\'s own word for gone',
       );
       expect(
-        find.text('Row'),
-        findsNothing,
-        reason: 'the added exercise is not on this side at all, so it wears '
-            'nothing here — one membership test, two readings',
+        markOf('Bench Press'),
+        isNull,
+        reason: 'both sides hold it: an edit neither made is not a mark',
       );
-      expect(markOf('Bench Press'), isNull);
+
+      // The removed group is a real card on this side, not only a marked
+      // name: it keeps the start's frozen sets, drawn as the ordinary card
+      // they were — the red minus IS the removal (2026-10-27), not a repaint
+      // of the containers and rows the way the open pass draws one.
+      await tester.tap(find.text('Curl'));
+      await tester.pumpAndSettle();
+      expect(find.text('40'), findsOneWidget);
+      expect(find.text('10'), findsOneWidget);
+      expect(
+        tester
+            .widget<SessionExerciseCard>(find.byType(SessionExerciseCard))
+            .deletedExercises,
+        everyElement(isFalse),
+        reason: 'the removal is the mark, not the chrome',
+      );
+      expect(
+        tester.widget<SessionSetRow>(find.byType(SessionSetRow)).deleted,
+        isFalse,
+        reason: 'its sets read as the sets it had, plain',
+      );
+
+      // Flipping to the start shows the same group unmarked: the start is
+      // what the pass found, and nothing has been removed from it yet. The
+      // pair's marks both live on the end (2026-10-27).
+      await tester.tap(find.byIcon(kCompareGlyph));
+      await tester.pumpAndSettle();
+
+      expect(find.text('START OF REVIEW -'), findsOneWidget);
+      expect(
+        markOf('Curl'),
+        isNull,
+        reason: 'the start is the baseline — it wears no marks at all',
+      );
+      expect(
+        tester
+            .widget<SessionExerciseCard>(find.byType(SessionExerciseCard))
+            .deletedExercises,
+        everyElement(isFalse),
+        reason: 'and nothing on it is drawn as removed',
+      );
+      expect(
+        tester.widget<SessionSetRow>(find.byType(SessionSetRow)).deleted,
+        isFalse,
+      );
     });
 
     testWidgets('a record with one side has nothing to read the names '
@@ -2505,7 +3034,8 @@ void main() {
       expect(
         markOf('Row'),
         isNull,
-        reason: 'and drawn without a mark, not with a guess — there is no '
+        reason:
+            'and drawn without a mark, not with a guess — there is no '
             'second side to have read an edit off',
       );
     });
@@ -2522,7 +3052,16 @@ void main() {
 
       expect(find.byIcon(kCompareGlyph), findsNothing);
       expect(find.byIcon(kCompareGlyphOn), findsNothing);
-      expect(find.text('AFTER · 9 Oct 2026'), findsOneWidget);
+      expect(find.text('END OF REVIEW -'), findsOneWidget);
+      expect(
+        tester
+            .widget<SessionChevronButton>(
+              find.byKey(const ValueKey('record-version-bar-older')),
+            )
+            .enabled,
+        isFalse,
+        reason: 'one version is a stack of one: nowhere older to walk',
+      );
     });
 
     testWidgets('the bar is the pass\'s own, with every verb that writes '
@@ -2547,7 +3086,8 @@ void main() {
       expect(
         find.text(kReviewAfterLabel),
         findsOneWidget,
-        reason: 'the bar names the frozen side on screen, not a walk that '
+        reason:
+            'the bar names the frozen side on screen, not a walk that '
             'has stopped',
       );
       expect(
@@ -2558,13 +3098,15 @@ void main() {
       expect(
         buttonOf(kDoneGlyph).disabled,
         isTrue,
-        reason: 'green and greyed: the answer is written down, and nothing '
+        reason:
+            'green and greyed: the answer is written down, and nothing '
             'here can change it',
       );
       expect(
         buttonOf(kNoteGlyph).disabled,
         isTrue,
-        reason: 'the note this writes is the plan\'s, and a record holds no '
+        reason:
+            'the note this writes is the plan\'s, and a record holds no '
             'plan to write to',
       );
       expect(
@@ -2600,7 +3142,8 @@ void main() {
       expect(
         tick.color,
         isNot(AppColors.success),
-        reason: 'the colour is the pass\'s word for the mark, and this '
+        reason:
+            'the colour is the pass\'s word for the mark, and this '
             'workout never got one',
       );
       expect(tick.disabled, isTrue);
@@ -2656,7 +3199,8 @@ void main() {
       expect(
         find.byType(SessionSetRow),
         findsNothing,
-        reason: 'an empty grid would read as "no sets", which is a claim the '
+        reason:
+            'an empty grid would read as "no sets", which is a claim the '
             'row cannot make',
       );
     });
@@ -2665,7 +3209,9 @@ void main() {
       tester,
     ) async {
       seed();
-      history.reviews = [completedRow(withExercises: false)];
+      history.reviews = [
+        completedRow(withExercises: false, withBeforeExercises: false),
+      ];
       await pumpRecord(tester, subject: recordSession());
 
       await tester.tap(find.text('Push Day'));
@@ -2677,7 +3223,39 @@ void main() {
       );
     });
 
-    testWidgets('a goal row opens the same sheet the pass opens — reading, '
+    testWidgets('a workout the pass emptied draws its removals rather than '
+        'claiming it was recorded empty', (tester) async {
+      seed();
+      // The start held the group and the end holds nothing: the pass removed
+      // it. The record says so — the card it had, wearing a red minus —
+      // instead of reading as a workout that was always empty (2026-10-27).
+      history.reviews = [completedRow(withExercises: false)];
+      await pumpRecord(tester, subject: recordSession());
+
+      await tester.tap(find.text('Push Day'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('This review recorded no exercises for this workout.'),
+        findsNothing,
+      );
+      expect(find.byType(SessionExerciseCard), findsOneWidget);
+      expect(find.text('Bench Press'), findsOneWidget);
+      expect(
+        tester
+            .widget<SessionExerciseCard>(find.byType(SessionExerciseCard))
+            .deletedExercises,
+        everyElement(isFalse),
+        reason: 'the removed group draws as the card it was',
+      );
+      expect(
+        tester.widget<SessionSetRow>(find.byType(SessionSetRow)).deleted,
+        isFalse,
+        reason: 'and keeps the sets it had, read plain',
+      );
+    });
+
+    testWidgets('a goal row opens the same form the pass opens — resting, '
         'never writing', (tester) async {
       seed();
       await pumpRecord(tester, subject: recordSession());
@@ -2686,27 +3264,50 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Bench Press'), findsOneWidget);
-      expect(find.text('100 kg × 5 reps'), findsOneWidget);
+      expect(find.text('100 kg × 5'), findsOneWidget);
 
       await tester.tap(find.text('Bench Press'));
       await tester.pumpAndSettle();
 
-      // The sheet the pass opens, resting. No writer was wired, so every way
-      // into edit mode is gone with it — the notes rest as a readout and the
-      // box never comes.
-      expect(find.byType(GoalRow), findsWidgets, reason: 'the sheet is up');
-      expect(find.byType(LambdaInput), findsNothing);
-      expect(find.text('Add a note…'), findsNothing);
+      // The sheet the pass opens, resting: the shared form with the goal's
+      // notes in the box, and no Edit to reach it with.
+      expect(find.text('Goal'), findsOneWidget);
+      expect(find.text('Beltless, pause on the chest'), findsOneWidget);
       expect(
-        find.byIcon(Icons.edit_outlined),
+        find.byIcon(LucideIcons.pencil),
         findsNothing,
-        reason: 'a record has no pencil — nothing to enter edit mode with',
+        reason: 'a record has no way into edit mode — nothing to unlock it',
       );
+      expect(find.text('SAVE'), findsOneWidget);
+      expect(
+        tester
+            .widget<GlassButton>(find.widgetWithText(GlassButton, 'SAVE'))
+            .disabled,
+        isTrue,
+      );
+      expect(
+        tester.widget<LambdaInput>(find.byType(LambdaInput)).enabled,
+        isFalse,
+        reason: 'the box shows the note back; it does not take one',
+      );
+      // The target reads back in the same cells the pass edits.
+      expect(
+        tester
+            .widget<TextField>(find.byKey(const ValueKey('goal-reps')))
+            .controller!
+            .text,
+        '5',
+      );
+      final kg = tester.widget<TextField>(
+        find.byKey(const ValueKey('goal-kg')),
+      );
+      expect(kg.controller!.text, '100');
+      expect(kg.readOnly, isTrue);
 
-      // The readout is inert: tapping it cannot open a box that would write.
-      await tester.tap(find.byType(LambdaReadout));
+      // And the selector opens nothing: the tap is gone with the edit.
+      await tester.tap(find.byKey(const ValueKey('goal-exercise-selector')));
       await tester.pumpAndSettle();
-      expect(find.byType(LambdaInput), findsNothing);
+      expect(find.text('Search exercises…'), findsNothing);
     });
 
     testWidgets('a record never adopts or clears a pass running elsewhere', (
@@ -2728,12 +3329,13 @@ void main() {
       expect(
         find.text(kReviewCompleteLabel),
         findsOneWidget,
-        reason: 'the bar is the record\'s own — it reads the session it was '
+        reason:
+            'the bar is the record\'s own — it reads the session it was '
             'opened with, not whatever pass the notifier holds',
       );
       expect(find.text('In Review'), findsNothing);
 
-      await tester.tap(find.byIcon(Icons.arrow_back));
+      await tester.tap(find.byIcon(LucideIcons.chevronLeft));
       await tester.pumpAndSettle();
 
       expect(
@@ -2833,11 +3435,10 @@ void main() {
       expect(mapped.reviewId, 'rev-legacy');
       expect(mapped.programId, 'prog1');
       expect(mapped.title, 'Old pass');
-      expect(
-        mapped.sessionIds,
-        ['s1', 's2'],
-        reason: 'the set the list resolved — the row stores none of its own',
-      );
+      expect(mapped.sessionIds, [
+        's1',
+        's2',
+      ], reason: 'the set the list resolved — the row stores none of its own');
       expect(mapped.goalIds, isEmpty);
       expect(mapped.reviewed.keys, ['s1']);
 
@@ -2858,7 +3459,8 @@ void main() {
       expect(
         withGoals.programId,
         isNull,
-        reason: 'standalone when the row is — the record keeps the row\'s own '
+        reason:
+            'standalone when the row is — the record keeps the row\'s own '
             'shape',
       );
     });

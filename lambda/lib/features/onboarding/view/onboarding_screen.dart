@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
 import '../../../core/styles/app_radius.dart';
@@ -24,24 +25,28 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   static const _slides = [
     _SlideData(
-      icon: Icons.timer_outlined,
+      icon: LucideIcons.timer,
       title: 'Track Your Workouts',
-      body: 'Log sets, track rest periods, and see your progress in real time during every training session.',
+      body:
+          'Log sets, track rest periods, and see your progress in real time during every training session.',
     ),
     _SlideData(
-      icon: Icons.calendar_month_outlined,
+      icon: LucideIcons.calendarDays,
       title: 'Plan with Programs',
-      body: 'Create programs with planned workouts, schedule them by day, and let Lambda guide your training.',
+      body:
+          'Create programs with planned workouts, schedule them by day, and let Lambda guide your training.',
     ),
     _SlideData(
-      icon: Icons.flag_outlined,
+      icon: LucideIcons.flag,
       title: 'Set PRs & Review',
-      body: 'Every set is checked against your personal records. Review past sessions, edit history, and see what works.',
+      body:
+          'Every set is checked against your personal records. Review past sessions, edit history, and see what works.',
     ),
     _SlideData(
-      icon: Icons.insights_outlined,
+      icon: LucideIcons.lineChart,
       title: 'Stay Consistent',
-      body: 'Built-in rest timer, workout history, exercise library — everything you need to train smarter.',
+      body:
+          'Built-in rest timer, workout history, exercise library — everything you need to train smarter.',
     ),
   ];
 
@@ -94,15 +99,23 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     width: double.infinity,
                     color: AppColors.dangerBg,
                     padding: const EdgeInsets.symmetric(
-                        horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
-                    child: Text(state.error!,
-                        style: AppFonts.ui(
-                            color: AppColors.danger, fontSize: AppTextStyles.sm)),
+                      horizontal: AppSpacing.lg,
+                      vertical: AppSpacing.sm,
+                    ),
+                    child: Text(
+                      state.error!,
+                      style: AppFonts.ui(
+                        color: AppColors.danger,
+                        fontSize: AppTextStyles.sm,
+                      ),
+                    ),
                   ),
                 Expanded(
                   child: PageView(
                     controller: _pageCtrl,
-                    children: _slides.map((s) => _SlideContent(data: s)).toList(),
+                    children: _slides
+                        .map((s) => _SlideContent(data: s))
+                        .toList(),
                   ),
                 ),
                 // Dots
@@ -116,7 +129,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                         height: 8,
                         margin: const EdgeInsets.symmetric(horizontal: 3),
                         decoration: BoxDecoration(
-                          color: i == _page ? AppColors.accent : AppColors.border,
+                          color: i == _page
+                              ? AppColors.accent
+                              : AppColors.border,
                           borderRadius: BorderRadius.circular(4),
                         ),
                       );
@@ -124,7 +139,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   ),
                 ),
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(AppSpacing.xl, 0, AppSpacing.xl, AppSpacing.xl),
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.xl,
+                    0,
+                    AppSpacing.xl,
+                    AppSpacing.xl,
+                  ),
                   child: LambdaButton(
                     label: _page < _slides.length - 1 ? 'Next' : 'Get Started',
                     onPressed: _page < _slides.length - 1 ? _next : _finish,
@@ -140,7 +160,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     );
   }
 
-  void _next() => _pageCtrl.nextPage(duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
+  void _next() => _pageCtrl.nextPage(
+    duration: const Duration(milliseconds: 300),
+    curve: Curves.easeInOut,
+  );
 
   Future<void> _finish() async {
     await _viewModel.submit();
@@ -148,7 +171,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 }
 
 class _SlideData {
-  const _SlideData({required this.icon, required this.title, required this.body});
+  const _SlideData({
+    required this.icon,
+    required this.title,
+    required this.body,
+  });
   final IconData icon;
   final String title;
   final String body;
@@ -175,14 +202,25 @@ class _SlideContent extends StatelessWidget {
             child: Icon(data.icon, size: 48, color: AppColors.accent),
           ),
           const SizedBox(height: AppSpacing.xl),
-          Text(data.title,
-              style: AppFonts.ui(
-                  fontSize: AppTextStyles.xl, fontWeight: FontWeight.w800, color: AppColors.primary),
-              textAlign: TextAlign.center),
+          Text(
+            data.title,
+            style: AppFonts.ui(
+              fontSize: AppTextStyles.xl,
+              fontWeight: FontWeight.w800,
+              color: AppColors.primary,
+            ),
+            textAlign: TextAlign.center,
+          ),
           const SizedBox(height: AppSpacing.sm),
-          Text(data.body,
-              style: AppFonts.ui(fontSize: AppTextStyles.md, color: AppColors.muted),
-              textAlign: TextAlign.center),
+          Text(
+            data.body,
+            style: AppFonts.ui(
+              fontSize: AppTextStyles.md,
+              color: AppColors.inkSecondary,
+              height: 1.4,
+            ),
+            textAlign: TextAlign.center,
+          ),
         ],
       ),
     );

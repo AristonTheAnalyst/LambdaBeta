@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
@@ -8,22 +9,26 @@ import '../../../core/styles/app_radius.dart';
 import '../../../core/styles/app_spacing.dart';
 import '../../../core/styles/app_text_styles.dart';
 import '../../../core/utils/session_format.dart';
+import '../../../data/models/custom_variation.dart';
 import '../../../data/models/exercise_detail.dart';
 import '../../../data/models/goal.dart';
 import '../../../data/models/planned_session.dart';
 import '../../../data/models/program_content.dart';
 import '../../../data/models/program_review.dart';
+import '../../../data/models/review_stage.dart';
 import '../../../data/repositories/exercise_repository.dart';
 import '../../../data/repositories/planned_session_repository.dart';
 import '../../../data/repositories/program_history_repository.dart';
 import '../../../data/repositories/program_repository.dart';
 import '../../../data/repositories/session_repository.dart';
+import '../../../data/repositories/staged_planned_sessions.dart';
 import '../../../shared/router/app_router.dart';
 import '../../../shared/widgets/app_card.dart';
 import '../../../shared/widgets/container_styles.dart';
 import '../../../shared/widgets/exercise_target_picker.dart';
 import '../../../shared/widgets/floating_bar.dart';
 import '../../../shared/widgets/glass_button.dart';
+import '../../../shared/widgets/header_icon_button.dart';
 import '../../../shared/widgets/page_header.dart';
 import '../../../shared/widgets/scroll_shrink_nav_bar.dart';
 import '../../../shared/widgets/slide_tab_bar.dart';
@@ -133,7 +138,7 @@ Future<void> saveReviewWorkoutNote({
 /// landing and the notes sheet need, carried forward by [copyWith] as the pass
 /// advances.
 class ReviewSession {
-  const ReviewSession({
+  ReviewSession({
     required this.reviewId,
     required this.programId,
     required this.sessionIds,
@@ -144,7 +149,8 @@ class ReviewSession {
     this.title,
     this.sinceDate,
     this.achievements,
-  });
+    ReviewStage? stage,
+  }) : stage = stage ?? ReviewStage();
 
   final String reviewId;
 
@@ -194,6 +200,13 @@ class ReviewSession {
   /// Null for a standalone pass, which has no program to derive against.
   final ProgramAchievements? achievements;
 
+  /// The workouts this pass has edited so far — its working copy, kept on the
+  /// review row and applied only when the pass finishes (2026-10-27). One
+  /// mutable document, shared by every copy of this session: the route's
+  /// staged store writes it, and the landing, the comparison and the finish
+  /// all read the same instance.
+  final ReviewStage stage;
+
   /// True while the landing is the page under the bar.
   bool get isOverview => activeSessionId == null;
 
@@ -212,8 +225,7 @@ class ReviewSession {
   ReviewSession get asLanding => copyWith(clearActiveSession: true);
 
   /// How many of the set have been Done.
-  int get reviewedCount =>
-      sessionIds.where(reviewed.containsKey).length;
+  int get reviewedCount => sessionIds.where(reviewed.containsKey).length;
 
   /// The same pass with the scope, the ticks, or the open workout moved on.
   ///
@@ -242,6 +254,7 @@ class ReviewSession {
       title: title,
       sinceDate: sinceDate,
       achievements: achievements,
+      stage: stage,
     );
   }
 }
@@ -270,9 +283,9 @@ class ReviewScope extends InheritedNotifier<ValueNotifier<ReviewSession?>> {
 /// this is the backstop behind them.
 Future<bool?> startReview(BuildContext context, ReviewSession session) {
   if (reviewSessionNotifier.value != null) {
-    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-      const SnackBar(content: Text('A review is already open.')),
-    );
+    ScaffoldMessenger.maybeOf(
+      context,
+    )?.showSnackBar(const SnackBar(content: Text('A review is already open.')));
     return Future<bool?>.value();
   }
   reviewSessionNotifier.value = session;
@@ -338,18 +351,22 @@ ReviewSession completedReviewSession({
 /// the notifier and the ceremony answer for one review at a time.
 Future<bool?> openCompletedReview(
   BuildContext context,
-  ReviewSession session,
-) {
+  ReviewSession session, {
+  /// Whose record it is, when the reader is not the owner — the coach in
+  /// coach mode (2026-10-28). Null reads the signed-in user.
+  String? userId,
+}) {
   if (reviewSessionNotifier.value != null) {
-    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-      const SnackBar(content: Text('A review is already open.')),
-    );
+    ScaffoldMessenger.maybeOf(
+      context,
+    )?.showSnackBar(const SnackBar(content: Text('A review is already open.')));
     return Future<bool?>.value();
   }
   return Navigator.of(context, rootNavigator: true).push<bool>(
     MaterialPageRoute(
       settings: const RouteSettings(name: kReviewRouteNameRecord),
-      builder: (_) => ReviewRoute(session: session, readOnly: true),
+      builder: (_) =>
+          ReviewRoute(session: session, readOnly: true, userId: userId),
     ),
   );
 }
@@ -408,16 +425,42 @@ class _ReviewRouteState extends State<ReviewRoute> {
   ///
   /// Built on the first open, not with the route: a record never opens one,
   /// and constructing a [WorkoutEditorViewModel] evaluates the global
-  /// PowerSync database through its lesson repository — which is also what
+  /// PowerSync database through its note repository — which is also what
   /// lets a host test render a record with no database under it.
   WorkoutEditorViewModel? _editor;
-  WorkoutEditorViewModel get _editorFor => _editor ??= WorkoutEditorViewModel();
+  WorkoutEditorViewModel get _editorFor =>
+      _editor ??= WorkoutEditorViewModel(workoutPlanRepo: _staged);
 
   late final _planned = widget.plannedRepository ?? PlannedSessionRepository();
   late final _programs = widget.programRepository ?? ProgramRepository();
   late final _exercises = widget.exerciseRepository ?? ExerciseRepository();
-  late final _history =
-      widget.historyRepository ?? ProgramHistoryRepository();
+  late final _history = widget.historyRepository ?? ProgramHistoryRepository();
+
+  /// The pass's staged store — what the editor writes through for the length
+  /// of the ceremony, so nothing it does lands on the plan until the pass
+  /// finishes (2026-10-27). Built on the first open, not with the route: a
+  /// record never writes, and building it evaluates the signed-in user.
+  StagedPlannedSessions? _stagedCache;
+  StagedPlannedSessions? get _staged => widget.readOnly
+      ? null
+      : _stagedCache ??= StagedPlannedSessions(
+          reviewId: widget.session.reviewId,
+          userId: _userId,
+          stage: widget.session.stage,
+          delegate: _planned,
+          variationNames: () => _exercises.fetchVariationNameMap(_userId),
+          persist: (stage) =>
+              _history.saveProposal(widget.session.reviewId, stage),
+        );
+
+  /// Waits for the editor's staged writes and their persist. A failure only
+  /// costs durability across a restart — the stage in memory is what the
+  /// finish applies — so it is not the landing's business to report one.
+  Future<void> _flushStage() async {
+    try {
+      await _stagedCache?.flush();
+    } catch (_) {}
+  }
 
   /// The set as the landing shows it, resolved from the live rows — null
   /// until the read lands, so a card never shows a workout the read has not
@@ -428,6 +471,12 @@ class _ReviewRouteState extends State<ReviewRoute> {
   /// read lands. An id that no longer resolves is dropped, not shown as a
   /// hole.
   List<_GoalCard>? _goals;
+
+  /// The live dims the card names resolve through, kept for the focused goal
+  /// sheet: a goal opened from a card names its exercise and its variation
+  /// from the identical maps the card itself used (2026-10-19).
+  Map<String, ExerciseDetail> _details = const {};
+  List<CustomVariation> _variations = const [];
 
   bool get _loading => _cards == null || _goals == null;
 
@@ -468,9 +517,15 @@ class _ReviewRouteState extends State<ReviewRoute> {
   /// read for it.
   Future<void> _loadCards() async {
     final ids = _session.sessionIds;
+    final stage = _session.stage;
     final cards = <_ReviewCard>[];
     for (final id in ids) {
-      final workout = await _planned.fetchPlannedSessionById(id);
+      // A workout the pass has edited reads from the stage — the card names
+      // what the pass left, not what the plan still holds.
+      final staged = stage.workout(id);
+      final workout = staged != null
+          ? staged.model
+          : await _planned.fetchPlannedSessionById(id);
       if (workout == null) continue;
       cards.add(_ReviewCard(workout: workout));
     }
@@ -491,6 +546,11 @@ class _ReviewRouteState extends State<ReviewRoute> {
     final details = byId.isEmpty
         ? const <String, ExerciseDetail>{}
         : await _exercises.fetchExerciseDetailMap(_userId);
+    // The focused sheet's variation cell needs the library, and a card's goal
+    // may well carry a variation — read with the names, once.
+    final variations = byId.isEmpty
+        ? const <CustomVariation>[]
+        : await _exercises.fetchVariations(_userId);
 
     final goals = <_GoalCard>[];
     for (final id in ids) {
@@ -508,7 +568,11 @@ class _ReviewRouteState extends State<ReviewRoute> {
       );
     }
     if (!mounted) return;
-    setState(() => _goals = goals);
+    setState(() {
+      _goals = goals;
+      _details = details;
+      _variations = variations;
+    });
   }
 
   /// Loads the notes the review already carries — it may be a resume, and the
@@ -520,8 +584,12 @@ class _ReviewRouteState extends State<ReviewRoute> {
   /// land on it. A read that fails leaves the maps empty rather than blocking
   /// the editor — the bar shows no note, and re-taking it writes through the
   /// repository's own fresh read, so nothing is lost but the display.
+  ///
+  /// Through [_history], the route's own store, like every other read the
+  /// ceremony makes: a host test injects one, and a fresh repository here
+  /// would step around the seam.
   void _seedNotes() {
-    ProgramHistoryRepository().fetchReview(widget.session.reviewId).then((row) {
+    _history.fetchReview(widget.session.reviewId).then((row) {
       if (!mounted || row == null) return;
       // Compared by id, not identity: the session is replaced as the pass
       // advances ([ReviewSession.copyWith]), so the object that started this
@@ -529,10 +597,12 @@ class _ReviewRouteState extends State<ReviewRoute> {
       if (reviewSessionNotifier.value?.reviewId != widget.session.reviewId) {
         return;
       }
-      reviewNotesNotifier.value =
-          Map<String, String>.unmodifiable(row.exerciseNotes);
-      reviewWorkoutNotesNotifier.value =
-          Map<String, String>.unmodifiable(row.workoutNotes);
+      reviewNotesNotifier.value = Map<String, String>.unmodifiable(
+        row.exerciseNotes,
+      );
+      reviewWorkoutNotesNotifier.value = Map<String, String>.unmodifiable(
+        row.workoutNotes,
+      );
     });
   }
 
@@ -554,8 +624,7 @@ class _ReviewRouteState extends State<ReviewRoute> {
     // open. A record never owns the notifier, and says so structurally rather
     // than by the id happening not to match.
     final reviewId = widget.session.reviewId;
-    if (!widget.readOnly &&
-        reviewSessionNotifier.value?.reviewId == reviewId) {
+    if (!widget.readOnly && reviewSessionNotifier.value?.reviewId == reviewId) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (reviewSessionNotifier.value?.reviewId == reviewId) {
           reviewSessionNotifier.value = null;
@@ -584,7 +653,8 @@ class _ReviewRouteState extends State<ReviewRoute> {
     // it. The lookup still happens (`maybeOf`) so the dependency is declared
     // in the one branch that wants it.
     final scoped = ReviewScope.maybeOf(context);
-    final live = (!widget.readOnly &&
+    final live =
+        (!widget.readOnly &&
             scoped != null &&
             scoped.reviewId == widget.session.reviewId)
         ? scoped
@@ -593,6 +663,7 @@ class _ReviewRouteState extends State<ReviewRoute> {
       return _ReviewShell(
         session: live,
         readOnly: widget.readOnly,
+        userId: _userId,
         body: const Center(
           child: SizedBox(
             width: 22,
@@ -604,13 +675,19 @@ class _ReviewRouteState extends State<ReviewRoute> {
     }
     final cards = _cards!;
     // Every workout in the set is gone — deleted between the pass being
-    // started and being opened. Only then is there nothing to walk; a partial
-    // drop is noted on the landing instead.
-    if (cards.isEmpty) return _missing(live);
+    // started and being opened — and there was a set to lose. An EMPTY scope
+    // is a different state: a pass begun from the Reviews tab starts here and
+    // grows from its own add tiles (2026-10-27), so the landing is exactly
+    // what it should show. Only then is there nothing to walk; a partial drop
+    // is noted on the landing instead.
+    if (cards.isEmpty && live.sessionIds.isNotEmpty) return _missing(live);
     return _ReviewLanding(
       session: live,
+      userId: _userId,
       cards: cards,
       goals: _goals!,
+      detailMap: _details,
+      variations: _variations,
       missingCount: live.sessionIds.length - cards.length,
       readOnly: widget.readOnly,
       // A pass opens the real editor; a record opens the workout as the
@@ -619,7 +696,7 @@ class _ReviewRouteState extends State<ReviewRoute> {
           ? _openRecordWorkout
           : (card) => _openWorkout(live, card),
       onScopeChanged: _syncScope,
-      onGoalDescriptionChanged: _setGoalDescription,
+      onGoalSaved: _saveGoal,
       onFinish: widget.readOnly
           ? null
           : () => _finishPass(
@@ -664,33 +741,45 @@ class _ReviewRouteState extends State<ReviewRoute> {
     await _loadGoals();
   }
 
-  /// Writes a goal's notes from the landing's focused sheet, then rebuilds
-  /// the card in place — the sheet reads the goal row it was opened with, so
-  /// a card left stale would show the old text on the next tap.
+  /// Writes a goal from the landing's focused sheet, then rebuilds the card in
+  /// place — the sheet reads the goal row it was opened with, and the card's
+  /// name and target are live readings, so a card left stale would show the
+  /// old target on the next tap (2026-10-19).
   ///
-  /// Failures propagate: the write comes from a live box, and the sheet that
-  /// owns it is the one that keeps the text and says it could not save.
-  Future<void> _setGoalDescription(String goalId, String description) async {
-    await ProgramRepository().updateGoalDescription(goalId, description);
-    if (!mounted) return;
+  /// Failures propagate: the sheet that asked for the write is the one that
+  /// keeps its form standing and says it could not save.
+  Future<Goal?> _saveGoal(String goalId, ExerciseTarget target) async {
+    final updated = await _programs.updateGoal(
+      goalId,
+      exerciseId: target.exerciseId,
+      exerciseName: target.exerciseName,
+      variationId: target.variationId,
+      targetWeight: target.weight,
+      targetReps: target.reps,
+      description: target.notes,
+      targetDate: target.targetDate,
+    );
+    if (!mounted || updated == null) return updated;
     final goals = _goals;
-    if (goals == null) return;
-    final text = description.trim();
-    setState(() {
-      _goals = [
-        for (final card in goals)
-          if (card.goal.goalId == goalId)
-            _GoalCard(
-              goal: text.isEmpty
-                  ? card.goal.copyWith(clearDescription: true)
-                  : card.goal.copyWith(description: text),
-              exerciseName: card.exerciseName,
-              target: card.target,
-            )
-          else
-            card,
-      ];
-    });
+    if (goals != null) {
+      setState(() {
+        _goals = [
+          for (final card in goals)
+            if (card.goal.goalId == goalId)
+              _GoalCard(
+                goal: updated,
+                exerciseName: goalExerciseNameFor(updated, _details),
+                target: goalTargetValue(
+                  updated.targetWeight,
+                  updated.targetReps,
+                ),
+              )
+            else
+              card,
+        ];
+      });
+    }
+    return updated;
   }
 
   /// Opens one workout: the real editor, on the root navigator, with the
@@ -714,13 +803,23 @@ class _ReviewRouteState extends State<ReviewRoute> {
       _WorkoutRoute(
         reviewId: session.reviewId,
         workoutId: card.sessionId,
-        builder: (_) =>
-            PlanSessionScreen(viewModel: _editorFor, workout: card.workout),
+        // The pass is handed to the editor as well as published to the
+        // scope: both are set while a pass runs, but only one of them is a
+        // fact of the route (2026-10-25).
+        builder: (_) => PlanSessionScreen(
+          viewModel: _editorFor,
+          workout: card.workout,
+          reviewSession: session,
+        ),
       ),
     );
     if (!mounted) return;
+    // Settle the editor's queued staged writes before the landing reads.
+    await _flushStage();
+    if (!mounted) return;
     // The editor may have renamed (or deleted) the workout it was opened on —
-    // the landing reads the live rows, so it re-resolves the set now.
+    // the landing reads the stage (or, untouched, the live rows) and
+    // re-resolves the set now.
     _loadCards();
   }
 
@@ -745,22 +844,30 @@ class _ReviewRouteState extends State<ReviewRoute> {
     final row = await _history.fetchReview(widget.session.reviewId);
     if (!mounted) return;
 
-    // One side of the review's documents, narrowed to this workout. Narrowing
-    // is the pass's own read ([contentInScope]) — the review covers a set, and
-    // this screen is about one workout of it.
-    ContentSession? side(ProgramContent? content) {
-      if (content == null) return null;
-      final scoped = contentInScope(content, sessionId: card.sessionId);
-      return scoped.sessions.isEmpty ? null : scoped.sessions.first;
-    }
+    // The workout's whole story, read once: the current plan, then every
+    // completed review's end and start, newest first (2026-10-26). The
+    // reader walks this list — which is what makes a step a repaint rather
+    // than a read.
+    final versions = await _history.fetchWorkoutVersions(
+      userId: _userId,
+      sessionId: card.sessionId,
+    );
+    if (!mounted) return;
 
-    final before = side(row?.baseline);
-    final after = side(row?.snapshot);
+    // The landing's card is this review's end — the workout as this pass
+    // left it. A miss (-1) is a review that kept no record of it, which the
+    // reader says rather than papering over with the current plan.
+    final initialIndex = versions.indexWhere(
+      (v) =>
+          v.reviewId == widget.session.reviewId &&
+          v.side == WorkoutVersionSide.end,
+    );
+
     // Names come from the library, live — the record stores ids, and a rename
     // shows through here as it does everywhere else.
     var names = const <String, String>{};
     var variationNames = const <String, String>{};
-    if (before != null || after != null) {
+    if (versions.any((v) => v.session != null)) {
       names = await _exercises.fetchExerciseNameMap(_userId);
       variationNames = await _exercises.fetchVariationNameMap(_userId);
       if (!mounted) return;
@@ -783,17 +890,21 @@ class _ReviewRouteState extends State<ReviewRoute> {
 
     await Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute<void>(
+        // Named like the record route above it, so the page is legible as
+        // part of the same ceremony wherever a route name is read (a record
+        // is never what a live pass unwinds into — that is `kReviewRouteName`'s
+        // job, and this name is deliberately not it).
+        settings: const RouteSettings(name: kReviewRouteNameRecord),
         builder: (_) => RecordWorkoutScreen(
           session: session,
           name: card.name,
-          before: before,
-          after: after,
-          beforeDate: row?.createdDate,
-          afterDate: row?.completedDate,
-          exerciseNotes: row?.exerciseNotes ?? const {},
-          workoutNote: row?.workoutNotes[card.sessionId],
+          versions: versions,
+          initialIndex: initialIndex,
           exerciseNames: names,
           variationNames: variationNames,
+          // The floor's doors read the user's own shelves (2026-10-27): the
+          // PRs, goals and exercise notes the version names.
+          userId: _userId,
         ),
       ),
     );
@@ -806,6 +917,22 @@ class _ReviewRouteState extends State<ReviewRoute> {
   /// need — but they are asked about once, because the tick is the explicit
   /// "finished with this one" and silence would let it pass for one.
   Future<void> _finishPass(ReviewSession session, {String? label}) async {
+    // A pass may be begun empty and grow on its landing (2026-10-27), but it
+    // cannot END empty: a review covers workouts, and a record of none is a
+    // checkpoint of nothing. The rule lives at the finish because the same
+    // landings add goals first — the scope grows in any order, the close does
+    // not.
+    if (session.sessionIds.isEmpty) {
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Add a workout before finishing — a review has to cover at least '
+            'one.',
+          ),
+        ),
+      );
+      return;
+    }
     final done = session.reviewedCount;
     final total = session.sessionIds.length;
     if (done < total) {
@@ -824,11 +951,16 @@ class _ReviewRouteState extends State<ReviewRoute> {
     if (notes == null || !mounted) return;
 
     try {
-      await ProgramHistoryRepository().completeReview(
+      // Every staged write must be on the row before the finish reads it: the
+      // pass completes on the stage as it stands, not as the last persist
+      // caught it.
+      await _staged?.flush();
+      await _history.completeReview(
         session.reviewId,
-        userId: _currentUserId(),
+        userId: _userId,
         outcome: kOutcomeReviewed,
         notes: notes.isEmpty ? null : notes,
+        stage: session.stage,
       );
       if (!mounted) return;
       // Unwind only — `ReviewRoute`'s dispose clears the notifier once the
@@ -852,6 +984,7 @@ class _ReviewRouteState extends State<ReviewRoute> {
   Widget _missing(ReviewSession session) => _ReviewShell(
     session: session,
     readOnly: widget.readOnly,
+    userId: _userId,
     onFinish: widget.readOnly ? null : () => _finishPass(session),
     body: Center(
       child: Padding(
@@ -862,7 +995,7 @@ class _ReviewRouteState extends State<ReviewRoute> {
             Text(
               'The workouts in this review are no longer available.',
               textAlign: TextAlign.center,
-              style: AppFonts.ui(color: AppColors.muted),
+              style: AppFonts.ui(color: AppColors.inkSecondary, height: 1.4),
             ),
             const SizedBox(height: AppSpacing.lg),
             TextButton(
@@ -914,14 +1047,14 @@ Future<bool> confirmPartialFinish(
       content: Text(
         'Finish anyway? The workouts left unticked are saved with the '
         'review as they stand.',
-        style: AppFonts.ui(color: AppColors.muted),
+        style: AppFonts.ui(color: AppColors.inkSecondary, height: 1.4),
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(false),
           child: Text(
             'Keep reviewing',
-            style: AppFonts.ui(color: AppColors.muted),
+            style: AppFonts.ui(color: AppColors.inkSecondary),
           ),
         ),
         TextButton(
@@ -998,10 +1131,14 @@ class _ReviewShell extends StatelessWidget {
     required this.body,
     this.onFinish,
     this.readOnly = false,
+    this.userId,
   });
 
   final ReviewSession session;
   final Widget body;
+
+  /// Whose data the bar reads; null = the signed-in user (2026-10-28).
+  final String? userId;
 
   /// Finishes the pass from the shell. Null while the set is still loading —
   /// there is nothing loaded to record — and on a record, which is closed
@@ -1024,6 +1161,7 @@ class _ReviewShell extends StatelessWidget {
           session: session.asLanding,
           onFinish: onFinish,
           readOnly: readOnly,
+          userId: userId,
         ),
         child: body,
       ),
@@ -1045,22 +1183,35 @@ class _ReviewShell extends StatelessWidget {
 class _ReviewLanding extends StatefulWidget {
   const _ReviewLanding({
     required this.session,
+    this.userId,
     required this.cards,
     required this.goals,
+    required this.detailMap,
+    required this.variations,
     required this.missingCount,
     required this.onOpen,
     required this.onScopeChanged,
-    required this.onGoalDescriptionChanged,
+    required this.onGoalSaved,
     required this.onFinish,
     this.readOnly = false,
   });
 
   final ReviewSession session;
+
+  /// Whose data the cards and sheets read; null = the signed-in user
+  /// (2026-10-28).
+  final String? userId;
+
   final List<_ReviewCard> cards;
 
   /// The goals the pass covers, resolved. A goal has no editor — it is read,
   /// not walked — so its card opens the focused sheet instead of a route.
   final List<_GoalCard> goals;
+
+  /// The names the focused sheet resolves its picker against — the same maps
+  /// the cards' names were built from.
+  final Map<String, ExerciseDetail> detailMap;
+  final List<CustomVariation> variations;
 
   /// Workouts in the set that no longer resolve — dropped from the cards but
   /// still part of what the review covers.
@@ -1077,10 +1228,13 @@ class _ReviewLanding extends StatefulWidget {
   /// workouts and goals now, and the route above re-reads it.
   final Future<void> Function() onScopeChanged;
 
-  /// Writes a goal's notes from the focused sheet. The route above owns the
-  /// row and the rebuild; this page only hands the write through.
-  final Future<void> Function(String goalId, String description)
-  onGoalDescriptionChanged;
+  /// Writes a goal from the focused sheet. A pass opens the same form the
+  /// Library's Goals tab opens, so an edit reaches the goal row itself; the
+  /// route above owns the row and the rebuild, and this page only hands the
+  /// write through. A record never calls it — its sheet is opened with no
+  /// writer at all.
+  final Future<Goal?> Function(String goalId, ExerciseTarget target)
+  onGoalSaved;
 
   /// Finishes the pass. Null on a record — it is closed already.
   final Future<void> Function()? onFinish;
@@ -1103,22 +1257,26 @@ enum _LandingTab {
 }
 
 class _ReviewLandingState extends State<_ReviewLanding> {
+  /// The owner the cards, goals and scope sheet read; the route's injected
+  /// user in coach mode, the signed-in account otherwise (2026-10-28).
+  String get _userId => widget.userId ?? _currentUserId();
+
   /// Which half of the pass is showing. Workouts first: the walking happens
-  /// there, and a pass cannot have none.
+  /// there, and a pass begun empty opens on the list it has to fill first.
   int _tab = 0;
 
   @override
   Widget build(BuildContext context) {
     final session = widget.session;
-    // A pass with no goals gets no second tab — not an empty one: the strip
-    // is the claim that there is something under it.
+    // Goals is always a pass's second tab (2026-10-27): a pass begins with no
+    // scope, so the tab has to exist before its first goal does — a strip that
+    // appeared only once a goal was picked could never be used to pick one.
+    // A record keeps the old rule (only when it has goals): nothing can be
+    // added to a record, and its Summary tab is what follows Workouts then.
     final goals = widget.goals;
-    // The Summary tab is the record's: what the pass produced, read once it
-    // is over. An open pass has no such promise to make, and a legacy
-    // program review with no goals reads Workouts | Summary.
     final tabs = <_LandingTab>[
       _LandingTab.workouts,
-      if (goals.isNotEmpty) _LandingTab.goals,
+      if (!widget.readOnly || goals.isNotEmpty) _LandingTab.goals,
       if (widget.readOnly) _LandingTab.summary,
     ];
     final tab = tabs[_tab.clamp(0, tabs.length - 1)];
@@ -1144,6 +1302,7 @@ class _ReviewLandingState extends State<_ReviewLanding> {
         bar: ReviewBar(
           session: session.asLanding,
           readOnly: widget.readOnly,
+          userId: _userId,
           onFinish: widget.onFinish,
           // The count and the Finish gate both read the whole pass, both
           // halves — this is the one bar that can see all of it. A record's
@@ -1161,8 +1320,11 @@ class _ReviewLandingState extends State<_ReviewLanding> {
             children: [
               PageHeader(
                 title: session.title ?? 'Review',
-                left: IconButton(
-                  icon: Icon(Icons.arrow_back, color: AppColors.primary),
+                left: HeaderIconButton(
+                  icon: LucideIcons.chevronLeft,
+                  semanticsLabel: 'Back',
+                  glyphSize: 18,
+                  color: AppColors.primary,
                   // A record is not unwound — nothing is open to unwind — so
                   // its arrow pops the route it is on.
                   onPressed: () => widget.readOnly
@@ -1219,7 +1381,7 @@ class _ReviewLandingState extends State<_ReviewLanding> {
     await showReviewScopeSheet(
       context,
       reviewId: session.reviewId,
-      userId: _currentUserId(),
+      userId: _userId,
       sessionIds: session.sessionIds,
       goalIds: session.goalIds,
       section: section,
@@ -1302,9 +1464,10 @@ class _ReviewLandingState extends State<_ReviewLanding> {
             key: ValueKey(card.sessionId),
             actions: [
               SwipeAction(
-                icon: Icons.remove_circle_outline,
-                
+                icon: LucideIcons.circleMinus,
+
                 color: AppColors.danger,
+                foreground: AppColors.dangerText,
                 onTap: () => _removeWorkout(card),
               ),
             ],
@@ -1336,7 +1499,10 @@ class _ReviewLandingState extends State<_ReviewLanding> {
           missingCount == 1
               ? '1 workout in this review is no longer available.'
               : '$missingCount workouts in this review are no longer available.',
-          style: AppFonts.ui(fontSize: AppTextStyles.xs, color: AppColors.muted),
+          style: AppFonts.ui(
+            fontSize: AppTextStyles.xs,
+            color: AppColors.inkSecondary,
+          ),
         ),
       ],
     ];
@@ -1348,8 +1514,9 @@ class _ReviewLandingState extends State<_ReviewLanding> {
   /// rather than a second view.
   ///
   /// A record's rows open the same sheet with no writer wired: the report it
-  /// would take is already made, so the sheet reads the goal back whole — its
-  /// description and the history the axes stand on — with edit mode gone.
+  /// would take is already made, so the form rests — every value shown, none
+  /// enterable, no Edit — and a goal the record left nothing about draws its
+  /// NOTES section not at all.
   List<Widget> _goalList() => [
     for (final goal in widget.goals) ...[
       if (widget.readOnly)
@@ -1359,18 +1526,15 @@ class _ReviewLandingState extends State<_ReviewLanding> {
             context,
             goal: goal.goal,
             exerciseName: goal.exerciseName,
-            onDescriptionChanged: null,
+            detailMap: widget.detailMap,
+            variations: widget.variations,
             // The axes are the goal's live history, read the same way the
             // pass reads them: a goal is read, not walked, and a completed
             // review did not freeze the sets it measures.
             loadPastSets: () =>
-                SessionRepository().loadPastSetsTimeline(_currentUserId()),
+                SessionRepository().loadPastSetsTimeline(_userId),
           ),
-          child: GoalRow(
-            exerciseName: goal.exerciseName,
-            target: goal.target,
-            onDelete: null,
-          ),
+          child: GoalRow(exerciseName: goal.exerciseName, target: goal.target),
         )
       else
         GestureDetector(
@@ -1379,21 +1543,18 @@ class _ReviewLandingState extends State<_ReviewLanding> {
             context,
             goal: goal.goal,
             exerciseName: goal.exerciseName,
-            onDescriptionChanged: (description) =>
-                widget.onGoalDescriptionChanged(goal.goal.goalId, description),
+            detailMap: widget.detailMap,
+            variations: widget.variations,
+            // The pass edits the goal itself through the same form the
+            // Library opens — a goal ticked here is the row, not a copy.
+            onSave: (target) => widget.onGoalSaved(goal.goal.goalId, target),
             // The history is read here, not fetched with the card: a pass can
-            // run for a while, and the sheet's whole point is the axes as they
-            // stand now.
+            // run for a while, and the sheet's whole point is the story as it
+            // stands now.
             loadPastSets: () =>
-                SessionRepository().loadPastSetsTimeline(_currentUserId()),
+                SessionRepository().loadPastSetsTimeline(_userId),
           ),
-          child: GoalRow(
-            exerciseName: goal.exerciseName,
-            target: goal.target,
-            // No × on the review's copy: an open pass is not where a goal is
-            // deleted, and the row is read here, not managed.
-            onDelete: null,
-          ),
+          child: GoalRow(exerciseName: goal.exerciseName, target: goal.target),
         ),
       const SizedBox(height: AppSpacing.sm),
     ],
@@ -1416,7 +1577,10 @@ class _ReviewLandingState extends State<_ReviewLanding> {
       child: Text(
         'Nothing here yet.',
         textAlign: TextAlign.center,
-        style: AppFonts.ui(fontSize: AppTextStyles.sm, color: AppColors.muted),
+        style: AppFonts.ui(
+          fontSize: AppTextStyles.sm,
+          color: AppColors.inkSecondary,
+        ),
       ),
     ),
   ];
@@ -1469,7 +1633,7 @@ class _AddTile extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.add, size: 16, color: AppColors.accent),
+              Icon(LucideIcons.plus, size: 16, color: AppColors.accent),
               const SizedBox(width: AppSpacing.xs),
               Text(
                 label,
@@ -1573,7 +1737,7 @@ class _WorkoutCard extends StatelessWidget {
           ),
           if (reviewed) ...[
             const SizedBox(width: AppSpacing.sm),
-            Icon(Icons.check_circle, size: 14, color: AppColors.success),
+            Icon(LucideIcons.circleCheck, size: 14, color: AppColors.success),
           ],
         ],
       ),
@@ -1628,6 +1792,8 @@ Widget reviewChrome(
   Future<ReviewComparison> Function()? loadComparison,
   Widget? aboveBar,
   ValueChanged<String>? onExerciseTap,
+  String? recordLabel,
+  String? userId,
 }) {
   final resolved = session ?? ReviewScope.maybeOf(context);
   if (resolved == null) return child;
@@ -1640,8 +1806,10 @@ Widget reviewChrome(
       onComparison: onComparison,
       comparing: comparing,
       readOnly: readOnly,
+      userId: userId,
       loadComparison: loadComparison,
       onExerciseTap: onExerciseTap,
+      recordLabel: recordLabel,
       // Done is the review's verb for one workout, and its mark needs the
       // editor's save underneath it: a tick over unsaved edits would say
       // "finished with this one" about a change that never landed. The
@@ -1683,9 +1851,9 @@ Future<void> editActiveWorkoutNote(
     );
   } catch (e) {
     if (!context.mounted) return;
-    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-      SnackBar(content: Text('Could not save the note: $e')),
-    );
+    ScaffoldMessenger.maybeOf(
+      context,
+    )?.showSnackBar(SnackBar(content: Text('Could not save the note: $e')));
   }
 }
 
@@ -1766,6 +1934,12 @@ Future<void> setActiveWorkoutDone(
 /// editors. Tab taps belong to the nav bar and the guard behind it; during a
 /// review there is no nav bar, and the pass leaves through the editor's own
 /// back guard instead.
+/// [session] is the pass this editor was OPENED under, when the route knows
+/// it — the same explicit session [reviewChrome] takes. A route that carries
+/// its review wears the review bar even where the ambient scope has gone
+/// (a record, a cleared notifier, a reload), because the bar is a fact of the
+/// route rather than a reading of a global. Null falls back to the scope,
+/// which is every editor opened from inside a live pass.
 Widget editorNavBar(
   BuildContext context, {
   required Widget child,
@@ -1776,9 +1950,11 @@ Widget editorNavBar(
   bool comparing = false,
   Widget? aboveBar,
   ValueChanged<String>? onExerciseTap,
+  ReviewSession? session,
+  String? userId,
 }) {
-  final session = ReviewScope.maybeOf(context);
-  if (session != null) {
+  final review = session ?? ReviewScope.maybeOf(context);
+  if (review != null) {
     return reviewChrome(
       context,
       child: child,
@@ -1788,6 +1964,11 @@ Widget editorNavBar(
       comparing: comparing,
       aboveBar: aboveBar,
       onExerciseTap: onExerciseTap,
+      userId: userId,
+      // The caller's own session, never the resolved one: a bar found
+      // through the scope has to keep READING the scope, or a Done tick
+      // would not move it.
+      session: session,
     );
   }
   return ScrollShrinkNavBar(
@@ -1834,11 +2015,12 @@ class ReviewComparison {
 
 /// Gathers everything a comparison taken mid-review needs.
 ///
-/// The "after" side is built live because the pass IS the editing: what the
-/// review has changed is exactly the difference between the plan as last
-/// reviewed (or as found) and the plan as it stands. Live means the pass's own
-/// scope — the whole program for a program review, the picked set and goals
-/// for a standalone one.
+/// The "after" side is built through the pass's STAGE because the pass is the
+/// editing (2026-10-27): what the review has changed is exactly the difference
+/// between the plan as last reviewed (or as found) and the workouts as the
+/// pass has left them — rows the pass never touched still read live, through
+/// the same store. The scope is the pass's own — the whole program for a
+/// program review, the picked set and goals for a standalone one.
 ///
 /// Compare is a per-workout verb — it runs from inside one workout — so both
 /// documents are narrowed to [ReviewSession.activeSessionId]: the "before"
@@ -1860,13 +2042,25 @@ Future<ReviewComparison> loadReviewComparison(
       ? null
       : await history.comparisonBase(review, sessionId: workoutId);
   final programId = session.programId;
+  final staged = session.stage.isEmpty
+      ? null
+      : StagedPlannedSessions(
+          reviewId: session.reviewId,
+          userId: userId,
+          stage: session.stage,
+        );
   final live = programId == null
       ? await history.buildContentForSessions(
           userId: userId,
           sessionIds: session.sessionIds,
           goalIds: session.goalIds,
+          store: staged,
         )
-      : await history.buildContent(userId: userId, programId: programId);
+      : await history.buildContent(
+          userId: userId,
+          programId: programId,
+          store: staged,
+        );
   final library = ExerciseRepository();
   final names = await library.fetchExerciseNameMap(userId);
   final variations = await library.fetchVariationNameMap(userId);
@@ -1936,9 +2130,15 @@ class ReviewBar extends StatefulWidget {
     this.loadComparison,
     this.onExerciseTap,
     this.overviewProgress,
+    this.recordLabel,
+    this.userId,
   });
 
   final ReviewSession session;
+
+  /// Whose data the bar's reads use; null = the signed-in user
+  /// (2026-10-28).
+  final String? userId;
 
   /// Whether this bar is over a record — a completed pass opened to be read.
   /// A record is a walk that has happened: over a workout the label names the
@@ -2009,11 +2209,24 @@ class ReviewBar extends StatefulWidget {
   /// the cards stay inert.
   final ValueChanged<String>? onExerciseTap;
 
+  /// What a record's bar calls the reading on screen, in place of the frozen
+  /// side's name ([kReviewAfterLabel] / [kReviewBeforeLabel]). Null keeps the
+  /// side's name where a workout is open; a record whose walker can step
+  /// past the review it was opened from passes the name of what is actually
+  /// on screen (the plan itself), because a bar saying "After Review" over a
+  /// document no review wrote would be a wrong reading rather than a terse
+  /// one. Ignored wherever the bar is not a record's.
+  final String? recordLabel;
+
   @override
   State<ReviewBar> createState() => _ReviewBarState();
 }
 
 class _ReviewBarState extends State<ReviewBar> {
+  /// The owner a comparison reads; the record's user in coach mode
+  /// (2026-10-28).
+  String get _userId => widget.userId ?? _currentUserId();
+
   bool _finishing = false;
   bool _comparing = false;
   bool _readingChanges = false;
@@ -2026,7 +2239,10 @@ class _ReviewBarState extends State<ReviewBar> {
     final onFinish = widget.onFinish;
     // The pass's count, from the whole pass when the bar knows it. The landing
     // hands in workouts-plus-goals; every other bar counts the workouts its own
-    // session holds, because that is all it is over.
+    // session holds, because that is all it is over. A pass that covers nothing
+    // yet — it begins empty and its landing builds the scope (2026-10-27) — has
+    // nothing to count, so its label stays the plain 'In Review' rather than
+    // opening on '0 of 0'.
     final overviewProgress = widget.overviewProgress;
     final passDone = overviewProgress?.done ?? session.reviewedCount;
     final passTotal = overviewProgress?.total ?? session.sessionIds.length;
@@ -2062,12 +2278,12 @@ class _ReviewBarState extends State<ReviewBar> {
     final label = readingBefore
         ? kReviewBeforeLabel
         : readingSide
-        ? kReviewAfterLabel
+        ? (widget.recordLabel ?? kReviewAfterLabel)
         : settled
         ? kReviewCompleteLabel
         : widget.comparing
         ? 'Previously'
-        : session.isOverview
+        : session.isOverview && passTotal > 0
         ? 'In Review · $passDone of $passTotal'
         : 'In Review';
     // The bar's own radius, not the button's default: a tighter corner sitting
@@ -2093,12 +2309,13 @@ class _ReviewBarState extends State<ReviewBar> {
           child: GlassButton(
             label: '',
             // An eye: the button is "show me the record", and the eye is the
-            // one glyph that says that without a word — outlined at rest and
-            // filled while the record is up, so the toggle wears its state
-            // (2026-10-10; the fill is ink, not colour — see below).
+            // one glyph that says that without a word — dashed at rest and
+            // solid while the record is up, since Lucide has no filled eye
+            // to pair with its outline (2026-10-31; the state stays ink, not
+            // colour — see below).
             icon: widget.comparing
-                ? Icons.visibility
-                : Icons.visibility_outlined,
+                ? LucideIcons.eye
+                : LucideIcons.eyeDashed,
             compact: true,
             radius: radius,
             loading: _comparing,
@@ -2128,7 +2345,7 @@ class _ReviewBarState extends State<ReviewBar> {
           child: GlassButton(
             label: '',
             // Two shapes half over each other: difference, without a word.
-            icon: Icons.difference_outlined,
+            icon: LucideIcons.gitCompare,
             compact: true,
             radius: radius,
             loading: _readingChanges,
@@ -2154,7 +2371,7 @@ class _ReviewBarState extends State<ReviewBar> {
               label: 'Workout note',
               child: GlassButton(
                 label: '',
-                icon: Icons.sticky_note_2_outlined,
+                icon: LucideIcons.stickyNote,
                 compact: true,
                 radius: radius,
                 // Locked on a record as well: the note this writes is the
@@ -2184,7 +2401,7 @@ class _ReviewBarState extends State<ReviewBar> {
               : 'Done with this workout',
           child: GlassButton(
             label: '',
-            icon: Icons.check,
+            icon: LucideIcons.check,
             compact: true,
             radius: radius,
             loading: _settingDone,
@@ -2389,7 +2606,7 @@ class _ReviewBarState extends State<ReviewBar> {
     try {
       final load =
           widget.loadComparison ??
-          () => loadReviewComparison(widget.session, userId: _currentUserId());
+          () => loadReviewComparison(widget.session, userId: _userId);
       final comparison = await load();
       if (!mounted) return;
       setState(() => _comparing = false);
@@ -2408,9 +2625,9 @@ class _ReviewBarState extends State<ReviewBar> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _comparing = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not compare: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not compare: $e')));
     }
   }
 
@@ -2449,7 +2666,7 @@ class _ReviewBarState extends State<ReviewBar> {
     try {
       final load =
           widget.loadComparison ??
-          () => loadReviewComparison(widget.session, userId: _currentUserId());
+          () => loadReviewComparison(widget.session, userId: _userId);
       final comparison = await load();
       if (!mounted) return;
       setState(() => _readingChanges = false);
@@ -2476,9 +2693,9 @@ class _ReviewBarState extends State<ReviewBar> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _readingChanges = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not read the changes: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not read the changes: $e')));
     }
   }
 }
@@ -2498,4 +2715,3 @@ String _currentUserId() {
   }
   return id;
 }
-

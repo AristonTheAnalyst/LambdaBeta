@@ -61,12 +61,93 @@
 # retries forever — a stalled upload checkpoint on that device, never an error
 # the user sees.
 #
+# 2026-10-19 (goal target date): + fact_goal.target_date /
+# .target_date_history_json. No stream change — the row is already
+# `SELECT *` — so deploying this file is only needed to record the columns; the
+# migration alone is enough. Push 20261019120000_goal_target_date.sql BEFORE
+# shipping a build that writes them: against an unmigrated server the upload
+# earns PGRST204, which the client retries forever — a stalled upload
+# checkpoint on that device, never an error the user sees.
+#
+# 2026-10-23 (friends): + friends_data, a SECOND auto-subscribed stream:
+# dim_friend_code, friend_relationship, and each mutual friend's completed
+# sessions plus the rows the viewer reads (exercises, variations, exercise notes,
+# goals) and a NAME-ONLY dim_user slice. Push
+# 20261023120000_friends.sql BEFORE deploying this stream — validation names
+# the new tables — and bump the app version first so old builds keep
+# user_data only (they don't know the new tables' local schema).
+#
+# 2026-10-25 (friend nicknames): + friend_relationship.nickname — the caller's
+# private label for one friend. No query change for the column itself (the
+# row is already `SELECT *`), but friends_data gains a SECOND dim_friend_code
+# query carrying each mutual friend's code, which the Friends list falls back
+# to when a friend has no name and no nickname. That is a deliberate widening
+# of the old "the code streams to its owner only" rule — the code is the
+# shareable handle and the friendship is mutual. Push
+# 20261025120000_friend_nicknames.sql BEFORE shipping a build that writes
+# nickname: against an unmigrated server the upload earns PGRST204, retried
+# forever — a stalled upload checkpoint on that device, never a user-visible
+# error.
+#
+# 2026-10-26 (coaching): + coaching_data, a third auto-subscribed stream — a
+# coach's read-only view of an accepted athlete's completed training. Gated on
+# consent: the `my_athletes` CTE requires coaching_relationship.accepted_date,
+# which 20261026140000_coaching_consent.sql adds; an unaccepted invitation
+# sends nothing. Push that migration BEFORE deploying this file.
+#
+# 2026-10-26 (coaching invites, #22): coaching_data gains a second CTE,
+# `my_coaches`, and a second NAME-ONLY dim_user slice beneath the athlete one.
+# The COACH's name reaches the ATHLETE from the moment the invitation exists —
+# an athlete cannot consent to an anonymous request, and the name is the
+# coach's own disclosure, made by typing the athlete's code. The reverse stays
+# gated: the ATHLETE's name reaches the coach only on acceptance. RPCs
+# coach_invite_by_code / accept_coaching_invitation /
+# remove_coaching_relationship and the consent-tightened coach policies land in
+# 20261026150000_coaching_invite_accept.sql — push it before this deploy.
+#
+# 2026-10-26 (multi-set goals): + fact_goal_target, a goal's requirement list
+# (each row "this set or better"). Both streams gain it — the owner's own
+# rows in user_data, a mutual friend's in friends_data beside the fact_goal
+# rows that already stream. Push 20261026120000_goal_targets.sql BEFORE
+# shipping a build that writes it: the table does not exist server-side until
+# then, so every insert would fail the upload. This file must also be
+# redeployed for the rows to come back DOWN — a local write survives on the
+# device regardless, but a resync would drop a multi-set goal's requirements
+# until the stream names the table.
+#
+# 2026-10-26 (per-friend privacy tiers, #23): + friend_relationship
+# .share_notes — the owner's per-friend choice to send NOTES with their
+# history. friends_data now sends a friend's exercise notes (dim_exercise_note) only
+# when that friend shares them, and splits fact_session into two disjoint
+# queries: the full row for sharers, the row with NULL pre_notes/post_notes
+# for everyone else. Postgres RLS is row-level and cannot mask a column, so
+# the stream is where session-note privacy is enforced (the dim_exercise_note row
+# policy is the REST half, in 20261026160000_friend_privacy.sql). Push that
+# migration BEFORE deploying this file — the new CTEs name the column, and
+# validation reads the real table.
+#
+# 2026-10-26 (coach authoring, #24): user_data gains fact_coach_assignment and
+# fact_coach_feedback — the two tables of the coaching hand-off. Both are
+# served to EITHER side of the row (coach_user_id or athlete_user_id is the
+# caller), the same shape coaching_relationship already uses, because both
+# parties read them and the RLS policies on each table gate the same way.
+# Neither rides coaching_data: that stream is the coach's view of an
+# athlete's training, while these rows are shared by construction (an offer,
+# a note) and its athlete-side consent gate would hide an invitation from the
+# very athlete who has to decide it. An assignment's snapshot is frozen text
+# in the row — no template is ever shared, and no dim row crosses users.
+# Push 20261026170000_coach_authoring.sql BEFORE deploying this file
+# (validation names the new tables), then deploy so the rows can come back
+# down; a local write survives on the device regardless.
+#
 # Deploy steps (PowerSync Dashboard → Sync Streams):
 #   1. Replace the current YAML with this file.
-#   2. Bump the app version BEFORE deploying — sync streams attach to app
-#      versions, and the old app must keep the old streams until the new
-#      build ships.
-#   3. Validate, then Deploy.
+#   2. Validate, then Deploy.
+#
+# A deploy applies to every connected client immediately — sync streams do NOT
+# attach to app versions (the dashboard's app_version metadata is for logging
+# only). The version bump exists so builds that read a NEW table's rows ship
+# around the deploy; a client ignores rows for tables its local schema lacks.
 #
 # NOTE: if the app ever adds a synced table, update lib/core/powersync/schema.dart
 # AND lib/core/powersync/database.dart AND this file — see the sync-contract skill.
@@ -88,12 +169,154 @@ streams:
       - SELECT *, pr_view_setting_id as id FROM dim_pr_view_setting WHERE user_id = auth.user_id()
       - SELECT *, program_id as id FROM dim_program WHERE user_id = auth.user_id()
       - SELECT *, program_run_id as id FROM fact_program_run WHERE user_id = auth.user_id()
-      - SELECT *, lesson_id as id FROM dim_lesson WHERE user_id = auth.user_id()
+      - SELECT *, exercise_note_id as id FROM dim_exercise_note WHERE user_id = auth.user_id()
       - SELECT *, session_id as id FROM dim_planned_session WHERE user_id = auth.user_id()
       - SELECT *, planned_exercise_id as id FROM dim_planned_session_exercise WHERE user_id = auth.user_id()
       - SELECT *, planned_set_id as id FROM dim_planned_session_exercise_set WHERE user_id = auth.user_id()
       - SELECT *, planned_session_program_id as id FROM dim_planned_session_program WHERE user_id = auth.user_id()
       - SELECT *, goal_id as id FROM fact_goal WHERE user_id = auth.user_id()
+      - SELECT *, goal_target_id as id FROM fact_goal_target WHERE user_id = auth.user_id()
       - SELECT *, review_id as id FROM fact_program_review WHERE user_id = auth.user_id()
+      # Name history (2026-10-29): the owner's own renames (a coach's renames
+      # of rows they created arrive here too, attributed to them).
+      - SELECT *, name_change_id as id FROM fact_name_change WHERE user_id = auth.user_id()
       - SELECT *, block_id as id FROM dim_program_block WHERE user_id = auth.user_id()
       - SELECT *, (coach_user_id || '-' || athlete_user_id) as id FROM coaching_relationship WHERE coach_user_id = auth.user_id() OR athlete_user_id = auth.user_id()
+      # Coach-authored workouts (2026-10-26, #24). Both sides read: the
+      # athlete decides an offer, the coach watches its status. The snapshot
+      # is frozen text in the row — an accepted assignment is copied into the
+      # athlete's own library, never a shared template.
+      - SELECT *, assignment_id as id FROM fact_coach_assignment WHERE coach_user_id = auth.user_id() OR athlete_user_id = auth.user_id()
+      # Coach feedback on a completed session (2026-10-26, #24): the coach
+      # writes it, both sides read it on the record itself.
+      - SELECT *, feedback_id as id FROM fact_coach_feedback WHERE coach_user_id = auth.user_id() OR athlete_user_id = auth.user_id()
+
+  # Friends (2026-10-23). One bucket per friend: every query keys on the same
+  # `my_friends` list, so the queries share buckets instead of adding one per
+  # table. The list is MUTUAL by construction — a one-way row (say, someone
+  # inserting themselves as my friend over REST) matches nothing.
+  # Streams bypass RLS; this query IS the privacy boundary.
+  #
+  # Per-friend note tiers (2026-10-26, #23): `share_notes` is a promise the
+  # OWNER makes about their own data, so what ARRIVES from a friend is read
+  # off the REVERSE row — the friend's directed row toward me — and never off
+  # my own. The two CTEs split my mutual friends by that flag; the pair is a
+  # partition (the column is NOT NULL DEFAULT false), which lets every
+  # note-bearing query pick its side with the documented `IN cte` shorthand —
+  # a multi-column CTE would break that shorthand everywhere.
+  friends_data:
+    auto_subscribe: true
+    with:
+      my_friends: SELECT f.friend_user_id AS friend_id
+                  FROM friend_relationship f
+                  WHERE f.user_id = auth.user_id()
+                    AND f.friend_user_id IN (
+                      SELECT rev.user_id FROM friend_relationship rev
+                      WHERE rev.friend_user_id = auth.user_id())
+      friends_sharing_notes: SELECT f.friend_user_id AS friend_id
+                             FROM friend_relationship f
+                             WHERE f.user_id = auth.user_id()
+                               AND f.friend_user_id IN (
+                                 SELECT rev.user_id FROM friend_relationship rev
+                                 WHERE rev.friend_user_id = auth.user_id()
+                                   AND rev.share_notes = true)
+      friends_not_sharing_notes: SELECT f.friend_user_id AS friend_id
+                                 FROM friend_relationship f
+                                 WHERE f.user_id = auth.user_id()
+                                   AND f.friend_user_id IN (
+                                     SELECT rev.user_id FROM friend_relationship rev
+                                     WHERE rev.friend_user_id = auth.user_id()
+                                       AND rev.share_notes = false)
+    queries:
+      - SELECT *, user_id as id FROM dim_friend_code WHERE user_id = auth.user_id()
+      # A friend's code, so the list can fall back to it when the friend has no
+      # name and no nickname (2026-10-25). Deliberate widening of the old
+      # "code streams to its owner only" rule: the code is the shareable
+      # handle and the friendship is mutual.
+      - SELECT *, user_id as id FROM dim_friend_code WHERE user_id IN my_friends
+      - SELECT *, (user_id || '-' || friend_user_id) as id FROM friend_relationship WHERE user_id = auth.user_id()
+      # Names and the code fallback — a friend's height, weight, gender, DOB
+      # and profile stay private.
+      - SELECT user_id, user_name, user_lastname, user_id as id FROM dim_user WHERE user_id IN my_friends
+      # Completed records only — the live session is never sent. TWO queries,
+      # split on the note tier (2026-10-26, #23): a friend who shares notes
+      # gets the whole row; everyone else gets the same session with its note
+      # columns nulled at the source. They are disjoint by user, so no row is
+      # ever served by both.
+      - SELECT *, session_id as id FROM fact_session WHERE user_id IN friends_sharing_notes AND end_datetime IS NOT NULL
+      - SELECT session_id, user_id, created_datetime, end_datetime, planned_session_id, planned_session_name, program_run_id, pre_feeling, post_feeling, device_id, NULL AS pre_notes, NULL AS post_notes, session_id as id FROM fact_session WHERE user_id IN friends_not_sharing_notes AND end_datetime IS NOT NULL
+      # Children keyed on user_id (one bucket per friend); a session_id filter
+      # would allocate one bucket per session, thousands for a long history. A
+      # mid-session friend's child rows can download, but the parent
+      # fact_session row is withheld, so no surface can name or open them.
+      - SELECT *, session_exercise_id as id FROM fact_session_exercise WHERE user_id IN my_friends
+      - SELECT *, session_exercise_set_id as id FROM fact_session_exercise_set WHERE user_id IN my_friends
+      - SELECT *, custom_exercise_id as id FROM dim_exercise WHERE user_id IN my_friends
+      - SELECT *, custom_variation_id as id FROM dim_variation WHERE user_id IN my_friends
+      # Exercise notes are the second tier (2026-10-26, #23): a friend's
+      # notes stream only when that friend shares them. The REST policy on
+      # dim_exercise_note carries the same gate.
+      - SELECT *, exercise_note_id as id FROM dim_exercise_note WHERE user_id IN friends_sharing_notes
+      - SELECT *, goal_id as id FROM fact_goal WHERE user_id IN my_friends
+      # A friend's multi-set requirements ride beside the goals they belong
+      # to (2026-10-26) — the goal row alone would read as a goal with no
+      # target.
+      - SELECT *, goal_target_id as id FROM fact_goal_target WHERE user_id IN my_friends
+
+  # Coaching (2026-10-26). The coach's view of an athlete's completed
+  # training, gated on CONSENT: `my_athletes` requires accepted_date, so an
+  # invitation the athlete has not accepted sends nothing at all — not a
+  # name, not a session. The accept RPC is what sets the date; the coach's
+  # invitation row itself already arrives through user_data. Streams bypass
+  # RLS; this query is the privacy boundary (the RLS policies on the
+  # athlete's tables are the REST defence, tightened to the same gate in
+  # 20261026150000_coaching_invite_accept.sql).
+  #
+  # The gate is ASYMMETRIC on purpose (2026-10-26, #22): `my_coaches` carries
+  # the COACH's name to the ATHLETE from the moment a row exists — pending or
+  # accepted — because an athlete cannot consent to an anonymous request. It
+  # is name-only, and it is the coach's own disclosure. The athlete side
+  # (`my_athletes`) still yields nothing until acceptance.
+  coaching_data:
+    auto_subscribe: true
+    with:
+      my_athletes: SELECT cr.athlete_user_id AS athlete_id
+                   FROM coaching_relationship cr
+                   WHERE cr.coach_user_id = auth.user_id()
+                     AND cr.accepted_date IS NOT NULL
+      my_coaches: SELECT cr.coach_user_id AS coach_id
+                  FROM coaching_relationship cr
+                  WHERE cr.athlete_user_id = auth.user_id()
+    queries:
+      # A name-only slice, the friends stream's rule: body metrics and the
+      # profile stay private.
+      - SELECT user_id, user_name, user_lastname, user_id as id FROM dim_user WHERE user_id IN my_athletes
+      # The coach's name, to their invited athlete (pending rows included).
+      # Name-only, the same columns — nothing else about a coach is sent.
+      - SELECT user_id, user_name, user_lastname, user_id as id FROM dim_user WHERE user_id IN my_coaches
+      # Completed records only — an athlete's live session is never sent.
+      - SELECT *, session_id as id FROM fact_session WHERE user_id IN my_athletes AND end_datetime IS NOT NULL
+      # Children keyed on user_id (one bucket per athlete), the friends
+      # stream's shape; a mid-session athlete's child rows can download
+      # parentless, and no surface can name or open them.
+      - SELECT *, session_exercise_id as id FROM fact_session_exercise WHERE user_id IN my_athletes
+      - SELECT *, session_exercise_set_id as id FROM fact_session_exercise_set WHERE user_id IN my_athletes
+      - SELECT *, custom_exercise_id as id FROM dim_exercise WHERE user_id IN my_athletes
+      - SELECT *, custom_variation_id as id FROM dim_variation WHERE user_id IN my_athletes
+      - SELECT *, exercise_note_id as id FROM dim_exercise_note WHERE user_id IN my_athletes
+      - SELECT *, goal_id as id FROM fact_goal WHERE user_id IN my_athletes
+      - SELECT *, goal_target_id as id FROM fact_goal_target WHERE user_id IN my_athletes
+      # The athlete's WORKOUTS (2026-10-28, coach mode): the coach browses —
+      # and later writes — her library on her behalf, so the planned sessions
+      # and their children ride with the rest. The program join is sent with
+      # them because the library lists standalone workouts only; without it a
+      # program copy could not be told from a library original.
+      - SELECT *, session_id as id FROM dim_planned_session WHERE user_id IN my_athletes
+      - SELECT *, planned_exercise_id as id FROM dim_planned_session_exercise WHERE user_id IN my_athletes
+      - SELECT *, planned_set_id as id FROM dim_planned_session_exercise_set WHERE user_id IN my_athletes
+      - SELECT *, planned_session_program_id as id FROM dim_planned_session_program WHERE user_id IN my_athletes
+      # Her review passes (2026-10-28, phase 4): completed records browse
+      # read-only in coach mode. Open passes stay her working state (the
+      # client filters them out), and the row's snapshots carry what each
+      # version looked like.
+      - SELECT *, review_id as id FROM fact_program_review WHERE user_id IN my_athletes

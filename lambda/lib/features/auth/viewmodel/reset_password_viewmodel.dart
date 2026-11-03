@@ -17,12 +17,11 @@ class ResetPasswordState {
     String? error,
     bool clearError = false,
     bool? success,
-  }) =>
-      ResetPasswordState(
-        isLoading: isLoading ?? this.isLoading,
-        error: clearError ? null : error ?? this.error,
-        success: success ?? this.success,
-      );
+  }) => ResetPasswordState(
+    isLoading: isLoading ?? this.isLoading,
+    error: clearError ? null : error ?? this.error,
+    success: success ?? this.success,
+  );
 }
 
 class ResetPasswordViewModel {
@@ -31,8 +30,9 @@ class ResetPasswordViewModel {
   Future<void> updatePassword(String newPassword) async {
     state.value = state.value.copyWith(isLoading: true, clearError: true);
     try {
-      final response = await Supabase.instance.client.auth
-          .updateUser(UserAttributes(password: newPassword));
+      final response = await Supabase.instance.client.auth.updateUser(
+        UserAttributes(password: newPassword),
+      );
       if (response.user == null) {
         state.value = state.value.copyWith(
           isLoading: false,
@@ -42,15 +42,11 @@ class ResetPasswordViewModel {
         state.value = state.value.copyWith(isLoading: false, success: true);
       }
     } catch (e) {
-      state.value = state.value.copyWith(
-        isLoading: false,
-        error: e.toString(),
-      );
+      state.value = state.value.copyWith(isLoading: false, error: e.toString());
     }
   }
 
-  void clearError() =>
-      state.value = state.value.copyWith(clearError: true);
+  void clearError() => state.value = state.value.copyWith(clearError: true);
 
   void dispose() => state.dispose();
 }

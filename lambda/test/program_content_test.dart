@@ -10,49 +10,47 @@ ContentSet _set(
   String? variation,
   String? notes,
   int n = 1,
-}) =>
-    ContentSet(
-      plannedSetId: id,
-      plannedExerciseId: 'e1',
-      plannedSessionId: 's1',
-      userId: 'u1',
-      setNumber: n,
-      variationId: variation,
-      targetWeight: weight,
-      targetReps: reps,
-      targetNotes: notes,
-    );
+}) => ContentSet(
+  plannedSetId: id,
+  plannedExerciseId: 'e1',
+  plannedSessionId: 's1',
+  userId: 'u1',
+  setNumber: n,
+  variationId: variation,
+  targetWeight: weight,
+  targetReps: reps,
+  targetNotes: notes,
+);
 
 /// Re-parents a set fixture onto [exerciseId], so a fixture stays internally
 /// consistent however the set was constructed.
 ContentSet _withParent(ContentSet s, String exerciseId) => ContentSet(
-      plannedSetId: s.plannedSetId,
-      plannedExerciseId: exerciseId,
-      plannedSessionId: s.plannedSessionId,
-      userId: s.userId,
-      variationId: s.variationId,
-      setNumber: s.setNumber,
-      targetWeight: s.targetWeight,
-      targetReps: s.targetReps,
-      targetNotes: s.targetNotes,
-    );
+  plannedSetId: s.plannedSetId,
+  plannedExerciseId: exerciseId,
+  plannedSessionId: s.plannedSessionId,
+  userId: s.userId,
+  variationId: s.variationId,
+  setNumber: s.setNumber,
+  targetWeight: s.targetWeight,
+  targetReps: s.targetReps,
+  targetNotes: s.targetNotes,
+);
 
 ContentExercise _exercise(
   String id, {
   String? exerciseId = 'ex1',
   int order = 1,
   List<ContentSet>? sets,
-}) =>
-    ContentExercise(
-      plannedExerciseId: id,
-      plannedSessionId: 's1',
-      userId: 'u1',
-      exerciseId: exerciseId,
-      exerciseOrder: order,
-      sets: (sets ?? [_set('${id}set1', weight: '60', reps: '5')])
-          .map((s) => _withParent(s, id))
-          .toList(),
-    );
+}) => ContentExercise(
+  plannedExerciseId: id,
+  plannedSessionId: 's1',
+  userId: 'u1',
+  exerciseId: exerciseId,
+  exerciseOrder: order,
+  sets: (sets ?? [_set('${id}set1', weight: '60', reps: '5')])
+      .map((s) => _withParent(s, id))
+      .toList(),
+);
 
 ContentSession _session(
   String id, {
@@ -61,16 +59,15 @@ ContentSession _session(
   int? sequenceOrder = 1,
   String? blockId,
   List<ContentExercise>? exercises,
-}) =>
-    ContentSession(
-      sessionId: id,
-      userId: 'u1',
-      name: name,
-      notes: notes,
-      sequenceOrder: sequenceOrder,
-      blockId: blockId,
-      exercises: exercises ?? [_exercise('${id}e1')],
-    );
+}) => ContentSession(
+  sessionId: id,
+  userId: 'u1',
+  name: name,
+  notes: notes,
+  sequenceOrder: sequenceOrder,
+  blockId: blockId,
+  exercises: exercises ?? [_exercise('${id}e1')],
+);
 
 ContentGoal _goal(
   String id, {
@@ -80,47 +77,59 @@ ContentGoal _goal(
   num? weight,
   int? reps,
   String? text,
-}) =>
-    ContentGoal(
-      goalId: id,
-      userId: 'u1',
-      blockId: blockId,
-      exerciseId: exerciseId,
-      variationId: variationId,
-      targetWeight: weight,
-      targetReps: reps,
-      text: text,
-    );
+}) => ContentGoal(
+  goalId: id,
+  userId: 'u1',
+  blockId: blockId,
+  exerciseId: exerciseId,
+  variationId: variationId,
+  targetWeight: weight,
+  targetReps: reps,
+  text: text,
+);
 
 ProgramContent _sample() => ProgramContent(
-      blocks: const [
-        ContentBlock(
-          blockId: 'b1',
-          name: 'Accumulation',
-          blockOrder: 1,
-          targetWeeks: 4,
-          targetSessions: 16,
-        ),
-      ],
-      sessions: [
-        _session('s1', notes: 'chest focus', blockId: 'b1', exercises: [
-          _exercise('s1e1', sets: [
+  blocks: const [
+    ContentBlock(
+      blockId: 'b1',
+      name: 'Accumulation',
+      blockOrder: 1,
+      targetWeeks: 4,
+      targetSessions: 16,
+    ),
+  ],
+  sessions: [
+    _session(
+      's1',
+      notes: 'chest focus',
+      blockId: 'b1',
+      exercises: [
+        _exercise(
+          's1e1',
+          sets: [
             _set('s1e1set1', weight: '60', reps: '5', variation: 'v1'),
             _set('s1e1set2', weight: '60', reps: '5', n: 2, notes: 'backoff'),
-          ]),
-          _exercise('s1e2', exerciseId: 'ex2', order: 2),
-        ]),
-        _session('s2', name: 'Pull', sequenceOrder: 2),
+          ],
+        ),
+        _exercise('s1e2', exerciseId: 'ex2', order: 2),
       ],
-      // One per scope: the program's own (in force through every block) and
-      // the phase's, which is the pair a review has to tell apart.
-      goals: [
-        _goal('g1',
-            exerciseId: 'ex1', variationId: 'v1', weight: 100, reps: 1,
-            text: 'Bench'),
-        _goal('g2', blockId: 'b1', text: 'Sleep eight hours'),
-      ],
-    );
+    ),
+    _session('s2', name: 'Pull', sequenceOrder: 2),
+  ],
+  // One per scope: the program's own (in force through every block) and
+  // the phase's, which is the pair a review has to tell apart.
+  goals: [
+    _goal(
+      'g1',
+      exerciseId: 'ex1',
+      variationId: 'v1',
+      weight: 100,
+      reps: 1,
+      text: 'Bench',
+    ),
+    _goal('g2', blockId: 'b1', text: 'Sleep eight hours'),
+  ],
+);
 
 /// Reverses key order at every level, so a document with identical content but
 /// different serialization order can be produced.
@@ -166,9 +175,13 @@ void main() {
       expect(decoded.goals, hasLength(2));
       final programGoal = decoded.goals.first;
       expect(programGoal.goalId, 'g1');
-      expect(programGoal.blockId, isNull,
-          reason: 'a program-level goal is in force in every block — that is '
-              'the scope, and storing it as null is how it stays so');
+      expect(
+        programGoal.blockId,
+        isNull,
+        reason:
+            'a program-level goal is in force in every block — that is '
+            'the scope, and storing it as null is how it stays so',
+      );
       expect(programGoal.exerciseId, 'ex1');
       expect(programGoal.variationId, 'v1');
       expect(programGoal.targetWeight, 100);
@@ -209,8 +222,11 @@ void main() {
       final decoded = ProgramContent.decode(v1);
 
       expect(decoded.schema, 1, reason: 'the document says what it is');
-      expect(decoded.goals, isEmpty,
-          reason: 'it held no goals — not "it held unknown goals"');
+      expect(
+        decoded.goals,
+        isEmpty,
+        reason: 'it held no goals — not "it held unknown goals"',
+      );
       expect(decoded.blocks.single.name, 'Accumulation');
       expect(decoded.sessions.single.name, 'Push');
       expect(decoded.sessions.single.blockId, 'b1');
@@ -224,10 +240,14 @@ void main() {
         'goals': const [],
       });
 
-      expect(() => ProgramContent.decode(future), throwsFormatException,
-          reason: 'tolerating an older document is not the same as guessing '
-              'at a newer one — an unknown shape renders as missing content, '
-              'never as wrong content');
+      expect(
+        () => ProgramContent.decode(future),
+        throwsFormatException,
+        reason:
+            'tolerating an older document is not the same as guessing '
+            'at a newer one — an unknown shape renders as missing content, '
+            'never as wrong content',
+      );
     });
 
     test('counts match the captured content', () {
@@ -273,13 +293,27 @@ void main() {
       final after = ProgramContent(
         blocks: before.blocks,
         sessions: [
-          _session('s1', notes: 'chest focus', blockId: 'b1', exercises: [
-            _exercise('s1e1', sets: [
-              _set('s1e1set1', weight: '65', reps: '5', variation: 'v1'),
-              _set('s1e1set2', weight: '60', reps: '5', n: 2, notes: 'backoff'),
-            ]),
-            _exercise('s1e2', exerciseId: 'ex2', order: 2),
-          ]),
+          _session(
+            's1',
+            notes: 'chest focus',
+            blockId: 'b1',
+            exercises: [
+              _exercise(
+                's1e1',
+                sets: [
+                  _set('s1e1set1', weight: '65', reps: '5', variation: 'v1'),
+                  _set(
+                    's1e1set2',
+                    weight: '60',
+                    reps: '5',
+                    n: 2,
+                    notes: 'backoff',
+                  ),
+                ],
+              ),
+              _exercise('s1e2', exerciseId: 'ex2', order: 2),
+            ],
+          ),
           _session('s2', name: 'Pull', sequenceOrder: 2),
         ],
       );
@@ -306,8 +340,9 @@ void main() {
     test('an unknown schema throws rather than guessing', () {
       expect(
         () => ProgramContent.decode(
-            '{"schema": ${ProgramContent.currentSchema + 1}, '
-            '"sessions": []}'),
+          '{"schema": ${ProgramContent.currentSchema + 1}, '
+          '"sessions": []}',
+        ),
         throwsFormatException,
       );
     });
@@ -320,10 +355,7 @@ void main() {
     });
 
     test('non-object JSON throws', () {
-      expect(
-        () => ProgramContent.decode('[1, 2, 3]'),
-        throwsFormatException,
-      );
+      expect(() => ProgramContent.decode('[1, 2, 3]'), throwsFormatException);
     });
 
     test('malformed JSON throws', () {

@@ -135,7 +135,7 @@ class FloatingGlass extends StatelessWidget {
 /// The bar paints *over* [child] rather than being laid out beside it, which
 /// is what lets content scroll under the blur. Give the end of the scrollable
 /// [contentInset] worth of padding or its last item ends up underneath.
-class FloatingBarOverlay extends StatelessWidget {
+class FloatingBarOverlay extends StatefulWidget {
   const FloatingBarOverlay({
     super.key,
     required this.bar,
@@ -150,8 +150,10 @@ class FloatingBarOverlay extends StatelessWidget {
   /// A second bar floating directly above [bar] — the editor's counts over the
   /// nav bar or a review's. It shares [bar]'s margins and floats on the same
   /// gap, so the floor reads as one stack however many bars are standing on
-  /// it, and the page scrolls under all of them. A bar's worth of height is
-  /// what [contentInset] makes room for.
+  /// it, and the page scrolls under all of them. What it claims of
+  /// [contentInset] is its own measured height — a floating bar is a fixed
+  /// one, but a floating NOTICE (the another-device message, 2026-10-27) is
+  /// as tall as its words, and the page below has to clear all of it.
   final Widget? above;
 
   /// The page body. Painted under the bar, which is what the blur samples.
@@ -175,14 +177,62 @@ class FloatingBarOverlay extends StatelessWidget {
   }
 
   @override
+  State<FloatingBarOverlay> createState() => _FloatingBarOverlayState();
+}
+
+class _FloatingBarOverlayState extends State<FloatingBarOverlay> {
+  /// Sits on the storey above the bar so its laid-out size can be read.
+  final _aboveKey = GlobalKey();
+
+  /// The height the storey above the bar actually drew at. Null until the
+  /// frame it first drew in — the inset falls back to a bar's height, which
+  /// is exact for every bar and one frame short for a taller notice.
+  double? _aboveHeight;
+
+  @override
+  void didUpdateWidget(FloatingBarOverlay oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // A different storey answers for itself — the old height is no evidence
+    // about the new one, and the measured value rebuilds on its own frame.
+    if (oldWidget.above != widget.above) _aboveHeight = null;
+  }
+
+  // The storey's size exists only once it has been laid out, so the height is
+  // read after the frame and handed back through setState; the next build's
+  // inset carries it to every page below. A storey whose size is already
+  // known schedules one callback and goes no further.
+  void _measureAbove() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || widget.above == null) return;
+      _readAboveHeight();
+    });
+  }
+
+  /// Compares the laid-out height with the one the inset is carrying.
+  ///
+  /// Runs in the post-frame pass — the storey's size exists only there — and
+  /// is scheduled both by this overlay's own builds and by the storey's
+  /// [SizeChangedLayoutNotifier]: a storey can change height WITHOUT this
+  /// overlay rebuilding (the notice re-words itself off the ViewModel), and
+  /// the page below still has to be told.
+  void _readAboveHeight() {
+    final height = _aboveKey.currentContext?.size?.height;
+    if (height != null && height != _aboveHeight) {
+      setState(() => _aboveHeight = height);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     // A bar stacked above is a bar's height plus the gap it floats on: bars
-    // stack at the rhythm they float at.
-    final aboveInset =
-        above == null ? 0.0 : FloatingBar.barHeight + FloatingBar.floatGap;
+    // stack at the rhythm they float at. A notice is its measured height.
+    final aboveInset = widget.above == null
+        ? 0.0
+        : (_aboveHeight ?? FloatingBar.barHeight) + FloatingBar.floatGap;
+    if (widget.above != null) _measureAbove();
     return Stack(
       children: [
-        _FloatingBarScope(aboveInset: aboveInset, child: child),
+        _FloatingBarScope(aboveInset: aboveInset, child: widget.child),
         Positioned(
           left: FloatingBar.sideMargin,
           right: FloatingBar.sideMargin,
@@ -196,11 +246,23 @@ class FloatingBarOverlay extends StatelessWidget {
             // rather than a storey of it.
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              if (above != null) ...[
-                above!,
+              if (widget.above != null) ...[
+                NotificationListener<SizeChangedLayoutNotification>(
+                  // Its own lay-out change, not ours: re-read the height and
+                  // the inset follows on the next frame. The notification is
+                  // dispatched from inside layout, so the read waits for the
+                  // post-frame pass.
+                  onNotification: (_) {
+                    _measureAbove();
+                    return false;
+                  },
+                  child: SizeChangedLayoutNotifier(
+                    child: KeyedSubtree(key: _aboveKey, child: widget.above!),
+                  ),
+                ),
                 const SizedBox(height: FloatingBar.floatGap),
               ],
-              bar,
+              widget.bar,
             ],
           ),
         ),

@@ -1,24 +1,36 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
 import '../../../core/styles/app_radius.dart';
 import '../../../shared/widgets/container_styles.dart';
 import '../../../core/styles/app_spacing.dart';
+import '../../../shared/widgets/undo_redo_buttons.dart';
 import '../../../core/styles/app_text_styles.dart';
 import '../../../core/utils/session_format.dart';
+import '../../../core/utils/name_limit.dart';
 import '../../../data/models/planned_session.dart';
 import '../../../data/models/program_content.dart';
 import '../../../shared/mixins/unsaved_changes_guard.dart';
 import '../../../shared/router/app_router.dart';
 import '../../../shared/widgets/add_exercise_modal.dart';
+import '../../../shared/widgets/bar_icon_button.dart';
 import '../../../shared/widgets/dropdown_select.dart';
 import '../../../shared/widgets/exercise_selector.dart';
-import '../../../shared/widgets/floating_bar.dart';
+import '../../../shared/widgets/glass_button.dart';
+import '../../../shared/widgets/header_icon_button.dart';
+import '../../../shared/widgets/keyboard_floor_layout.dart';
 import '../../../shared/widgets/scroll_shrink_nav_bar.dart';
+import '../../../shared/widgets/session_date_bar.dart';
 import '../../../shared/widgets/session_exercise_card.dart';
 import '../../../shared/widgets/session_set_row.dart';
-import '../../../shared/widgets/stats_row.dart';
+import '../../goals/view/exercise_goals_sheet.dart';
+import '../../goals/view/goal_sheet.dart';
+import '../../session/view/exercise_notes_modal.dart';
+import '../../session/view/pr_history_sheet.dart';
+import '../../session/view/session_stats_bar.dart';
+import '../../../shared/widgets/exercise_target_picker.dart';
 import '../viewmodel/workout_editor_viewmodel.dart';
 import 'review_container.dart';
 
@@ -47,12 +59,15 @@ Future<bool> confirmEditWhileRunning(BuildContext context) async {
       content: Text(
         'This program is active. Changes to the workout apply to future '
         'sessions; past logged sets and PRs won\'t change.',
-        style: AppFonts.ui(color: AppColors.muted),
+        style: AppFonts.ui(color: AppColors.inkSecondary, height: 1.4),
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.of(ctx).pop(false),
-          child: Text('Cancel', style: AppFonts.ui(color: AppColors.muted)),
+          child: Text(
+            'Cancel',
+            style: AppFonts.ui(color: AppColors.inkSecondary),
+          ),
         ),
         TextButton(
           onPressed: () => Navigator.of(ctx).pop(true),
@@ -72,20 +87,37 @@ Future<bool> confirmEditWhileRunning(BuildContext context) async {
 
 /// Full-screen planned-workout editor that mirrors the active-session UX:
 /// tabbed by exercise, inline editable set grid (PlanSetRow), auto-commit on
-/// blur, Lessons/History per exercise, swipe-to-reveal delete/duplicate.
+/// blur, Notes/History per exercise, swipe-to-reveal delete/duplicate.
 /// Pushed via [program_detail_screen.dart] on create or edit.
 class PlanSessionScreen extends StatefulWidget {
   const PlanSessionScreen({
+    this.canDelete = true,
+    this.ownsViewModel = false,
     super.key,
     required this.viewModel,
     this.workout,
     this.standalone = false,
     this.standaloneWorkoutId,
     this.newWorkoutBlockId,
+    this.reviewSession,
   });
 
   final WorkoutEditorViewModel viewModel;
   final PlannedSession? workout; // null = new workout
+
+  /// Whether this screen created the VM it was handed, and so disposes it.
+  /// The library's create/edit path passes true (2026-10-28): it used to
+  /// dispose the VM as soon as the pop future resolved — while the editor's
+  /// own `dispose` still had to commit its name and notes, which then threw
+  /// inside the navigator's locked section and left every later push failing
+  /// (`!_debugLocked`). Tests and the review flow own their VMs and pass
+  /// false.
+  final bool ownsViewModel;
+
+  /// Whether the editor offers removal. Coach mode sets it false
+  /// (2026-10-28): plan on the athlete's behalf, never prune her library. The
+  /// VM refuses too; this hides the doors.
+  final bool canDelete;
 
   /// When true, a new workout is a standalone workout (no program).
   final bool standalone;
@@ -98,6 +130,19 @@ class PlanSessionScreen extends StatefulWidget {
   /// unfiled — which matters because a blocked program has no Workouts tab for
   /// an unfiled row to appear in.
   final String? newWorkoutBlockId;
+
+  /// The review this editor was opened under, when it was — handed in by the
+  /// review route rather than left to the ambient scope (2026-10-25).
+  ///
+  /// The scope is how an in-pass editor finds its review, and it works while
+  /// the pass runs: the notifier sits above the navigator. But it is a
+  /// GLOBAL, and a bar that reads it falls back to the app's tab bar the
+  /// moment it is empty — a record's workout, a route left standing after
+  /// the pass moved on, a rebuild after a reload. A workout opened from a
+  /// review is inside a ceremony for as long as it is on screen, so the
+  /// ceremony travels with the route. Null for every editor opened outside
+  /// one.
+  final ReviewSession? reviewSession;
 
   @override
   State<PlanSessionScreen> createState() => _PlanSessionScreenState();
@@ -124,15 +169,21 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
     return (sessions == null || sessions.isEmpty) ? null : sessions.first;
   }
 
-  /// The plan's own set count: every real row, and every draft.
+  /// The pass this editor is inside, or null for a plain editor.
   ///
-  /// A draft is an open set — added, not yet given a target, "do anything" —
-  /// and a set the user can see is a set the count has to own. Drafts
-  /// materialize as rows on input or on Save, so the number never moves when
-  /// one becomes a row.
-  int _planSetCount(WorkoutEditorState state) =>
-      state.workoutPlannedSessionExerciseSets.length +
-      state.workoutSetDrafts.values.fold(0, (count, ids) => count + ids.length);
+  /// The route's own review is the base — a workout opened from a review stays
+  /// in the ceremony even after the ambient scope has gone — with the live
+  /// copy read back by id when the notifier still holds this pass, so a Done
+  /// tick or an open workout keeps moving the bar. The scope lookup stays on
+  /// this path for the editors that were handed no review: it is both their
+  /// source and their rebuild dependency.
+  ReviewSession? get _reviewSession {
+    final scoped = ReviewScope.maybeOf(context);
+    final base = widget.reviewSession ?? scoped;
+    if (base == null) return null;
+    final live = reviewSessionNotifier.value;
+    return (live != null && live.reviewId == base.reviewId) ? live : base;
+  }
 
   @override
   void initState() {
@@ -165,7 +216,13 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
         // the 'New Session' seed forever.
         await widget.viewModel.openStandaloneWorkout(sid);
       } else if (widget.workout != null) {
-        await widget.viewModel.openEditWorkout(widget.workout!);
+        // A review's editor reads the workout with its removals in it: a
+        // group deleted during the pass stays on the card, red, so its note
+        // can explain why it went (2026-10-26).
+        await widget.viewModel.openEditWorkout(
+          widget.workout!,
+          includeArchived: _reviewSession != null,
+        );
       } else if (widget.standalone) {
         await widget.viewModel.createStandaloneWorkoutAndOpen();
       } else {
@@ -203,6 +260,10 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
     // updates that rebuild widgets referencing these controllers.
     widget.viewModel.commitWorkoutName();
     widget.viewModel.commitWorkoutNotes();
+    // Only an owned VM is disposed here, and only after its commits — the
+    // library hands the VM over rather than disposing it out from under this
+    // dispose (2026-10-28).
+    if (widget.ownsViewModel) widget.viewModel.dispose();
     _nameCtrl.dispose();
     _notesCtrl.dispose();
     _nameFocus.dispose();
@@ -225,12 +286,17 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
   }
 
   @override
-  void onDiscard() {
+  Future<void> onDiscard() {
     // Roll back to the open-time snapshot (or last Save): header fields and
     // sets. A workout created this editing session rolls back to
     // nonexistence; one with no exercises left after a full rollback is
     // removed rather than kept as an empty orphan.
-    widget.viewModel.discardWorkoutChanges();
+    //
+    // Awaited — the guard re-reads `hasUnsavedChanges` the moment this
+    // returns (2026-10-26). Un-awaited, the pop was decided mid-rollback,
+    // the guard declined, and the editor was left standing on its spinner
+    // with no workout under it.
+    return widget.viewModel.discardWorkoutChanges();
   }
 
   /// A nav-bar tab tap: run the unsaved-changes guard, then leave the editor
@@ -268,20 +334,22 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
   /// because it is pushed over the tab shell — or, while a review runs, the
   /// review's own bar in the same container.
   ///
-  /// [aboveBar] is the counts pill, stacked on the same floor — passed only
-  /// outside a review, where there is no review bar to carry the numbers. It
-  /// rides in the chrome rather than the page body because the two are one
-  /// stack: the floor of this screen is glass, however many bars are standing
-  /// on it.
+  /// The session furniture that used to ride [aboveBar] — the counts pill,
+  /// then the review's undo/redo storey — is the page's own floor now
+  /// (2026-10-26): [KeyboardFloorLayout] draws it inside the body, so the
+  /// floating bar is all that stands on the chrome. The floor still measures
+  /// its bottom inset from inside this wrapper, which is why the page is
+  /// built by a `Builder` under it.
   ///
   /// Compare is wired here because the record lives here: the bar loads a
   /// comparison and hands it back, and what this screen does with it is swap
   /// its own sets for it — and hand back null when the bar's button is tapped
   /// again.
-  Widget _navBar(Widget child, {Widget? aboveBar}) => editorNavBar(
+  Widget _navBar(Widget child) => editorNavBar(
     context,
     child: child,
-    aboveBar: aboveBar,
+    session: _reviewSession,
+    userId: widget.viewModel.userId,
     onTap: _onNavTap,
     settle: settleForReview,
     settleForCompare: settleForCompare,
@@ -316,6 +384,9 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
               body: reviewChrome(
                 context,
                 settle: null,
+                // The route's own pass, like the bar below it (2026-10-25).
+                session: _reviewSession,
+                userId: widget.viewModel.userId,
                 child: Center(
                   child: Padding(
                     padding: const EdgeInsets.all(AppSpacing.xl),
@@ -363,6 +434,8 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
             body: reviewChrome(
               context,
               settle: null,
+              session: _reviewSession,
+              userId: widget.viewModel.userId,
               child: Center(
                 child: CircularProgressIndicator(color: AppColors.accent),
               ),
@@ -372,169 +445,188 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
         // The record, when Compare is up. Read once here: it decides what the
         // body shows, and the exercise card draws from it.
         final original = _originalSession;
-        // The counts, in the app's own floating container — the same glass the
-        // nav bar wears, standing on the same floor one gap above it. They
-        // ride the chrome rather than the page because that is what they are:
-        // a readout about the page, at the floor, not a part of it. The page
-        // scrolls under them.
-        //
-        // Not during a pass (2026-10-10): there the review bar owns the floor
-        // and carries the numbers that matter — what CHANGED — so the pill
-        // stands down with the nav bar, and the page's inset shrinks with it
-        // ([FloatingBarOverlay] measures whatever is actually above the floor).
-        final statsBar = ReviewScope.maybeOf(context) == null
-            ? FloatingBar(
-                child: _PlanStatsBar(
-                  setCount: _planSetCount(state),
-                  exerciseCount: state.workoutExerciseSlots.length,
-                ),
-              )
-            : null;
-        return _navBar(buildGuardedScaffold(
-          scaffold: Scaffold(
-            backgroundColor: AppColors.bg,
-            // The editor is pushed full-screen (root navigator), which covers
-            // the tab shell — so it draws the app's floating bar itself. Tab
-            // taps run the unsaved-changes guard before leaving; while a
-            // review runs, the pass's own bar takes that bar's place.
-            body: Column(
-              children: [
-                _editableHeader(
-                  state.workoutUnsavedChanges,
-                  state.workoutExerciseSlots.isEmpty,
-                ),
-                if (state.error != null)
-                  Container(
-                    width: double.infinity,
-                    color: AppColors.dangerBg,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.lg,
-                      vertical: AppSpacing.sm,
-                    ),
-                    child: Text(
-                      state.error!,
-                      style: AppFonts.ui(
-                        color: AppColors.danger,
-                        fontSize: AppTextStyles.sm,
-                      ),
-                    ),
+        return _navBar(
+          buildGuardedScaffold(
+            scaffold: Scaffold(
+              backgroundColor: AppColors.bg,
+              // The keyboard paints over the floor instead of lifting it
+              // (2026-10-25), the same rule the session surfaces follow: the
+              // nav or review bar keeps its place and the page's scroll
+              // shrinks its viewport to the keyboard's top.
+              resizeToAvoidBottomInset: false,
+              // The editor is pushed full-screen (root navigator), which covers
+              // the tab shell — so it draws the app's floating bar itself. Tab
+              // taps run the unsaved-changes guard before leaving; while a
+              // review runs, the pass's own bar takes that bar's place.
+              body: Column(
+                children: [
+                  _editableHeader(
+                    state.workoutUnsavedChanges,
+                    state.workoutExerciseSlots.isEmpty,
                   ),
-                Expanded(
-                  // The page runs UNDER the floor: the nav or review bar and
-                  // the counts above it all paint over the page instead of
-                  // taking a band of it, so the scroll's own end has to clear
-                  // the whole stack.
-                  //
-                  // The Builder is load-bearing: this page draws those bars
-                  // around itself (`_navBar` below), so the inset only answers
-                  // from a context INSIDE that wrapper — measured from the
-                  // page's own build context it reads zero and the last set
-                  // ends up under the glass instead of clear of it.
-                  child: Builder(
-                    builder: (context) => SingleChildScrollView(
-                      padding: EdgeInsets.fromLTRB(
-                        AppSpacing.lg,
-                        AppSpacing.md,
-                        AppSpacing.lg,
-                        ScrollShrinkNavBar.contentInset(context),
+                  if (state.error != null)
+                    Container(
+                      width: double.infinity,
+                      color: AppColors.dangerBg,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.lg,
+                        vertical: AppSpacing.sm,
                       ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          // Session Notes is hidden from the frontend for now
-                          // (the VM plumbing stays — see initState). Day-of-week
-                          // scheduling is retired for now: a workout is a list
-                          // of exercises, and nothing assigns it to a weekday.
-                          //
-                          // Compare does not change the page: the same card
-                          // draws the same workout, with the record's rows in
-                          // place of the plan's (`original` below). The card's
-                          // tabs and buttons hold their places — the flip is
-                          // values only — and the note box flips its words
-                          // with them: the record's own note, labelled as the
-                          // record's, while the record is up. Which is what
-                          // the bar's label is there to tell apart.
-                          if (state.workoutSetsLoading)
-                            Center(
-                              child: Padding(
-                                padding: const EdgeInsets.all(AppSpacing.lg),
-                                child: CircularProgressIndicator(
-                                  color: AppColors.accent,
-                                ),
-                              ),
-                            )
-                          else if (state.workoutExerciseSlots.isEmpty) ...[
-                            const SizedBox(height: AppSpacing.xl),
-                            GestureDetector(
-                              onTap: _showAddExercise,
-                              child: Container(
-                                width: double.infinity,
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: AppSpacing.xxl,
-                                ),
-                                decoration: lambdaBox(ContainerTone.surface, radius:
-                                    AppRadius.lg,
+                      child: Text(
+                        state.error!,
+                        style: AppFonts.ui(
+                          color: AppColors.danger,
+                          fontSize: AppTextStyles.sm,
+                        ),
+                      ),
+                    ),
+                  Expanded(
+                    // The floor keeps its place under the keyboard, the
+                    // session surfaces' rule (2026-10-25): it is laid out
+                    // first and the page above it shrinks to the keyboard's
+                    // top, so a focused target cell is revealed above the
+                    // keyboard rather than behind it.
+                    //
+                    // The Builder is load-bearing: the floor measures the
+                    // floating bar it stands under through
+                    // `ScrollShrinkNavBar.contentInset`, which only answers
+                    // from a context INSIDE `_navBar`'s wrapper.
+                    child: Builder(
+                      builder: (context) => KeyboardFloorLayout(
+                        page: SingleChildScrollView(
+                          // The viewer's own insets — the card opens on the
+                          // same 22pt gutter, from the same 16 of air under
+                          // the header (2026-10-26).
+                          padding: const EdgeInsets.fromLTRB(
+                            AppSpacing.lg,
+                            AppSpacing.lg,
+                            AppSpacing.lg,
+                            AppSpacing.lg,
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              // Session Notes is hidden from the frontend for now
+                              // (the VM plumbing stays — see initState). Day-of-week
+                              // scheduling is retired for now: a workout is a list
+                              // of exercises, and nothing assigns it to a weekday.
+                              //
+                              // Compare does not change the page: the same card
+                              // draws the same workout, with the record's rows in
+                              // place of the plan's (`original` below). The card's
+                              // tabs and buttons hold their places — the flip is
+                              // values only — and the note box flips its words
+                              // with them: the record's own note, labelled as the
+                              // record's, while the record is up. Which is what
+                              // the bar's label is there to tell apart.
+                              if (state.workoutSetsLoading)
+                                Center(
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(
+                                      AppSpacing.lg,
+                                    ),
+                                    child: CircularProgressIndicator(
+                                      color: AppColors.accent,
+                                    ),
                                   ),
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.fitness_center_outlined,
-                                      size: 32,
-                                      color: AppColors.muted,
+                                )
+                              else if (state.workoutExerciseSlots.isEmpty) ...[
+                                const SizedBox(height: AppSpacing.xl),
+                                GestureDetector(
+                                  onTap: _showAddExercise,
+                                  child: Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: AppSpacing.xxl,
                                     ),
-                                    const SizedBox(height: AppSpacing.sm),
-                                    Text(
-                                      'Tap to add an exercise',
-                                      style: AppFonts.ui(
-                                        fontSize: AppTextStyles.md,
-                                        color: AppColors.muted,
-                                      ),
+                                    decoration: lambdaBox(
+                                      ContainerTone.surface,
+                                      radius: AppRadius.lg,
                                     ),
-                                    const SizedBox(height: AppSpacing.xs),
-                                    Text(
-                                      'A workout needs at least one exercise',
-                                      style: AppFonts.ui(
-                                        fontSize: AppTextStyles.xs,
-                                        color: AppColors.muted,
-                                      ),
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          LucideIcons.dumbbell,
+                                          size: 32,
+                                          color: AppColors.muted,
+                                        ),
+                                        const SizedBox(height: AppSpacing.sm),
+                                        Text(
+                                          'Tap to add an exercise',
+                                          style: AppFonts.ui(
+                                            fontSize: AppTextStyles.md,
+                                            color: AppColors.inkSecondary,
+                                          ),
+                                        ),
+                                        const SizedBox(height: AppSpacing.xs),
+                                        Text(
+                                          'A workout needs at least one exercise',
+                                          style: AppFonts.ui(
+                                            fontSize: AppTextStyles.xs,
+                                            color: AppColors.inkSecondary,
+                                          ),
+                                        ),
+                                      ],
                                     ),
-                                  ],
+                                  ),
                                 ),
-                              ),
-                            ),
-                          ] else if (state.activeSlot != null)
-                            _PlanExerciseCard(
-                              viewModel: widget.viewModel,
-                              slot: state.activeSlot!,
-                              onAddExercise: _showAddExercise,
-                              original: original,
-                              originalNotes: _original?.beforeNotes ?? const {},
-                            ),
-                        ],
+                              ] else if (state.activeSlot != null) ...[
+                                _PlanExerciseCard(
+                                  viewModel: widget.viewModel,
+                                  slot: state.activeSlot!,
+                                  onAddExercise: _showAddExercise,
+                                  canDelete: widget.canDelete,
+                                  original: original,
+                                  originalNotes:
+                                      _original?.beforeNotes ?? const {},
+                                ),
+                                // The way back for a group the pass removed
+                                // (2026-10-28): the card keeps it red, and
+                                // this puts it — and every set under it —
+                                // back in place. The live session's own
+                                // Restore, under the same card. Not while
+                                // Compare is up: the record is not the plan.
+                                if (original == null &&
+                                    _reviewSession != null &&
+                                    state.activeSlot!.deleted)
+                                  Padding(
+                                    padding: const EdgeInsets.only(
+                                      top: AppSpacing.md,
+                                    ),
+                                    child: GlassButton(
+                                      label: 'Restore',
+                                      onPressed: () => widget.viewModel
+                                          .restorePlannedExerciseGroup(
+                                            state.activeSlotIndex,
+                                          ),
+                                    ),
+                                  ),
+                              ],
+                            ],
+                          ),
+                        ),
+                        floor: _planFloor(context, state, original),
                       ),
                     ),
                   ),
-                ),
-                // The counts used to be a strip of their own here, pinned over
-                // a painted band. They are a floating bar now (`statsBar`,
-                // above) — the whole floor of this screen is glass, and the
-                // page scrolls under all of it.
-              ],
+                ],
+              ),
             ),
           ),
-        ), aboveBar: statsBar);
+        );
       },
     );
   }
 
   Widget _editableHeader(bool unsaved, bool noExercises) {
     final topPadding = MediaQuery.of(context).padding.top;
-    // Inside a review the header keeps no Delete: the trash deletes the
-    // planned workout, which is not what a pass is doing — taking a workout
-    // OUT of a review is the landing's swipe. The pass's own verbs (the
-    // workout's note among them) are on its bar, at the floor.
-    final review = ReviewScope.maybeOf(context);
+    // One trailing control, ever (2026-10-28): the Save check, and only while
+    // there is something to save. The Delete glyph is gone — a workout is
+    // deleted by the swipe in its list, and a second delete door in the bar
+    // crowded the title (the check plus a 40pt delete box reached inside the
+    // 88 band the name centres in). Taking a workout OUT of a review is the
+    // landing's swipe; a pass never deletes the plan.
     return Container(
       padding: EdgeInsets.only(top: topPadding),
       decoration: BoxDecoration(
@@ -548,8 +640,12 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
           children: [
             Positioned(
               left: 16,
-              child: GestureDetector(
-                onTap: () async {
+              child: HeaderIconButton(
+                icon: LucideIcons.chevronLeft,
+                semanticsLabel: 'Back',
+                glyphSize: 18,
+                color: AppColors.primary,
+                onPressed: () async {
                   // Blur first — set cells commit on focus loss, and the
                   // back guard must see the typed values.
                   FocusManager.instance.primaryFocus?.unfocus();
@@ -557,11 +653,6 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
                     Navigator.of(context, rootNavigator: true).pop();
                   }
                 },
-                child: Icon(
-                  Icons.arrow_back_ios_new,
-                  size: 18,
-                  color: AppColors.primary,
-                ),
               ),
             ),
             Positioned(
@@ -578,6 +669,10 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
                   focusNode: _nameFocus,
                   textAlign: TextAlign.center,
                   textCapitalization: TextCapitalization.words,
+                  // A header title has no room for a counter under it — the
+                  // field stops at the cap, which is the same hard stop the
+                  // workout cards enforce.
+                  maxLength: kMaxWorkoutNameLength,
                   style: AppFonts.ui(
                     fontSize: 17,
                     fontWeight: FontWeight.w600,
@@ -586,6 +681,7 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
                   decoration: const InputDecoration(
                     border: InputBorder.none,
                     hintText: 'Session name',
+                    counterText: '',
                     contentPadding: EdgeInsets.zero,
                     isDense: true,
                   ),
@@ -594,44 +690,26 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
               ),
             ),
             Positioned(
-              // The bare trash keeps the tighter 6 that its glyph's own side
-              // bearing already answers for; the boxed Save reads to the edge
-              // of its border, so it takes the inset the header's other
-              // controls use.
-              right: unsaved && !noExercises ? 16 : 6,
+              // Every control in this row is a box now — the bare glyphs wear
+              // [HeaderIconButton]'s 44px target — so the row takes the header
+              // inset its neighbours use, not the tighter one a bare glyph's
+              // own bearing answered for.
+              right: 16,
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (unsaved && !noExercises) ...[
-                    GestureDetector(
-                      onTap: () => widget.viewModel.saveWorkout(),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        // The glass recipe in success — the pressable chrome.
-                        decoration: glassBox(AppColors.success),
-                        child: Text(
-                          'Save',
-                          style: AppFonts.ui(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.success,
-                          ),
-                        ),
-                      ),
-                    ),
-                    if (review == null) const SizedBox(width: 10),
-                  ],
-                  if (review == null)
-                    GestureDetector(
-                      onTap: _confirmDelete,
-                      child: Icon(
-                        Icons.delete_outline,
-                        size: 20,
-                        color: AppColors.danger,
-                      ),
+                  // Undo/redo live on the floor in both modes (2026-10-26):
+                  // the editor wears the session floor now, and the header
+                  // keeps only the verb that belongs to the workout's
+                  // identity — Save, while there is anything unsaved.
+                  if (unsaved && !noExercises)
+                    GlassButton(
+                      label: '',
+                      icon: LucideIcons.check,
+                      semanticsLabel: 'Save workout',
+                      color: AppColors.success,
+                      compact: true,
+                      onPressed: () => widget.viewModel.saveWorkout(),
                     ),
                 ],
               ),
@@ -642,16 +720,216 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
     );
   }
 
+  /// The planner's floor (2026-10-26): the session floors' own furniture, so
+  /// planning reads as the same screen as logging — the same date bar, the
+  /// same row of 48pt squares, the same tiles.
+  ///
+  /// What the planner cannot do, it draws spent rather than omitting, the
+  /// session floors' own rule for a null callback:
+  ///
+  /// * the date bar is [SessionDateBar.plan] — a template is planned *for*
+  ///   sessions, so its phrase reads `PLAN` and both chevrons are greyed;
+  /// * the star is a session's ratings, and a plan has no session: greyed;
+  /// * outside a pass the trash is spent: the planner hides archived groups,
+  ///   and undo is the way back. **Inside a pass it is a door** (2026-10-28):
+  ///   the card keeps a removal red with its note, so the trash lists the
+  ///   pass's own removals and opens one for reading — and the Restore
+  ///   button under the card puts it back, exactly like the live session.
+  ///
+  /// The tiles are the live doors. A plan is *informed* by what the exercise
+  /// has done — every PR it ever landed, every goal it still stands, every
+  /// note it carries — so the trophy opens the PR History sheet, the bullseye
+  /// the exercise's goals (2026-10-27) and the note the exercise notes modal,
+  /// all scoped to the exercise on the card. The counts are whole shelves,
+  /// not a session gain, so the tiles draw `gain: false` (2026-10-26).
+  ///
+  /// Undo/redo answer as they always have — and stay spent while Compare is
+  /// up, because the record on screen is not the plan underneath.
+  Widget _planFloor(
+    BuildContext context,
+    WorkoutEditorState state,
+    ContentSession? original,
+  ) {
+    final vm = widget.viewModel;
+    final exerciseId = state.activeSlot?.exerciseId;
+    final locked = original != null;
+    final review = _reviewSession;
+    // The pass's own removals: the card still holds them, so the trash can
+    // list them by name and open one for reading. Outside a pass the list is
+    // empty and the slot stays spent.
+    final deletedSlots = [
+      if (review != null)
+        for (var i = 0; i < state.workoutExerciseSlots.length; i++)
+          if (state.workoutExerciseSlots[i].deleted)
+            (
+              index: i,
+              name: toProperCase(
+                vm.exerciseDisplayName(
+                  state.workoutExerciseSlots[i].exerciseId,
+                ),
+              ),
+            ),
+    ];
+    return Container(
+      key: const ValueKey('plan-session-bar'),
+      // The session floor's insets — the bottom one included: the page sits
+      // under the floating bar, so the row ends where the live page's does.
+      padding: EdgeInsets.fromLTRB(
+        AppSpacing.lg,
+        AppSpacing.sm,
+        AppSpacing.lg,
+        ScrollShrinkNavBar.contentInset(context),
+      ),
+      decoration: BoxDecoration(
+        color: AppColors.bg,
+        border: Border(top: BorderSide(color: AppColors.border, width: 0.5)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SessionDateBar.plan(),
+          const SizedBox(height: AppSpacing.sm),
+          Row(
+            children: [
+              UndoRedoButtons(
+                canUndo: vm.canUndo && !locked,
+                canRedo: vm.canRedo && !locked,
+                onUndo: vm.undo,
+                onRedo: vm.redo,
+                // Inside a pass the trash lists the pass's removals and a
+                // row opens one for reading; outside it, the slot is spent
+                // (a planner's deletion is a group, and undo is its way
+                // back) — 2026-10-28.
+                deletedExercises: [for (final d in deletedSlots) d.name],
+                onPickDeletedExercise: review == null
+                    ? (_) {}
+                    : (i) => vm.tapTab(deletedSlots[i].index),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              BarIconButton(
+                key: const ValueKey('plan-ratings-button'),
+                icon: LucideIcons.star,
+                semanticsLabel: 'Session ratings',
+                onPressed: () {},
+                enabled: false,
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: SessionStatsTiles(
+                  prCount: exerciseId == null ? 0 : vm.prCountFor(exerciseId),
+                  exerciseNoteCount: exerciseId == null
+                      ? 0
+                      : vm.noteCountFor(exerciseId),
+                  goalCount: exerciseId == null
+                      ? 0
+                      : vm.openGoalsFor(exerciseId),
+                  // A plan gains nothing: the counts are the whole shelves
+                  // behind the doors.
+                  gain: false,
+                  onPrTap: exerciseId == null
+                      ? null
+                      : () => _openPrHistory(exerciseId),
+                  onNoteTap: exerciseId == null
+                      ? null
+                      : () => _openNotes(exerciseId),
+                  // The goals door rides the planner too (2026-10-27): what
+                  // the exercise is chasing informs what the plan should ask
+                  // of it. Inside a review the same door stands.
+                  onGoalTap: exerciseId == null
+                      ? null
+                      : () => _openGoals(exerciseId),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// The floor's trophy: the active exercise's PR History, drawn by the same
+  /// sheet the session surfaces open. A plan has no session to narrow
+  /// against, so the sheet is handed no set ids and no start — every PR is
+  /// history — and, when a review stands behind the editor, the pass's own
+  /// window so PRs landed since it lead the feed (2026-10-26).
+  void _openPrHistory(String exerciseId) {
+    showPrHistorySheet(
+      context,
+      exerciseName: toProperCase(
+        widget.viewModel.exerciseDisplayName(exerciseId),
+      ),
+      prs: widget.viewModel.prHistoryFor(exerciseId),
+      sessionSetIds: const <String>{},
+      sinceLastReviewAt: _reviewSession?.sinceDate,
+    );
+  }
+
+  /// The floor's bullseye (2026-10-27): the exercise's goals on the PR
+  /// History sheet's furniture, open ones first by default — the same sheet
+  /// the two session floors open. The New goal door seeds the goals form
+  /// with just this exercise and files a standalone goal against this
+  /// editor's library.
+  void _openGoals(String exerciseId) {
+    final vm = widget.viewModel;
+    final state = vm.state.value;
+    final name = toProperCase(vm.exerciseDisplayName(exerciseId));
+    showExerciseGoalsSheet(
+      context,
+      exerciseName: name,
+      listenable: vm.state,
+      goalsFor: () => vm.goalsForExercise(exerciseId),
+      setsFor: () => vm.state.value.goalTimeline,
+      variationNames: {
+        for (final v in state.allVariations) v.variationId: v.name,
+      },
+      onNewGoal: () => showAddGoalSheet(
+        context,
+        detailMap: state.exerciseDetailMap,
+        variations: state.allVariations,
+        lastUsed: vm.lastUsedByExercise,
+        pastSets: state.goalTimeline,
+        seed: ExerciseTarget(exerciseId: exerciseId, exerciseName: name),
+        onAdd: vm.createGoalFromTarget,
+      ),
+    );
+  }
+
+  /// The floor's note: the active exercise's exercise notes, through the
+  /// session's own modal and the editor's own note callbacks — so a note
+  /// can be written, pinned and edited while planning, exactly as it can
+  /// while logging (2026-10-26). No session id and no start: the shelves are
+  /// the exercise's whole story, split by the pass's window when one stands
+  /// behind the editor.
+  void _openNotes(String exerciseId) {
+    final vm = widget.viewModel;
+    showExerciseNotesModal(
+      context,
+      listenable: vm.state,
+      notesFor: vm.notesFor,
+      loadNotesFor: vm.loadNotesFor,
+      addNote: vm.addNote,
+      toggleNotePin: vm.toggleNotePin,
+      deleteNote: vm.deleteNote,
+      updateNote: vm.updateNoteText,
+      canDelete: widget.canDelete,
+      manageOnlyUserId: widget.viewModel.actingActorId,
+      exerciseId: exerciseId,
+      exerciseName: toProperCase(vm.exerciseDisplayName(exerciseId)),
+      sinceLastReviewAt: _reviewSession?.sinceDate,
+    );
+  }
+
   void _confirmRemoveExercise(int index) {
     final state = widget.viewModel.state.value;
     if (index < 0 || index >= state.workoutExerciseSlots.length) return;
     final slot = state.workoutExerciseSlots[index];
+    // Already removed (a review's read keeps it on the card): there is
+    // nothing left to remove, and undo is the way back (2026-10-26).
+    if (slot.deleted) return;
     final name = toProperCase(
       state.exerciseDetailMap[slot.exerciseId]?.name ?? 'exercise',
     );
-    final setCount = state
-        .plannedSetsFor(slot.plannedExerciseId ?? '')
-        .length;
+    final setCount = state.plannedSetsFor(slot.plannedExerciseId ?? '').length;
 
     showDialog<void>(
       context: context,
@@ -665,13 +943,22 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
           ),
         ),
         content: Text(
-          'Remove $name from this workout?\n$setCount set${setCount == 1 ? '' : 's'} will be removed.',
-          style: AppFonts.ui(color: AppColors.muted),
+          // Inside a review the removal is a change worth explaining, so the
+          // card keeps the removed group on screen, red, until the pass
+          // finishes — the note beside it is where the reason goes. Outside a
+          // review the planner hides it like it always has (2026-10-26).
+          _reviewSession == null
+              ? 'Remove $name from this workout?\n$setCount set${setCount == 1 ? '' : 's'} will be removed.'
+              : 'Remove $name from this workout?\nIt stays on the card, red, so the review note can say why.',
+          style: AppFonts.ui(color: AppColors.inkSecondary, height: 1.4),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: Text('Keep', style: AppFonts.ui(color: AppColors.muted)),
+            child: Text(
+              'Keep',
+              style: AppFonts.ui(color: AppColors.inkSecondary),
+            ),
           ),
           TextButton(
             onPressed: () {
@@ -680,51 +967,6 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
             },
             child: Text(
               'Remove',
-              style: AppFonts.ui(
-                color: AppColors.danger,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _confirmDelete() {
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        title: Text(
-          'Delete Session',
-          style: AppFonts.ui(
-            fontWeight: FontWeight.w800,
-            color: AppColors.danger,
-          ),
-        ),
-        content: Text(
-          'Remove this planned workout and its sets?',
-          style: AppFonts.ui(color: AppColors.muted),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text('Cancel', style: AppFonts.ui(color: AppColors.muted)),
-          ),
-          TextButton(
-            onPressed: () async {
-              Navigator.of(ctx).pop();
-              // Await the delete BEFORE popping the editor — the library
-              // reloads on return, and an un-awaited delete races that
-              // reload (the deleted workout would still be listed).
-              await widget.viewModel.deletePlannedSession();
-              if (mounted) {
-                Navigator.of(context, rootNavigator: true).pop();
-              }
-            },
-            child: Text(
-              'Delete',
               style: AppFonts.ui(
                 color: AppColors.danger,
                 fontWeight: FontWeight.w600,
@@ -748,10 +990,7 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
             AddExerciseEntry(
               exerciseId: e.exerciseId,
               name: toProperCase(e.name),
-              lastUsed: lastUsedFromHistory(
-                s.historyByExercise,
-                e.exerciseId,
-              ),
+              lastUsed: lastUsedFromHistory(s.historyByExercise, e.exerciseId),
             ),
         ];
       },
@@ -759,41 +998,16 @@ class _PlanSessionScreenState extends State<PlanSessionScreen>
         (slot) => slot.exerciseId == id,
       ),
       onAdd: vm.addPlannedExerciseGroup,
-      onRemoveRequest: (id) async {
-        final i = vm.state.value.workoutExerciseSlots.indexWhere(
-          (slot) => slot.exerciseId == id,
-        );
-        if (i >= 0) _confirmRemoveExercise(i);
-      },
+      onRemoveRequest: widget.canDelete
+          ? (id) async {
+              final i = vm.state.value.workoutExerciseSlots.indexWhere(
+                (slot) => slot.exerciseId == id,
+              );
+              if (i >= 0) _confirmRemoveExercise(i);
+            }
+          : null,
       onCreate: vm.submitNewExercise,
       isCreating: () => vm.state.value.newExCreating,
-    );
-  }
-}
-
-// ── Stats Bar ────────────────────────────────────────────────────────────────
-
-class _PlanStatsBar extends StatelessWidget {
-  const _PlanStatsBar({required this.setCount, required this.exerciseCount});
-
-  final int setCount;
-  final int exerciseCount;
-
-  @override
-  Widget build(BuildContext context) {
-    return StatsRow(
-      // Two tiles, read across: SETS 25 · EXERCISES 4 — the way the live
-      // session's own bar reads the same kinds of count.
-      inline: true,
-      // No container of its own: this row is the CONTENT of the floating
-      // glass pill it rides in ([FloatingBar]), and a box inside a glass
-      // reads as two containers. Bare, its words sit straight on the glass at
-      // full strength.
-      tone: null,
-      tiles: [
-        StatsTile(label: 'SETS', value: '$setCount'),
-        StatsTile(label: 'EXERCISES', value: '$exerciseCount'),
-      ],
     );
   }
 }
@@ -802,14 +1016,18 @@ class _PlanStatsBar extends StatelessWidget {
 
 /// The planner's exercise card — an adapter over the shared
 /// [SessionExerciseCard] with planned-mode rows (targets, not logged sets).
-/// Lessons/History/PRs stay greyed by decision even though the VM holds
-/// lesson/history data: planning is about targets, and those surfaces stay
-/// disabled until they get planner wiring.
+///
+/// It wears the session's flat look (2026-10-26): no card fill, no border, the
+/// 6pt inner inset that lands every control on the page's 22pt gutter — so
+/// planning and logging read as one screen. The flat card draws no
+/// Notes/History/PRs pills at all; the exercise's PRs and notes are the floor
+/// tiles' doors now, which is why this card wires none of them.
 class _PlanExerciseCard extends StatelessWidget {
   const _PlanExerciseCard({
     required this.viewModel,
     required this.slot,
     required this.onAddExercise,
+    this.canDelete = true,
     this.original,
     this.originalNotes = const {},
   });
@@ -817,6 +1035,10 @@ class _PlanExerciseCard extends StatelessWidget {
   final WorkoutEditorViewModel viewModel;
   final PlanExerciseSlot slot;
   final VoidCallback onAddExercise;
+
+  /// Coach mode keeps the card editable and withholds its removal doors
+  /// (2026-10-28).
+  final bool canDelete;
 
   /// The open workout as the record holds it, while Compare is up — the same
   /// workout drawn through this same card, with the record's rows in place of
@@ -841,6 +1063,10 @@ class _PlanExerciseCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The scope, not the editor's route-carried review: this is the note
+    // bar, and its notes live in [reviewNotesNotifier], which only a live
+    // pass seeds — a carried review (a record's workout) has no notes to
+    // write, so drawing the box for it would offer a field over nothing.
     final review = ReviewScope.maybeOf(context);
     if (review == null) return _card(context, null, const {});
     // The note bar is the pass's record in flight: a save from any card has
@@ -915,13 +1141,17 @@ class _PlanExerciseCard extends StatelessWidget {
             exerciseId: exerciseId,
             displayIndex: i + 1,
             isDraft: false,
-            dragIndex: i,
             initialWeightText: set.targetWeight ?? '',
             initialRepsText: set.targetReps ?? '',
             initialVariationId: set.variationId,
             initialVariationName: set.variationName,
             initialNotes: set.targetNotes,
             hasNotes: set.targetNotes?.isNotEmpty ?? false,
+            // A removed group stays on screen for its rows: red, inert, and
+            // outside the drag list (2026-10-26).
+            deleted: slot.deleted,
+            canDelete: canDelete,
+            dragIndex: slot.deleted ? null : i,
             onRegisterCommit: vm.registerCommitHandle,
             onUnregisterCommit: vm.unregisterCommitHandle,
             onCommit: (isDraft, v, {bool immediate = false}) async {
@@ -945,7 +1175,8 @@ class _PlanExerciseCard extends StatelessWidget {
               notes: v.trim().isEmpty ? null : v.trim(),
               clearNotes: v.trim().isEmpty,
             ),
-            onDelete: () => vm.deletePlannedSessionExerciseSet(set.plannedSetId),
+            onDelete: () =>
+                vm.deletePlannedSessionExerciseSet(set.plannedSetId),
             onDuplicate: (v) => vm.duplicatePlannedSessionExerciseSet(
               set,
               targetWeight: v.weight,
@@ -971,6 +1202,7 @@ class _PlanExerciseCard extends StatelessWidget {
             initialRepsText: '',
             initialVariationId: null,
             hasNotes: false,
+            canDelete: canDelete,
             // Registered like a real row's: a draft's variation and notes live
             // in the row until it commits, and the commit that saves them is
             // whatever destroys or flushes the row — the exercise switch above
@@ -1028,38 +1260,43 @@ class _PlanExerciseCard extends StatelessWidget {
     }
 
     return SessionExerciseCard(
+      // The session's own look (2026-10-26): no fill, no border, no pills —
+      // the same card the Training page and the viewer draw.
+      flat: true,
       exerciseNames: [
         for (final slot in s.workoutExerciseSlots)
           toProperCase(vm.exerciseDisplayName(slot.exerciseId)),
       ],
       exerciseMarks: exerciseMarks,
+      // The card names each slot's state for the selector: a group removed
+      // during this review reads red, exactly as a deleted exercise does on
+      // the session surfaces (2026-10-26).
+      deletedExercises: [
+        for (final slot in s.workoutExerciseSlots) slot.deleted,
+      ],
       activeIndex: s.activeSlotIndex,
       // Switching tabs is looking, and stays: the record is read one exercise
       // at a time. Reordering and adding are writing, and grey out — the plan
-      // underneath is not what is on screen.
+      // underneath is not what is on screen. A removed group is a record of
+      // its own: it stays readable, and nothing writes to it.
       onSelect: (i) => vm.tapTab(i),
-      onMove: original == null
+      onMove: original == null && !slot.deleted
           ? (i, dir) => vm.reorderExercises(i, i + dir)
           : null,
       onAdd: original == null ? onAddExercise : null,
-      lessonsCount: 0,
-      onLessonsTap: null,
-      prCount: 0,
-      onPrTap: null,
       rows: rows,
       // While the record is up there is nothing to add a set to, and nothing
       // to drag: the row is drawn dead to hold the card's height, and the
       // grid stops being reorderable — both are the card's own height and
       // order staying put across the flip.
-      onAddSet: original == null
+      onAddSet: original == null && !slot.deleted
           ? () => vm.addDraftPlannedSessionExerciseSet(plannedExerciseId)
           : null,
       reserveAddSet: original != null,
-      onReorderSets: original == null
+      onReorderSets: original == null && !slot.deleted
           ? (oldIndex, newIndex) =>
                 vm.reorderPlannedSets(plannedExerciseId, oldIndex, newIndex)
           : null,
-      history: null,
       // Inside a review the card also carries that review's note for this
       // exercise — the box is shown even with none yet, because an empty box
       // is the way in. Outside one the note never existed and the box is not
@@ -1092,7 +1329,10 @@ class _PlanExerciseCard extends StatelessWidget {
   /// The record's own entry for one exercise. Null when the record holds no
   /// such exercise — the workout had no sets for it then, which the empty grid
   /// then says plainly.
-  ContentExercise? _recordExercise(ContentSession session, String plannedExerciseId) {
+  ContentExercise? _recordExercise(
+    ContentSession session,
+    String plannedExerciseId,
+  ) {
     for (final exercise in session.exercises) {
       if (exercise.plannedExerciseId == plannedExerciseId) return exercise;
     }
@@ -1120,9 +1360,9 @@ class _PlanExerciseCard extends StatelessWidget {
       );
     } catch (e) {
       if (!context.mounted) return;
-      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-        SnackBar(content: Text('Could not save the note: $e')),
-      );
+      ScaffoldMessenger.maybeOf(
+        context,
+      )?.showSnackBar(SnackBar(content: Text('Could not save the note: $e')));
     }
   }
 }

@@ -101,7 +101,8 @@ class _ReviewNotesSheetState extends State<_ReviewNotesSheet> {
               "stands now is saved with this review either way.",
               style: AppFonts.ui(
                 fontSize: AppTextStyles.sm,
-                color: AppColors.muted,
+                color: AppColors.inkSecondary,
+                height: 1.4,
               ),
             ),
             const SizedBox(height: AppSpacing.md),
@@ -120,8 +121,10 @@ class _ReviewNotesSheetState extends State<_ReviewNotesSheet> {
               label: 'Finish review',
               solid: true,
               color: AppColors.accent,
-              onPressed: () =>
-                  Navigator.of(context, rootNavigator: true).pop(_ctrl.text.trim()),
+              onPressed: () => Navigator.of(
+                context,
+                rootNavigator: true,
+              ).pop(_ctrl.text.trim()),
             ),
           ],
         ),
@@ -163,7 +166,7 @@ class _ScopeLine extends StatelessWidget {
               style: AppFonts.ui(
                 fontSize: AppTextStyles.sm,
                 fontWeight: FontWeight.w700,
-                color: AppColors.accentText,
+                color: AppColors.accent,
               ),
             ),
           ),
@@ -172,7 +175,7 @@ class _ScopeLine extends StatelessWidget {
               'since ${_shortDate(since)}',
               style: AppFonts.mono(
                 fontSize: AppTextStyles.xs,
-                color: AppColors.accentText,
+                color: AppColors.accent,
               ),
             ),
         ],
@@ -191,17 +194,27 @@ class _SectionLabel extends StatelessWidget {
     text,
     style: AppFonts.mono(
       fontSize: AppTextStyles.xs,
-      fontWeight: FontWeight.w700,
-      letterSpacing: 1.0,
-      color: AppColors.muted,
+      fontWeight: FontWeight.w600,
+      letterSpacing: 0.8,
+      color: AppColors.primary,
     ),
   );
 }
 
 String _shortDate(DateTime d) {
   const months = [
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
   ];
   return '${d.day} ${months[d.month - 1]}';
 }

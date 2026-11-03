@@ -89,10 +89,9 @@ class _VersionGateAppState extends State<VersionGateApp> {
     final cached = _cached;
 
     final status = result?.status ?? cached?.status;
-    final blocked =
-        result != null
-            ? result.status == VersionCheckStatus.updateRequired
-            : cached?.status == VersionCheckStatus.updateRequired;
+    final blocked = result != null
+        ? result.status == VersionCheckStatus.updateRequired
+        : cached?.status == VersionCheckStatus.updateRequired;
 
     if (blocked) {
       return MaterialApp(
@@ -104,7 +103,8 @@ class _VersionGateAppState extends State<VersionGateApp> {
 
     // upToDate, updateRecommended, unknown (failed-open), and no result at
     // all proceed to the app — the nudge reads the best answer we have.
-    final buildApp = widget.appBuilder ??
+    final buildApp =
+        widget.appBuilder ??
         (showUpdateNudge) => LambdaApp(showUpdateNudge: showUpdateNudge);
     return buildApp(status == VersionCheckStatus.updateRecommended);
   }

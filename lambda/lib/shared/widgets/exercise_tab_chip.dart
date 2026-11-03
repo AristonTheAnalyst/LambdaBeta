@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_fonts.dart';
 import '../../core/styles/app_radius.dart';
 import './container_styles.dart';
+import './user_name_text.dart';
 
 /// A pill-chip tab for the exercise tab bar. Used by both the session screen
 /// and the planned-workout screen.
@@ -55,12 +57,19 @@ class ExerciseTabChip extends StatelessWidget {
               Icon(prefixIcon, size: 11, color: color),
               const SizedBox(width: 4),
             ],
-            Text(
-              label,
-              style: AppFonts.ui(
-                fontSize: 14,
-                fontWeight: FontWeight.w700,
-                color: isActive ? color : AppColors.primary,
+            // Gallery-only today (the live selector draws its own field), but
+            // a name that can bleed is a name that will: bounded like every
+            // other, one line, full value on long-press (2026-10-20).
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 160),
+              child: UserNameText(
+                label,
+                tooltip: true,
+                style: AppFonts.ui(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: isActive ? color : AppColors.primary,
+                ),
               ),
             ),
             if (onRemove != null) ...[
@@ -68,7 +77,7 @@ class ExerciseTabChip extends StatelessWidget {
               GestureDetector(
                 onTap: onRemove,
                 child: Icon(
-                  Icons.close,
+                  LucideIcons.x,
                   size: 13,
                   color: isActive ? color : AppColors.border,
                 ),
@@ -96,7 +105,7 @@ class AddExerciseButton extends StatelessWidget {
         height: 30,
         alignment: Alignment.center,
         decoration: glassBox(AppColors.primary),
-        child: Icon(Icons.add, size: 16, color: AppColors.primary),
+        child: Icon(LucideIcons.plus, size: 16, color: AppColors.primary),
       ),
     );
   }

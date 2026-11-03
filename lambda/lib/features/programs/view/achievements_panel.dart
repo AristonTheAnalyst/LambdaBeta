@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
 import '../../../core/styles/app_radius.dart';
 import '../../../core/styles/app_spacing.dart';
 import '../../../core/styles/app_text_styles.dart';
+import '../../../data/models/goal.dart';
 import '../../../shared/widgets/container_styles.dart';
 import '../../../shared/widgets/pr_event_row.dart';
 import '../model/program_achievements.dart';
@@ -29,13 +31,19 @@ class AchievementsPanel extends StatelessWidget {
     if (a == null) {
       return Text(
         'Achievements are shown for the program that is currently running.',
-        style: AppFonts.ui(fontSize: AppTextStyles.sm, color: AppColors.muted),
+        style: AppFonts.ui(
+          fontSize: AppTextStyles.sm,
+          color: AppColors.inkSecondary,
+        ),
       );
     }
     if (a.isEmpty) {
       return Text(
         'Nothing logged in this window yet.',
-        style: AppFonts.ui(fontSize: AppTextStyles.sm, color: AppColors.muted),
+        style: AppFonts.ui(
+          fontSize: AppTextStyles.sm,
+          color: AppColors.inkSecondary,
+        ),
       );
     }
 
@@ -74,7 +82,6 @@ class _CountRow extends StatelessWidget {
       style: AppFonts.mono(
         fontSize: AppTextStyles.xs,
         fontWeight: FontWeight.w700,
-        letterSpacing: 0.6,
         color: AppColors.accent,
       ),
     );
@@ -107,7 +114,7 @@ class _GoalRow extends StatelessWidget {
       child: Row(
         children: [
           Icon(
-            g.achieved ? Icons.check_circle_outline : Icons.circle_outlined,
+            g.achieved ? LucideIcons.circleCheck : LucideIcons.circle,
             size: 16,
             color: g.achieved ? AppColors.success : AppColors.muted,
           ),
@@ -131,7 +138,9 @@ class _GoalRow extends StatelessWidget {
                     g.achieved ? 'reached $evidence' : 'closest $evidence',
                     style: AppFonts.mono(
                       fontSize: AppTextStyles.xs,
-                      color: g.achieved ? AppColors.success : AppColors.muted,
+                      color: g.achieved
+                          ? AppColors.success
+                          : AppColors.inkSecondary,
                     ),
                   ),
               ],
@@ -142,13 +151,20 @@ class _GoalRow extends StatelessWidget {
     );
   }
 
-  /// "100kg × 1", or just the reps when there is no weight target.
+  /// "100kg × 1", or just the reps when there is no weight target — joined by
+  /// " · " when the goal lists several rungs (2026-10-26).
   static String _targetLabel(GoalAchievement g) {
     final parts = <String>[
-      if (g.goal.targetWeight != null)
-        '${formatPrNumber(g.goal.targetWeight!)}kg',
-      if (g.goal.targetReps != null) '× ${formatPrNumber(g.goal.targetReps!)}',
+      for (final target in g.goal.requirements) _oneTarget(target),
     ];
-    return parts.isEmpty ? 'Goal' : parts.join(' ');
+    return parts.isEmpty ? 'Goal' : parts.join(' · ');
+  }
+
+  static String _oneTarget(GoalTargetSet target) {
+    final parts = <String>[
+      if (target.weight != null) '${formatPrNumber(target.weight!)}kg',
+      if (target.reps != null) '× ${formatPrNumber(target.reps!)}',
+    ];
+    return parts.join(' ');
   }
 }

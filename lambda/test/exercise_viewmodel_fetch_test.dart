@@ -137,12 +137,18 @@ void main() {
 
     expect(repo.exerciseReads, 1);
     expect(repo.variationReads, 1);
-    expect(repo.usageReads, 1,
-        reason: 'the catalog is passed into the usage read — it must not '
-            're-read exercises and variations inside');
-    expect(vm.state.value.exerciseDetailMap['ex1']?.exercise.name,
-        'Bench Press',
-        reason: 'the detail map derives from the list, not a third read');
+    expect(
+      repo.usageReads,
+      1,
+      reason:
+          'the catalog is passed into the usage read — it must not '
+          're-read exercises and variations inside',
+    );
+    expect(
+      vm.state.value.exerciseDetailMap['ex1']?.exercise.name,
+      'Bench Press',
+      reason: 'the detail map derives from the list, not a third read',
+    );
     vm.dispose();
   });
 
@@ -151,37 +157,49 @@ void main() {
     await vm.fetchAll();
     await vm.fetchAll();
 
-    expect(repo.exerciseReads, 1,
-        reason: 'the load-once guard stops the hub\'s re-entry from '
-            're-reading the catalog');
+    expect(
+      repo.exerciseReads,
+      1,
+      reason:
+          'the load-once guard stops the hub\'s re-entry from '
+          're-reading the catalog',
+    );
     vm.dispose();
   });
 
   test('a rename patches the list without re-reading', () async {
     final vm = ExerciseViewModel(repo: repo, userId: 'u1');
     await vm.fetchAll();
-    final readsBefore = repo.exerciseReads + repo.variationReads + repo.usageReads;
+    final readsBefore =
+        repo.exerciseReads + repo.variationReads + repo.usageReads;
 
     await vm.renameExercise('ex1', 'Incline Bench');
 
-    expect(repo.exerciseReads + repo.variationReads + repo.usageReads,
-        readsBefore,
-        reason: 'renaming must not rescan the catalog or the timeline');
+    expect(
+      repo.exerciseReads + repo.variationReads + repo.usageReads,
+      readsBefore,
+      reason: 'renaming must not rescan the catalog or the timeline',
+    );
     expect(vm.state.value.exercises.single.name, 'Incline Bench');
-    expect(vm.state.value.exerciseDetailMap['ex1']?.exercise.name,
-        'Incline Bench');
+    expect(
+      vm.state.value.exerciseDetailMap['ex1']?.exercise.name,
+      'Incline Bench',
+    );
     vm.dispose();
   });
 
   test('a delete removes the row locally without re-reading', () async {
     final vm = ExerciseViewModel(repo: repo, userId: 'u1');
     await vm.fetchAll();
-    final readsBefore = repo.exerciseReads + repo.variationReads + repo.usageReads;
+    final readsBefore =
+        repo.exerciseReads + repo.variationReads + repo.usageReads;
 
     await vm.deleteExercise('ex1');
 
-    expect(repo.exerciseReads + repo.variationReads + repo.usageReads,
-        readsBefore);
+    expect(
+      repo.exerciseReads + repo.variationReads + repo.usageReads,
+      readsBefore,
+    );
     expect(vm.state.value.exercises, isEmpty);
     expect(vm.state.value.exerciseDetailMap, isEmpty);
     vm.dispose();
@@ -190,18 +208,18 @@ void main() {
   test('a create inserts the new row locally without re-reading', () async {
     final vm = ExerciseViewModel(repo: repo, userId: 'u1');
     await vm.fetchAll();
-    final readsBefore = repo.exerciseReads + repo.variationReads + repo.usageReads;
+    final readsBefore =
+        repo.exerciseReads + repo.variationReads + repo.usageReads;
 
     vm.setCreateExName('Squat');
     final id = await vm.submitCreateExercise();
 
     expect(id, isNotNull);
-    expect(repo.exerciseReads + repo.variationReads + repo.usageReads,
-        readsBefore);
     expect(
-      vm.state.value.exercises.map((e) => e.name),
-      contains('Squat'),
+      repo.exerciseReads + repo.variationReads + repo.usageReads,
+      readsBefore,
     );
+    expect(vm.state.value.exercises.map((e) => e.name), contains('Squat'));
     vm.dispose();
   });
 
