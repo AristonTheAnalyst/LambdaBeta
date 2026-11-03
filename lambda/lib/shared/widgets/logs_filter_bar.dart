@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_fonts.dart';
 import '../../core/styles/app_spacing.dart';
@@ -152,7 +153,7 @@ class LogsFilterBar extends StatelessWidget {
                 const SizedBox(width: AppSpacing.sm),
                 GestureDetector(
                   onTap: onClear,
-                  child: Icon(Icons.close, size: 18, color: AppColors.muted),
+                  child: Icon(LucideIcons.x, size: 18, color: AppColors.muted),
                 ),
               ],
             ],
@@ -200,7 +201,7 @@ class _FilterChip extends StatelessWidget {
             ),
             const SizedBox(width: 4),
             Icon(
-              Icons.keyboard_arrow_down,
+              LucideIcons.chevronDown,
               size: 14,
               color: isActive ? AppColors.accent : AppColors.inkSecondary,
             ),

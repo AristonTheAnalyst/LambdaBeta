@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_fonts.dart';
 import '../../core/styles/app_spacing.dart';
@@ -181,7 +182,7 @@ class _MultiSelectSheetState<T> extends State<_MultiSelectSheet<T>> {
                           ),
                         ),
                         if (isSelected)
-                          Icon(Icons.check, size: 18, color: AppColors.accent),
+                          Icon(LucideIcons.check, size: 18, color: AppColors.accent),
                       ],
                     ),
                   ),

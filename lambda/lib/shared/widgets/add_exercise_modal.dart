@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_fonts.dart';
 import '../../core/styles/app_spacing.dart';
@@ -228,7 +229,7 @@ class _AddExerciseModalContentState extends State<_AddExerciseModalContent> {
                 ),
                 GestureDetector(
                   onTap: () => Navigator.of(context, rootNavigator: true).pop(),
-                  child: Icon(Icons.close, size: 20, color: AppColors.muted),
+                  child: Icon(LucideIcons.x, size: 20, color: AppColors.muted),
                 ),
               ],
             ),
@@ -368,7 +369,7 @@ class _AddExerciseModalContentState extends State<_AddExerciseModalContent> {
               ),
               if (added) ...[
                 const SizedBox(width: 8),
-                Icon(Icons.check_circle, size: 14, color: AppColors.success),
+                Icon(LucideIcons.circleCheck, size: 14, color: AppColors.success),
                 const SizedBox(width: 4),
                 Text(
                   'Added',

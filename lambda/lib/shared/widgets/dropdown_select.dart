@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_fonts.dart';
 import '../../core/styles/app_radius.dart';
@@ -187,7 +188,7 @@ class DropdownSelect<T> extends StatelessWidget {
                   ),
                 ),
                 Icon(
-                  Icons.keyboard_arrow_down,
+                  LucideIcons.chevronDown,
                   size: 14,
                   color: AppColors.muted,
                 ),
@@ -213,7 +214,7 @@ class DropdownSelect<T> extends StatelessWidget {
                     ),
                   ),
                   Icon(
-                    Icons.keyboard_arrow_down,
+                    LucideIcons.chevronDown,
                     size: 18,
                     color: AppColors.muted,
                   ),
@@ -373,7 +374,7 @@ class _DropdownSheetContentState<T> extends State<_DropdownSheetContent<T>> {
         ),
         GestureDetector(
           onTap: widget.onClose,
-          child: Icon(Icons.close, size: 20, color: AppColors.muted),
+          child: Icon(LucideIcons.x, size: 20, color: AppColors.muted),
         ),
       ],
     );
@@ -490,7 +491,7 @@ class _DropdownSheetContentState<T> extends State<_DropdownSheetContent<T>> {
               ),
               if (selected) ...[
                 const SizedBox(width: AppSpacing.sm),
-                Icon(Icons.check, size: 18, color: AppColors.primary),
+                Icon(LucideIcons.check, size: 18, color: AppColors.primary),
               ],
             ],
           ),

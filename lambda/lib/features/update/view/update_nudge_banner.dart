@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_radius.dart';
 import '../../../shared/widgets/container_styles.dart';
@@ -49,7 +50,7 @@ class UpdateNudgeBanner extends StatelessWidget {
             child: Row(
               children: [
                 Icon(
-                  Icons.system_update_alt,
+                  LucideIcons.download,
                   size: 18,
                   color: AppColors.accent,
                 ),
@@ -77,7 +78,7 @@ class UpdateNudgeBanner extends StatelessWidget {
                 const SizedBox(width: AppSpacing.sm),
                 GestureDetector(
                   onTap: onDismiss,
-                  child: Icon(Icons.close, size: 16, color: AppColors.muted),
+                  child: Icon(LucideIcons.x, size: 16, color: AppColors.muted),
                 ),
               ],
             ),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
@@ -596,7 +597,7 @@ class _GoalsScreenState extends State<GoalsScreen> {
                   ? null
                   : GlassButton(
                       label: '',
-                      icon: Icons.add,
+                      icon: LucideIcons.plus,
                       semanticsLabel: 'Add goal',
                       compact: true,
                       onPressed: _openAdd,
@@ -631,7 +632,7 @@ class _GoalsScreenState extends State<GoalsScreen> {
           const SizedBox(width: AppSpacing.sm),
           GlassButton(
             label: '',
-            icon: Icons.filter_list,
+            icon: LucideIcons.listFilter,
             semanticsLabel: 'Filter goals',
             compact: true,
             // A list quietly missing rows must say so somewhere, and the
@@ -653,7 +654,7 @@ class _GoalsScreenState extends State<GoalsScreen> {
             const SizedBox(width: AppSpacing.sm),
             GlassButton(
               label: '',
-              icon: Icons.add,
+              icon: LucideIcons.plus,
               semanticsLabel: 'Add goal',
               compact: true,
               onPressed: _openAdd,
@@ -888,7 +889,7 @@ class _GoalsScreenState extends State<GoalsScreen> {
       borderRadius: AppRadius.md,
       actions: [
         SwipeAction(
-          icon: Icons.delete_outline,
+          icon: LucideIcons.trash2,
           color: AppColors.danger,
           foreground: AppColors.dangerText,
           onTap: () => _delete(goal),
@@ -1009,7 +1010,7 @@ class _ExerciseHeader extends StatelessWidget {
           ),
           const SizedBox(width: AppSpacing.xs),
           Icon(
-            expanded ? Icons.expand_less : Icons.expand_more,
+            expanded ? LucideIcons.chevronUp : LucideIcons.chevronDown,
             size: 18,
             color: AppColors.muted,
           ),
@@ -1184,7 +1185,7 @@ class _GoalFilterSheetState extends State<_GoalFilterSheet> {
         decoration: glassBox(narrowed ? AppColors.accent : AppColors.primary),
         child: Row(
           children: [
-            Icon(Icons.event_outlined, size: 16, color: fg),
+            Icon(LucideIcons.calendar, size: 16, color: fg),
             const SizedBox(width: AppSpacing.sm),
             Expanded(
               child: Text(
@@ -1198,7 +1199,7 @@ class _GoalFilterSheetState extends State<_GoalFilterSheet> {
                 ),
               ),
             ),
-            Icon(Icons.chevron_right, size: 16, color: fg),
+            Icon(LucideIcons.chevronRight, size: 16, color: fg),
           ],
         ),
       ),
@@ -1220,7 +1221,7 @@ class _GoalFilterSheetState extends State<_GoalFilterSheet> {
         decoration: glassBox(narrowed ? AppColors.accent : AppColors.primary),
         child: Row(
           children: [
-            Icon(Icons.fitness_center, size: 16, color: fg),
+            Icon(LucideIcons.dumbbell, size: 16, color: fg),
             const SizedBox(width: AppSpacing.sm),
             Expanded(
               child: Text(
@@ -1234,7 +1235,7 @@ class _GoalFilterSheetState extends State<_GoalFilterSheet> {
                 ),
               ),
             ),
-            Icon(Icons.chevron_right, size: 16, color: fg),
+            Icon(LucideIcons.chevronRight, size: 16, color: fg),
           ],
         ),
       ),

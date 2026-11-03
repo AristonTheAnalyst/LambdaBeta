@@ -7,6 +7,7 @@ import 'package:lambda/shared/widgets/dropdown_select.dart';
 import 'package:lambda/shared/widgets/exercise_target_picker.dart';
 import 'package:lambda/shared/widgets/session_set_row.dart';
 import 'package:lambda/shared/widgets/user_name_text.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 /// The variation cell is a full-width field, so the whole cell is the target
 /// (2026-10-25). The dropdown's compact row is only as wide as its label and
@@ -120,7 +121,7 @@ void main() {
     final chevron = tester.getRect(
       find.descendant(
         of: find.byType(DropdownSelect<String?>),
-        matching: find.byIcon(Icons.keyboard_arrow_down),
+        matching: find.byIcon(LucideIcons.chevronDown),
       ),
     );
 

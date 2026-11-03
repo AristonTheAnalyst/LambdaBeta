@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../../core/styles/app_colors.dart';
 import '../../../../core/styles/app_fonts.dart';
 import '../../../../core/styles/app_spacing.dart';
@@ -291,7 +292,7 @@ class _LogsScreenState extends State<LogsScreen> with RouteAware {
                   left: widget.onBack == null
                       ? null
                       : HeaderIconButton(
-                          icon: Icons.arrow_back,
+                          icon: LucideIcons.arrowLeft,
                           semanticsLabel: 'Back',
                           onPressed: widget.onBack,
                           color: AppColors.primary,

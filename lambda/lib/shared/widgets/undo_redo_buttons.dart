@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_fonts.dart';
 import '../../core/styles/app_spacing.dart';
@@ -64,9 +65,9 @@ class UndoRedoButtons extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        _button(Icons.undo, 'Undo', canUndo, onUndo),
+        _button(LucideIcons.undo2, 'Undo', canUndo, onUndo),
         const SizedBox(width: AppSpacing.xs),
-        _button(Icons.redo, 'Redo', canRedo, onRedo),
+        _button(LucideIcons.redo2, 'Redo', canRedo, onRedo),
         if (onPickDeletedExercise != null) ...[
           const SizedBox(width: AppSpacing.xs),
           DeletedExercisesButton(
@@ -76,7 +77,7 @@ class UndoRedoButtons extends StatelessWidget {
             // The rows open the deleted exercise for READING (the live
             // stats bar's view-then-restore flow, 2026-10-14) — the eye
             // says what a tap does.
-            rowIcon: Icons.visibility_outlined,
+            rowIcon: LucideIcons.eye,
             semanticsLabel: 'Deleted exercises',
           ),
         ],
@@ -99,7 +100,7 @@ class DeletedExercisesButton extends StatelessWidget {
     super.key,
     required this.deletedExercises,
     required this.onPickDeletedExercise,
-    this.rowIcon = Icons.restore_from_trash,
+    this.rowIcon = LucideIcons.rotateCcw,
     this.semanticsLabel = 'Deleted exercises',
     this.compact = false,
   });
@@ -133,7 +134,7 @@ class DeletedExercisesButton extends StatelessWidget {
       // label is stated here because this branch has no [MenuPopover] to
       // carry one; the open branch would otherwise announce twice.
       return _button(
-        Icons.restore_from_trash,
+        LucideIcons.rotateCcw,
         false,
         () {},
         semanticsLabel: semanticsLabel,
@@ -145,7 +146,7 @@ class DeletedExercisesButton extends StatelessWidget {
     return MenuPopover(
       align: MenuPopoverAlign.start,
       semanticsLabel: semanticsLabel,
-      trigger: (context, open) => _button(Icons.restore_from_trash, true, open),
+      trigger: (context, open) => _button(LucideIcons.rotateCcw, true, open),
       contentBuilder: (context, dismiss) => Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -175,7 +176,7 @@ class DeletedExerciseRow extends StatelessWidget {
   const DeletedExerciseRow({
     super.key,
     required this.name,
-    this.icon = Icons.restore_from_trash,
+    this.icon = LucideIcons.rotateCcw,
     required this.onTap,
   });
 

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_fonts.dart';
@@ -96,7 +97,7 @@ class SheetFilterField<T> extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: AppSpacing.xs),
-                Icon(Icons.expand_more, size: 14, color: color),
+                Icon(LucideIcons.chevronDown, size: 14, color: color),
               ],
             ),
           ),

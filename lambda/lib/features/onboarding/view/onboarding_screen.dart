@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
 import '../../../core/styles/app_radius.dart';
@@ -24,25 +25,25 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   static const _slides = [
     _SlideData(
-      icon: Icons.timer_outlined,
+      icon: LucideIcons.timer,
       title: 'Track Your Workouts',
       body:
           'Log sets, track rest periods, and see your progress in real time during every training session.',
     ),
     _SlideData(
-      icon: Icons.calendar_month_outlined,
+      icon: LucideIcons.calendarDays,
       title: 'Plan with Programs',
       body:
           'Create programs with planned workouts, schedule them by day, and let Lambda guide your training.',
     ),
     _SlideData(
-      icon: Icons.flag_outlined,
+      icon: LucideIcons.flag,
       title: 'Set PRs & Review',
       body:
           'Every set is checked against your personal records. Review past sessions, edit history, and see what works.',
     ),
     _SlideData(
-      icon: Icons.insights_outlined,
+      icon: LucideIcons.lineChart,
       title: 'Stay Consistent',
       body:
           'Built-in rest timer, workout history, exercise library — everything you need to train smarter.',

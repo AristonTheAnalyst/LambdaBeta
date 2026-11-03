@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_fonts.dart';
@@ -37,7 +38,7 @@ class PrEventRow extends StatelessWidget {
       decoration: lambdaBox(ContainerTone.accent, radius: AppRadius.md),
       child: Row(
         children: [
-          Icon(Icons.emoji_events_outlined, size: 16, color: AppColors.accent),
+          Icon(LucideIcons.trophy, size: 16, color: AppColors.accent),
           const SizedBox(width: AppSpacing.sm),
           Expanded(
             child: Column(

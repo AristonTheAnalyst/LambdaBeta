@@ -7,7 +7,7 @@ import '../../../core/utils/friendly_error.dart';
 import '../../../data/models/friend.dart';
 import '../../../data/repositories/friend_repository.dart';
 
-/// Everything the Friends tab draws (2026-10-23): the caller's own code, the
+/// Everything the Friends panel draws (2026-10-23): the caller's own code, the
 /// friends list, and the state of an in-flight add.
 class FriendsState {
   const FriendsState({
@@ -51,7 +51,7 @@ class FriendsState {
   );
 }
 
-/// The Friends tab's ViewModel, the `ValueNotifier<State>` species: two live
+/// The Friends panel's ViewModel, the `ValueNotifier<State>` species: two live
 /// watches (own code, friends list) plus two commands that reach the server.
 ///
 /// Reads ride the local mirror — the friends_data stream keeps it fresh — so
@@ -131,50 +131,6 @@ class FriendsViewModel {
         error: friendlyError(e),
       );
       return null;
-    }
-  }
-
-  /// Removes [friend]. True when the server-side cut succeeded and the local
-  /// row is gone; false records [state.error].
-  Future<bool> remove(Friend friend) async {
-    if (_disposed) return false;
-    try {
-      await _repo.removeFriend(_userId, friend.userId);
-      return true;
-    } catch (e) {
-      if (_disposed) return false;
-      state.value = state.value.copyWith(error: friendlyError(e));
-      return false;
-    }
-  }
-
-  /// Sets — or clears, with null or a blank value — the caller's private label
-  /// for [friend]. True when the local write landed (the watch repaints in
-  /// the same beat); false records [state.error].
-  Future<bool> setNickname(Friend friend, String? nickname) async {
-    if (_disposed) return false;
-    try {
-      await _repo.setNickname(_userId, friend.userId, nickname);
-      return true;
-    } catch (e) {
-      if (_disposed) return false;
-      state.value = state.value.copyWith(error: friendlyError(e));
-      return false;
-    }
-  }
-
-  /// Records whether the caller shares notes with [friend] (2026-10-26, #23).
-  /// True when the local write landed (the watch repaints in the same beat);
-  /// false records [state.error].
-  Future<bool> setShareNotes(Friend friend, bool shareNotes) async {
-    if (_disposed) return false;
-    try {
-      await _repo.setShareNotes(_userId, friend.userId, shareNotes);
-      return true;
-    } catch (e) {
-      if (_disposed) return false;
-      state.value = state.value.copyWith(error: friendlyError(e));
-      return false;
     }
   }
 

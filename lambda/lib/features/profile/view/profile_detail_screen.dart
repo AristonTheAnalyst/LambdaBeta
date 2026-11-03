@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../shared/widgets/container_styles.dart';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../../core/styles/app_colors.dart';
 import '../../../../core/styles/app_fonts.dart';
 import '../../../../core/styles/app_spacing.dart';
@@ -220,7 +221,7 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen>
                 PageHeader(
                   title: 'User Profile',
                   left: HeaderIconButton(
-                    icon: Icons.arrow_back_ios_new,
+                    icon: LucideIcons.chevronLeft,
                     semanticsLabel: 'Back',
                     glyphSize: 18,
                     onPressed: () async {
@@ -233,7 +234,7 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen>
                   right: !state.isEditing
                       ? GlassButton(
                           label: '',
-                          icon: Icons.edit_outlined,
+                          icon: LucideIcons.pencil,
                           semanticsLabel: 'Edit profile',
                           onPressed: () {
                             _populateEditFields();
@@ -386,7 +387,7 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen>
                                             ),
                                           ),
                                           Icon(
-                                            Icons.calendar_today_outlined,
+                                            LucideIcons.calendar,
                                             size: 18,
                                             color: AppColors.muted,
                                           ),

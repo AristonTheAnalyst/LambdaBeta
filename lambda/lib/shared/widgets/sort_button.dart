@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_spacing.dart';
@@ -67,7 +68,7 @@ class SortButton<T> extends StatelessWidget {
       tone: elevated ? ContainerTone.ghost : ContainerTone.surface,
       trigger: (context, open) => GlassButton(
         label: '',
-        icon: Icons.sort,
+        icon: LucideIcons.arrowUpDown,
         compact: true,
         onPressed: open,
       ),
@@ -126,7 +127,7 @@ class _SortMenu<T> extends StatelessWidget {
             // The active criterion wears the direction it reads in — the
             // arrow IS the reading, since these menus never say the words.
             trailing: Icon(
-              descending ? Icons.arrow_downward : Icons.arrow_upward,
+              descending ? LucideIcons.arrowDown : LucideIcons.arrowUp,
               size: 14,
               color: AppColors.accent,
             ),

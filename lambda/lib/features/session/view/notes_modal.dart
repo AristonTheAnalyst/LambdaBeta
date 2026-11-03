@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
 import '../../../core/styles/app_radius.dart';
@@ -95,7 +96,7 @@ class _NotesModalContentState extends State<_NotesModalContent> {
                 ),
                 GlassButton(
                   label: '',
-                  icon: Icons.check,
+                  icon: LucideIcons.check,
                   semanticsLabel: widget.readOnly ? 'Done' : 'Save note',
                   compact: true,
                   // Done dismisses whatever the state; Save has nothing to

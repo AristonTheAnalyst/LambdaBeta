@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_fonts.dart';
@@ -19,7 +20,7 @@ class InfoButton extends StatelessWidget {
     super.key,
     required this.title,
     required this.body,
-    this.icon = Icons.info_outline,
+    this.icon = LucideIcons.info,
     this.size = 22,
   });
 
@@ -48,7 +49,7 @@ class InfoButton extends StatelessWidget {
         child: SizedBox(
           width: 44,
           height: 44,
-          child: Icon(Icons.info_outline, size: size, color: AppColors.accent),
+          child: Icon(LucideIcons.info, size: size, color: AppColors.accent),
         ),
       ),
     );
@@ -61,7 +62,7 @@ Future<void> showInfoSheet(
   BuildContext context, {
   required String title,
   required String body,
-  IconData icon = Icons.info_outline,
+  IconData icon = LucideIcons.info,
 }) => showLambdaModal<void>(
   context,
   fitContent: true,

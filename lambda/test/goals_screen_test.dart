@@ -15,6 +15,7 @@ import 'package:lambda/shared/widgets/container_styles.dart';
 import 'package:lambda/shared/widgets/lambda_input.dart';
 import 'package:lambda/shared/widgets/segmented_control.dart';
 import 'package:lambda/shared/widgets/swipe_actions.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'support/fake_program_repos.dart';
 import 'support/fake_session_repository.dart';
@@ -150,7 +151,7 @@ void main() {
     required String reps,
     required String kg,
   }) async {
-    await tester.tap(find.byIcon(Icons.add));
+    await tester.tap(find.byIcon(LucideIcons.plus));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('goal-exercise-selector')));
     await tester.pumpAndSettle();
@@ -181,9 +182,9 @@ void main() {
     // sits on the target's own line behind a green tick, and the deadline it
     // answered is not drawn — the card states one date, never both. The words
     // the symbols replaced are gone from the card.
-    expect(find.byIcon(Icons.check), findsOneWidget);
+    expect(find.byIcon(LucideIcons.check), findsOneWidget);
     expect(find.text('5 Mar 2026'), findsOneWidget);
-    expect(find.byIcon(Icons.track_changes), findsNothing);
+    expect(find.byIcon(LucideIcons.target), findsNothing);
     expect(find.text('None'), findsNothing);
     expect(find.text('Target date'), findsNothing);
     expect(find.text('Completed'), findsNothing);
@@ -202,7 +203,7 @@ void main() {
 
     // The card itself says it is done (2026-10-20): the New goal form's
     // achieved chrome, and no tick in the corner — the tick said it twice.
-    expect(find.byIcon(Icons.check_circle), findsNothing);
+    expect(find.byIcon(LucideIcons.circleCheck), findsNothing);
     expect(
       find.byWidgetPredicate(
         (w) => w is Container && w.decoration == successBox(),
@@ -230,11 +231,11 @@ void main() {
     // open ring (the card states one date, not a pair of slots), and no green
     // chrome.
     expect(find.text('Not yet'), findsNothing);
-    expect(find.byIcon(Icons.track_changes), findsOneWidget);
+    expect(find.byIcon(LucideIcons.target), findsOneWidget);
     expect(find.text('None'), findsOneWidget);
-    expect(find.byIcon(Icons.check), findsNothing);
-    expect(find.byIcon(Icons.radio_button_unchecked), findsNothing);
-    expect(find.byIcon(Icons.check_circle), findsNothing);
+    expect(find.byIcon(LucideIcons.check), findsNothing);
+    expect(find.byIcon(LucideIcons.circle), findsNothing);
+    expect(find.byIcon(LucideIcons.circleCheck), findsNothing);
     expect(
       find.byWidgetPredicate(
         (w) => w is Container && w.decoration == successBox(),
@@ -256,14 +257,14 @@ void main() {
       await pumpGoals(tester);
       await openSection(tester, 'Bench');
 
-      expect(find.byIcon(Icons.check), findsOneWidget);
+      expect(find.byIcon(LucideIcons.check), findsOneWidget);
       expect(find.text('5 Mar 2026'), findsOneWidget);
       expect(
         find.text('1 Nov 2026'),
         findsNothing,
         reason: 'the deadline was answered — it is not stated again',
       );
-      expect(find.byIcon(Icons.track_changes), findsNothing);
+      expect(find.byIcon(LucideIcons.target), findsNothing);
     },
   );
 
@@ -284,7 +285,7 @@ void main() {
     // The + opens the add sheet on the session-style composer (2026-10-19):
     // the exercise dropdown, then one set row under the session's own column
     // labels, notes beneath it, and ADD at the floor.
-    await tester.tap(find.byIcon(Icons.add));
+    await tester.tap(find.byIcon(LucideIcons.plus));
     await tester.pumpAndSettle();
 
     expect(find.text('REPS'), findsOneWidget);
@@ -347,7 +348,7 @@ void main() {
       'and Done closes it', (tester) async {
     programs.goals = [];
     await pumpGoals(tester);
-    await tester.tap(find.byIcon(Icons.add));
+    await tester.tap(find.byIcon(LucideIcons.plus));
     await tester.pumpAndSettle();
 
     // One sheet, three goals (2026-10-26): a written goal clears the form for
@@ -440,7 +441,7 @@ void main() {
     ];
     await pumpGoals(tester);
 
-    await tester.tap(find.byIcon(Icons.add));
+    await tester.tap(find.byIcon(LucideIcons.plus));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('goal-exercise-selector')));
     await tester.pumpAndSettle();
@@ -465,7 +466,7 @@ void main() {
     ];
     await pumpGoals(tester);
 
-    await tester.tap(find.byIcon(Icons.add));
+    await tester.tap(find.byIcon(LucideIcons.plus));
     await tester.pumpAndSettle();
     // The variation cell's placeholder opens the picker in place — scoped to
     // the picker's own set row, since a card on the list behind the sheet
@@ -508,7 +509,7 @@ void main() {
     ];
     await pumpGoals(tester);
 
-    await tester.tap(find.byIcon(Icons.filter_list));
+    await tester.tap(find.byIcon(LucideIcons.listFilter));
     await tester.pumpAndSettle();
     expect(find.text('Filter goals'), findsOneWidget);
 
@@ -519,7 +520,7 @@ void main() {
     expect(find.text('Bench'), findsOneWidget);
     expect(find.text('Squat'), findsNothing);
 
-    await tester.tap(find.byIcon(Icons.filter_list));
+    await tester.tap(find.byIcon(LucideIcons.listFilter));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Not complete'));
     await tester.pumpAndSettle();
@@ -530,7 +531,7 @@ void main() {
 
     // All goes back to the whole library, from the same control. Scoped to
     // the control: each date row also says "All" while it is not narrowing.
-    await tester.tap(find.byIcon(Icons.filter_list));
+    await tester.tap(find.byIcon(LucideIcons.listFilter));
     await tester.pumpAndSettle();
     await tester.tap(
       find.descendant(
@@ -580,7 +581,7 @@ void main() {
     await pumpGoals(tester);
 
     Future<void> applyLastMonth(String rowKey) async {
-      await tester.tap(find.byIcon(Icons.filter_list));
+      await tester.tap(find.byIcon(LucideIcons.listFilter));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(ValueKey(rowKey)));
       await tester.pumpAndSettle();
@@ -594,7 +595,7 @@ void main() {
     }
 
     Future<void> clear() async {
-      await tester.tap(find.byIcon(Icons.filter_list));
+      await tester.tap(find.byIcon(LucideIcons.listFilter));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Clear'));
       await tester.pumpAndSettle();
@@ -622,7 +623,7 @@ void main() {
     // The written date stopped being a question (2026-10-20): the sheet
     // offers the lifts, status, the deadline and the completion, nothing
     // else.
-    await tester.tap(find.byIcon(Icons.filter_list));
+    await tester.tap(find.byIcon(LucideIcons.listFilter));
     await tester.pumpAndSettle();
     expect(find.text('EXERCISES'), findsOneWidget);
     expect(find.text('STATUS'), findsOneWidget);
@@ -651,7 +652,7 @@ void main() {
     Finder row(String name) =>
         find.descendant(of: find.byType(ListView), matching: find.text(name));
 
-    await tester.tap(find.byIcon(Icons.filter_list));
+    await tester.tap(find.byIcon(LucideIcons.listFilter));
     await tester.pumpAndSettle();
 
     // The exercise half is a field, not a shelf of ticks (2026-10-20): it
@@ -703,7 +704,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(row('Bench'));
     await tester.pumpAndSettle();
-    await tester.tap(find.byIcon(Icons.close));
+    await tester.tap(find.byIcon(LucideIcons.x));
     await tester.pumpAndSettle();
     expect(
       find.text('2 exercises'),
@@ -716,7 +717,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(row('Bench'));
     await tester.pumpAndSettle();
-    await tester.tap(find.byIcon(Icons.close));
+    await tester.tap(find.byIcon(LucideIcons.x));
     await tester.pumpAndSettle();
     expect(
       find.descendant(
@@ -732,13 +733,13 @@ void main() {
     expect(find.text('Squat'), findsOneWidget);
 
     // An untick is a removal, from the same picker.
-    await tester.tap(find.byIcon(Icons.filter_list));
+    await tester.tap(find.byIcon(LucideIcons.listFilter));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('goal-filter-exercises')));
     await tester.pumpAndSettle();
     await tester.tap(row('Squat'));
     await tester.pumpAndSettle();
-    await tester.tap(find.byIcon(Icons.close));
+    await tester.tap(find.byIcon(LucideIcons.x));
     await tester.pumpAndSettle();
     expect(find.text('All exercises'), findsOneWidget);
     await tester.tap(find.text('Done'));
@@ -762,7 +763,7 @@ void main() {
     );
 
     // Name reads the same way here...
-    await tester.tap(find.byIcon(Icons.sort));
+    await tester.tap(find.byIcon(LucideIcons.arrowUpDown));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Name'));
     await tester.pumpAndSettle();
@@ -772,7 +773,7 @@ void main() {
     );
 
     // The same criterion again answers the same question the other way.
-    await tester.tap(find.byIcon(Icons.sort));
+    await tester.tap(find.byIcon(LucideIcons.arrowUpDown));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Name'));
     await tester.pumpAndSettle();
@@ -782,7 +783,7 @@ void main() {
     );
 
     // Recently added reads newest first — squat was written after bench.
-    await tester.tap(find.byIcon(Icons.sort));
+    await tester.tap(find.byIcon(LucideIcons.arrowUpDown));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Recently added'));
     await tester.pumpAndSettle();
@@ -884,7 +885,7 @@ void main() {
     // Re-picking the criterion flips the deadline reading, and only that:
     // the bench's later deadline now leads the squat, while the done section
     // stays at the floor and the open goal stays above the done one.
-    await tester.tap(find.byIcon(Icons.sort));
+    await tester.tap(find.byIcon(LucideIcons.arrowUpDown));
     await tester.pumpAndSettle();
     await tester.tap(find.text('By exercise'));
     await tester.pumpAndSettle();
@@ -1006,21 +1007,21 @@ void main() {
     expect(find.text('Squat'), findsOneWidget);
     expect(find.text('100 kg × 5'), findsNothing);
     expect(find.text('140 kg × 3'), findsNothing);
-    expect(find.byIcon(Icons.expand_more), findsNWidgets(2));
-    expect(find.byIcon(Icons.expand_less), findsNothing);
+    expect(find.byIcon(LucideIcons.chevronDown), findsNWidgets(2));
+    expect(find.byIcon(LucideIcons.chevronUp), findsNothing);
 
     // A tap opens one section — its card arrives, its arrow turns up and the
     // other stays closed.
     await openSection(tester, 'Bench');
     expect(find.text('100 kg × 5'), findsOneWidget);
     expect(find.text('140 kg × 3'), findsNothing);
-    expect(find.byIcon(Icons.expand_less), findsOneWidget);
-    expect(find.byIcon(Icons.expand_more), findsOneWidget);
+    expect(find.byIcon(LucideIcons.chevronUp), findsOneWidget);
+    expect(find.byIcon(LucideIcons.chevronDown), findsOneWidget);
 
     // The same tap closes it again.
     await openSection(tester, 'Bench');
     expect(find.text('100 kg × 5'), findsNothing);
-    expect(find.byIcon(Icons.expand_less), findsNothing);
+    expect(find.byIcon(LucideIcons.chevronUp), findsNothing);
   });
 
   testWidgets('the card carries no ×, and the question names the goal', (
@@ -1031,12 +1032,12 @@ void main() {
 
     // Deleting is the swipe drawer's alone (2026-10-19): the card offers no
     // one-tap control, so the gesture is the only way in.
-    expect(find.byIcon(Icons.close), findsNothing);
+    expect(find.byIcon(LucideIcons.x), findsNothing);
 
     // The question itself still stands behind the drawer.
     await tester.drag(find.text('100 kg × 5'), const Offset(-120, 0));
     await tester.pumpAndSettle();
-    await tester.tap(find.byIcon(Icons.delete_outline));
+    await tester.tap(find.byIcon(LucideIcons.trash2));
     await tester.pumpAndSettle();
 
     expect(find.text('Delete this goal?'), findsOneWidget);
@@ -1069,7 +1070,7 @@ void main() {
 
     await tester.drag(find.text('100 kg × 5'), const Offset(-120, 0));
     await tester.pumpAndSettle();
-    await tester.tap(find.byIcon(Icons.delete_outline));
+    await tester.tap(find.byIcon(LucideIcons.trash2));
     await tester.pumpAndSettle();
 
     expect(find.text('Delete this goal?'), findsOneWidget);
@@ -1084,7 +1085,7 @@ void main() {
     // Reopen and answer yes.
     await tester.drag(find.text('100 kg × 5'), const Offset(-120, 0));
     await tester.pumpAndSettle();
-    await tester.tap(find.byIcon(Icons.delete_outline));
+    await tester.tap(find.byIcon(LucideIcons.trash2));
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(TextButton, 'Delete goal'));
     await tester.pumpAndSettle();
@@ -1112,7 +1113,7 @@ void main() {
       reason: 'opening a goal must not be able to change it',
     );
 
-    await tester.tap(find.byIcon(Icons.edit_outlined));
+    await tester.tap(find.byIcon(LucideIcons.pencil));
     await tester.pumpAndSettle();
     await tester.enterText(
       // The sheet's own input — the toolbar's search box is still in the tree
@@ -1251,7 +1252,7 @@ void main() {
     expect(programs.createdGoals, isEmpty);
 
     // Reopening finds the form exactly as it was left.
-    await tester.tap(find.byIcon(Icons.add));
+    await tester.tap(find.byIcon(LucideIcons.plus));
     await tester.pumpAndSettle();
     expect(
       find.descendant(
@@ -1307,7 +1308,7 @@ void main() {
 
     expect(programs.createdGoals.single.targetDate, today);
     expect(
-      find.byIcon(Icons.track_changes),
+      find.byIcon(LucideIcons.target),
       findsOneWidget,
       reason: 'the card marks the deadline it was given',
     );
@@ -1320,7 +1321,7 @@ void main() {
     programs.goals = [bench(targetDate: DateTime(2026, 11, 1))];
     await pumpGoals(tester);
     await openSection(tester, 'Bench');
-    expect(find.byIcon(Icons.track_changes), findsOneWidget);
+    expect(find.byIcon(LucideIcons.target), findsOneWidget);
     expect(find.text('1 Nov 2026'), findsOneWidget);
 
     await tester.tap(find.text('100 kg × 5'));
@@ -1339,7 +1340,7 @@ void main() {
 
     // The × is the way back to no deadline — but it edits the draft, not the
     // row: nothing is written until SAVE.
-    await tester.tap(find.byIcon(Icons.edit_outlined));
+    await tester.tap(find.byIcon(LucideIcons.pencil));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('goal-target-date-clear')));
     await tester.pumpAndSettle();

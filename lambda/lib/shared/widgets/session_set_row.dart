@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:flutter/services.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_fonts.dart';
 import '../../core/styles/app_radius.dart';
@@ -963,7 +964,7 @@ class _SessionSetRowState extends State<SessionSetRow> {
         borderRadius: AppRadius.md,
         actions: [
           SwipeAction(
-            icon: Icons.sticky_note_2_outlined,
+            icon: LucideIcons.stickyNote,
 
             color: AppColors.primary,
             foreground: AppColors.bg,
@@ -980,14 +981,14 @@ class _SessionSetRowState extends State<SessionSetRow> {
         actions: [
           if (!_isDraft)
             SwipeAction(
-              icon: Icons.copy_rounded,
+              icon: LucideIcons.copy,
 
               color: AppColors.accent,
               foreground: AppColors.accentText,
               onTap: _duplicate,
             ),
           SwipeAction(
-            icon: Icons.sticky_note_2_outlined,
+            icon: LucideIcons.stickyNote,
 
             color: AppColors.primary,
             foreground: AppColors.bg,
@@ -995,7 +996,7 @@ class _SessionSetRowState extends State<SessionSetRow> {
           ),
           if (widget.canDelete)
             SwipeAction(
-              icon: Icons.delete_outline,
+              icon: LucideIcons.trash2,
 
               color: AppColors.danger,
               foreground: AppColors.dangerText,
@@ -1012,7 +1013,7 @@ class _SessionSetRowState extends State<SessionSetRow> {
         borderRadius: AppRadius.md,
         actions: [
           SwipeAction(
-            icon: Icons.sticky_note_2_outlined,
+            icon: LucideIcons.stickyNote,
 
             color: AppColors.primary,
             foreground: AppColors.bg,

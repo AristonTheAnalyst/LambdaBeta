@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
@@ -196,7 +197,7 @@ class GoalRow extends StatelessWidget {
                     _dateMark(
                       'Completed $completedDay',
                       completedDay!,
-                      icon: Icons.check,
+                      icon: LucideIcons.check,
                       success: true,
                     )
                   else
@@ -217,7 +218,7 @@ class GoalRow extends StatelessWidget {
 
 /// The deadline's mark: Material's bullseye ([Icons.track_changes]) — a mark
 /// to hit, rather than the calendar the form's date field already wears.
-const _targetIcon = Icons.track_changes;
+const _targetIcon = LucideIcons.target;
 
 /// One symbol and its date, read as one phrase — "◎ 31 Oct 2026".
 ///

@@ -8,12 +8,17 @@ import 'athlete.dart';
 /// agreed yet, so the athlete's name is absent (the coaching_data stream sends
 /// nothing about an unaccepted athlete). The coach's name is present from the
 /// invitation on — the athlete cannot judge a request from nobody.
+///
+/// Since 2026-10-30 either side can ask ([requestedByUserId]): a pending row
+/// where the caller is the requester is one they WAIT on, and one where the
+/// other side is the requester is one THEY must accept.
 class CoachRelationship {
   const CoachRelationship({
     required this.coachUserId,
     required this.athleteUserId,
     this.createdDate,
     this.acceptedDate,
+    this.requestedByUserId,
     this.coachFirstName,
     this.coachLastName,
     this.athleteFirstName,
@@ -24,12 +29,23 @@ class CoachRelationship {
   final String athleteUserId;
   final DateTime? createdDate;
   final DateTime? acceptedDate;
+
+  /// Who asked for the edge: the athlete's id for "coach me", the coach's for
+  /// "let me coach you". Null on rows written before the column existed —
+  /// those were all coach-initiated.
+  final String? requestedByUserId;
+
   final String? coachFirstName;
   final String? coachLastName;
   final String? athleteFirstName;
   final String? athleteLastName;
 
   bool get isAccepted => acceptedDate != null;
+
+  /// Whether [userId] is the side that asked. A pending row they asked for is
+  /// theirs to accept; one the caller asked for is theirs to wait on.
+  bool requestedBy(String userId) =>
+      (requestedByUserId ?? coachUserId) == userId;
 
   /// The coach, named where their `dim_user` slice has synced.
   Athlete get coach => Athlete(
@@ -62,6 +78,7 @@ class CoachRelationship {
         acceptedDate: map['accepted_date'] != null
             ? DateTime.tryParse(map['accepted_date'] as String)
             : null,
+        requestedByUserId: map['requested_by_user_id'] as String?,
         coachFirstName: map['coach_first_name'] as String?,
         coachLastName: map['coach_last_name'] as String?,
         athleteFirstName: map['athlete_first_name'] as String?,
@@ -73,6 +90,7 @@ class CoachRelationship {
     'athlete_user_id': athleteUserId,
     'created_date': createdDate?.toIso8601String(),
     'accepted_date': acceptedDate?.toIso8601String(),
+    'requested_by_user_id': requestedByUserId,
     'coach_first_name': coachFirstName,
     'coach_last_name': coachLastName,
     'athlete_first_name': athleteFirstName,

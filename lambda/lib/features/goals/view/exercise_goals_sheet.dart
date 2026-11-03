@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
@@ -238,7 +239,7 @@ class _ExerciseGoalsSheetState extends State<_ExerciseGoalsSheet> {
             if (widget.onNewGoal != null)
               HeaderIconButton(
                 key: const ValueKey('exercise-goals-add'),
-                icon: Icons.add,
+                icon: LucideIcons.plus,
                 semanticsLabel: 'New goal',
                 color: AppColors.success,
                 onPressed: widget.onNewGoal!,
@@ -255,7 +256,7 @@ class _ExerciseGoalsSheetState extends State<_ExerciseGoalsSheet> {
             const SizedBox(width: AppSpacing.xs),
             HeaderIconButton(
               key: const ValueKey('exercise-goals-close'),
-              icon: Icons.close,
+              icon: LucideIcons.x,
               semanticsLabel: 'Close',
               color: AppColors.muted,
               onPressed: () => Navigator.of(context, rootNavigator: true).pop(),
@@ -419,7 +420,7 @@ class _GoalEntry extends StatelessWidget {
               // A mark to hit while it stands, a tick once it was hit — the
               // goal card's own two glyphs.
               Icon(
-                achieved ? Icons.check_circle : Icons.track_changes,
+                achieved ? LucideIcons.circleCheck : LucideIcons.target,
                 size: 15,
                 color: color,
               ),

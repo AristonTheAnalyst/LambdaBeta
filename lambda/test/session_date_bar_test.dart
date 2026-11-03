@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:lambda/features/session/model/session_local_state.dart';
 import 'package:lambda/shared/widgets/session_chevron_button.dart';
 import 'package:lambda/shared/widgets/session_date_bar.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 /// The floor's date bar walks the session stack (2026-10-22): one chevron
 /// each side of `TODAY -` / `PREVIOUSLY -`, drawn from the session stage's
@@ -74,7 +75,7 @@ void main() {
       );
       expect(
         icon.icon,
-        key.endsWith('older') ? Icons.chevron_left : Icons.chevron_right,
+        key.endsWith('older') ? LucideIcons.chevronLeft : LucideIcons.chevronRight,
       );
       expect(icon.size, SessionChevronButton.kSessionChevronIconSize);
     }
@@ -262,8 +263,8 @@ void main() {
     Icon ringOf(String mode) => tester.widget<Icon>(
       find.descendant(of: option(mode), matching: find.byType(Icon)),
     );
-    expect(ringOf('exercise').icon, Icons.radio_button_checked);
-    expect(ringOf('session').icon, Icons.radio_button_unchecked);
+    expect(ringOf('exercise').icon, LucideIcons.circleDot);
+    expect(ringOf('session').icon, LucideIcons.circle);
 
     // The pair rides inside the selector's own box, under the date: one
     // control, read top to bottom (2026-10-23).
@@ -315,8 +316,8 @@ void main() {
       mode: SessionDateMode.session,
       onToggleMode: () => toggles++,
     );
-    expect(ringOf('exercise').icon, Icons.radio_button_unchecked);
-    expect(ringOf('session').icon, Icons.radio_button_checked);
+    expect(ringOf('exercise').icon, LucideIcons.circle);
+    expect(ringOf('session').icon, LucideIcons.circleDot);
 
     await tester.tap(option('session'));
     expect(toggles, 1, reason: 'the checked radio is not a switch either');

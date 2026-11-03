@@ -26,6 +26,7 @@ import 'package:lambda/shared/widgets/lambda_input.dart';
 import 'package:lambda/shared/widgets/session_chevron_button.dart';
 import 'package:lambda/shared/widgets/session_exercise_card.dart';
 import 'package:lambda/shared/widgets/undo_redo_buttons.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 /// A variation picked on an empty draft set, and the exercise switch that used
 /// to eat it.
@@ -301,7 +302,7 @@ void main() {
     /// the *workout's*, so it has to be asked for by where it sits.
     Finder barNoteGlyph() => find.descendant(
       of: find.byType(ReviewBar),
-      matching: find.byIcon(Icons.sticky_note_2_outlined),
+      matching: find.byIcon(LucideIcons.stickyNote),
     );
 
     // The session and its notes are process-global, matching the bar's — a
@@ -320,7 +321,7 @@ void main() {
       await pumpEditor(tester);
 
       expect(
-        find.byIcon(Icons.delete_outline),
+        find.byIcon(LucideIcons.trash2),
         findsNothing,
         reason:
             'the library\'s swipe deletes a workout; a second door in the '
@@ -342,11 +343,11 @@ void main() {
       expect(find.byType(ReviewBar), findsNothing);
       final cardGlyphs = find.descendant(
         of: find.byType(SessionExerciseCard),
-        matching: find.byIcon(Icons.sticky_note_2_outlined),
+        matching: find.byIcon(LucideIcons.stickyNote),
       );
       final floorNoteTile = find.descendant(
         of: find.byKey(const ValueKey('plan-session-bar')),
-        matching: find.byIcon(Icons.sticky_note_2_outlined),
+        matching: find.byIcon(LucideIcons.stickyNote),
       );
       expect(
         floorNoteTile,
@@ -356,7 +357,7 @@ void main() {
             'whole notes shelf — the live session\'s own tile',
       );
       expect(
-        find.byIcon(Icons.sticky_note_2_outlined).evaluate().length,
+        find.byIcon(LucideIcons.stickyNote).evaluate().length,
         cardGlyphs.evaluate().length + floorNoteTile.evaluate().length,
         reason:
             'every other note glyph belongs to the card or the floor tile — '
@@ -369,7 +370,7 @@ void main() {
       await pumpEditorInReview(tester);
 
       expect(
-        find.byIcon(Icons.delete_outline),
+        find.byIcon(LucideIcons.trash2),
         findsNothing,
         reason:
             'deleting the planned workout is not a verb of the pass — '
@@ -859,7 +860,7 @@ void main() {
 
       // The trash is a door inside a pass now (2026-10-28), and its menu
       // names the group the pass removed.
-      await tester.tap(find.byIcon(Icons.restore_from_trash));
+      await tester.tap(find.byIcon(LucideIcons.rotateCcw));
       await tester.pumpAndSettle();
       final row = tester.widget<DeletedExerciseRow>(
         find.byType(DeletedExerciseRow),
@@ -1051,7 +1052,7 @@ void main() {
       );
 
       await tester.tap(
-        find.descendant(of: pair(), matching: find.byIcon(Icons.undo)),
+        find.descendant(of: pair(), matching: find.byIcon(LucideIcons.undo2)),
       );
       await tester.pumpAndSettle();
 
@@ -1149,7 +1150,7 @@ void main() {
       await tester.tap(find.text('+ ADD SET'));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byIcon(Icons.arrow_back_ios_new));
+      await tester.tap(find.bySemanticsLabel('Back'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Discard'));
       await tester.pumpAndSettle();

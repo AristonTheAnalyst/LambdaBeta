@@ -1,8 +1,13 @@
 # Coaching & friendship — one relationship, two consents
 
-**Status:** proposed, nothing implemented (2026-10-28). Supersedes the
-two-table coaching model built 2026-10-26 (#21–#24): `coaching_relationship`,
-the invite/accept RPCs, the assignment flow, and the separate Coach roster.
+**Status:** partly built (2026-10-30). The Social restructure landed first:
+the Coach roster is gone, coaching lives on the friend's profile, and either
+side can ask (`request_coaching` / `offer_coaching` /
+`accept_coaching_request`, migration `20261030120000`) — but the consent is
+still stored on `coaching_relationship`, with the athlete's
+`friend_relationship` grant bridged on accept so `is_coach_of()` works. The
+rest of this document — friend requests, block and code rotation, retiring
+`coaching_relationship`, the `user_block` table — is still proposed.
 
 ## Decisions locked (2026-10-28)
 

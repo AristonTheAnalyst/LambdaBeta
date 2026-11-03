@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
@@ -24,13 +25,13 @@ import '../model/acting_identity.dart';
 /// bar's first two, element for element, so the two surfaces read as one app.
 const coachModeNavItems = [
   ScrollShrinkNavItem(
-    icon: Icons.play_circle_outline,
-    activeIcon: Icons.play_circle,
+    icon: LucideIcons.circlePlay,
+    activeIcon: LucideIcons.circlePlay,
     label: 'Session',
   ),
   ScrollShrinkNavItem(
-    icon: Icons.local_library_outlined,
-    activeIcon: Icons.local_library,
+    icon: LucideIcons.library,
+    activeIcon: LucideIcons.library,
     label: 'Library',
   ),
 ];
@@ -113,14 +114,16 @@ class _CoachModeScreenState extends State<CoachModeScreen> {
     if (Navigator.of(context).canPop()) {
       Navigator.of(context).pop();
     } else {
-      context.go('/profile/coach');
+      // The roster lives in the Social tab's Coach panel (2026-10-29); the
+      // hub stays mounted under this page, so its tab survives the landing.
+      context.go('/friends');
     }
   }
 
   /// The way out, standing to the left of the tabs (2026-10-28): a left
   /// chevron at the bar's leading edge.
   Widget _exitButton(VoidCallback onExit) => HeaderIconButton(
-    icon: Icons.chevron_left,
+    icon: LucideIcons.chevronLeft,
     semanticsLabel: 'Exit coach mode',
     glyphSize: 22,
     onPressed: onExit,

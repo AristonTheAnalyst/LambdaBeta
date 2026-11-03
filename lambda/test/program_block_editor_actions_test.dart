@@ -9,6 +9,7 @@ import 'package:lambda/features/programs/view/plan_session_screen.dart';
 import 'package:lambda/features/programs/view/program_block_editor_screen.dart';
 import 'package:lambda/features/programs/viewmodel/program_detail_viewmodel.dart';
 import 'package:lambda/shared/widgets/glass_button.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'support/fake_program_repos.dart';
 
@@ -104,7 +105,7 @@ void main() {
   /// The `+` beside the Workouts heading. Its label is empty by design, so the
   /// icon is the identifier — and the goals section has a `+` of its own.
   Finder addButton() => find.byWidgetPredicate(
-    (w) => w is GlassButton && w.icon == Icons.add && w.label.isEmpty,
+    (w) => w is GlassButton && w.icon == LucideIcons.plus && w.label.isEmpty,
   );
 
   testWidgets('a workout row opens that workout in the editor', (tester) async {

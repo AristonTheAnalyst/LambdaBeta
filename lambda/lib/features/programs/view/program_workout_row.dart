@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
 import '../../../core/styles/app_spacing.dart';
@@ -102,7 +103,7 @@ class ProgramWorkoutRow extends StatelessWidget {
           if (dragIndex != null)
             ReorderableDragStartListener(
               index: dragIndex!,
-              child: Icon(Icons.drag_handle, size: 18, color: AppColors.muted),
+              child: Icon(LucideIcons.gripHorizontal, size: 18, color: AppColors.muted),
             ),
         ],
       ),

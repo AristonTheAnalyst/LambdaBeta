@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../core/styles/app_colors.dart';
 import '../../../data/cache/past_sets_timeline_cache.dart';
 import '../../../core/styles/app_fonts.dart';
@@ -302,7 +303,7 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
                 child: Row(
                   children: [
                     Icon(
-                      Icons.edit_outlined,
+                      LucideIcons.pencil,
                       size: 18,
                       color: AppColors.primary,
                     ),
@@ -332,7 +333,7 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
                   child: Row(
                     children: [
                       Icon(
-                        Icons.history,
+                        LucideIcons.history,
                         size: 18,
                         color: AppColors.primary,
                       ),
@@ -360,7 +361,7 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
                 child: Row(
                   children: [
                     Icon(
-                      Icons.delete_outline,
+                      LucideIcons.trash2,
                       size: 18,
                       color: AppColors.danger,
                     ),
@@ -524,7 +525,7 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
                       ),
                       const SizedBox(width: 4),
                       Icon(
-                        Icons.arrow_drop_down,
+                        LucideIcons.chevronDown,
                         size: 18,
                         color: AppColors.muted,
                       ),
@@ -533,13 +534,13 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
                 ),
               ),
               left: HeaderIconButton(
-                icon: Icons.arrow_back_ios_new,
+                icon: LucideIcons.chevronLeft,
                 semanticsLabel: 'Back',
                 glyphSize: 18,
                 onPressed: () => context.pop(),
               ),
               right: HeaderIconButton(
-                icon: Icons.more_horiz,
+                icon: LucideIcons.ellipsis,
                 semanticsLabel: 'Exercise options',
                 glyphSize: 22,
                 // Inert for an exercise the coach did not create (2026-10-29).
@@ -645,7 +646,7 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
                   style: AppFonts.mono(fontSize: 13, color: AppColors.primary),
                 ),
                 const SizedBox(width: 4),
-                Icon(Icons.arrow_drop_down, size: 16, color: AppColors.muted),
+                Icon(LucideIcons.chevronDown, size: 16, color: AppColors.muted),
               ],
             ),
           ),
@@ -689,7 +690,7 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
             const Spacer(),
             GlassButton(
               label: '',
-              icon: Icons.tune,
+              icon: LucideIcons.slidersHorizontal,
               semanticsLabel: 'View settings',
               compact: true,
               onPressed: _openViewSettings,
@@ -768,7 +769,7 @@ class _MetricsCard extends StatelessWidget {
                       children: [
                         if (i == 0) ...[
                           Icon(
-                            Icons.emoji_events_outlined,
+                            LucideIcons.trophy,
                             size: 16,
                             color: AppColors.accent,
                           ),
@@ -861,7 +862,7 @@ class _CurveRow extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
               child: Icon(
-                Icons.arrow_forward,
+                LucideIcons.arrowRight,
                 size: 14,
                 color: established
                     ? AppColors.accent
@@ -898,7 +899,7 @@ class _CurveRow extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(
-                      Icons.emoji_events_outlined,
+                      LucideIcons.trophy,
                       size: 12,
                       color: prCount! > 0
                           ? AppColors.accent
@@ -1070,8 +1071,8 @@ class _ViewSettingsSheetState extends State<_ViewSettingsSheet> {
                         children: [
                           Icon(
                             hidden
-                                ? Icons.check_box_outline_blank
-                                : Icons.check_box,
+                                ? LucideIcons.square
+                                : LucideIcons.squareCheck,
                             size: 18,
                             color: hidden ? AppColors.muted : AppColors.accent,
                           ),

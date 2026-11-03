@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
@@ -294,7 +295,7 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
               right: widget.canDelete
                   ? GlassButton(
                       label: '',
-                      icon: Icons.add,
+                      icon: LucideIcons.plus,
                       semanticsLabel: 'Start review',
                       compact: true,
                       loading: _busy,
@@ -337,7 +338,7 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
             label: 'Date filter',
             child: GlassButton(
               label: '',
-              icon: Icons.date_range_outlined,
+              icon: LucideIcons.calendarRange,
               compact: true,
               color: _dateActive ? AppColors.accent : null,
               onPressed: _pickDate,
@@ -347,7 +348,7 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
             const SizedBox(width: AppSpacing.sm),
             GlassButton(
               label: '',
-              icon: Icons.add,
+              icon: LucideIcons.plus,
               semanticsLabel: 'Start review',
               compact: true,
               loading: _busy,
@@ -437,7 +438,7 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
               key: ValueKey(entry.review.reviewId),
               actions: [
                 SwipeAction(
-                  icon: Icons.delete_outline,
+                  icon: LucideIcons.trash2,
 
                   color: AppColors.danger,
                   foreground: AppColors.dangerText,
@@ -466,7 +467,7 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
                 key: ValueKey(entry.review.reviewId),
                 actions: [
                   SwipeAction(
-                    icon: Icons.delete_outline,
+                    icon: LucideIcons.trash2,
                     color: AppColors.danger,
                     foreground: AppColors.dangerText,
                     onTap: () => _deleteCompleted(entry),
@@ -628,7 +629,7 @@ class _CompletedReviewCard extends StatelessWidget {
               ],
             ),
           ),
-          Icon(Icons.chevron_right, size: 16, color: AppColors.muted),
+          Icon(LucideIcons.chevronRight, size: 16, color: AppColors.muted),
         ],
       ),
     );

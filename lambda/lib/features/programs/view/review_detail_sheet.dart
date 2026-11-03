@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
@@ -516,7 +517,7 @@ class _ExerciseTargets extends StatelessWidget {
                   Padding(
                     padding: const EdgeInsets.only(top: 2),
                     child: Icon(
-                      Icons.sticky_note_2_outlined,
+                      LucideIcons.stickyNote,
                       size: 10,
                       color: AppColors.accent,
                     ),
@@ -699,7 +700,7 @@ class _NoteLine extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.only(top: 2),
           child: Icon(
-            Icons.sticky_note_2_outlined,
+            LucideIcons.stickyNote,
             size: 10,
             color: AppColors.accent,
           ),

@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
@@ -1320,7 +1321,7 @@ class _ReviewLandingState extends State<_ReviewLanding> {
               PageHeader(
                 title: session.title ?? 'Review',
                 left: HeaderIconButton(
-                  icon: Icons.arrow_back_ios_new,
+                  icon: LucideIcons.chevronLeft,
                   semanticsLabel: 'Back',
                   glyphSize: 18,
                   color: AppColors.primary,
@@ -1463,7 +1464,7 @@ class _ReviewLandingState extends State<_ReviewLanding> {
             key: ValueKey(card.sessionId),
             actions: [
               SwipeAction(
-                icon: Icons.remove_circle_outline,
+                icon: LucideIcons.circleMinus,
 
                 color: AppColors.danger,
                 foreground: AppColors.dangerText,
@@ -1632,7 +1633,7 @@ class _AddTile extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.add, size: 16, color: AppColors.accent),
+              Icon(LucideIcons.plus, size: 16, color: AppColors.accent),
               const SizedBox(width: AppSpacing.xs),
               Text(
                 label,
@@ -1736,7 +1737,7 @@ class _WorkoutCard extends StatelessWidget {
           ),
           if (reviewed) ...[
             const SizedBox(width: AppSpacing.sm),
-            Icon(Icons.check_circle, size: 14, color: AppColors.success),
+            Icon(LucideIcons.circleCheck, size: 14, color: AppColors.success),
           ],
         ],
       ),
@@ -2308,12 +2309,13 @@ class _ReviewBarState extends State<ReviewBar> {
           child: GlassButton(
             label: '',
             // An eye: the button is "show me the record", and the eye is the
-            // one glyph that says that without a word — outlined at rest and
-            // filled while the record is up, so the toggle wears its state
-            // (2026-10-10; the fill is ink, not colour — see below).
+            // one glyph that says that without a word — dashed at rest and
+            // solid while the record is up, since Lucide has no filled eye
+            // to pair with its outline (2026-10-31; the state stays ink, not
+            // colour — see below).
             icon: widget.comparing
-                ? Icons.visibility
-                : Icons.visibility_outlined,
+                ? LucideIcons.eye
+                : LucideIcons.eyeDashed,
             compact: true,
             radius: radius,
             loading: _comparing,
@@ -2343,7 +2345,7 @@ class _ReviewBarState extends State<ReviewBar> {
           child: GlassButton(
             label: '',
             // Two shapes half over each other: difference, without a word.
-            icon: Icons.difference_outlined,
+            icon: LucideIcons.gitCompare,
             compact: true,
             radius: radius,
             loading: _readingChanges,
@@ -2369,7 +2371,7 @@ class _ReviewBarState extends State<ReviewBar> {
               label: 'Workout note',
               child: GlassButton(
                 label: '',
-                icon: Icons.sticky_note_2_outlined,
+                icon: LucideIcons.stickyNote,
                 compact: true,
                 radius: radius,
                 // Locked on a record as well: the note this writes is the
@@ -2399,7 +2401,7 @@ class _ReviewBarState extends State<ReviewBar> {
               : 'Done with this workout',
           child: GlassButton(
             label: '',
-            icon: Icons.check,
+            icon: LucideIcons.check,
             compact: true,
             radius: radius,
             loading: _settingDone,

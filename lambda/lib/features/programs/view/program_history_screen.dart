@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_spacing.dart';
@@ -30,7 +31,7 @@ class ProgramHistoryScreen extends StatelessWidget {
           PageHeader(
             title: 'History',
             left: HeaderIconButton(
-              icon: Icons.arrow_back_ios_new,
+              icon: LucideIcons.chevronLeft,
               semanticsLabel: 'Back',
               glyphSize: 18,
               onPressed: () => Navigator.of(context).pop(),

@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../core/theme/lambda_theme.dart';
 import '../../features/auth/view/forgot_password_screen.dart';
@@ -8,20 +9,14 @@ import '../../features/auth/view/login_screen.dart';
 import '../../features/auth/view/reset_password_screen.dart';
 import '../../features/auth/view/signup_screen.dart';
 import '../../features/coach/view/coach_mode_screen.dart';
-import '../../features/coach/view/coach_screen.dart';
-import '../../features/dev/lab/lab_screen.dart';
-import '../../features/dev/view/coach_icons_screen.dart';
 import '../../features/dev/view/dev_screen.dart';
-import '../../features/dev/view/experimental_screen.dart';
 import '../../features/dev/view/gallery_screen.dart';
-import '../../features/dev/view/exercise_note_debug_screen.dart';
-import '../../features/dev/view/nav_bar_demo_screen.dart';
-import '../../features/dev/pr_lab/pr_lab_screen.dart';
-import '../../features/dev/view/pr_history_demo_screen.dart';
-import '../../features/dev/view/visual_pairings_screen.dart';
+import '../../features/dev/view/friend_screen_lab.dart';
+import '../../features/dev/view/session_cards_screen.dart';
 import '../../features/exercises/view/exercise_hub_screen.dart';
 import '../../features/exercises/view/exercise_detail_screen.dart';
 import '../../features/exercises/view/guide_screen.dart';
+import '../../features/friends/view/friend_profile_screen.dart';
 import '../../features/friends/view/friends_screen.dart';
 import '../../features/logs/view/logs_screen.dart';
 import '../../features/logs/view/session_detail_screen.dart';
@@ -138,7 +133,7 @@ abstract final class AppRouter {
       // ── A friend's record (2026-10-23) ───────────────────────────────────
       // Top-level, beside /logs, for the same reason: the viewer draws its
       // own bar rather than sitting under the shell's. The bar lights the
-      // Friends tab (`navRoute`), and the page is read-only throughout —
+      // Social tab (`navRoute`), and the page is read-only throughout —
       // no edit, no Restore, no notes composer.
       GoRoute(
         path: '/friends/:userId/sessions/:sessionId',
@@ -152,8 +147,8 @@ abstract final class AppRouter {
 
       // ── An athlete's record (2026-10-26) ─────────────────────────────────
       // The coach's viewer, the same read-only page as the friend's. Top
-      // level for the same reason, but its bar lights Profile — the tab the
-      // roster hangs off; the list itself is /profile/coach/:athleteId.
+      // level for the same reason; its bar lights Social — the tab the
+      // coaching roster hangs off since 2026-10-29.
       GoRoute(
         path: '/coach/:athleteId/sessions/:sessionId',
         builder: (_, state) => SessionDetailScreen(
@@ -163,7 +158,7 @@ abstract final class AppRouter {
           // The coach may not touch the athlete's sets, but they are the one
           // reader who writes on this page: their feedback (2026-10-26, #24).
           canCoach: true,
-          navRoute: '/profile',
+          navRoute: '/friends',
         ),
       ),
 
@@ -179,27 +174,6 @@ abstract final class AppRouter {
           athleteName: (state.extra as String?) ?? 'Athlete',
         ),
       ),
-
-      // ── Dev-only full-screen demos ───────────────────────────────────────
-      // Outside the tab shell on purpose: these pages draw their own bottom
-      // bar, and the shell's bar would sit underneath it.
-      // `kDebugMode`, not `!kReleaseMode`: a profile build is for measuring
-      // the shipping app, so it must not carry the dev surfaces either
-      // (2026-10-22). Both flags are const, so the routes are compiled out of
-      // the binary in profile and release alike.
-      if (kDebugMode)
-        GoRoute(
-          path: '/nav-bar-demo',
-          builder: (_, _) => const NavBarDemoScreen(),
-        ),
-
-      // The review flow lab. Top-level for a stronger reason than the demos:
-      // it swaps the app onto a sandbox database for as long as it is open, so
-      // the shell — and every tab under it — must not be reachable while it
-      // runs. It has no routes of its own: the review flow pushes what it
-      // needs on the root navigator, exactly as it does outside the lab.
-      if (kDebugMode)
-        GoRoute(path: '/dev/lab', builder: (_, _) => const LabScreen()),
 
       // ── Tab shell ─────────────────────────────────────────────────────────
       ShellRoute(
@@ -227,25 +201,41 @@ abstract final class AppRouter {
           ),
           GoRoute(
             path: '/friends',
+            // The Social tab (2026-10-30): the friends list and nothing else.
+            // Coaching moved onto each friend's profile, so there is no
+            // second panel and no roster page to reach.
             builder: (_, _) => const FriendsScreen(),
             routes: [
-              // A friend's completed sessions — the Training Logs list
-              // pointed at their history, read-only (2026-10-23). The name
-              // rides `extra` so the header reads "Jamie" without a query;
-              // a deep link falls back to the word.
+              // One friend's profile — the friendship's verbs, the coaching
+              // asks and the way to their training. The name rides `extra`
+              // so the header reads "Jamie" before the row syncs; a deep
+              // link falls back to the word.
               GoRoute(
                 path: ':userId',
-                builder: (context, state) => LogsScreen(
-                  userId: state.pathParameters['userId'],
-                  readOnly: true,
-                  headerTitle: state.extra as String? ?? 'Sessions',
-                  onBack: () =>
-                      context.canPop() ? context.pop() : context.go('/friends'),
-                  emptyMessage: 'No sessions yet',
-                  emptyHint: 'This friend has no completed sessions.',
-                  sessionRouteBuilder: (id) =>
-                      '/friends/${state.pathParameters['userId']}/sessions/$id',
+                builder: (context, state) => FriendProfileScreen(
+                  friendId: state.pathParameters['userId']!,
+                  initialName: state.extra as String?,
                 ),
+                routes: [
+                  // Their completed sessions — the Training Logs list pointed
+                  // at their history, read-only (2026-10-23), opened from the
+                  // profile's View training.
+                  GoRoute(
+                    path: 'logs',
+                    builder: (context, state) => LogsScreen(
+                      userId: state.pathParameters['userId'],
+                      readOnly: true,
+                      headerTitle: state.extra as String? ?? 'Sessions',
+                      onBack: () => context.canPop()
+                          ? context.pop()
+                          : context.go('/friends'),
+                      emptyMessage: 'No sessions yet',
+                      emptyHint: 'This friend has no completed sessions.',
+                      sessionRouteBuilder: (id) =>
+                          '/friends/${state.pathParameters['userId']}/sessions/$id',
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -260,31 +250,8 @@ abstract final class AppRouter {
                 path: 'appearance',
                 builder: (_, _) => const AppearanceScreen(),
               ),
-              // Profile → Coach: the coach's roster, then an athlete's
-              // completed history in the same read-only list and viewer the
-              // Friends tab uses (2026-10-26). Nested under /profile so the
-              // pushed pages keep the Profile tab lit and the bar visible.
-              GoRoute(
-                path: 'coach',
-                builder: (_, _) => const CoachScreen(),
-                routes: [
-                  GoRoute(
-                    path: ':athleteId',
-                    builder: (context, state) => LogsScreen(
-                      userId: state.pathParameters['athleteId'],
-                      readOnly: true,
-                      headerTitle: state.extra as String? ?? 'Athlete',
-                      onBack: () => context.canPop()
-                          ? context.pop()
-                          : context.go('/profile/coach'),
-                      emptyMessage: 'No sessions yet',
-                      emptyHint: 'This athlete has no completed sessions.',
-                      sessionRouteBuilder: (id) =>
-                          '/coach/${state.pathParameters['athleteId']}/sessions/$id',
-                    ),
-                  ),
-                ],
-              ),
+              // Coach left Profile for the Social tab (2026-10-29): its page
+              // is that hub's second panel, so no route leads here.
             ],
           ),
           // Dev routes exist in debug builds only — a profile build measures
@@ -296,25 +263,12 @@ abstract final class AppRouter {
               routes: [
                 GoRoute(path: 'gallery', builder: (_, _) => GalleryScreen()),
                 GoRoute(
-                  path: 'experimental',
-                  builder: (_, _) => ExperimentalScreen(),
+                  path: 'friend-screen',
+                  builder: (_, _) => const FriendScreenLab(),
                 ),
                 GoRoute(
-                  path: 'note-debug',
-                  builder: (_, _) => const ExerciseNoteDebugScreen(),
-                ),
-                GoRoute(
-                  path: 'pr-history',
-                  builder: (_, _) => const PrHistoryDemoScreen(),
-                ),
-                GoRoute(path: 'pr-lab', builder: (_, _) => const PrLabScreen()),
-                GoRoute(
-                  path: 'visual-pairings',
-                  builder: (_, _) => const VisualPairingsScreen(),
-                ),
-                GoRoute(
-                  path: 'coach-icons',
-                  builder: (_, _) => const CoachIconsScreen(),
+                  path: 'session-cards',
+                  builder: (_, _) => const SessionCardsScreen(),
                 ),
               ],
             ),
@@ -338,17 +292,15 @@ bool showBottomNavFor(String location) =>
 
 /// Whether a location's page lets the keyboard push the shell's floor up.
 ///
-/// True everywhere but the pages that pin their floor and let the keyboard
-/// paint over it: the PR Lab's stage, which keeps the date changer, the action
-/// bar and the nav bar exactly where they are (2026-10-21), and the session
-/// surfaces — the live wizard's floor bar carries the date selector and the
-/// PR/notes doors, and a keyboard that lifted it would move the page under
-/// the user's hands mid-set (2026-10-25). Each page opts out on its own
-/// Scaffold; this is the shell opting out with it — a body that still resized
-/// would carry the nav bar up anyway, and the floor with it.
+/// True everywhere but the session surfaces: the live wizard's floor bar
+/// carries the date selector and the PR/notes doors, and a keyboard that
+/// lifted it would move the page under the user's hands mid-set (2026-10-25).
+/// The page opts out on its own Scaffold; this is the shell opting out with
+/// it — a body that still resized would carry the nav bar up anyway, and the
+/// floor with it.
 @visibleForTesting
 bool shellResizesForKeyboard(String location) {
-  const pinned = ['/dev/pr-lab', '/session'];
+  const pinned = ['/session'];
   return !pinned.any((r) => location == r || location.startsWith('$r/'));
 }
 
@@ -387,32 +339,34 @@ final _tabs = <_Tab>[
   const _Tab(
     '/session',
     ScrollShrinkNavItem(
-      icon: Icons.play_circle_outline,
-      activeIcon: Icons.play_circle,
+      icon: LucideIcons.circlePlay,
+      activeIcon: LucideIcons.circlePlay,
       label: 'Session',
     ),
   ),
   const _Tab(
     '/exercises',
     ScrollShrinkNavItem(
-      icon: Icons.local_library_outlined,
-      activeIcon: Icons.local_library,
+      // Trying the grid at the user's request (2026-10-31); `library` and
+      // the rest of the shortlist stay on Dev -> Library Tab Icon.
+      icon: LucideIcons.layoutGrid,
+      activeIcon: LucideIcons.layoutGrid,
       label: 'Library',
     ),
   ),
   const _Tab(
     '/friends',
     ScrollShrinkNavItem(
-      icon: Icons.people_outline,
-      activeIcon: Icons.people,
-      label: 'Friends',
+      icon: LucideIcons.users,
+      activeIcon: LucideIcons.users,
+      label: 'Social',
     ),
   ),
   const _Tab(
     '/profile',
     ScrollShrinkNavItem(
-      icon: Icons.person_outline,
-      activeIcon: Icons.person,
+      icon: LucideIcons.user,
+      activeIcon: LucideIcons.user,
       label: 'Profile',
     ),
   ),
@@ -420,8 +374,8 @@ final _tabs = <_Tab>[
     const _Tab(
       '/dev',
       ScrollShrinkNavItem(
-        icon: Icons.code,
-        activeIcon: Icons.code,
+        icon: LucideIcons.code,
+        activeIcon: LucideIcons.code,
         label: 'Dev',
       ),
     ),
@@ -486,7 +440,7 @@ class _TabShell extends StatelessWidget {
 ///
 /// Production callers: the pushed editors that draw their own bar, and the
 /// session viewer, whose bar lights whichever tab opened it (`navRoute`) —
-/// Session for the user's own record, Friends when reading a friend's.
+/// Session for the user's own record, Social when reading a friend's.
 int tabIndexFor(String location) => _tabIndexFor(location);
 
 /// The shell's bar, handed out for the screens that cover it.

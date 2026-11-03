@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_fonts.dart';
@@ -265,7 +266,7 @@ class ChoiceRow extends StatelessWidget {
               ),
             ),
             if (active)
-              trailing ?? Icon(Icons.check, size: 16, color: AppColors.accent),
+              trailing ?? Icon(LucideIcons.check, size: 16, color: AppColors.accent),
           ],
         ),
       ),

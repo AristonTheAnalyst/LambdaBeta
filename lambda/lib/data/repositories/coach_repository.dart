@@ -6,7 +6,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/powersync/database.dart' as ps;
-import '../../core/utils/friend_code.dart';
 import '../../core/utils/lambda_exception.dart';
 import '../cache/past_sets_timeline_cache.dart';
 import '../models/coach_assignment.dart';
@@ -20,47 +19,60 @@ import 'program_history_repository.dart';
 
 const _uuid = Uuid();
 
-/// What the invite RPC reports back: the athlete the code resolved to, and
-/// whether the invitation is new ([created] false = the row was already there).
-class CoachInvite {
-  const CoachInvite({required this.athleteUserId, required this.created});
+/// What an ask RPC reports back (2026-10-30): the edge's two ids and whether
+/// it is new ([created] false = the row was already there, so nothing is
+/// mirrored).
+class CoachingRequest {
+  const CoachingRequest({
+    required this.coachUserId,
+    required this.athleteUserId,
+    required this.created,
+  });
 
+  final String coachUserId;
   final String athleteUserId;
   final bool created;
 }
 
-/// The network half of [CoachRepository] (2026-10-26) — the three calls that
-/// must reach the server, in the [FriendRemote] seam's shape: host tests
-/// cannot construct `Supabase.instance`, so the RPC contract is only testable
-/// through an injected object.
+/// The network half of [CoachRepository] (2026-10-26) — the calls that must
+/// reach the server, in the [FriendRemote] seam's shape: host tests cannot
+/// construct `Supabase.instance`, so the RPC contract is only testable through
+/// an injected object.
 abstract class CoachRemote {
-  /// Resolves [code] to a user and writes the invitation, server-side.
-  /// Throws [LambdaException] with a user-facing sentence on refusal.
-  Future<CoachInvite> inviteByCode(String code);
+  /// The caller asks [coachUserId] — a friend — to coach them (2026-10-30).
+  Future<CoachingRequest> requestCoaching(String coachUserId);
 
-  /// Stamps the athlete's consent on a pending invitation.
-  Future<void> acceptInvitation(String coachUserId);
+  /// The caller offers to coach [athleteUserId] — a friend (2026-10-30).
+  Future<CoachingRequest> offerCoaching(String athleteUserId);
+
+  /// The caller accepts the pending edge the OTHER side asked for, either
+  /// direction (2026-10-30).
+  Future<void> acceptRequest(String otherUserId);
 
   /// Ends the relationship, from either side (decline, revoke or withdrawal).
   Future<void> remove(String otherUserId);
 }
 
-/// The real remote: the three SECURITY DEFINER RPCs. The SQL enforces the
-/// consent rules; the messages below translate its `raise exception` keys.
+/// The real remote: the SECURITY DEFINER RPCs. The SQL enforces the consent
+/// rules; the messages below translate its `raise exception` keys.
 class SupabaseCoachRemote implements CoachRemote {
   const SupabaseCoachRemote();
 
   SupabaseClient get _client => Supabase.instance.client;
 
-  @override
-  Future<CoachInvite> inviteByCode(String code) async {
+  /// The three ask/accept RPCs share one shape: one jsonb object back, or a
+  /// PostgREST refusal mapped to a sentence.
+  Future<CoachingRequest> _ask(
+    String function,
+    Map<String, dynamic> params,
+  ) async {
     try {
       final data = await _client
-          .rpc('coach_invite_by_code', params: {'p_code': code})
+          .rpc(function, params: params)
           .timeout(const Duration(seconds: 8));
-      // The function returns one jsonb object (not a row set).
       final map = (data as Map).cast<String, dynamic>();
-      return CoachInvite(
+      return CoachingRequest(
+        coachUserId: map['coach_user_id'] as String,
         athleteUserId: map['athlete_user_id'] as String,
         created: map['created'] as bool? ?? true,
       );
@@ -68,26 +80,34 @@ class SupabaseCoachRemote implements CoachRemote {
       throw LambdaException(
         _errorMessage(
           e.message,
-          fallback: 'Could not send that invitation. Try again in a moment.',
+          fallback: 'Could not send that request. Try again in a moment.',
         ),
       );
     }
   }
 
   @override
-  Future<void> acceptInvitation(String coachUserId) async {
+  Future<CoachingRequest> requestCoaching(String coachUserId) =>
+      _ask('request_coaching', {'p_coach_user_id': coachUserId});
+
+  @override
+  Future<CoachingRequest> offerCoaching(String athleteUserId) =>
+      _ask('offer_coaching', {'p_athlete_user_id': athleteUserId});
+
+  @override
+  Future<void> acceptRequest(String otherUserId) async {
     try {
       await _client
           .rpc(
-            'accept_coaching_invitation',
-            params: {'p_coach_user_id': coachUserId},
+            'accept_coaching_request',
+            params: {'p_other_user_id': otherUserId},
           )
           .timeout(const Duration(seconds: 8));
     } on PostgrestException catch (e) {
       throw LambdaException(
         _errorMessage(
           e.message,
-          fallback: 'Could not accept that invitation. Try again in a moment.',
+          fallback: 'Could not accept that. Try again in a moment.',
         ),
       );
     }
@@ -115,17 +135,14 @@ class SupabaseCoachRemote implements CoachRemote {
   /// The RPC's `raise exception` text is the key; one sentence per outcome.
   static String _errorMessage(String message, {required String fallback}) {
     final m = message.toLowerCase();
-    if (m.contains('friend_code_invalid')) {
-      return "That friend code doesn't look right. Check it and try again.";
-    }
-    if (m.contains('friend_code_not_found')) {
-      return 'No one has that friend code.';
-    }
     if (m.contains('cannot_coach_self')) {
       return "That's your own friend code — enter your athlete's.";
     }
+    if (m.contains('not_friends')) {
+      return 'You can only coach a friend.';
+    }
     if (m.contains('invitation_not_found')) {
-      return 'That invitation is no longer there.';
+      return 'That request is no longer there.';
     }
     if (m.contains('not_authenticated')) {
       return 'Your session has expired — sign in again.';
@@ -182,7 +199,7 @@ class CoachRepository {
   Stream<List<CoachRelationship>> watchRelationships(String userId) => ps.db
       .watch(
         'SELECT cr.coach_user_id, cr.athlete_user_id, cr.created_date, '
-        'cr.accepted_date, '
+        'cr.accepted_date, cr.requested_by_user_id, '
         'cu.user_name AS coach_first_name, '
         'cu.user_lastname AS coach_last_name, '
         'au.user_name AS athlete_first_name, '
@@ -196,37 +213,55 @@ class CoachRepository {
       )
       .map((rows) => rows.map(CoachRelationship.fromMap).toList());
 
-  /// Invites the owner of [rawCode] to share their training. A malformed code
-  /// is refused here, before any network call; the server applies the same
-  /// rule. Returns the RPC's report so the screen can say which name landed.
-  Future<CoachInvite> inviteByCode(String userId, String rawCode) async {
-    final code = normalizeFriendCode(rawCode);
-    if (code == null) {
-      throw const LambdaException(
-        "That friend code doesn't look right. Check it and try again.",
-      );
+  /// The athlete's ask (2026-10-30): [userId] asks [coachId] — a friend — to
+  /// coach them. The coach accepts with [acceptRequest].
+  Future<CoachingRequest> requestCoaching(
+    String userId,
+    String coachId,
+  ) async {
+    final request = await _remote.requestCoaching(coachId);
+    if (request.created) {
+      await _mirrorAsk(request.coachUserId, request.athleteUserId, userId);
     }
-    final invite = await _remote.inviteByCode(code);
-    if (invite.created) {
-      await _mirrorInvite(userId, invite.athleteUserId);
-    }
-    return invite;
+    return request;
   }
 
-  /// Accepts [coachId]'s invitation — the athlete's consent. The stream starts
-  /// sending their history to the coach on the round after the write lands.
-  Future<void> acceptInvitation(String userId, String coachId) async {
-    await _remote.acceptInvitation(coachId);
+  /// The coach's offer (2026-10-30): [userId] offers to coach [athleteId] — a
+  /// friend.
+  Future<CoachingRequest> offerCoaching(
+    String userId,
+    String athleteId,
+  ) async {
+    final request = await _remote.offerCoaching(athleteId);
+    if (request.created) {
+      await _mirrorAsk(request.coachUserId, request.athleteUserId, userId);
+    }
+    return request;
+  }
+
+  /// Accepts the pending edge [otherUserId] asked for — as the coach when they
+  /// asked to be coached, as the athlete when they offered. The grant lands on
+  /// the athlete's friendship row server-side; the stream repaints the list.
+  Future<void> acceptRequest(String userId, String otherUserId) async {
+    await _remote.acceptRequest(otherUserId);
     try {
       await ps.safeWriteTransaction((tx) async {
         await tx.execute(
           'UPDATE coaching_relationship SET accepted_date = ? '
-          'WHERE coach_user_id = ? AND athlete_user_id = ?',
-          [DateTime.now().toUtc().toIso8601String(), coachId, userId],
+          'WHERE accepted_date IS NULL '
+          'AND ((coach_user_id = ? AND athlete_user_id = ?) '
+          'OR (coach_user_id = ? AND athlete_user_id = ?))',
+          [
+            DateTime.now().toUtc().toIso8601String(),
+            userId,
+            otherUserId,
+            otherUserId,
+            userId,
+          ],
         );
       });
     } catch (e) {
-      debugPrint('CoachRepository.acceptInvitation: local mirror failed: $e');
+      debugPrint('CoachRepository.acceptRequest: local mirror failed: $e');
     }
   }
 
@@ -250,28 +285,32 @@ class CoachRepository {
     PastSetsTimelineCache.instance.invalidate(otherUserId);
   }
 
-  /// Best-effort: the RPC succeeded and the invitation exists server-side, so
-  /// a failed local insert must not read as a failed invite. The next sync
-  /// round brings the row down anyway.
-  Future<void> _mirrorInvite(String coachId, String athleteId) async {
+  /// Best-effort mirror of an ask (2026-10-30): the pending row under the
+  /// synthetic id the stream uses, with the requester stamped. A failure must
+  /// not read as a failed request — the RPC already wrote it, and the next
+  /// sync round brings it down anyway.
+  Future<void> _mirrorAsk(
+    String coachId,
+    String athleteId,
+    String requestedBy,
+  ) async {
     try {
       await ps.safeWriteTransaction((tx) async {
         await tx.execute(
           'INSERT OR IGNORE INTO coaching_relationship '
-          '(id, coach_user_id, athlete_user_id, created_date) '
-          'VALUES (?, ?, ?, ?)',
+          '(id, coach_user_id, athlete_user_id, created_date, '
+          'requested_by_user_id) VALUES (?, ?, ?, ?, ?)',
           [
-            // MUST match the stream's `coach_user_id || '-' || athlete_user_id`,
-            // or the download lands as a second row.
             '$coachId-$athleteId',
             coachId,
             athleteId,
             DateTime.now().toUtc().toIso8601String(),
+            requestedBy,
           ],
         );
       });
     } catch (e) {
-      debugPrint('CoachRepository.inviteByCode: local mirror failed: $e');
+      debugPrint('CoachRepository._mirrorAsk: local insert failed: $e');
     }
   }
 

@@ -1,14 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lambda/core/utils/lambda_exception.dart';
-import 'package:lambda/data/models/athlete.dart';
 import 'package:lambda/data/models/coach_assignment.dart';
 import 'package:lambda/data/models/coach_feedback.dart';
 import 'package:lambda/data/models/coach_relationship.dart';
+import 'package:lambda/data/models/friend.dart';
 import 'package:lambda/data/models/planned_session.dart';
 import 'package:lambda/data/repositories/coach_repository.dart';
-import 'package:lambda/features/coach/view/coach_screen.dart';
-import 'package:lambda/features/coach/viewmodel/coach_viewmodel.dart';
+import 'package:lambda/data/repositories/friend_repository.dart';
+import 'package:lambda/features/coach/view/assign_workout_sheet.dart';
+import 'package:lambda/features/friends/viewmodel/friend_profile_viewmodel.dart';
 import 'package:lambda/features/logs/view/session_detail_screen.dart';
 import 'package:lambda/shared/widgets/glass_button.dart';
 
@@ -17,15 +18,17 @@ import 'package:lambda/shared/widgets/glass_button.dart';
 /// sections, and the two sheets. The database half — the name remap and the
 /// transaction that copies a workout into the athlete's library — is
 /// `integration_test/coach_authoring_test.dart`'s.
-class _FakeCoachRepository extends Fake implements CoachRepository {
-  _FakeCoachRepository({
-    this.relationships = const [],
-    this.assignments = const [],
-    this.workouts = const [],
-  });
+class _FakeFriendRepository extends Fake implements FriendRepository {
+  @override
+  Stream<List<Friend>> watchFriends(String userId) => Stream.value(const []);
 
-  List<CoachRelationship> relationships;
-  List<CoachAssignment> assignments;
+  @override
+  Stream<String?> watchMyCode(String userId) => Stream.value(null);
+}
+
+class _FakeCoachRepository extends Fake implements CoachRepository {
+  _FakeCoachRepository({this.workouts = const []});
+
   List<PlannedSession> workouts;
 
   final assigned = <(String, String, String?)>[];
@@ -36,11 +39,11 @@ class _FakeCoachRepository extends Fake implements CoachRepository {
 
   @override
   Stream<List<CoachRelationship>> watchRelationships(String userId) =>
-      Stream.value(relationships);
+      Stream.value(const []);
 
   @override
   Stream<List<CoachAssignment>> watchAssignments(String userId) =>
-      Stream.value(assignments);
+      Stream.value(const []);
 
   @override
   Future<List<PlannedSession>> assignableWorkouts(String coachId) async =>
@@ -117,21 +120,6 @@ CoachAssignment _assignment({
   createdDate: created ?? DateTime.utc(2026, 10, 24, 12),
   acceptedDate: accepted,
   declinedDate: declined,
-);
-
-CoachRelationship _row({
-  required String coach,
-  required String athlete,
-  String? coachName,
-  String? athleteName,
-  DateTime? accepted,
-}) => CoachRelationship(
-  coachUserId: coach,
-  athleteUserId: athlete,
-  coachFirstName: coachName,
-  athleteFirstName: athleteName,
-  createdDate: DateTime.utc(2026, 10, 20, 12),
-  acceptedDate: accepted ?? DateTime.utc(2026, 10, 21),
 );
 
 void main() {
@@ -227,176 +215,6 @@ void main() {
     });
   });
 
-  group('CoachViewModel — the assignment slices', () {
-    test('splits by side and status; declines drop off the sent list', () async {
-      final repo = _FakeCoachRepository(
-        relationships: [
-          _row(coach: 'coach-1', athlete: 'me', coachName: 'Jamie'),
-          _row(coach: 'me', athlete: 'sam', athleteName: 'Sam'),
-        ],
-        assignments: [
-          _assignment(id: 'pending-me', coach: 'coach-1', athlete: 'me'),
-          _assignment(
-            id: 'accepted-me',
-            coach: 'coach-1',
-            athlete: 'me',
-            accepted: DateTime.utc(2026, 10, 25),
-          ),
-          _assignment(id: 'sent-pending', coach: 'me', athlete: 'sam'),
-          _assignment(
-            id: 'sent-declined',
-            coach: 'me',
-            athlete: 'sam',
-            declined: DateTime.utc(2026, 10, 25),
-          ),
-        ],
-      );
-      final vm = CoachViewModel(repo: repo, userId: 'me');
-      addTearDown(vm.dispose);
-      vm.start();
-      await Future<void>.delayed(Duration.zero);
-
-      final state = vm.state.value;
-      expect(
-        state.assignmentInvitations.map((a) => a.assignmentId),
-        ['pending-me'],
-        reason: 'only a pending offer addressed to the caller is an invitation',
-      );
-      expect(
-        state.assignmentsSent.map((a) => a.assignmentId),
-        ['sent-pending'],
-        reason: 'a declined assignment is history, not a status line',
-      );
-      expect(state.isLoading, isFalse);
-    });
-
-    test('the five commands reach the repository', () async {
-      final repo = _FakeCoachRepository(
-        relationships: [_row(coach: 'me', athlete: 'sam', athleteName: 'Sam')],
-        workouts: [
-          const PlannedSession(
-            sessionId: 'ws-1',
-            userId: 'me',
-            name: 'Push A',
-          ),
-        ],
-      );
-      final vm = CoachViewModel(repo: repo, userId: 'me');
-      addTearDown(vm.dispose);
-      vm.start();
-      await Future<void>.delayed(Duration.zero);
-
-      const athlete = Athlete(userId: 'sam', firstName: 'Sam');
-      final workouts = await vm.loadWorkouts();
-      expect(workouts!.single.name, 'Push A');
-
-      expect(await vm.assign(athlete, workouts.single, note: 'Try this'),
-          isTrue);
-      expect(repo.assigned.single, ('sam', 'ws-1', 'Try this'));
-
-      final invitation = _assignment(coach: 'coach-1', athlete: 'me');
-      expect(await vm.acceptAssignment(invitation), isTrue);
-      expect(await vm.declineAssignment(invitation), isTrue);
-      expect(await vm.withdrawAssignment(invitation), isTrue);
-      expect(repo.acceptedAssignments, ['as-1']);
-      expect(repo.declinedAssignments, ['as-1']);
-      expect(repo.withdrawnAssignments, ['as-1']);
-    });
-  });
-
-  group('Coach screen — assignments', () {
-    Future<_FakeCoachRepository> pump(
-      WidgetTester tester, {
-      List<CoachRelationship> relationships = const [],
-      List<CoachAssignment> assignments = const [],
-      List<PlannedSession> workouts = const [],
-    }) async {
-      tester.view.physicalSize = const Size(1206, 2622);
-      tester.view.devicePixelRatio = 3;
-      addTearDown(tester.view.reset);
-      final repo = _FakeCoachRepository(
-        relationships: relationships,
-        assignments: assignments,
-        workouts: workouts,
-      );
-      final vm = CoachViewModel(repo: repo, userId: 'me');
-      addTearDown(vm.dispose);
-      await tester.pumpWidget(MaterialApp(home: CoachScreen(viewModel: vm)));
-      await tester.pumpAndSettle();
-      return repo;
-    }
-
-    testWidgets('draws assignments to you and assignments sent', (
-      tester,
-    ) async {
-      final repo = await pump(
-        tester,
-        relationships: [
-          _row(coach: 'coach-1', athlete: 'me', coachName: 'Jamie'),
-          _row(coach: 'me', athlete: 'sam', athleteName: 'Sam'),
-        ],
-        assignments: [
-          _assignment(
-            id: 'pending-me',
-            coach: 'coach-1',
-            athlete: 'me',
-            name: 'Legs B',
-            note: 'Heavier squats today',
-          ),
-          _assignment(id: 'sent-pending', coach: 'me', athlete: 'sam'),
-        ],
-      );
-      expect(repo.assigned, isEmpty);
-
-      expect(find.text('ASSIGNMENTS TO YOU'), findsOneWidget);
-      expect(find.text('Legs B'), findsOneWidget);
-      expect(find.text('Heavier squats today'), findsOneWidget);
-      expect(find.text('From '), findsOneWidget);
-      expect(find.text('Jamie'), findsWidgets);
-
-      expect(find.text('ASSIGNMENTS SENT'), findsOneWidget);
-      expect(find.text('To '), findsOneWidget);
-      expect(find.text('AWAITING REPLY'), findsOneWidget);
-    });
-
-    testWidgets('Accept hands the assignment to the view model', (
-      tester,
-    ) async {
-      final repo = await pump(
-        tester,
-        relationships: [_row(coach: 'coach-1', athlete: 'me', coachName: 'Jamie')],
-        assignments: [_assignment(coach: 'coach-1', athlete: 'me')],
-      );
-
-      await tester.tap(find.text('Accept'));
-      await tester.pumpAndSettle();
-
-      expect(repo.acceptedAssignments, ['as-1']);
-    });
-
-    testWidgets('Decline asks first, then stamps the decline', (tester) async {
-      final repo = await pump(
-        tester,
-        relationships: [_row(coach: 'coach-1', athlete: 'me', coachName: 'Jamie')],
-        assignments: [_assignment(coach: 'coach-1', athlete: 'me')],
-      );
-
-      await tester.tap(find.text('Decline'));
-      await tester.pumpAndSettle();
-      expect(find.text('Decline Workout'), findsOneWidget);
-
-      await tester.tap(find.widgetWithText(GlassButton, 'Keep it'));
-      await tester.pumpAndSettle();
-      expect(repo.declinedAssignments, isEmpty);
-
-      await tester.tap(find.text('Decline'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.widgetWithText(GlassButton, 'Decline').last);
-      await tester.pumpAndSettle();
-      expect(repo.declinedAssignments, ['as-1']);
-    });
-  });
-
   group('The assign sheet', () {
     testWidgets('lists the coach\'s workouts and sends the chosen one', (
       tester,
@@ -411,7 +229,12 @@ void main() {
           PlannedSession(sessionId: 'ws-2', userId: 'me', name: 'Pull B'),
         ],
       );
-      final vm = CoachViewModel(repo: repo, userId: 'me');
+      final vm = FriendProfileViewModel(
+        me: 'me',
+        friendId: 'sam',
+        friendRepo: _FakeFriendRepository(),
+        coachRepo: repo,
+      );
       addTearDown(vm.dispose);
 
       await tester.pumpWidget(
@@ -422,7 +245,7 @@ void main() {
                 onPressed: () => showAssignWorkoutSheet(
                   context,
                   vm: vm,
-                  athlete: const Athlete(userId: 'sam', firstName: 'Sam'),
+                  athleteName: 'Sam',
                 ),
                 child: const Text('open'),
               ),
@@ -467,7 +290,12 @@ void main() {
           PlannedSession(sessionId: 'ws-1', userId: 'me', name: 'Push A'),
         ],
       )..error = LambdaException('That workout is already pending.');
-      final vm = CoachViewModel(repo: repo, userId: 'me');
+      final vm = FriendProfileViewModel(
+        me: 'me',
+        friendId: 'sam',
+        friendRepo: _FakeFriendRepository(),
+        coachRepo: repo,
+      );
       addTearDown(vm.dispose);
 
       await tester.pumpWidget(
@@ -478,7 +306,7 @@ void main() {
                 onPressed: () => showAssignWorkoutSheet(
                   context,
                   vm: vm,
-                  athlete: const Athlete(userId: 'sam', firstName: 'Sam'),
+                  athleteName: 'Sam',
                 ),
                 child: const Text('open'),
               ),

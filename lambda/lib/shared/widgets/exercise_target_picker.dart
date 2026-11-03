@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_fonts.dart';
@@ -720,7 +721,7 @@ class _ExerciseTargetPickerState extends State<ExerciseTargetPicker> {
       ),
       child: Row(
         children: [
-          Icon(Icons.check_circle, size: 14, color: AppColors.success),
+          Icon(LucideIcons.circleCheck, size: 14, color: AppColors.success),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
@@ -733,7 +734,7 @@ class _ExerciseTargetPickerState extends State<ExerciseTargetPicker> {
             ),
           ),
           if (onTap != null)
-            Icon(Icons.chevron_right, size: 16, color: AppColors.success),
+            Icon(LucideIcons.chevronRight, size: 16, color: AppColors.success),
         ],
       ),
     ),
@@ -759,7 +760,7 @@ class _ExerciseTargetPickerState extends State<ExerciseTargetPicker> {
         child: Row(
           children: [
             Icon(
-              Icons.event_outlined,
+              LucideIcons.calendar,
               size: 16,
               color: date == null ? AppColors.muted : AppColors.primary,
             ),
@@ -784,7 +785,7 @@ class _ExerciseTargetPickerState extends State<ExerciseTargetPicker> {
                 key: const ValueKey('goal-target-date-history'),
                 onTap: widget.onOpenTargetDateHistory,
                 behavior: HitTestBehavior.opaque,
-                child: Icon(Icons.history, size: 16, color: AppColors.muted),
+                child: Icon(LucideIcons.history, size: 16, color: AppColors.muted),
               ),
             ],
             if (enabled && date != null)
@@ -793,7 +794,7 @@ class _ExerciseTargetPickerState extends State<ExerciseTargetPicker> {
                 onTap: () => setState(() => widget.draft.targetDate = null),
                 child: Padding(
                   padding: const EdgeInsets.only(left: 10),
-                  child: Icon(Icons.close, size: 16, color: AppColors.muted),
+                  child: Icon(LucideIcons.x, size: 16, color: AppColors.muted),
                 ),
               ),
           ],
@@ -846,7 +847,7 @@ class _ExerciseTargetPickerState extends State<ExerciseTargetPicker> {
                     turns: _open ? 0.5 : 0,
                     duration: const Duration(milliseconds: 150),
                     child: Icon(
-                      Icons.keyboard_arrow_down,
+                      LucideIcons.chevronDown,
                       size: 16,
                       color: name == null ? AppColors.muted : AppColors.primary,
                     ),
@@ -1031,7 +1032,7 @@ class _ExerciseTargetPickerState extends State<ExerciseTargetPicker> {
             alignment: Alignment.centerLeft,
             child: GlassButton(
               label: 'Add set',
-              icon: Icons.add,
+              icon: LucideIcons.plus,
               compact: true,
               onPressed: () => setState(widget.draft.addRow),
             ),
@@ -1096,7 +1097,7 @@ class _ExerciseTargetPickerState extends State<ExerciseTargetPicker> {
               child: SizedBox(
                 width: 40,
                 height: 40,
-                child: Icon(Icons.close, size: 16, color: AppColors.muted),
+                child: Icon(LucideIcons.x, size: 16, color: AppColors.muted),
               ),
             ),
           ],

@@ -1,16 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../../core/styles/app_colors.dart';
-import '../../../../core/styles/app_fonts.dart';
 import '../../../../core/styles/app_spacing.dart';
 import '../../../../core/styles/app_text_styles.dart';
 import '../../../../shared/widgets/app_card.dart';
-import '../../../../shared/widgets/glass_button.dart';
 import '../../../../shared/widgets/page_header.dart';
 import '../../../../shared/widgets/scroll_shrink_nav_bar.dart';
-import '../sample_data_service.dart';
 
+/// The debug build's toolbox (2026-10-31): reference pages and layout labs
+/// only. The retired demos — the PR History/PR Lab pair, the review-flow
+/// lab, the nav-bar demo, Experimental, Visual Pairings, Coach Icons, the
+/// sample-data seeder and the exercise-note dump — are gone; each had
+/// settled its question.
 class DevScreen extends StatelessWidget {
   const DevScreen({super.key});
 
@@ -36,67 +39,26 @@ class DevScreen extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _NavCard(
-                    icon: Icons.palette_outlined,
+                    icon: LucideIcons.palette,
                     label: 'Gallery',
                     subtitle: 'Colors, typography, spacing & components',
                     onTap: () => context.push('/dev/gallery'),
                   ),
                   const SizedBox(height: AppSpacing.sm),
                   _NavCard(
-                    icon: Icons.science_outlined,
-                    label: 'Experimental Features',
-                    subtitle: 'Theme picker and in-progress features',
-                    onTap: () => context.push('/dev/experimental'),
+                    icon: LucideIcons.user,
+                    label: 'Friend Screen',
+                    subtitle: 'Static layout prototype — identity, numbers, tabs',
+                    onTap: () => context.push('/dev/friend-screen'),
                   ),
                   const SizedBox(height: AppSpacing.sm),
                   _NavCard(
-                    icon: Icons.bug_report_outlined,
-                    label: 'ExerciseNote Debug',
-                    subtitle: 'Raw dim_exercise_note rows + upload queue',
-                    onTap: () => context.push('/dev/note-debug'),
+                    icon: LucideIcons.rectangleHorizontal,
+                    label: 'Session Cards',
+                    subtitle: 'The shipped card against three drawn from scratch',
+                    onTap: () => context.push('/dev/session-cards'),
                   ),
                   const SizedBox(height: AppSpacing.sm),
-                  _NavCard(
-                    icon: Icons.blur_on,
-                    label: 'Nav Bar Demo',
-                    subtitle: 'Floating blurred bar that shrinks on scroll',
-                    onTap: () => context.push('/nav-bar-demo'),
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                  _NavCard(
-                    icon: Icons.route_outlined,
-                    label: 'Review Flow',
-                    subtitle: 'The real review flow, on fake data',
-                    onTap: () => context.push('/dev/lab'),
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                  _NavCard(
-                    icon: Icons.emoji_events_outlined,
-                    label: 'PR History',
-                    subtitle: 'The session screen on fake data — tap PRs',
-                    onTap: () => context.push('/dev/pr-history'),
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                  _NavCard(
-                    icon: Icons.science_outlined,
-                    label: 'PR Lab',
-                    subtitle: 'Layout sandbox — isolated copies, nothing leaks',
-                    onTap: () => context.push('/dev/pr-lab'),
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                  _NavCard(
-                    icon: Icons.compare_arrows,
-                    label: 'Visual Pairings',
-                    subtitle: 'Read vs edit treatments for boxes and stars',
-                    onTap: () => context.push('/dev/visual-pairings'),
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                  _NavCard(
-                    icon: Icons.school_outlined,
-                    label: 'Coach Icons',
-                    subtitle: 'Coaching and exit glyphs at bar size, with names',
-                    onTap: () => context.push('/dev/coach-icons'),
-                  ),
                   const SizedBox(height: AppSpacing.xl),
                   AppCard(
                     child: Column(
@@ -124,141 +86,9 @@ class DevScreen extends StatelessWidget {
                       ],
                     ),
                   ),
-                  const SizedBox(height: AppSpacing.sm),
-                  _SampleDataCard(userId: session?.user.id ?? ''),
                 ],
               ),
             ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SampleDataCard extends StatefulWidget {
-  const _SampleDataCard({required this.userId});
-
-  final String userId;
-
-  @override
-  State<_SampleDataCard> createState() => _SampleDataCardState();
-}
-
-class _SampleDataCardState extends State<_SampleDataCard> {
-  final _service = SampleDataService();
-  bool _busy = false;
-
-  Future<void> _insert() async {
-    if (_busy || widget.userId.isEmpty) return;
-    setState(() => _busy = true);
-    try {
-      final count = await _service.insertSampleData(widget.userId);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: AppColors.surface,
-          content: Text(
-            'Inserted $count sample sessions (test1/test2).',
-            style: AppFonts.ui(color: AppColors.success),
-          ),
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: AppColors.surface,
-          content: Text(
-            'Insert failed: $e',
-            style: AppFonts.ui(color: AppColors.danger),
-          ),
-        ),
-      );
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  Future<void> _delete() async {
-    if (_busy || widget.userId.isEmpty) return;
-    setState(() => _busy = true);
-    try {
-      final count = await _service.deleteSampleData(widget.userId);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: AppColors.surface,
-          content: Text(
-            'Deleted $count sample sessions.',
-            style: AppFonts.ui(color: AppColors.success),
-          ),
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: AppColors.surface,
-          content: Text(
-            'Delete failed: $e',
-            style: AppFonts.ui(color: AppColors.danger),
-          ),
-        ),
-      );
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AppCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Sample Data',
-            style: TextStyle(
-              fontSize: AppTextStyles.md,
-              fontWeight: FontWeight.w600,
-              color: AppColors.primary,
-            ),
-          ),
-          const SizedBox(height: AppSpacing.xs),
-          Text(
-            '12 weeks of backdated sessions: test1 (no variation) + '
-            'test2 (variation1), 3 sets each, weight up 2.5kg per session '
-            'so every session PRs.',
-            style: TextStyle(
-              fontSize: AppTextStyles.sm,
-              color: AppColors.muted,
-            ),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          Row(
-            children: [
-              Expanded(
-                child: GlassButton(
-                  label: 'Insert',
-                  icon: Icons.add,
-                  loading: _busy,
-                  disabled: _busy,
-                  onPressed: _insert,
-                ),
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              Expanded(
-                child: GlassButton(
-                  label: 'Delete',
-                  icon: Icons.delete_outline,
-                  color: AppColors.danger,
-                  loading: _busy,
-                  disabled: _busy,
-                  onPressed: _delete,
-                ),
-              ),
-            ],
           ),
         ],
       ),
@@ -313,7 +143,7 @@ class _NavCard extends StatelessWidget {
               ],
             ),
           ),
-          Icon(Icons.chevron_right, size: 18, color: AppColors.muted),
+          Icon(LucideIcons.chevronRight, size: 18, color: AppColors.muted),
         ],
       ),
     );
@@ -332,12 +162,14 @@ class _InfoRow extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            '$label: ',
-            style: TextStyle(
-              fontSize: AppTextStyles.sm,
-              color: AppColors.muted,
-              fontWeight: FontWeight.w600,
+          SizedBox(
+            width: 72,
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: AppTextStyles.sm,
+                color: AppColors.muted,
+              ),
             ),
           ),
           Expanded(
@@ -345,7 +177,7 @@ class _InfoRow extends StatelessWidget {
               value,
               style: TextStyle(
                 fontSize: AppTextStyles.sm,
-                color: AppColors.primary,
+                color: AppColors.inkSecondary,
               ),
             ),
           ),

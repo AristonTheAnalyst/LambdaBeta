@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../../core/styles/app_colors.dart';
 import '../../../../core/styles/app_spacing.dart';
 import '../../../../core/styles/app_text_styles.dart';
@@ -30,21 +31,14 @@ class ProfileHubScreen extends StatelessWidget {
               child: Column(
                 children: [
                   _HubCard(
-                    icon: Icons.person_outline,
+                    icon: LucideIcons.user,
                     title: 'User Profile',
                     subtitle: 'View and edit your personal details',
                     onTap: () => context.push('/profile/detail'),
                   ),
                   const SizedBox(height: AppSpacing.md),
                   _HubCard(
-                    icon: Icons.sports_outlined,
-                    title: 'Coach',
-                    subtitle: "Read your athletes' training",
-                    onTap: () => context.push('/profile/coach'),
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  _HubCard(
-                    icon: Icons.palette_outlined,
+                    icon: LucideIcons.palette,
                     title: 'Appearance',
                     subtitle: 'Choose how the app looks',
                     onTap: () => context.push('/profile/appearance'),
@@ -113,7 +107,7 @@ class _HubCard extends StatelessWidget {
               ],
             ),
           ),
-          Icon(Icons.chevron_right, size: 18, color: AppColors.muted),
+          Icon(LucideIcons.chevronRight, size: 18, color: AppColors.muted),
         ],
       ),
     );

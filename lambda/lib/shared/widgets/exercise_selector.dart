@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_fonts.dart';
 import '../../core/styles/app_radius.dart';
@@ -17,8 +18,8 @@ import './session_chevron_button.dart';
 /// plus (2026-10-13). Nothing is stored — the mark is derived wherever a
 /// second reading exists.
 enum ExerciseMark {
-  added(Icons.add_circle, 14),
-  removed(Icons.remove_circle, 14);
+  added(LucideIcons.circlePlus, 14),
+  removed(LucideIcons.circleMinus, 14);
 
   const ExerciseMark(this.icon, this.size);
 
@@ -204,7 +205,7 @@ class _ExerciseSelectorState extends State<ExerciseSelector> {
             // is the date bar's own (`chevron_*` at 24) in a 40px target
             // (2026-10-22): one chevron species for the whole session stage.
             _arrow(
-              Icons.chevron_left,
+              LucideIcons.chevronLeft,
               widget.exercises.length > 1 && widget.activeIndex > 0,
               () => widget.onSelect(widget.activeIndex - 1),
               key: const ValueKey('exercise-selector-prev'),
@@ -277,7 +278,7 @@ class _ExerciseSelectorState extends State<ExerciseSelector> {
                           turns: _open ? 0.5 : 0,
                           duration: const Duration(milliseconds: 150),
                           child: Icon(
-                            Icons.keyboard_arrow_down,
+                            LucideIcons.chevronDown,
                             size: 16,
                             color: AppColors.primary,
                           ),
@@ -290,7 +291,7 @@ class _ExerciseSelectorState extends State<ExerciseSelector> {
             ),
             const SizedBox(width: AppSpacing.xs),
             _arrow(
-              Icons.chevron_right,
+              LucideIcons.chevronRight,
               widget.exercises.length > 1 &&
                   widget.activeIndex < widget.exercises.length - 1,
               () => widget.onSelect(widget.activeIndex + 1),
@@ -418,7 +419,7 @@ class _ExerciseSelectorState extends State<ExerciseSelector> {
               ),
             ),
             _arrow(
-              Icons.keyboard_arrow_up,
+              LucideIcons.chevronUp,
               widget.onMove != null && i > 0,
               () => widget.onMove!(i, -1),
               size: 28,
@@ -427,7 +428,7 @@ class _ExerciseSelectorState extends State<ExerciseSelector> {
             ),
             const SizedBox(width: 2),
             _arrow(
-              Icons.keyboard_arrow_down,
+              LucideIcons.chevronDown,
               widget.onMove != null && i < widget.exercises.length - 1,
               () => widget.onMove!(i, 1),
               size: 28,
@@ -488,7 +489,7 @@ class _ExerciseSelectorState extends State<ExerciseSelector> {
         decoration: enabled ? glassBox(AppColors.primary) : null,
         child: Row(
           children: [
-            Icon(Icons.add, size: 16, color: color),
+            Icon(LucideIcons.plus, size: 16, color: color),
             const SizedBox(width: AppSpacing.sm),
             // The popover is the field's width, and the field narrows as the
             // chevrons around it grow (2026-10-22): the label ellipsizes on

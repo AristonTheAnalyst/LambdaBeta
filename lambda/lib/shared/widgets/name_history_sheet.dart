@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_fonts.dart';
@@ -141,7 +142,7 @@ class _NameHistorySheetState extends State<_NameHistorySheet> {
                     ),
                   ),
                   HeaderIconButton(
-                    icon: Icons.close,
+                    icon: LucideIcons.x,
                     semanticsLabel: 'Close',
                     onPressed: () => Navigator.of(context).pop(),
                   ),

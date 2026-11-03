@@ -16,7 +16,6 @@ import '../models/program_block.dart';
 import '../models/program_usage.dart';
 import '../models/goal.dart';
 import '../../shared/utils/unique_name.dart';
-import 'lab_mode.dart';
 import 'planned_session_repository.dart';
 
 const _uuid = Uuid();
@@ -56,9 +55,9 @@ abstract class ProgramRemote {
   Future<void> insertBlock(Map<String, dynamic> row);
 }
 
-/// The remote the dev flow lab uses: it does nothing, on purpose, and reads
-/// as empty. Every method's local half still runs, so the sandbox is fully
-/// functional — it just never leaves the device. See `lab_mode.dart`.
+/// A remote for tests and sandboxes: it does nothing, on purpose, and reads
+/// as empty. Every method's local half still runs, so the store is fully
+/// functional — it just never leaves the device.
 class LocalOnlyProgramRemote implements ProgramRemote {
   const LocalOnlyProgramRemote();
 
@@ -138,11 +137,7 @@ class ProgramRepository {
   }
 
   ProgramRepository({ProgramRemote? remote})
-    : _remote =
-          remote ??
-          (labMode
-              ? const LocalOnlyProgramRemote()
-              : const SupabaseProgramRemote());
+    : _remote = remote ?? const SupabaseProgramRemote();
 
   final ProgramRemote _remote;
   final PlannedSessionRepository _plannedRepo = PlannedSessionRepository();

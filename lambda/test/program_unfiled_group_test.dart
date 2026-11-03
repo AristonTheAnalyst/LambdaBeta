@@ -7,6 +7,7 @@ import 'package:lambda/data/models/planned_session_program.dart';
 import 'package:lambda/data/models/program_block.dart';
 import 'package:lambda/features/programs/view/program_detail_screen.dart';
 import 'package:lambda/features/programs/viewmodel/program_detail_viewmodel.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'support/fake_program_repos.dart';
 
@@ -108,12 +109,12 @@ void main() {
     await reveal(tester);
 
     expect(
-      find.byIcon(Icons.drive_file_move_outline),
+      find.byIcon(LucideIcons.folderInput),
       findsOneWidget,
       reason: 'filing it into a block is the fix the group exists to offer',
     );
     expect(
-      find.byIcon(Icons.delete_outline),
+      find.byIcon(LucideIcons.trash2),
       findsOneWidget,
       reason:
           'and removing it from the program is the other answer — an '
@@ -137,7 +138,7 @@ void main() {
     await pump(tester, usesBlocks: true);
 
     await reveal(tester);
-    await tester.tap(find.byIcon(Icons.drive_file_move_outline));
+    await tester.tap(find.byIcon(LucideIcons.folderInput));
     await tester.pumpAndSettle();
 
     // The sheet offers the program's blocks to choose between — by name, which

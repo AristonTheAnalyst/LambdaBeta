@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../../core/styles/app_colors.dart';
 import '../../../data/models/custom_exercise.dart';
 import '../../../../shared/widgets/info_button.dart';
@@ -11,8 +12,10 @@ import 'exercise_library_screen.dart';
 
 /// Exercises hub: five tabs — Exercises, Variations, Workouts (standalone
 /// planned sessions), Reviews, Goals — each with a search-and-buttons
-/// toolbar of its own, plus the header's ⓘ that explains **the tab in force**
-/// (2026-10-19). The library's Exercises/Variations tabs are embedded first.
+/// toolbar of its own. The strip draws each tab's **glyph only** (2026-10-31)
+/// and the header names the tab in force beside its ⓘ, so five tabs fit
+/// without shrinking their words. The library's Exercises/Variations tabs
+/// are embedded first.
 /// Programs are out of the UI for now (2026-10-26): their workouts were only
 /// ever copies of regular ones and the two read as duplicates.
 ///
@@ -89,7 +92,7 @@ class _ExerciseHubScreenState extends State<ExerciseHubScreen> {
     (
       label: 'Exercises',
       title: 'Exercises',
-      icon: Icons.fitness_center,
+      icon: LucideIcons.dumbbell,
       body:
           'Every movement you can log. Create an exercise, open one to see '
           'its history and PRs, or archive the ones you no longer use.',
@@ -98,7 +101,7 @@ class _ExerciseHubScreenState extends State<ExerciseHubScreen> {
     (
       label: 'Variations',
       title: 'Variations',
-      icon: Icons.tune,
+      icon: LucideIcons.dna,
       body:
           'Modifiers a set can carry — a grip, a pause, a tempo. The list is '
           'shared by every exercise; pick one while logging a set.',
@@ -107,7 +110,7 @@ class _ExerciseHubScreenState extends State<ExerciseHubScreen> {
     (
       label: 'Workouts',
       title: 'Workouts',
-      icon: Icons.assignment_outlined,
+      icon: LucideIcons.clipboardList,
       body:
           'Reusable session templates: the exercises and target sets you '
           'plan to do. Start one from the Session tab, or keep it as a '
@@ -118,7 +121,7 @@ class _ExerciseHubScreenState extends State<ExerciseHubScreen> {
       (
         label: 'Reviews',
         title: 'Reviews',
-        icon: Icons.rate_review_outlined,
+        icon: LucideIcons.clipboardCheck,
         body:
             'A pass over the workouts and goals you pick. Open each workout, '
             'make changes, add notes, then finish — the record keeps what you '
@@ -128,7 +131,8 @@ class _ExerciseHubScreenState extends State<ExerciseHubScreen> {
     (
       label: 'Goals',
       title: 'Goals',
-      icon: Icons.flag_outlined,
+      // The crosshair, chosen at the user's call (2026-10-31).
+      icon: LucideIcons.crosshair,
       body:
           'A weight × reps target on one exercise — a set to beat. Every '
           'logged set is measured against it, and a hit shows the set that '
@@ -179,11 +183,16 @@ class _ExerciseHubScreenState extends State<ExerciseHubScreen> {
       body: Column(
         children: [
           PageHeader(
-            title: 'Library',
+            // The strip carries glyphs only (2026-10-31), so the header says
+            // which tab is open — the name the strip no longer draws.
+            title: tab.title,
             right: InfoButton(title: tab.title, body: tab.body, icon: tab.icon),
           ),
-          SlideTabBar(
-            tabs: [for (final tab in tabs) tab.label],
+          SlideIconTabBar(
+            tabs: [
+              for (final tab in tabs)
+                SlideIconTab(icon: tab.icon, label: tab.label),
+            ],
             activeIndex: active,
             onTap: (i) => setState(() => _tab = i),
           ),

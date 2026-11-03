@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
@@ -80,7 +81,7 @@ class _ReviewSnapshotScreenState extends State<ReviewSnapshotScreen> {
           PageHeader(
             title: _title,
             left: HeaderIconButton(
-              icon: Icons.arrow_back_ios_new,
+              icon: LucideIcons.chevronLeft,
               semanticsLabel: 'Back',
               glyphSize: 18,
               onPressed: () => Navigator.of(context).pop(),
@@ -146,7 +147,7 @@ class _UnreadableCheckpoint extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.help_outline, color: AppColors.muted, size: 32),
+          Icon(LucideIcons.circleHelp, color: AppColors.muted, size: 32),
           const SizedBox(height: AppSpacing.md),
           Text(
             "This checkpoint can't be displayed",

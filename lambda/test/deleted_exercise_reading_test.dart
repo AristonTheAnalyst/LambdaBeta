@@ -6,6 +6,7 @@ import 'package:lambda/shared/widgets/menu_popover.dart';
 import 'package:lambda/shared/widgets/session_set_row.dart';
 import 'package:lambda/shared/widgets/swipe_actions.dart';
 import 'package:lambda/shared/widgets/undo_redo_buttons.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 /// A deleted exercise's reading in the past-session viewer (2026-10-14):
 /// the set containers draw red with red text and are inert — the deletion is
@@ -117,7 +118,7 @@ void main() {
     final swipe = tester.widget<SwipeActions>(find.byType(SwipeActions));
     final icons = [for (final a in swipe.actions) a.icon];
     expect(icons, [
-      Icons.sticky_note_2_outlined,
+      LucideIcons.stickyNote,
     ], reason: 'note only — never duplicate or delete');
   });
 
@@ -137,13 +138,13 @@ void main() {
       ),
     );
 
-    final icon = tester.widget<Icon>(find.byIcon(Icons.restore_from_trash));
+    final icon = tester.widget<Icon>(find.byIcon(LucideIcons.rotateCcw));
     expect(
       icon.color,
       AppColors.muted,
       reason: 'nothing to work through — the slot waits greyed',
     );
-    await tester.tap(find.byIcon(Icons.restore_from_trash));
+    await tester.tap(find.byIcon(LucideIcons.rotateCcw));
     await tester.pumpAndSettle();
     expect(find.byType(MenuPopover), findsNothing);
   });
@@ -157,7 +158,7 @@ void main() {
           body: Center(
             child: DeletedExercisesButton(
               deletedExercises: const ['Bench Press', 'Back Squat'],
-              rowIcon: Icons.visibility_outlined,
+              rowIcon: LucideIcons.eye,
               onPickDeletedExercise: picked.add,
             ),
           ),
@@ -166,12 +167,12 @@ void main() {
     );
 
     expect(
-      tester.widget<Icon>(find.byIcon(Icons.restore_from_trash)).color,
+      tester.widget<Icon>(find.byIcon(LucideIcons.rotateCcw)).color,
       AppColors.primary,
       reason: 'there is something in the slot — it lights',
     );
 
-    await tester.tap(find.byIcon(Icons.restore_from_trash));
+    await tester.tap(find.byIcon(LucideIcons.rotateCcw));
     await tester.pumpAndSettle();
     expect(find.text('Bench Press'), findsOneWidget);
     expect(find.text('Back Squat'), findsOneWidget);
@@ -186,7 +187,7 @@ void main() {
           'restores on it, the viewer views',
     );
     expect(
-      find.byIcon(Icons.visibility_outlined),
+      find.byIcon(LucideIcons.eye),
       findsNWidgets(2),
       reason: 'each row wears the glyph the caller asked for',
     );

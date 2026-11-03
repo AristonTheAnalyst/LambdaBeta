@@ -298,8 +298,7 @@ void main() {
     await PastSetsTimelineCache.instance.get(friend);
     expect(PastSetsTimelineCache.instance.asc(friend), isNotNull);
 
-    final removed = await vm.remove(vm.state.value.friends.single);
-    expect(removed, isTrue);
+    await friends.removeFriend(me, friend);
     expect(remote.removals, [friend]);
 
     await waitFor(
@@ -333,10 +332,7 @@ void main() {
     );
     expect(vm.state.value.friends.single.displayName, 'Jamie Rivera');
 
-    expect(
-      await vm.setNickname(vm.state.value.friends.single, 'Natasha'),
-      isTrue,
-    );
+    await friends.setNickname(me, friend, 'Natasha');
     await waitFor(
       () => vm.state.value.friends.single.displayName == 'Natasha',
       reason: 'the watch to repaint with the nickname',
@@ -349,7 +345,7 @@ void main() {
     expect(stored.single['nickname'], 'Natasha');
 
     // Clearing falls back to the friend's own name.
-    expect(await vm.setNickname(vm.state.value.friends.single, null), isTrue);
+    await friends.setNickname(me, friend, null);
     await waitFor(
       () => vm.state.value.friends.single.displayName == 'Jamie Rivera',
       reason: 'the cleared nickname to fall back',
@@ -434,10 +430,7 @@ void main() {
 
     // Renaming the first row to a name that sorts after the second flips the
     // order — proof the query orders by the label it draws.
-    expect(
-      await vm.setNickname(vm.state.value.friends.first, 'Zulu'),
-      isTrue,
-    );
+    await friends.setNickname(me, vm.state.value.friends.first.userId, 'Zulu');
     await waitFor(
       () => vm.state.value.friends
               .map((f) => f.displayName)

@@ -22,6 +22,7 @@ import 'package:lambda/shared/widgets/lambda_input.dart';
 import 'package:lambda/shared/widgets/segmented_control.dart';
 import 'package:lambda/shared/widgets/session_chevron_button.dart';
 import 'package:lambda/shared/widgets/swipe_actions.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'support/readable_text.dart';
 import 'support/fake_coach_repository.dart';
@@ -361,7 +362,7 @@ void main() {
     expect(
       find.descendant(
         of: row,
-        matching: find.byIcon(Icons.keyboard_arrow_down),
+        matching: find.byIcon(LucideIcons.chevronDown),
       ),
       findsNothing,
       reason:

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../../core/styles/app_colors.dart';
 import '../../../../core/styles/app_fonts.dart';
 import '../../../../core/styles/app_radius.dart';
@@ -44,7 +45,7 @@ class AppearanceScreen extends StatelessWidget {
               PageHeader(
                 title: 'Appearance',
                 left: HeaderIconButton(
-                  icon: Icons.arrow_back_ios_new,
+                  icon: LucideIcons.chevronLeft,
                   semanticsLabel: 'Back',
                   glyphSize: 18,
                   onPressed: () => context.pop(),
@@ -254,7 +255,7 @@ class _ThemeOption extends StatelessWidget {
                     ),
                   ),
                   child: selected
-                      ? Icon(Icons.check, size: 12, color: AppColors.accentText)
+                      ? Icon(LucideIcons.check, size: 12, color: AppColors.accentText)
                       : null,
                 ),
               ],

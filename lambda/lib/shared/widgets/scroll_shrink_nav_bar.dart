@@ -32,7 +32,10 @@ class ScrollShrinkNavItem {
 /// An Instagram-style floating bar: a rounded, translucent, blurred pill
 /// that hovers inside the screen's edges and above the bottom safe area. It
 /// shrinks while the content scrolls down and springs back the moment the
-/// user scrolls up, keeping its colour throughout — only the size moves.
+/// user scrolls up, in size and transparency together: full size is fully
+/// opaque, and the far end of the shrink rests at one fifth opacity
+/// ([collapsedOpacity]) — 80% transparent — so the bar recedes into the page
+/// instead of sitting on it as a solid slab (2026-11-02).
 ///
 /// The pill itself is [FloatingBar] — the app's bottom chrome, shared with
 /// anything else that sits at the floor of the screen. This widget adds the
@@ -106,6 +109,11 @@ class ScrollShrinkNavBar extends StatefulWidget {
 
   /// Bar height when the page is scrolled down.
   static const double collapsedHeight = 42;
+
+  /// Opacity at the far end of the shrink: one fifth opaque (80%
+  /// transparent), and the most transparent the bar ever gets. Full size is
+  /// fully opaque.
+  static const double collapsedOpacity = 0.2;
 
   /// The bar shrinks as one piece — width and height at the same rate — so
   /// the side margins open up exactly as far as the height drops.
@@ -206,6 +214,9 @@ class _ScrollShrinkNavBarState extends State<ScrollShrinkNavBar>
           // Built once and handed to the builder: the bar inside does not
           // change with the animation, only the transform over it does.
           child: FloatingBar(child: _buildItems()),
+          // Size and transparency are one gesture: the same curved value
+          // drives both, so the bar fades into the page exactly as far as it
+          // recedes — to [ScrollShrinkNavBar.collapsedOpacity] at the far end.
           builder: (context, bar) => Transform.scale(
             // Uniform, and anchored at the bottom edge so the bar keeps
             // floating in place while it recedes.
@@ -213,7 +224,12 @@ class _ScrollShrinkNavBarState extends State<ScrollShrinkNavBar>
                 ScrollShrinkNavBar.collapsedScale +
                 (1 - ScrollShrinkNavBar.collapsedScale) * _t.value,
             alignment: Alignment.bottomCenter,
-            child: bar,
+            child: Opacity(
+              opacity:
+                  ScrollShrinkNavBar.collapsedOpacity +
+                  (1 - ScrollShrinkNavBar.collapsedOpacity) * _t.value,
+              child: bar,
+            ),
           ),
         ),
         child: NotificationListener<ScrollNotification>(
@@ -224,10 +240,9 @@ class _ScrollShrinkNavBarState extends State<ScrollShrinkNavBar>
     );
   }
 
-  /// The destinations, filling the bar's width. Everything here is a constant
-  /// — the only thing a scroll changes is the [Transform.scale] around the
-  /// bar, so it keeps its full colour and weight as it recedes rather than
-  /// fading out.
+  /// The destinations, filling the bar's width. Everything here is constant —
+  /// a scroll only scales and fades the whole pill around it, so nothing
+  /// inside has to know the bar is moving.
   Widget _buildItems() {
     final items = Row(
       children: [

@@ -136,18 +136,23 @@ stream; the `accepted_date` column must exist or the CTE fails to parse.
   private, exactly as on the friends path.
 - What it does NOT send: `fact_bodyweight`, `dim_program`, planned sessions
   — the record viewer reads names off the session's own snapshot.
-- **Writes are RPC-only (#22).** `coach_invite_by_code`,
-  `accept_coaching_invitation` and `remove_coaching_relationship` are
-  SECURITY DEFINER and are the only paths that change the edge; the client
-  mirrors their effects locally. The mirror's queued ops must pass RLS, so
-  `coaching_relationship` keeps exactly two client write policies: coach
-  INSERT with `accepted_date is null`, athlete UPDATE of their own row. The
-  invite RPC returns `created`, and the client mirrors only a new invitation
-  — an upsert against an already-accepted row would be refused by the
-  insert policy's check. The coach's own `coaching_relationship` rows ride
-  `user_data` (own rows, `SELECT *`), so the roster sees both pending and
-  accepted edges; the other side's name still arrives only through
-  `coaching_data`.
+- **Writes are RPC-only (#22; either direction since 2026-10-30).**
+  `request_coaching`, `offer_coaching`, `accept_coaching_request` and
+  `remove_coaching_relationship` are SECURITY DEFINER and are the only paths
+  that change the edge; the client mirrors their effects locally. The
+  mirror's queued ops must pass RLS, so `coaching_relationship` keeps
+  exactly two client write policies: an INSERT of the pending row the caller
+  requested (`requested_by_user_id = auth.uid()`, either side,
+  `accepted_date is null`), and an UPDATE that accepts only a row the OTHER
+  side requested. A mirror therefore always writes the column, and a row
+  written before the column existed (`requested_by_user_id` NULL) still
+  reads as coach-requested (`coalesce(requested_by_user_id, coach_user_id)`).
+  The ask RPC returns `created`, and the client mirrors only a new row — an
+  upsert against an already-accepted one would be refused by the insert
+  policy's check. The coach's own `coaching_relationship` rows ride
+  `user_data` (own rows, `SELECT *` — the new column needs no stream
+  redeploy), so the profile sees both pending and accepted edges; the other
+  side's name still arrives only through `coaching_data`.
 
 ## The coach hand-off rides `user_data` (2026-10-26, #24)
 

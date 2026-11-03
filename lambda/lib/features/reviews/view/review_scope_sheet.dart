@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
@@ -581,7 +582,7 @@ class _ReviewScopeSheetState extends State<_ReviewScopeSheet> {
                 ),
                 GlassButton(
                   label: '',
-                  icon: Icons.check,
+                  icon: LucideIcons.check,
                   semanticsLabel: 'Done',
                   compact: true,
                   onPressed: _done,

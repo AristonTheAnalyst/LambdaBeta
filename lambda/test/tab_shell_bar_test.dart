@@ -94,13 +94,8 @@ void main() {
       }
     });
 
-    test('the PR Lab lets the keyboard paint over its floor', () {
-      expect(shellResizesForKeyboard('/dev/pr-lab'), isFalse);
-    });
-
     test('a path that merely starts with a pinned route still lifts', () {
       // Only the full segment counts — the same rule the bar's branches use.
-      expect(shellResizesForKeyboard('/dev/pr-labs'), isTrue);
       expect(shellResizesForKeyboard('/sessions'), isTrue);
     });
   });

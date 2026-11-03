@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
@@ -82,7 +83,7 @@ class _ReviewNameSheetState extends State<_ReviewNameSheet> {
                 ),
                 GlassButton(
                   label: '',
-                  icon: Icons.arrow_forward_ios,
+                  icon: LucideIcons.chevronRight,
                   semanticsLabel: 'Start review',
                   compact: true,
                   disabled: !_hasName,

@@ -9,6 +9,7 @@ import 'package:lambda/data/models/program_review.dart';
 import 'package:lambda/features/reviews/view/reviews_screen.dart';
 import 'package:lambda/features/reviews/viewmodel/reviews_viewmodel.dart';
 import 'package:lambda/shared/widgets/swipe_actions.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'support/fake_program_repos.dart';
 import 'support/readable_text.dart';
@@ -134,7 +135,7 @@ void main() {
     ];
     await pumpReviews(tester);
 
-    await tester.tap(find.byIcon(Icons.date_range_outlined));
+    await tester.tap(find.byIcon(LucideIcons.calendarRange));
     await tester.pumpAndSettle();
     await tester.tap(find.text('1M'));
     await tester.pumpAndSettle();
@@ -160,7 +161,7 @@ void main() {
 
     await tester.drag(find.text('Mid block'), const Offset(-120, 0));
     await tester.pumpAndSettle();
-    await tester.tap(find.byIcon(Icons.delete_outline));
+    await tester.tap(find.byIcon(LucideIcons.trash2));
     await tester.pumpAndSettle();
 
     expect(find.text('Cancel this review?'), findsOneWidget);
@@ -186,7 +187,7 @@ void main() {
 
     await tester.drag(find.text('Mid block'), const Offset(-120, 0));
     await tester.pumpAndSettle();
-    await tester.tap(find.byIcon(Icons.delete_outline));
+    await tester.tap(find.byIcon(LucideIcons.trash2));
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(TextButton, 'Cancel review'));
     await tester.pumpAndSettle();
@@ -242,7 +243,7 @@ void main() {
 
     await tester.drag(find.text('Block 1 review'), const Offset(-120, 0));
     await tester.pumpAndSettle();
-    await tester.tap(find.byIcon(Icons.delete_outline));
+    await tester.tap(find.byIcon(LucideIcons.trash2));
     await tester.pumpAndSettle();
 
     expect(find.text('Delete this review?'), findsOneWidget);
@@ -274,7 +275,7 @@ void main() {
 
     await tester.drag(find.text('Block 1 review'), const Offset(-120, 0));
     await tester.pumpAndSettle();
-    await tester.tap(find.byIcon(Icons.delete_outline));
+    await tester.tap(find.byIcon(LucideIcons.trash2));
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(TextButton, 'Delete review'));
     await tester.pumpAndSettle();

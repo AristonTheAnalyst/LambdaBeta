@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_fonts.dart';
 import '../../core/styles/app_text_styles.dart';
@@ -71,7 +72,7 @@ class LambdaSearchField extends StatelessWidget {
           color: AppColors.inkSecondary,
         ),
         prefixIcon: showIcon
-            ? Icon(Icons.search, size: 18, color: AppColors.muted)
+            ? Icon(LucideIcons.search, size: 18, color: AppColors.muted)
             : null,
         suffixIcon: suffix,
         filled: true,

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../../core/styles/app_colors.dart';
 import '../../../../core/styles/app_fonts.dart';
 import '../../../../core/styles/app_radius.dart';
@@ -312,7 +313,7 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
             PageHeader(
               title: 'New Program',
               left: HeaderIconButton(
-                icon: Icons.arrow_back_ios_new,
+                icon: LucideIcons.chevronLeft,
                 semanticsLabel: 'Back',
                 glyphSize: 18,
                 onPressed: () => context.pop(),
@@ -483,8 +484,8 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
         children: [
           Icon(
             selected
-                ? Icons.radio_button_checked
-                : Icons.radio_button_unchecked,
+                ? LucideIcons.circleDot
+                : LucideIcons.circle,
             size: 20,
             color: selected ? AppColors.accent : AppColors.muted,
           ),
@@ -561,7 +562,7 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
             Expanded(
               child: GlassButton(
                 label: 'New',
-                icon: Icons.add,
+                icon: LucideIcons.plus,
                 onPressed: _addWorkout,
               ),
             ),
@@ -569,7 +570,7 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
             Expanded(
               child: GlassButton(
                 label: 'From Workouts',
-                icon: Icons.library_add_outlined,
+                icon: LucideIcons.libraryBig,
                 onPressed: _addExistingWorkout,
               ),
             ),
@@ -613,14 +614,14 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
               child: SwipeActions(
                 actions: [
                   SwipeAction(
-                    icon: Icons.copy_rounded,
+                    icon: LucideIcons.copy,
 
                     color: AppColors.accent,
                     foreground: AppColors.accentText,
                     onTap: () => _vm.duplicatePlannedSession(workouts[i]),
                   ),
                   SwipeAction(
-                    icon: Icons.delete_outline,
+                    icon: LucideIcons.trash2,
 
                     color: AppColors.danger,
                     foreground: AppColors.dangerText,
@@ -664,7 +665,7 @@ class _ProgramWizardScreenState extends State<ProgramWizardScreen> {
                       ReorderableDragStartListener(
                         index: i,
                         child: Icon(
-                          Icons.drag_handle,
+                          LucideIcons.gripHorizontal,
                           size: 18,
                           color: AppColors.muted,
                         ),

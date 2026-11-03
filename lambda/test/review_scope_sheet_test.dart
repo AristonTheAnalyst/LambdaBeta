@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lambda/features/reviews/view/review_scope_sheet.dart';
 import 'package:lambda/features/reviews/viewmodel/reviews_viewmodel.dart';
 import 'package:lambda/shared/widgets/glass_button.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'support/fake_program_repos.dart';
 
@@ -177,14 +178,14 @@ void main() {
     // that are in, nothing at all on the rows that are not.
     await openSheet(tester, sessionIds: ['w1']);
 
-    expect(find.byIcon(Icons.check_circle), findsOneWidget);
-    expect(find.byIcon(Icons.circle_outlined), findsNothing);
+    expect(find.byIcon(LucideIcons.circleCheck), findsOneWidget);
+    expect(find.byIcon(LucideIcons.circle), findsNothing);
 
     await tester.tap(find.text('Pull Day'));
     await tester.pumpAndSettle();
 
-    expect(find.byIcon(Icons.check_circle), findsNWidgets(2));
-    expect(find.byIcon(Icons.circle_outlined), findsNothing);
+    expect(find.byIcon(LucideIcons.circleCheck), findsNWidgets(2));
+    expect(find.byIcon(LucideIcons.circle), findsNothing);
   });
 
   testWidgets('the last workout cannot be taken out, and the sheet says why', (
@@ -254,7 +255,7 @@ void main() {
 
     // The row did not take the tick, so the sheet must not keep it either:
     // a tick the pass does not have is a lie the landing would keep showing.
-    expect(find.byIcon(Icons.check_circle), findsOneWidget);
+    expect(find.byIcon(LucideIcons.circleCheck), findsOneWidget);
     expect(find.textContaining('Could not update the review'), findsOneWidget);
   });
 
@@ -314,7 +315,7 @@ void main() {
       lessThan(tester.getTopLeft(find.text('Pull Day')).dy),
     );
 
-    await tester.tap(find.byIcon(Icons.sort));
+    await tester.tap(find.byIcon(LucideIcons.arrowUpDown));
     await tester.pumpAndSettle();
     await tester.tap(find.text('A–Z'));
     await tester.pumpAndSettle();
@@ -345,7 +346,7 @@ void main() {
     await openSheet(tester, goalIds: ['g1'], section: ReviewScopeSection.goals);
 
     // "In this review" is what the pass already holds.
-    await tester.tap(find.byIcon(Icons.filter_list));
+    await tester.tap(find.byIcon(LucideIcons.listFilter));
     await tester.pumpAndSettle();
     await tester.tap(find.text('In this review'));
     await tester.pumpAndSettle();
@@ -353,7 +354,7 @@ void main() {
     expect(find.text('Squat'), findsNothing);
 
     // "Not in this review" is what is still to add...
-    await tester.tap(find.byIcon(Icons.filter_list));
+    await tester.tap(find.byIcon(LucideIcons.listFilter));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Not in this review'));
     await tester.pumpAndSettle();
@@ -378,7 +379,7 @@ void main() {
       lessThan(tester.getTopLeft(find.text('Squat')).dy),
     );
 
-    await tester.tap(find.byIcon(Icons.sort));
+    await tester.tap(find.byIcon(LucideIcons.arrowUpDown));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Heaviest target'));
     await tester.pumpAndSettle();
@@ -414,7 +415,7 @@ void main() {
     await tester.tap(find.text('Legs'));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.widgetWithIcon(GlassButton, Icons.check));
+    await tester.tap(find.widgetWithIcon(GlassButton, LucideIcons.check));
     await tester.pumpAndSettle();
 
     expect(result!.sessionIds, ['w1', 'w3']);
@@ -424,7 +425,7 @@ void main() {
     // claimed — the caller must not read null as an empty scope.
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithIcon(GlassButton, Icons.check));
+    await tester.tap(find.widgetWithIcon(GlassButton, LucideIcons.check));
     await tester.pumpAndSettle();
     expect(result, isNull);
   });

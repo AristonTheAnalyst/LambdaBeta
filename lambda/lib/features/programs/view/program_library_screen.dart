@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
 import '../../../core/styles/app_spacing.dart';
@@ -371,14 +372,14 @@ class _ProgramLibraryScreenState extends State<ProgramLibraryScreen> {
                 PageHeader(
                   title: 'Programs',
                   left: HeaderIconButton(
-                    icon: Icons.arrow_back_ios_new,
+                    icon: LucideIcons.chevronLeft,
                     semanticsLabel: 'Back',
                     glyphSize: 18,
                     onPressed: () => context.pop(),
                   ),
                   right: GlassButton(
                     label: '',
-                    icon: Icons.add,
+                    icon: LucideIcons.plus,
                     semanticsLabel: 'New program',
                     onPressed: _openCreate,
                     compact: true,
@@ -407,7 +408,7 @@ class _ProgramLibraryScreenState extends State<ProgramLibraryScreen> {
                       const SizedBox(width: AppSpacing.sm),
                       GlassButton(
                         label: '',
-                        icon: Icons.add,
+                        icon: LucideIcons.plus,
                         semanticsLabel: 'New program',
                         onPressed: _openCreate,
                         compact: true,
@@ -415,7 +416,7 @@ class _ProgramLibraryScreenState extends State<ProgramLibraryScreen> {
                       const SizedBox(width: AppSpacing.sm),
                       GlassButton(
                         label: '',
-                        icon: Icons.archive_outlined,
+                        icon: LucideIcons.archive,
                         semanticsLabel: 'Archived programs',
                         onPressed: _openArchived,
                         compact: true,
@@ -602,14 +603,14 @@ class _ProgramCard extends StatelessWidget {
     return SwipeActions(
       actions: [
         SwipeAction(
-          icon: Icons.copy_rounded,
+          icon: LucideIcons.copy,
 
           color: AppColors.accent,
           foreground: AppColors.accentText,
           onTap: onDuplicate,
         ),
         SwipeAction(
-          icon: Icons.delete_outline,
+          icon: LucideIcons.trash2,
 
           color: AppColors.danger,
           foreground: AppColors.dangerText,
@@ -671,7 +672,7 @@ class _ProgramCard extends StatelessWidget {
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Icon(
-                                    Icons.flag_outlined,
+                                    LucideIcons.flag,
                                     size: 12,
                                     color: AppColors.accent,
                                   ),
@@ -776,7 +777,7 @@ class _ProgramCard extends StatelessWidget {
                 if (isPaused)
                   GlassButton(
                     label: 'Resume',
-                    icon: Icons.play_circle_outline,
+                    icon: LucideIcons.circlePlay,
                     compact: true,
                     loading: settingCurrent,
                     disabled: settingCurrent,
@@ -785,7 +786,7 @@ class _ProgramCard extends StatelessWidget {
                 else if (!isCurrent)
                   GlassButton(
                     label: 'Begin Program',
-                    icon: Icons.play_circle_outline,
+                    icon: LucideIcons.circlePlay,
                     compact: true,
                     loading: settingCurrent,
                     disabled: settingCurrent || nothingToRun,
@@ -794,7 +795,7 @@ class _ProgramCard extends StatelessWidget {
                 const Spacer(),
                 GlassButton(
                   label: '',
-                  icon: Icons.copy,
+                  icon: LucideIcons.copy,
                   semanticsLabel: 'Duplicate program',
                   compact: true,
                   onPressed: onDuplicate,

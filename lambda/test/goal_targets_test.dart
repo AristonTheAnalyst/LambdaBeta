@@ -9,6 +9,7 @@ import 'package:lambda/features/goals/view/goal_sheet.dart';
 import 'package:lambda/features/programs/model/program_achievements.dart';
 import 'package:lambda/shared/widgets/exercise_target_picker.dart';
 import 'package:lambda/shared/widgets/glass_button.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 /// Multi-set goals (2026-10-26): a goal may list several rungs — "100 × 5,
 /// then 110 × 3" — every one of which a session must meet with a **distinct**
@@ -677,7 +678,7 @@ void main() {
     expect(cell('goal-kg-1').controller!.text, '110');
     expect(cell('goal-reps-1').controller!.text, '3');
 
-    await tester.tap(find.byIcon(Icons.edit_outlined));
+    await tester.tap(find.byIcon(LucideIcons.pencil));
     await tester.pumpAndSettle();
     await tester.enterText(find.byKey(const ValueKey('goal-reps-1')), '2');
     await tester.pumpAndSettle();

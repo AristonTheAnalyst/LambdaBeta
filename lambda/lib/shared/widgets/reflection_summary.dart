@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_fonts.dart';
 import 'container_styles.dart';
@@ -64,13 +65,13 @@ class ReflectionSummary extends StatelessWidget {
     // 16 between exercises, 24 between sections.
     final sections = <Widget>[
       if (showPrs) ...[
-        _sectionLabel(Icons.emoji_events_outlined, 'PRS'),
+        _sectionLabel(LucideIcons.trophy, 'PRS'),
         const SizedBox(height: AppSpacing.sm),
         ..._sectionContent(prExercises, 'No PRs this session', _prCardsFor),
       ],
       if (showPrs && showNotes) const SizedBox(height: AppSpacing.xl),
       if (showNotes) ...[
-        _sectionLabel(Icons.sticky_note_2_outlined, 'EXERCISE NOTES'),
+        _sectionLabel(LucideIcons.stickyNote, 'EXERCISE NOTES'),
         const SizedBox(height: AppSpacing.sm),
         ..._sectionContent(
           noteExercises,
@@ -157,7 +158,7 @@ class ReflectionSummary extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Icon(
-                Icons.sticky_note_2_outlined,
+                LucideIcons.stickyNote,
                 size: 16,
                 color: AppColors.primary,
               ),
@@ -199,7 +200,7 @@ class ReflectionSummary extends StatelessWidget {
       decoration: lambdaBox(ContainerTone.accent, radius: AppRadius.md),
       child: Row(
         children: [
-          Icon(Icons.emoji_events_outlined, size: 16, color: AppColors.accent),
+          Icon(LucideIcons.trophy, size: 16, color: AppColors.accent),
           const SizedBox(width: AppSpacing.sm),
           Expanded(
             child: Column(

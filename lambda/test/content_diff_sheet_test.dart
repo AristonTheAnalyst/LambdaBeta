@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lambda/data/models/program_content.dart';
 import 'package:lambda/features/programs/view/content_diff_sheet.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 /// The comparison sheet: a card per exercise, and the note-change popup.
 ///
@@ -150,7 +151,7 @@ void main() {
     expect(find.text('renamed: Push → Push Day'), findsOneWidget);
     // No rung, and a tap on the row does nothing — the detail already says
     // everything the row has.
-    expect(find.byIcon(Icons.chevron_right), findsNothing);
+    expect(find.byIcon(LucideIcons.chevronRight), findsNothing);
     await tester.tap(find.text('renamed: Push → Push Day'));
     await tester.pumpAndSettle();
     expect(find.text('Note changed'), findsNothing);
@@ -302,7 +303,7 @@ void main() {
 
     // Both cards offer the rung — an untouched exercise is still somewhere
     // to go.
-    expect(find.byIcon(Icons.chevron_right), findsNWidgets(2));
+    expect(find.byIcon(LucideIcons.chevronRight), findsNWidgets(2));
 
     await tester.tap(find.text('Bench Press'));
     await tester.pumpAndSettle();
@@ -358,7 +359,7 @@ void main() {
     expect(find.text('No changes'), findsOneWidget);
 
     // One rung, on the survivor alone: the removed card has nowhere to go.
-    expect(find.byIcon(Icons.chevron_right), findsOneWidget);
+    expect(find.byIcon(LucideIcons.chevronRight), findsOneWidget);
 
     await tester.tap(find.text('Incline Press'));
     await tester.pumpAndSettle();
@@ -401,9 +402,9 @@ void main() {
     expect(find.text('Changes made'), findsOneWidget);
     expect(find.textContaining('variation'), findsNothing);
     // The glyph vocabulary the sheet used to speak is gone.
-    expect(find.byIcon(Icons.add_circle_outline), findsNothing);
-    expect(find.byIcon(Icons.remove_circle_outline), findsNothing);
-    expect(find.byIcon(Icons.edit_outlined), findsNothing);
+    expect(find.byIcon(LucideIcons.circlePlus), findsNothing);
+    expect(find.byIcon(LucideIcons.circleMinus), findsNothing);
+    expect(find.byIcon(LucideIcons.pencil), findsNothing);
   });
 
   testWidgets('a subtitle renders when the caller has one to give', (

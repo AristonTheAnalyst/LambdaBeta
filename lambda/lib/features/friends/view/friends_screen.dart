@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
@@ -15,26 +16,27 @@ import '../../../shared/widgets/app_card.dart';
 import '../../../shared/widgets/container_styles.dart';
 import '../../../shared/widgets/glass_button.dart';
 import '../../../shared/widgets/header_icon_button.dart';
+import '../../../shared/widgets/lambda_avatar.dart';
 import '../../../shared/widgets/lambda_input.dart';
 import '../../../shared/widgets/name_limit_counter.dart';
 import '../../../shared/widgets/page_header.dart';
 import '../../../shared/widgets/scroll_shrink_nav_bar.dart';
 import '../../../shared/widgets/slide_up_modal.dart';
-import '../../../shared/widgets/swipe_actions.dart';
 import '../../../shared/widgets/user_name_text.dart';
 import '../viewmodel/friends_viewmodel.dart';
 
-/// The Friends tab (2026-10-23): the user's own shareable code, the friends
-/// the code has won, and the way to add more.
+/// The Social tab (2026-10-23, reshaped 2026-10-30): the people the caller
+/// trains with, one list, and one door in.
 ///
 /// A friend is made instantly and mutually — entering a code is the whole
-/// ceremony, so this screen has no pending section and no request verbs. The
-/// code card is the top of the page because sharing it is the act that makes
-/// the feature work; the list below it opens each friend's training history
-/// in the same read-only viewer the user reads their own sessions in.
+/// ceremony — and every friend's row opens their **profile**, which is where
+/// the friendship's verbs live: their training, a nickname, the note tier,
+/// coaching in either direction, and removing them. The shareable code lives
+/// in the add sheet (the header's `person_add` icon), because sharing it is
+/// what makes the feature work.
 ///
-/// Each friend's row draws three swipes: rename (nickname), privacy (the
-/// per-friend note tier, 2026-10-26) and remove.
+/// A row wears a **COACH** or **CLIENT** pill when an accepted coaching edge
+/// connects the two (2026-10-30); a plain friendship wears none.
 class FriendsScreen extends StatefulWidget {
   const FriendsScreen({super.key, this.viewModel});
 
@@ -65,17 +67,6 @@ class _FriendsScreenState extends State<FriendsScreen> {
     super.dispose();
   }
 
-  Future<void> _copyCode(String code) async {
-    await Clipboard.setData(ClipboardData(text: formatFriendCode(code)));
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Friend code copied'),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
-  }
-
   Future<void> _openAddSheet() async {
     // A refusal from a previous attempt belongs to the sheet that showed it.
     _vm.clearError();
@@ -94,52 +85,6 @@ class _FriendsScreenState extends State<FriendsScreen> {
     );
   }
 
-  Future<void> _remove(Friend friend) async {
-    final ok = await _confirmRemoveFriend(context, friend.displayName);
-    if (!ok || !mounted) return;
-    final removed = await _vm.remove(friend);
-    if (!mounted || removed) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          _vm.state.value.error ?? 'Could not remove that friend.',
-        ),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
-  }
-
-  /// Opens the nickname sheet for [friend]. A dismissed sheet writes nothing;
-  /// an emptied field clears the nickname, so the row falls back to the
-  /// friend's own name, then their code.
-  Future<void> _rename(Friend friend) async {
-    final result = await showNicknameSheet(context, friend: friend);
-    if (result == null || !mounted) return;
-    final trimmed = result.trim();
-    final saved = await _vm.setNickname(
-      friend,
-      trimmed.isEmpty ? null : trimmed,
-    );
-    if (!mounted || saved) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          _vm.state.value.error ?? 'Could not save that nickname.',
-        ),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
-  }
-
-  /// Opens the per-friend privacy sheet for [friend] (2026-10-26, #23). The
-  /// sheet writes each choice as it is made — the flag is on the caller's own
-  /// row — so a dismissal loses nothing.
-  Future<void> _openPrivacy(Friend friend) async {
-    // A refusal from a previous attempt belongs to the sheet that showed it.
-    _vm.clearError();
-    await showFriendPrivacySheet(context, vm: _vm, friend: friend);
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -150,9 +95,9 @@ class _FriendsScreenState extends State<FriendsScreen> {
           return Column(
             children: [
               PageHeader(
-                title: 'Friends',
+                title: 'Social',
                 right: HeaderIconButton(
-                  icon: Icons.person_add_alt_1,
+                  icon: LucideIcons.userPlus,
                   semanticsLabel: 'Add friend',
                   onPressed: _openAddSheet,
                 ),
@@ -168,13 +113,6 @@ class _FriendsScreenState extends State<FriendsScreen> {
                     AppSpacing.lg + ScrollShrinkNavBar.contentInset(context),
                   ),
                   children: [
-                    _CodeCard(
-                      code: state.myCode,
-                      onCopy: state.myCode == null
-                          ? null
-                          : () => _copyCode(state.myCode!),
-                    ),
-                    const SizedBox(height: AppSpacing.xl),
                     _SectionCaption(count: state.friends.length),
                     const SizedBox(height: AppSpacing.sm),
                     if (state.isLoading && state.friends.isEmpty)
@@ -197,9 +135,6 @@ class _FriendsScreenState extends State<FriendsScreen> {
                             '/friends/${state.friends[i].userId}',
                             extra: state.friends[i].displayName,
                           ),
-                          onRename: () => _rename(state.friends[i]),
-                          onPrivacy: () => _openPrivacy(state.friends[i]),
-                          onRemove: () => _remove(state.friends[i]),
                         ),
                       ],
                   ],
@@ -208,68 +143,6 @@ class _FriendsScreenState extends State<FriendsScreen> {
             ],
           );
         },
-      ),
-    );
-  }
-}
-
-/// The shareable code, in its mono grouping, with the one action that
-/// matters beside it. `—` until the code's row first syncs.
-class _CodeCard extends StatelessWidget {
-  const _CodeCard({required this.code, required this.onCopy});
-
-  final String? code;
-  final VoidCallback? onCopy;
-
-  @override
-  Widget build(BuildContext context) {
-    return AppCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'YOUR FRIEND CODE',
-            style: AppFonts.mono(
-              fontSize: AppTextStyles.xs,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.8,
-              color: AppColors.inkSecondary,
-            ),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  code == null ? '—' : formatFriendCode(code!),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppFonts.mono(
-                    fontSize: AppTextStyles.xl,
-                    fontWeight: FontWeight.w600,
-                    // The uppercase-mono label tracking's ceiling — the
-                    // spacing that makes a code read as a code without
-                    // drifting off the type ladder (typography §3).
-                    letterSpacing: 0.8,
-                    // The absence glyph is a placeholder, and placeholders
-                    // read in secondary ink (2026-10-22).
-                    color: code == null
-                        ? AppColors.inkSecondary
-                        : AppColors.primary,
-                  ),
-                ),
-              ),
-              const SizedBox(width: AppSpacing.md),
-              GlassButton(
-                label: 'Copy',
-                icon: Icons.copy_outlined,
-                compact: true,
-                disabled: code == null,
-                onPressed: onCopy ?? () {},
-              ),
-            ],
-          ),
-        ],
       ),
     );
   }
@@ -308,74 +181,73 @@ class _SectionCaption extends StatelessWidget {
   }
 }
 
+/// One friend: the placeholder picture, their name, the coaching pill when
+/// there is one, and the chevron into their profile (2026-10-30).
 class _FriendRow extends StatelessWidget {
-  const _FriendRow({
-    required this.friend,
-    required this.onTap,
-    required this.onRename,
-    required this.onPrivacy,
-    required this.onRemove,
-  });
+  const _FriendRow({required this.friend, required this.onTap});
 
   final Friend friend;
   final VoidCallback onTap;
-  final VoidCallback onRename;
-  final VoidCallback onPrivacy;
-  final VoidCallback onRemove;
 
   @override
   Widget build(BuildContext context) {
-    return SwipeActions(
-      // Keyed by friend, so a removal never hands an open drawer's state to
-      // the row that slides up into its place.
-      key: ValueKey(friend.userId),
-      actions: [
-        // Rename is the drawer's one non-destructive circle: the cream
-        // `primary` fill with the page's own `bg` as its ink, the same recipe
-        // the set row's notes action uses (`session_set_row.dart`). Red stays
-        // reserved for remove.
-        SwipeAction(
-          icon: Icons.edit_outlined,
-          color: AppColors.primary,
-          foreground: AppColors.bg,
-          onTap: onRename,
-        ),
-        // What this friend is sent (2026-10-26, #23) — the tier control, not
-        // an edit of the friend.
-        SwipeAction(
-          icon: Icons.visibility_outlined,
-          color: AppColors.primary,
-          foreground: AppColors.bg,
-          onTap: onPrivacy,
-        ),
-        SwipeAction(
-          icon: Icons.person_remove_outlined,
-          color: AppColors.danger,
-          foreground: AppColors.dangerText,
-          onTap: onRemove,
-        ),
-      ],
-      child: AppCard(
-        onTap: onTap,
-        child: Row(
-          children: [
-            Expanded(
-              child: UserNameText(
-                friend.displayName,
-                style: AppFonts.ui(
-                  fontSize: AppTextStyles.body,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.primary,
-                ),
+    final role = friend.coachingRole;
+    return AppCard(
+      onTap: onTap,
+      child: Row(
+        children: [
+          const LambdaAvatar(),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: UserNameText(
+              friend.displayName,
+              style: AppFonts.ui(
+                fontSize: AppTextStyles.body,
+                fontWeight: FontWeight.w600,
+                color: AppColors.primary,
               ),
             ),
+          ),
+          if (role != null) ...[
             const SizedBox(width: AppSpacing.sm),
-            Icon(
-              Icons.chevron_right,
-              size: 20,
-              color: AppColors.muted,
-            ),
+            CoachingPill(role: role),
           ],
+          const SizedBox(width: AppSpacing.sm),
+          Icon(LucideIcons.chevronRight, size: 20, color: AppColors.muted),
+        ],
+      ),
+    );
+  }
+}
+
+/// The row's coaching badge: what this friend is TO THE CALLER — their coach,
+/// or their client (2026-10-30). A plain friendship draws none.
+class CoachingPill extends StatelessWidget {
+  const CoachingPill({super.key, required this.role});
+
+  final FriendCoachingRole role;
+
+  @override
+  Widget build(BuildContext context) {
+    final isCoach = role == FriendCoachingRole.coach;
+    final bg = isCoach ? AppColors.successBg : AppColors.accentBg;
+    final ink = isCoach ? AppColors.success : AppColors.accent;
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.sm,
+        vertical: 3,
+      ),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+      ),
+      child: Text(
+        isCoach ? 'COACH' : 'CLIENT',
+        style: AppFonts.mono(
+          fontSize: AppTextStyles.xs,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.8,
+          color: ink,
         ),
       ),
     );
@@ -391,7 +263,7 @@ class _EmptyFriends extends StatelessWidget {
       padding: const EdgeInsets.only(top: AppSpacing.xxl),
       child: Column(
         children: [
-          Icon(Icons.people_outline, size: 28, color: AppColors.muted),
+          Icon(LucideIcons.users, size: 28, color: AppColors.muted),
           const SizedBox(height: AppSpacing.md),
           Text(
             'No friends yet',
@@ -420,8 +292,12 @@ class _EmptyFriends extends StatelessWidget {
   }
 }
 
-/// The add-by-code sheet. Returns the added friend (and whether the
-/// friendship was new); null when dismissed.
+/// The add sheet (2026-10-30): the caller's own code, with its copy verb, and
+/// the field that adds someone else's. One sheet because the two halves are
+/// one exchange — you show yours, then type theirs.
+///
+/// Returns the added friend (and whether the friendship was new); null when
+/// dismissed.
 Future<AddFriendResult?> showAddFriendSheet(
   BuildContext context, {
   required FriendsViewModel vm,
@@ -461,6 +337,17 @@ class _AddFriendSheetState extends State<_AddFriendSheet> {
     if (mounted) setState(() {});
   }
 
+  Future<void> _copyCode(String code) async {
+    await Clipboard.setData(ClipboardData(text: formatFriendCode(code)));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Friend code copied'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
   /// The field's own cleaner: upper-case, drop anything that is not a letter
   /// or digit (the hyphens the card draws, pasted spaces), stop at eight. The
   /// cleaner runs before the field's cap would, so pasting `abcd-efgh` lands
@@ -498,7 +385,7 @@ class _AddFriendSheetState extends State<_AddFriendSheet> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              'Add friend',
+              'Add a friend',
               style: AppFonts.ui(
                 fontSize: AppTextStyles.lg,
                 fontWeight: FontWeight.w800,
@@ -518,9 +405,15 @@ class _AddFriendSheetState extends State<_AddFriendSheet> {
             ValueListenableBuilder<FriendsState>(
               valueListenable: widget.vm.state,
               builder: (context, state, _) {
+                final code = state.myCode;
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    _CodeCard(
+                      code: code,
+                      onCopy: code == null ? null : () => _copyCode(code),
+                    ),
+                    const SizedBox(height: AppSpacing.lg),
                     LambdaInput(
                       controller: _ctrl,
                       label: 'Friend code',
@@ -550,6 +443,74 @@ class _AddFriendSheetState extends State<_AddFriendSheet> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// The shareable code, in its mono grouping, with the one action that
+/// matters beside it. `—` until the code's row first syncs.
+class _CodeCard extends StatelessWidget {
+  const _CodeCard({required this.code, required this.onCopy});
+
+  final String? code;
+  final VoidCallback? onCopy;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceHigh,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'YOUR FRIEND CODE',
+            style: AppFonts.mono(
+              fontSize: AppTextStyles.xs,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.8,
+              color: AppColors.inkSecondary,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  code == null ? '—' : formatFriendCode(code!),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppFonts.mono(
+                    fontSize: AppTextStyles.xl,
+                    fontWeight: FontWeight.w600,
+                    // The uppercase-mono label tracking's ceiling — the
+                    // spacing that makes a code read as a code without
+                    // drifting off the type ladder (typography §3).
+                    letterSpacing: 0.8,
+                    // The absence glyph is a placeholder, and placeholders
+                    // read in secondary ink (2026-10-22).
+                    color: code == null
+                        ? AppColors.inkSecondary
+                        : AppColors.primary,
+                  ),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.md),
+              GlassButton(
+                label: 'Copy',
+                icon: LucideIcons.copy,
+                compact: true,
+                disabled: code == null,
+                onPressed: onCopy ?? () {},
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -692,21 +653,34 @@ class _NicknameSheetState extends State<_NicknameSheet> {
 /// sent. Two tiers are drawn — the first always on, the second the caller's
 /// choice — and every tap is its own complete write, so there is no Save to
 /// press and a dismissal loses nothing.
+///
+/// The sheet takes the write itself ([onShareNotes]) rather than a view model,
+/// so the friend profile and the Social list can both open it (2026-10-30).
 Future<void> showFriendPrivacySheet(
   BuildContext context, {
-  required FriendsViewModel vm,
   required Friend friend,
+  required Future<bool> Function(bool shareNotes) onShareNotes,
+  String? Function()? errorOf,
 }) => showLambdaModal<void>(
   context,
   fitContent: true,
-  child: _PrivacySheet(vm: vm, friend: friend),
+  child: _PrivacySheet(
+    friend: friend,
+    onShareNotes: onShareNotes,
+    errorOf: errorOf,
+  ),
 );
 
 class _PrivacySheet extends StatefulWidget {
-  const _PrivacySheet({required this.vm, required this.friend});
+  const _PrivacySheet({
+    required this.friend,
+    required this.onShareNotes,
+    this.errorOf,
+  });
 
-  final FriendsViewModel vm;
   final Friend friend;
+  final Future<bool> Function(bool shareNotes) onShareNotes;
+  final String? Function()? errorOf;
 
   @override
   State<_PrivacySheet> createState() => _PrivacySheetState();
@@ -723,7 +697,7 @@ class _PrivacySheetState extends State<_PrivacySheet> {
       _saving = true;
       _error = null;
     });
-    final ok = await widget.vm.setShareNotes(widget.friend, value);
+    final ok = await widget.onShareNotes(value);
     if (!mounted) return;
     setState(() {
       _saving = false;
@@ -732,7 +706,7 @@ class _PrivacySheetState extends State<_PrivacySheet> {
       } else {
         // The row keeps its old mark: a write that did not land must not
         // read as a choice that did.
-        _error = widget.vm.state.value.error;
+        _error = widget.errorOf?.call();
       }
     });
   }
@@ -766,7 +740,7 @@ class _PrivacySheetState extends State<_PrivacySheet> {
             ),
             const SizedBox(height: AppSpacing.lg),
             const _TierRow(
-              icon: Icons.fitness_center,
+              icon: LucideIcons.dumbbell,
               title: 'Training and sets',
               subtitle:
                   "Weights, reps and each set's notes. Always shared while "
@@ -775,7 +749,7 @@ class _PrivacySheetState extends State<_PrivacySheet> {
             ),
             const SizedBox(height: AppSpacing.sm),
             _TierRow(
-              icon: Icons.sticky_note_2_outlined,
+              icon: LucideIcons.stickyNote,
               title: 'Exercise and session notes',
               subtitle:
                   'Your exercise notes and what you write before and after a '
@@ -879,7 +853,7 @@ class _TierRow extends StatelessWidget {
               ),
               const SizedBox(width: AppSpacing.sm),
               Icon(
-                selected ? Icons.check_circle : Icons.circle_outlined,
+                selected ? LucideIcons.circleCheck : LucideIcons.circle,
                 size: 20,
                 // Muted is the unselected ring — inactive chrome, never text.
                 color: selected ? AppColors.primary : AppColors.muted,
@@ -890,47 +864,4 @@ class _TierRow extends StatelessWidget {
       ),
     );
   }
-}
-
-/// The one "remove this friend?" warning. Returns true only on confirmation;
-/// a dismissed dialog reads as "no".
-Future<bool> _confirmRemoveFriend(BuildContext context, String name) async {
-  final ok = await showDialog<bool>(
-    context: context,
-    builder: (ctx) => AlertDialog(
-      backgroundColor: AppColors.surface,
-      title: Text(
-        'Remove Friend',
-        style: AppFonts.ui(
-          fontWeight: FontWeight.w800,
-          color: AppColors.danger,
-        ),
-      ),
-      content: Text(
-        'Remove $name from your friends? '
-        'You will not see each other\'s sessions anymore.',
-        style: AppFonts.ui(color: AppColors.inkSecondary, height: 1.4),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(ctx).pop(false),
-          child: Text(
-            'Cancel',
-            style: AppFonts.ui(color: AppColors.inkSecondary),
-          ),
-        ),
-        TextButton(
-          onPressed: () => Navigator.of(ctx).pop(true),
-          child: Text(
-            'Remove',
-            style: AppFonts.ui(
-              color: AppColors.danger,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
-      ],
-    ),
-  );
-  return ok ?? false;
 }

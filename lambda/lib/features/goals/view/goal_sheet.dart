@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
@@ -290,7 +291,7 @@ class _GoalSheetState extends State<_GoalSheet> {
                   if (writable && !_editing)
                     GlassButton(
                       label: '',
-                      icon: Icons.edit_outlined,
+                      icon: LucideIcons.pencil,
                       semanticsLabel: 'Edit goal',
                       compact: true,
                       onPressed: () => setState(() => _editing = true),
@@ -407,7 +408,7 @@ class _TargetDateHistorySheet extends StatelessWidget {
       child: Row(
         children: [
           Icon(
-            Icons.event_outlined,
+            LucideIcons.calendar,
             size: 16,
             color: to == null ? AppColors.muted : AppColors.primary,
           ),
@@ -719,7 +720,7 @@ class _AddGoalSheetState extends State<_AddGoalSheet> {
       ),
       child: Row(
         children: [
-          Icon(Icons.check_circle, size: 14, color: AppColors.success),
+          Icon(LucideIcons.circleCheck, size: 14, color: AppColors.success),
           const SizedBox(width: 8),
           Expanded(
             child: Text(

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
@@ -341,7 +342,7 @@ class _PrHistorySheetState extends State<_PrHistorySheet> {
                   const SizedBox(width: AppSpacing.xs),
                   HeaderIconButton(
                     key: const ValueKey('pr-history-close'),
-                    icon: Icons.close,
+                    icon: LucideIcons.x,
                     semanticsLabel: 'Close',
                     color: AppColors.muted,
                     onPressed: () =>
@@ -554,7 +555,7 @@ class _PrHistoryEntry extends StatelessWidget {
           // left-to-right, the way it happened.
           Row(
             children: [
-              Icon(Icons.emoji_events, size: 15, color: color),
+              Icon(LucideIcons.trophy, size: 15, color: color),
               const SizedBox(width: AppSpacing.xs),
               Text(
                 '${formatPrNumber(event.weight)}kg × '

@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
 import '../../../core/styles/app_radius.dart';
@@ -687,7 +688,7 @@ class _SessionScreenState extends State<SessionScreen>
                                   // created yet.
                                   SessionViewModel.kPreQuestionnairePage =>
                                     HeaderIconButton(
-                                      icon: Icons.arrow_back_ios_new,
+                                      icon: LucideIcons.chevronLeft,
                                       semanticsLabel: 'Back',
                                       glyphSize: 18,
                                       color: AppColors.primary,
@@ -707,7 +708,7 @@ class _SessionScreenState extends State<SessionScreen>
                                                   // square read as "pause/stop
                                                   // the timer", the X reads as
                                                   // "close this session".
-                                                  icon: Icons.close,
+                                                  icon: LucideIcons.x,
                                                   semanticsLabel:
                                                       'Cancel workout',
                                                   color: AppColors.danger,
@@ -719,14 +720,14 @@ class _SessionScreenState extends State<SessionScreen>
                                                   // (2026-10-28): the tick ends
                                                   // the session, never deletes
                                                   // it.
-                                                  icon: Icons.check,
+                                                  icon: LucideIcons.check,
                                                   semanticsLabel: 'End session',
                                                   color: AppColors.success,
                                                   onPressed:
                                                       _confirmEndWorkout,
                                                 ))
                                         : HeaderIconButton(
-                                            icon: Icons.arrow_back_ios_new,
+                                            icon: LucideIcons.chevronLeft,
                                             semanticsLabel: 'Back',
                                             glyphSize: 18,
                                             color: AppColors.primary,
@@ -745,7 +746,7 @@ class _SessionScreenState extends State<SessionScreen>
                                           ),
                                   // Summary: resume training (the back-door).
                                   _ => HeaderIconButton(
-                                    icon: Icons.arrow_back_ios_new,
+                                    icon: LucideIcons.chevronLeft,
                                     semanticsLabel: 'Back',
                                     glyphSize: 18,
                                     color: AppColors.primary,
@@ -782,7 +783,7 @@ class _SessionScreenState extends State<SessionScreen>
                                                 ),
                                           )
                                         : HeaderIconButton(
-                                            icon: Icons.add,
+                                            icon: LucideIcons.plus,
                                             semanticsLabel: 'Start',
                                             glyphSize: 22,
                                             color: AppColors.success,
@@ -795,7 +796,7 @@ class _SessionScreenState extends State<SessionScreen>
                                           ),
                                   SessionViewModel.kPreQuestionnairePage =>
                                     HeaderIconButton(
-                                      icon: Icons.arrow_forward_ios,
+                                      icon: LucideIcons.chevronRight,
                                       semanticsLabel: 'Continue',
                                       glyphSize: 18,
                                       color: AppColors.success,
@@ -807,14 +808,14 @@ class _SessionScreenState extends State<SessionScreen>
                                   SessionViewModel.kTrainingPage =>
                                     _vm.hasActiveWorkout
                                         ? HeaderIconButton(
-                                            icon: Icons.arrow_forward_ios,
+                                            icon: LucideIcons.chevronRight,
                                             semanticsLabel: 'Summary',
                                             glyphSize: 18,
                                             color: AppColors.success,
                                             onPressed: _goToSummary,
                                           )
                                         : HeaderIconButton(
-                                            icon: Icons.play_arrow,
+                                            icon: LucideIcons.play,
                                             semanticsLabel: 'Start workout',
                                             glyphSize: 22,
                                             color: AppColors.success,
@@ -823,7 +824,7 @@ class _SessionScreenState extends State<SessionScreen>
                                   SessionViewModel.kSummaryPage =>
                                     _vm.hasActiveWorkout
                                         ? HeaderIconButton(
-                                            icon: Icons.check,
+                                            icon: LucideIcons.check,
                                             semanticsLabel: 'End workout',
                                             glyphSize: 22,
                                             color: AppColors.success,
@@ -831,7 +832,7 @@ class _SessionScreenState extends State<SessionScreen>
                                           )
                                         : null,
                                   _ => HeaderIconButton(
-                                    icon: Icons.check,
+                                    icon: LucideIcons.check,
                                     semanticsLabel: 'Done',
                                     glyphSize: 22,
                                     color: AppColors.success,
@@ -1147,8 +1148,8 @@ class _PreEvaluationPageState extends State<_PreEvaluationPage> {
                               children: [
                                 Icon(
                                   _showLastSession
-                                      ? Icons.arrow_back
-                                      : Icons.history,
+                                      ? LucideIcons.arrowLeft
+                                      : LucideIcons.history,
                                   size: 13,
                                   color: AppColors.primary,
                                 ),
@@ -1189,7 +1190,7 @@ class _PreEvaluationPageState extends State<_PreEvaluationPage> {
         children: [
           Row(
             children: [
-              Icon(Icons.history, size: 11, color: AppColors.muted),
+              Icon(LucideIcons.history, size: 11, color: AppColors.muted),
               const SizedBox(width: 4),
               Text(
                 'FROM LAST SESSION',
@@ -1358,19 +1359,19 @@ class _LastSessionCard extends StatelessWidget {
                   // All-sessions picker — jumps the card to any completed
                   // session instead of paging one step at a time.
                   _pagerButton(
-                    Icons.list_alt,
+                    LucideIcons.list,
                     vm.completedSessionCount > 0,
                     () => _openSessionPicker(context, vm),
                   ),
                   const SizedBox(width: AppSpacing.sm),
                   _pagerButton(
-                    Icons.chevron_left,
+                    LucideIcons.chevronLeft,
                     vm.reflectionCanGoOlder,
                     vm.showOlderReflectionSession,
                   ),
                   const SizedBox(width: AppSpacing.sm),
                   _pagerButton(
-                    Icons.chevron_right,
+                    LucideIcons.chevronRight,
                     vm.reflectionCanGoNewer,
                     vm.showNewerReflectionSession,
                   ),
@@ -1717,7 +1718,7 @@ class _TrainingHeaderSelector extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 4),
-              Icon(Icons.arrow_drop_down, size: 18, color: AppColors.muted),
+              Icon(LucideIcons.chevronDown, size: 18, color: AppColors.muted),
             ],
           ),
         ),
@@ -2054,7 +2055,7 @@ class _TrainingPageState extends State<_TrainingPage> {
                 // (2026-10-27).
                 BarIconButton(
                   key: const ValueKey('ratings-button'),
-                  icon: Icons.star_rounded,
+                  icon: LucideIcons.star,
                   semanticsLabel: 'Session ratings',
                   onPressed: widget.onOpenRatings,
                 ),
@@ -2147,7 +2148,7 @@ Future<void> _showWorkoutPickerSheet(
                         child: Row(
                           children: [
                             Icon(
-                              Icons.edit_off_outlined,
+                              LucideIcons.pencilOff,
                               size: 18,
                               color: AppColors.muted,
                             ),
@@ -2165,7 +2166,7 @@ Future<void> _showWorkoutPickerSheet(
                             if (vm.selectedPlannedSession == null &&
                                 vm.selectedStandaloneWorkout == null)
                               Icon(
-                                Icons.check,
+                                LucideIcons.check,
                                 size: 18,
                                 color: AppColors.primary,
                               ),
@@ -2231,7 +2232,7 @@ Future<void> _showWorkoutPickerSheet(
                                 if (w.sessionId ==
                                     vm.selectedStandaloneWorkout?.sessionId)
                                   Icon(
-                                    Icons.check,
+                                    LucideIcons.check,
                                     size: 18,
                                     color: AppColors.primary,
                                   ),
@@ -2266,7 +2267,7 @@ Future<void> _showWorkoutPickerSheet(
                 decoration: glassBox(AppColors.primary),
                 child: Row(
                   children: [
-                    Icon(Icons.history, size: 18, color: AppColors.primary),
+                    Icon(LucideIcons.history, size: 18, color: AppColors.primary),
                     const SizedBox(width: AppSpacing.sm),
                     Expanded(
                       child: Text(
@@ -2278,7 +2279,7 @@ Future<void> _showWorkoutPickerSheet(
                         ),
                       ),
                     ),
-                    Icon(Icons.chevron_right, size: 18, color: AppColors.muted),
+                    Icon(LucideIcons.chevronRight, size: 18, color: AppColors.muted),
                   ],
                 ),
               ),
@@ -2724,8 +2725,8 @@ class _PostQuestionnairePageState extends State<_PostQuestionnairePage> {
                                   children: [
                                     Icon(
                                       _showPreviousSession
-                                          ? Icons.arrow_back
-                                          : Icons.history,
+                                          ? LucideIcons.arrowLeft
+                                          : LucideIcons.history,
                                       size: 13,
                                       color: AppColors.primary,
                                     ),
@@ -2770,7 +2771,7 @@ class _PostQuestionnairePageState extends State<_PostQuestionnairePage> {
         children: [
           Row(
             children: [
-              Icon(Icons.history, size: 11, color: AppColors.muted),
+              Icon(LucideIcons.history, size: 11, color: AppColors.muted),
               const SizedBox(width: 4),
               Text(
                 'FROM LAST SESSION',

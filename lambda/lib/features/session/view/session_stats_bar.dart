@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_radius.dart';
 import '../../../core/styles/app_spacing.dart';
@@ -196,7 +197,7 @@ class SessionStatsTiles extends StatelessWidget {
         Expanded(
           child: _control(
             key: const ValueKey('session-prs-tile'),
-            icon: Icons.emoji_events,
+            icon: LucideIcons.trophy,
             semanticsLabel: _semantics(prCount, 'PR'),
             active: prCount > 0,
             onTap: onPrTap,
@@ -207,7 +208,7 @@ class SessionStatsTiles extends StatelessWidget {
           Expanded(
             child: _control(
               key: const ValueKey('session-goals-button'),
-              icon: Icons.track_changes,
+              icon: LucideIcons.target,
               semanticsLabel: _goalSemantics(goalCount),
               active: goalCount > 0,
               onTap: onGoalTap,
@@ -218,7 +219,7 @@ class SessionStatsTiles extends StatelessWidget {
         Expanded(
           child: _control(
             key: const ValueKey('session-notes-tile'),
-            icon: Icons.sticky_note_2_outlined,
+            icon: LucideIcons.stickyNote,
             semanticsLabel: _semantics(exerciseNoteCount, 'exercise note'),
             active: exerciseNoteCount > 0,
             onTap: onNoteTap,

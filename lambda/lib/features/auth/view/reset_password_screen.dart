@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_text_styles.dart';
 import '../../../core/utils/validators.dart';
@@ -198,7 +199,7 @@ class _SuccessView extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Icon(Icons.check_circle_outline, size: 64, color: AppColors.accent),
+          Icon(LucideIcons.circleCheck, size: 64, color: AppColors.accent),
           SizedBox(height: 24),
           Text(
             'Password updated!',

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lambda/shared/widgets/glass_button.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 /// The one button, in its glyph-only form — what most of the app's chrome
 /// became on 2026-10-20.
@@ -25,7 +26,7 @@ void main() {
         _host(
           GlassButton(
             label: '',
-            icon: Icons.arrow_back_ios_new,
+            icon: LucideIcons.chevronLeft,
             semanticsLabel: 'Back',
             compact: true,
             onPressed: () {},
@@ -48,7 +49,7 @@ void main() {
           _host(
             GlassButton(
               label: '',
-              icon: Icons.check,
+              icon: LucideIcons.check,
               semanticsLabel: 'Save',
               compact: compact,
               onPressed: () {},
@@ -78,7 +79,7 @@ void main() {
         _host(
           GlassButton(
             label: '',
-            icon: Icons.close,
+            icon: LucideIcons.x,
             semanticsLabel: 'Cancel',
             disabled: true,
             onPressed: () => taps++,
@@ -102,7 +103,7 @@ void main() {
         _host(
           GlassButton(
             label: 'Save',
-            icon: Icons.check,
+            icon: LucideIcons.check,
             onPressed: () => taps++,
           ),
         ),

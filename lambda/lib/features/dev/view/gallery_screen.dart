@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../../core/styles/app_fonts.dart';
 import '../../../../core/styles/app_radius.dart';
 import '../../../../core/styles/app_spacing.dart';
@@ -64,7 +65,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
                 title: 'Style Gallery',
                 left: IconButton(
                   icon: Icon(
-                    Icons.arrow_back_ios_new,
+                    LucideIcons.chevronLeft,
                     size: 18,
                     color: c.primary,
                   ),
@@ -286,28 +287,28 @@ class _GalleryScreenState extends State<GalleryScreen> {
                               // the plain form is a header's.
                               GlassButton(
                                 label: '',
-                                icon: Icons.add,
+                                icon: LucideIcons.plus,
                                 semanticsLabel: 'Add',
                                 compact: true,
                                 onPressed: () {},
                               ),
                               GlassButton(
                                 label: '',
-                                icon: Icons.sort,
+                                icon: LucideIcons.arrowUpDown,
                                 semanticsLabel: 'Sort',
                                 compact: true,
                                 onPressed: () {},
                               ),
                               GlassButton(
                                 label: '',
-                                icon: Icons.check,
+                                icon: LucideIcons.check,
                                 semanticsLabel: 'Save',
                                 color: c.success,
                                 onPressed: () {},
                               ),
                               GlassButton(
                                 label: '',
-                                icon: Icons.close,
+                                icon: LucideIcons.x,
                                 semanticsLabel: 'Cancel',
                                 color: c.danger,
                                 compact: true,
@@ -315,7 +316,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
                               ),
                               GlassButton(
                                 label: '',
-                                icon: Icons.undo,
+                                icon: LucideIcons.undo2,
                                 semanticsLabel: 'Undo',
                                 compact: true,
                                 disabled: true,
@@ -333,28 +334,28 @@ class _GalleryScreenState extends State<GalleryScreen> {
                           child: Row(
                             children: [
                               HeaderIconButton(
-                                icon: Icons.arrow_back_ios_new,
+                                icon: LucideIcons.chevronLeft,
                                 semanticsLabel: 'Back',
                                 glyphSize: 18,
                                 onPressed: () {},
                               ),
                               GlassButton(
                                 label: '',
-                                icon: Icons.edit_outlined,
+                                icon: LucideIcons.pencil,
                                 semanticsLabel: 'Edit',
                                 compact: true,
                                 onPressed: () {},
                               ),
                               const SizedBox(width: AppSpacing.sm),
                               HeaderIconButton(
-                                icon: Icons.sort,
+                                icon: LucideIcons.arrowUpDown,
                                 semanticsLabel: 'Sort',
                                 variant: HeaderIconVariant.boxed,
                                 onPressed: () {},
                               ),
                               const Spacer(),
                               HeaderIconButton(
-                                icon: Icons.edit_outlined,
+                                icon: LucideIcons.pencil,
                                 semanticsLabel: 'Edit (inert)',
                                 onPressed: null,
                               ),
@@ -557,7 +558,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     Icon(
-                                      Icons.history,
+                                      LucideIcons.history,
                                       size: 11,
                                       color: c.accent,
                                     ),
@@ -767,7 +768,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
                               _Banner(
-                                icon: Icons.check_circle_outline,
+                                icon: LucideIcons.circleCheck,
                                 text:
                                     'Session complete, rest well and see you soon',
                                 fill: c.successBg,
@@ -776,7 +777,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
                               ),
                               const SizedBox(height: AppSpacing.sm),
                               _Banner(
-                                icon: Icons.event_outlined,
+                                icon: LucideIcons.calendar,
                                 text: 'Chest Day — planned session',
                                 fill: c.plannedBg,
                                 border: c.planned,
@@ -784,7 +785,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
                               ),
                               const SizedBox(height: AppSpacing.sm),
                               _Banner(
-                                icon: Icons.error_outline,
+                                icon: LucideIcons.circleAlert,
                                 text: 'Something went wrong',
                                 fill: c.dangerBg,
                                 border: c.dangerBorder,
@@ -825,7 +826,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
                                 child: Row(
                                   children: [
                                     Icon(
-                                      Icons.emoji_events_outlined,
+                                      LucideIcons.trophy,
                                       size: 16,
                                       color: c.accent,
                                     ),
@@ -858,7 +859,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Icon(
-                                      Icons.menu_book_outlined,
+                                      LucideIcons.bookOpen,
                                       size: 16,
                                       color: c.primary,
                                     ),
@@ -891,14 +892,14 @@ class _GalleryScreenState extends State<GalleryScreen> {
                             borderRadius: AppRadius.md,
                             actions: [
                               SwipeAction(
-                                icon: Icons.copy_rounded,
+                                icon: LucideIcons.copy,
 
                                 color: c.accent,
                                 foreground: c.accentText,
                                 onTap: () {},
                               ),
                               SwipeAction(
-                                icon: Icons.delete_outline,
+                                icon: LucideIcons.trash2,
 
                                 color: c.danger,
                                 foreground: c.dangerText,
@@ -979,7 +980,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
                                       ),
                                     ),
                                     child: Icon(
-                                      Icons.sticky_note_2_outlined,
+                                      LucideIcons.stickyNote,
                                       size: 15,
                                       color: c.primary,
                                     ),

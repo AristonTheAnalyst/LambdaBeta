@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_radius.dart';
 import '../../../core/styles/app_fonts.dart';
@@ -546,7 +547,7 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
               ),
             ),
             ListTile(
-              leading: Icon(Icons.add, color: AppColors.accent),
+              leading: Icon(LucideIcons.plus, color: AppColors.accent),
               title: Text(
                 'New workout',
                 style: AppFonts.ui(
@@ -558,7 +559,7 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
             ),
             ListTile(
               leading: Icon(
-                Icons.library_add_outlined,
+                LucideIcons.libraryBig,
                 color: AppColors.accent,
               ),
               title: Text(
@@ -712,14 +713,14 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
             onTap: () => _openEditWorkout(workouts[i]),
             swipeActions: [
               SwipeAction(
-                icon: Icons.copy_rounded,
+                icon: LucideIcons.copy,
 
                 color: AppColors.accent,
                 foreground: AppColors.accentText,
                 onTap: () => _vm.duplicatePlannedSession(workouts[i]),
               ),
               SwipeAction(
-                icon: Icons.delete_outline,
+                icon: LucideIcons.trash2,
 
                 color: AppColors.danger,
                 foreground: AppColors.dangerText,
@@ -871,7 +872,7 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
                       onSubmitted: (_) => _nameFocus.unfocus(),
                     ),
                     left: HeaderIconButton(
-                      icon: Icons.arrow_back_ios_new,
+                      icon: LucideIcons.chevronLeft,
                       semanticsLabel: 'Back',
                       glyphSize: 18,
                       onPressed: () async {
@@ -897,7 +898,7 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
                     right: hasUnsavedChanges
                         ? GlassButton(
                             label: '',
-                            icon: Icons.check,
+                            icon: LucideIcons.check,
                             semanticsLabel: 'Save program',
                             compact: true,
                             loading: state.isSaving,
@@ -1064,7 +1065,7 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
               ),
               GlassButton(
                 label: '',
-                icon: Icons.add,
+                icon: LucideIcons.plus,
                 semanticsLabel: 'Add workout',
                 compact: true,
                 onPressed: _openAddWorkoutMenu,
@@ -1105,7 +1106,7 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
         children: [
           GlassButton(
             label: 'Begin Program',
-            icon: Icons.play_circle_outline,
+            icon: LucideIcons.circlePlay,
             disabled: true,
             onPressed: _confirmBeginProgram,
           ),
@@ -1125,7 +1126,7 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
         Expanded(
           child: GlassButton(
             label: 'Begin Program',
-            icon: Icons.play_circle_outline,
+            icon: LucideIcons.circlePlay,
             loading: state.settingCurrent,
             disabled: state.settingCurrent,
             onPressed: _confirmBeginProgram,
@@ -1183,14 +1184,14 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
         if (run.blockId == null)
           GlassButton(
             label: 'Edit duration',
-            icon: Icons.tune,
+            icon: LucideIcons.slidersHorizontal,
             compact: true,
             onPressed: () => _editRunConfig(run),
           ),
         const SizedBox(height: AppSpacing.xs),
         GlassButton(
           label: 'End Program',
-          icon: Icons.stop_circle_outlined,
+          icon: LucideIcons.circleStop,
           compact: true,
           onPressed: () => _confirmEndRun(context),
         ),
@@ -1252,7 +1253,7 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
         const SizedBox(height: AppSpacing.md),
         GlassButton(
           label: 'Resume',
-          icon: Icons.play_circle_outline,
+          icon: LucideIcons.circlePlay,
           solid: true,
           loading: state.settingCurrent,
           disabled: state.settingCurrent,
@@ -1264,7 +1265,7 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
             Expanded(
               child: GlassButton(
                 label: forBlock ? 'Restart this block' : 'Restart program',
-                icon: Icons.restart_alt,
+                icon: LucideIcons.rotateCw,
                 compact: true,
                 disabled: state.settingCurrent,
                 onPressed: () => _confirmRestart(run),
@@ -1274,7 +1275,7 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
             Expanded(
               child: GlassButton(
                 label: 'End Program',
-                icon: Icons.stop_circle_outlined,
+                icon: LucideIcons.circleStop,
                 compact: true,
                 disabled: state.settingCurrent,
                 onPressed: () => _confirmEndRun(context, paused: true),
@@ -1382,7 +1383,7 @@ class _ProgramDetailScreenState extends State<ProgramDetailScreen>
           const SizedBox(height: AppSpacing.md),
           GlassButton(
             label: 'Add block',
-            icon: Icons.add,
+            icon: LucideIcons.plus,
             compact: true,
             onPressed: _openCreateBlock,
           ),
@@ -1460,8 +1461,8 @@ class _DueBanner extends StatelessWidget {
           children: [
             Icon(
               due.isBlockStart
-                  ? Icons.play_circle_outline
-                  : Icons.flag_outlined,
+                  ? LucideIcons.circlePlay
+                  : LucideIcons.flag,
               size: 16,
               color: AppColors.accent,
             ),
@@ -1485,7 +1486,7 @@ class _DueBanner extends StatelessWidget {
                 fontWeight: FontWeight.w800,
               ),
             ),
-            Icon(Icons.chevron_right, size: 18, color: AppColors.accent),
+            Icon(LucideIcons.chevronRight, size: 18, color: AppColors.accent),
           ],
         ),
       ),
@@ -1563,7 +1564,7 @@ class _BlockHeader extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Icon(Icons.view_agenda_outlined, size: 18, color: AppColors.accent),
+            Icon(LucideIcons.rows3, size: 18, color: AppColors.accent),
             const SizedBox(width: AppSpacing.sm),
             Expanded(
               child: Column(
@@ -1601,17 +1602,17 @@ class _BlockHeader extends StatelessWidget {
             if (onBegin != null)
               GlassButton(
                 label: 'Begin',
-                icon: Icons.play_circle_outline,
+                icon: LucideIcons.circlePlay,
                 compact: true,
                 onPressed: onBegin!,
               ),
             HeaderIconButton(
-              icon: Icons.add,
+              icon: LucideIcons.plus,
               semanticsLabel: 'Add workouts',
               glyphSize: 18,
               onPressed: onAddWorkouts,
             ),
-            Icon(Icons.chevron_right, size: 18, color: AppColors.muted),
+            Icon(LucideIcons.chevronRight, size: 18, color: AppColors.muted),
           ],
         ),
       ),
@@ -1674,14 +1675,14 @@ class _UnfiledGroup extends StatelessWidget {
             onTap: () => onTap(w),
             swipeActions: [
               SwipeAction(
-                icon: Icons.drive_file_move_outline,
+                icon: LucideIcons.folderInput,
 
                 color: AppColors.accent,
                 foreground: AppColors.accentText,
                 onTap: () => onFile(w),
               ),
               SwipeAction(
-                icon: Icons.delete_outline,
+                icon: LucideIcons.trash2,
 
                 color: AppColors.danger,
                 foreground: AppColors.dangerText,

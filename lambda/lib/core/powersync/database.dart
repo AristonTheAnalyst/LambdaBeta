@@ -239,12 +239,11 @@ PowerSyncDatabase get db =>
 /// integration harness starts (it swaps in the first database of its
 /// process).
 ///
-/// Two callers, one mechanism. Integration tests drive the REAL repositories
+/// One caller, one mechanism. Integration tests drive the REAL repositories
 /// against a throwaway PowerSync database with the real client schema
 /// (`openDatabase` is never called there, and cannot be: it wants a signed-in
-/// Supabase session and the device's app container). The dev flow lab swaps in
-/// a scratch database for the length of a sandbox session and restores the
-/// app's own on the way out.
+/// Supabase session and the device's app container). The swap is restored on
+/// the way out.
 ///
 /// Repositories read `db` per call, so a swap takes effect for any repo
 /// already constructed — with one exception, [ExerciseNoteRepository], which

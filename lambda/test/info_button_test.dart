@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lambda/core/styles/app_fonts.dart';
 import 'package:lambda/shared/widgets/info_button.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'support/readable_text.dart';
 
@@ -37,7 +38,7 @@ void main() {
               InfoButton(
                 title: 'Goals',
                 body: 'A weight × reps target on one exercise.',
-                icon: Icons.flag_outlined,
+                icon: LucideIcons.flag,
               ),
             ],
           ),
@@ -45,7 +46,7 @@ void main() {
       ),
     );
 
-    await tester.tap(find.byIcon(Icons.info_outline));
+    await tester.tap(find.byIcon(LucideIcons.info));
     await tester.pumpAndSettle();
 
     expect(find.text('Goals'), findsOneWidget);

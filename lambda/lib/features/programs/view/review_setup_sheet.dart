@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
@@ -378,7 +379,7 @@ class _WorkoutRow extends StatelessWidget {
             ),
             const SizedBox(width: 8),
             Icon(
-              ticked ? Icons.check_circle : Icons.circle_outlined,
+              ticked ? LucideIcons.circleCheck : LucideIcons.circle,
               size: 14,
               color: ticked ? AppColors.success : AppColors.muted,
             ),

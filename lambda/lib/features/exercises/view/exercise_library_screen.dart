@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../../core/styles/app_colors.dart';
 import '../../../../data/repositories/exercise_repository.dart';
 import '../../../../core/styles/app_fonts.dart';
@@ -353,7 +354,7 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
                 PageHeader(
                   title: 'Exercise Library',
                   left: HeaderIconButton(
-                    icon: Icons.arrow_back_ios_new,
+                    icon: LucideIcons.chevronLeft,
                     semanticsLabel: 'Back',
                     glyphSize: 18,
                     onPressed: () => context.pop(),
@@ -465,7 +466,7 @@ class _ExercisesPanel extends StatelessWidget {
                     const SizedBox(width: AppSpacing.sm),
                     GlassButton(
                       label: '',
-                      icon: Icons.add,
+                      icon: LucideIcons.plus,
                       semanticsLabel: 'Add exercise',
                       onPressed: add,
                       compact: true,
@@ -475,7 +476,7 @@ class _ExercisesPanel extends StatelessWidget {
                     const SizedBox(width: AppSpacing.sm),
                     GlassButton(
                       label: '',
-                      icon: Icons.archive_outlined,
+                      icon: LucideIcons.archive,
                       semanticsLabel: 'Archived exercises',
                       onPressed: archived,
                       compact: true,
@@ -641,7 +642,7 @@ class _VariationsPanel extends StatelessWidget {
                     const SizedBox(width: AppSpacing.sm),
                     GlassButton(
                       label: '',
-                      icon: Icons.add,
+                      icon: LucideIcons.plus,
                       semanticsLabel: 'Add variation',
                       onPressed: add,
                       compact: true,
@@ -651,7 +652,7 @@ class _VariationsPanel extends StatelessWidget {
                     const SizedBox(width: AppSpacing.sm),
                     GlassButton(
                       label: '',
-                      icon: Icons.archive_outlined,
+                      icon: LucideIcons.archive,
                       semanticsLabel: 'Archived variations',
                       onPressed: archived,
                       compact: true,
@@ -802,7 +803,7 @@ class _PaginationBar extends StatelessWidget {
                   ? glassBox(AppColors.accent)
                   : lambdaBox(ContainerTone.ghost, radius: AppRadius.md),
               child: Icon(
-                Icons.chevron_left,
+                LucideIcons.chevronLeft,
                 size: 20,
                 color: canPrev ? AppColors.accent : AppColors.muted,
               ),
@@ -828,7 +829,7 @@ class _PaginationBar extends StatelessWidget {
                   ? glassBox(AppColors.accent)
                   : lambdaBox(ContainerTone.ghost, radius: AppRadius.md),
               child: Icon(
-                Icons.chevron_right,
+                LucideIcons.chevronRight,
                 size: 20,
                 color: canNext ? AppColors.accent : AppColors.muted,
               ),
@@ -1082,7 +1083,7 @@ class _EditVariationModal extends StatelessWidget {
                         padding: const EdgeInsets.only(right: AppSpacing.sm),
                         child: GlassButton(
                           label: '',
-                          icon: Icons.history,
+                          icon: LucideIcons.history,
                           semanticsLabel: 'Name history',
                           compact: true,
                           onPressed: onHistory!,
@@ -1091,7 +1092,7 @@ class _EditVariationModal extends StatelessWidget {
                     if (onDelete != null)
                       GlassButton(
                         label: '',
-                        icon: Icons.delete_outline,
+                        icon: LucideIcons.trash2,
                         semanticsLabel: 'Delete variation',
                         color: AppColors.danger,
                         compact: true,

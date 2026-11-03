@@ -31,6 +31,7 @@ import 'package:lambda/shared/widgets/session_exercise_card.dart';
 import 'package:lambda/shared/widgets/session_set_row.dart';
 import 'package:lambda/shared/widgets/swipe_actions.dart';
 import 'package:lambda/shared/widgets/undo_redo_buttons.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'support/fake_program_repos.dart';
 
@@ -61,11 +62,11 @@ import 'support/fake_program_repos.dart';
 /// The eye has two halves, because the toggle wears its state: outlined at
 /// rest, filled while the record is up. Tests name the half they expect
 /// instead of asking only that an eye exists.
-const kNoteGlyph = Icons.sticky_note_2_outlined;
-const kCompareGlyph = Icons.visibility_outlined;
-const kCompareGlyphOn = Icons.visibility;
-const kChangesGlyph = Icons.difference_outlined;
-const kDoneGlyph = Icons.check;
+const kNoteGlyph = LucideIcons.stickyNote;
+const kCompareGlyph = LucideIcons.eyeDashed;
+const kCompareGlyphOn = LucideIcons.eye;
+const kChangesGlyph = LucideIcons.gitCompare;
+const kDoneGlyph = LucideIcons.check;
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -217,7 +218,7 @@ void main() {
             'finished from the landing',
       );
       expect(
-        find.byIcon(Icons.close),
+        find.byIcon(LucideIcons.x),
         findsNothing,
         reason:
             'the bar carries decisions about the review, not navigation — '
@@ -1886,7 +1887,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Exercise'), findsOneWidget);
-      expect(find.byIcon(Icons.chevron_right), findsNothing);
+      expect(find.byIcon(LucideIcons.chevronRight), findsNothing);
     });
 
     testWidgets('says so when the changes cannot be read', (tester) async {
@@ -2373,7 +2374,7 @@ void main() {
       expect(find.text('Summary'), findsOneWidget);
       expect(find.text('Push Day'), findsOneWidget);
       expect(
-        find.byIcon(Icons.check_circle),
+        find.byIcon(LucideIcons.circleCheck),
         findsOneWidget,
         reason: 'the tick is the record of what the pass walked, kept whole',
       );
@@ -2395,7 +2396,7 @@ void main() {
             'over',
       );
       expect(
-        find.byIcon(Icons.add),
+        find.byIcon(LucideIcons.plus),
         findsNothing,
         reason: 'the add tiles put more in the set, and the set is what it was',
       );
@@ -3273,7 +3274,7 @@ void main() {
       expect(find.text('Goal'), findsOneWidget);
       expect(find.text('Beltless, pause on the chest'), findsOneWidget);
       expect(
-        find.byIcon(Icons.edit_outlined),
+        find.byIcon(LucideIcons.pencil),
         findsNothing,
         reason: 'a record has no way into edit mode — nothing to unlock it',
       );
@@ -3334,7 +3335,7 @@ void main() {
       );
       expect(find.text('In Review'), findsNothing);
 
-      await tester.tap(find.byIcon(Icons.arrow_back_ios_new));
+      await tester.tap(find.byIcon(LucideIcons.chevronLeft));
       await tester.pumpAndSettle();
 
       expect(

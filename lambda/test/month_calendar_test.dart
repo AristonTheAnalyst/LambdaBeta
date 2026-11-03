@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lambda/core/styles/app_colors.dart';
 import 'package:lambda/shared/widgets/month_calendar.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 /// [MonthCalendar] owns layout, bounds and hit-testing; the caller owns what a
 /// day means. These tests pin the half that moved — the bounds — because that
@@ -127,8 +128,8 @@ void main() {
     await tester.pumpWidget(host(onMonthChanged: shifts.add));
 
     // June 2030 is inside a 2029..2031 window, so both arrows work.
-    await tester.tap(find.byIcon(Icons.chevron_right));
-    await tester.tap(find.byIcon(Icons.chevron_left));
+    await tester.tap(find.byIcon(LucideIcons.chevronRight));
+    await tester.tap(find.byIcon(LucideIcons.chevronLeft));
     expect(shifts, [DateTime(2030, 7, 1), DateTime(2030, 5, 1)]);
 
     // Sitting on the last allowed month, forward does nothing.
@@ -136,7 +137,7 @@ void main() {
     await tester.pumpWidget(
       host(month: DateTime(2031, 12, 1), onMonthChanged: shifts.add),
     );
-    await tester.tap(find.byIcon(Icons.chevron_right));
+    await tester.tap(find.byIcon(LucideIcons.chevronRight));
     expect(shifts, isEmpty);
 
     // And on the first allowed month, back does nothing.
@@ -144,7 +145,7 @@ void main() {
     await tester.pumpWidget(
       host(month: DateTime(2029, 1, 1), onMonthChanged: shifts.add),
     );
-    await tester.tap(find.byIcon(Icons.chevron_left));
+    await tester.tap(find.byIcon(LucideIcons.chevronLeft));
     expect(shifts, isEmpty);
   });
 

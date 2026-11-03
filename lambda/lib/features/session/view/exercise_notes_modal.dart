@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
 import '../../../core/styles/app_radius.dart';
@@ -358,7 +359,7 @@ class _ExerciseNotesModalContentState extends State<_ExerciseNotesModalContent> 
                       if (!widget.readOnly)
                         GlassButton(
                           label: '',
-                          icon: Icons.add,
+                          icon: LucideIcons.plus,
                           semanticsLabel: 'Add exercise note',
                           compact: true,
                           onPressed: () => setState(() => _adding = true),
@@ -521,7 +522,7 @@ class _NoteRowState extends State<_NoteRow> {
       borderRadius: AppRadius.md,
       actions: [
         SwipeAction(
-          icon: Icons.delete_outline,
+          icon: LucideIcons.trash2,
 
           color: AppColors.danger,
           foreground: AppColors.dangerText,
@@ -550,7 +551,7 @@ class _NoteRowState extends State<_NoteRow> {
               border: Border.all(color: AppColors.border, width: 0.5),
             ),
       child: Icon(
-        Icons.push_pin,
+        LucideIcons.pin,
         // A lone glyph control draws at the nav scale, 18–20
         // (typography §3).
         size: 18,

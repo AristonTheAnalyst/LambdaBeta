@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_fonts.dart';
 import '../../core/styles/app_radius.dart';
@@ -395,7 +396,7 @@ class _SessionExerciseCardState extends State<SessionExerciseCard> {
       children: [
         Expanded(
           child: CardPillButton(
-            icon: Icons.sticky_note_2_outlined,
+            icon: LucideIcons.stickyNote,
             label: widget.exerciseNotesCount > 0
                 ? '${widget.exerciseNotesCount} Notes'
                 : 'Notes',
@@ -407,7 +408,7 @@ class _SessionExerciseCardState extends State<SessionExerciseCard> {
         const SizedBox(width: 6),
         Expanded(
           child: CardPillButton(
-            icon: Icons.history,
+            icon: LucideIcons.history,
             label: 'History',
             active: viewingHistory,
             enabled: widget.history != null && widget.history!.isNotEmpty,
@@ -430,7 +431,7 @@ class _SessionExerciseCardState extends State<SessionExerciseCard> {
         // (2026-10-21).
         Expanded(
           child: CardPillButton(
-            icon: Icons.emoji_events_outlined,
+            icon: LucideIcons.trophy,
             label: widget.prCount > 0
                 ? '+${widget.prCount} '
                       '${widget.prCount == 1 ? 'PR' : 'PRs'}'
@@ -460,7 +461,7 @@ class _SessionExerciseCardState extends State<SessionExerciseCard> {
       decoration: lambdaBox(ContainerTone.bg, radius: AppRadius.md),
       child: Row(
         children: [
-          Icon(Icons.sticky_note_2_outlined, size: 12, color: AppColors.primary),
+          Icon(LucideIcons.stickyNote, size: 12, color: AppColors.primary),
           const SizedBox(width: 6),
           Expanded(
             child: Text(

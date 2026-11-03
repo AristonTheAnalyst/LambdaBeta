@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
@@ -113,7 +114,7 @@ class _GoalRow extends StatelessWidget {
       child: Row(
         children: [
           Icon(
-            g.achieved ? Icons.check_circle_outline : Icons.circle_outlined,
+            g.achieved ? LucideIcons.circleCheck : LucideIcons.circle,
             size: 16,
             color: g.achieved ? AppColors.success : AppColors.muted,
           ),

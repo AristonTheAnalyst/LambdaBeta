@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
@@ -13,7 +14,7 @@ import '../../../shared/widgets/slide_up_modal.dart';
 /// The grant is one switch that opens a defined, one-way door: read the
 /// athlete's completed training and library, add new rows, and touch only
 /// what the coach themselves created. This sheet states both halves before
-/// the grant and stays reachable from the coaching screen afterwards.
+/// the grant and stays reachable from the friend's profile afterwards (2026-10-30).
 ///
 /// With [accepting] true it is the accept step's confirmation and returns
 /// `true` for Accept, `false` for anything else.
@@ -75,7 +76,7 @@ class _CoachPermissionsSheet extends StatelessWidget {
                     ),
                   ),
                   HeaderIconButton(
-                    icon: Icons.close,
+                    icon: LucideIcons.x,
                     semanticsLabel: 'Close',
                     onPressed: () => Navigator.of(context).pop(false),
                   ),
@@ -195,8 +196,8 @@ class _CoachPermissionsSheet extends StatelessWidget {
       children: [
         Icon(
           allowed
-              ? Icons.check_circle_outline
-              : Icons.remove_circle_outline,
+              ? LucideIcons.circleCheck
+              : LucideIcons.circleMinus,
           size: 16,
           color: allowed ? AppColors.success : AppColors.danger,
         ),

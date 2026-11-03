@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
@@ -96,7 +97,7 @@ class _CoachActivitySheetState extends State<_CoachActivitySheet> {
                     ),
                   ),
                   HeaderIconButton(
-                    icon: Icons.close,
+                    icon: LucideIcons.x,
                     semanticsLabel: 'Close',
                     onPressed: () => Navigator.of(context).pop(),
                   ),
@@ -180,17 +181,17 @@ class _CoachActivitySheetState extends State<_CoachActivitySheet> {
   Widget _row(CoachActivityEntry e) {
     final (icon, color, verb) = switch (e.kind) {
       CoachActivityKind.added => (
-        Icons.add_circle_outline,
+        LucideIcons.circlePlus,
         AppColors.success,
         'Added',
       ),
       CoachActivityKind.edited => (
-        Icons.edit_outlined,
+        LucideIcons.pencil,
         AppColors.primary,
         'Edited',
       ),
       CoachActivityKind.renamed => (
-        Icons.history,
+        LucideIcons.history,
         AppColors.primary,
         'Renamed',
       ),

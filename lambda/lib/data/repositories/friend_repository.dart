@@ -121,13 +121,28 @@ class FriendRepository {
   /// Outgoing rows only — the stream sends no other kind — ordered by the
   /// name the row DRAWS (nickname, else the friend's name, else their code),
   /// then by when they were added.
+  ///
+  /// The two `coaching_relationship` joins are the row's pill (2026-10-30):
+  /// an ACCEPTED edge in either direction, pending ones draw nothing.
   Stream<List<Friend>> watchFriends(String userId) => ps.db
       .watch(
         'SELECT fr.friend_user_id, fr.created_date, fr.nickname, '
-        'fr.share_notes, u.user_name, u.user_lastname, c.friend_code '
+        'fr.share_notes, u.user_name, u.user_lastname, c.friend_code, '
+        'CASE WHEN cm.coach_user_id IS NOT NULL THEN 1 ELSE 0 END '
+        '  AS coaches_me, '
+        'CASE WHEN ci.coach_user_id IS NOT NULL THEN 1 ELSE 0 END '
+        '  AS i_coach '
         'FROM friend_relationship fr '
         'LEFT JOIN dim_user u ON u.user_id = fr.friend_user_id '
         'LEFT JOIN dim_friend_code c ON c.user_id = fr.friend_user_id '
+        'LEFT JOIN coaching_relationship cm '
+        '  ON cm.coach_user_id = fr.friend_user_id '
+        ' AND cm.athlete_user_id = fr.user_id '
+        ' AND cm.accepted_date IS NOT NULL '
+        'LEFT JOIN coaching_relationship ci '
+        '  ON ci.coach_user_id = fr.user_id '
+        ' AND ci.athlete_user_id = fr.friend_user_id '
+        ' AND ci.accepted_date IS NOT NULL '
         'WHERE fr.user_id = ? '
         'ORDER BY COALESCE('
         "NULLIF(TRIM(fr.nickname), ''), "

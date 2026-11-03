@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lambda/core/styles/app_colors.dart';
 import 'package:lambda/features/session/view/ratings_sheet.dart';
+import 'package:lambda/shared/widgets/feeling_rating.dart';
 import 'package:lambda/shared/widgets/lambda_input.dart';
 import 'package:lambda/shared/widgets/lambda_readout.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'support/readable_text.dart';
 
@@ -17,6 +19,13 @@ import 'support/readable_text.dart';
 /// [showSessionRatingsSheet]'s `onEditingChanged` and grows the sheet's own
 /// pencil, left of the X (2026-10-27): the toggle flips the sections in place
 /// and drives the caller's mode.
+
+/// The rating stars are drawn, not fonted (2026-10-31), so the tests count
+/// the widget — filled and empty are the two states a rating must tell
+/// apart.
+Finder _stars({required bool filled}) => find.byWidgetPredicate(
+  (w) => w is RatingStar && w.filled == filled,
+);
 
 Finder _inPre(Finder matching) => find.descendant(
   of: find.byKey(const ValueKey('session-ratings-pre')),
@@ -98,8 +107,8 @@ void main() {
     // The stored notes and ratings arrive in their own sections.
     expect(_inPre(find.text('Slept well')), findsOneWidget);
     expect(_inPost(find.text('Rushed the last set')), findsOneWidget);
-    expect(_inPre(find.byIcon(Icons.star_rounded)), findsNWidgets(4));
-    expect(_inPost(find.byIcon(Icons.star_rounded)), findsNWidgets(3));
+    expect(_inPre(_stars(filled: true)), findsNWidgets(4));
+    expect(_inPost(_stars(filled: true)), findsNWidgets(3));
 
     // Editable while the session runs.
     expect(find.byType(LambdaInput), findsNWidgets(2));
@@ -115,7 +124,7 @@ void main() {
     await _pumpSheet(tester, preTaps: preTaps, preTyped: preTyped);
 
     // Nothing rated yet: five empty stars in the pre section.
-    final stars = _inPre(find.byIcon(Icons.star_border_rounded));
+    final stars = _inPre(_stars(filled: false));
     expect(stars, findsNWidgets(5));
 
     // The callback carries the tapped number — the VM's setter owns the
@@ -123,7 +132,7 @@ void main() {
     await tester.tap(stars.at(2));
     await tester.pumpAndSettle();
     expect(preTaps, [3]);
-    expect(_inPre(find.byIcon(Icons.star_rounded)), findsNWidgets(3));
+    expect(_inPre(_stars(filled: true)), findsNWidgets(3));
 
     await tester.enterText(_inPre(find.byType(LambdaInput)), 'Felt strong');
     await tester.pumpAndSettle();
@@ -190,7 +199,7 @@ void main() {
     Icon pencilIcon() => tester.widget<Icon>(
       find.descendant(
         of: _editButton(),
-        matching: find.byIcon(Icons.edit_outlined),
+        matching: find.byIcon(LucideIcons.pencil),
       ),
     );
 
@@ -220,7 +229,7 @@ void main() {
 
     // Editable for real: a star tap and a keystroke reach the caller. Two
     // stars are lit, so the first empty one is the third.
-    await tester.tap(_inPre(find.byIcon(Icons.star_border_rounded)).at(0));
+    await tester.tap(_inPre(_stars(filled: false)).at(0));
     await tester.pumpAndSettle();
     expect(preTaps, [3]);
     await tester.enterText(_inPre(find.byType(LambdaInput)), 'Felt strong');
@@ -256,7 +265,7 @@ void main() {
 
     final before = preTaps.length;
     await tester.tap(
-      _inPre(find.byIcon(Icons.star_border_rounded)).at(0),
+      _inPre(_stars(filled: false)).at(0),
       warnIfMissed: false,
     );
     await tester.pumpAndSettle();

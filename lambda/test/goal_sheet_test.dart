@@ -9,6 +9,7 @@ import 'package:lambda/features/goals/view/goal_sheet.dart';
 import 'package:lambda/shared/widgets/exercise_target_picker.dart';
 import 'package:lambda/shared/widgets/glass_button.dart';
 import 'package:lambda/shared/widgets/lambda_input.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'support/readable_text.dart';
 
@@ -178,7 +179,7 @@ void main() {
     matching: find.byType(TextField),
   );
   final saveButton = find.widgetWithText(GlassButton, 'SAVE');
-  final editButton = find.widgetWithIcon(GlassButton, Icons.edit_outlined);
+  final editButton = find.widgetWithIcon(GlassButton, LucideIcons.pencil);
 
   testWidgets(
     'rests on the stored goal — the whole form, none of it enterable',
@@ -289,12 +290,12 @@ void main() {
   ) async {
     await openSheet(tester, goal: goal(description: 'Beltless'));
 
-    await tester.tap(find.byIcon(Icons.edit_outlined));
+    await tester.tap(find.byIcon(LucideIcons.pencil));
     await tester.pumpAndSettle();
 
     // The mode changed, not the form: the same cells, now enterable — and
     // SAVE is still quiet, because nothing has been said yet.
-    expect(find.byIcon(Icons.edit_outlined), findsNothing);
+    expect(find.byIcon(LucideIcons.pencil), findsNothing);
     expect(field(tester, 'goal-reps').readOnly, isFalse);
     expect(field(tester, 'goal-kg').readOnly, isFalse);
     expect(
@@ -334,7 +335,7 @@ void main() {
       goal: goal(description: 'Beltless', targetDate: DateTime(2026, 11, 1)),
     );
 
-    await tester.tap(find.byIcon(Icons.edit_outlined));
+    await tester.tap(find.byIcon(LucideIcons.pencil));
     await tester.pumpAndSettle();
     await tester.enterText(find.byKey(const ValueKey('goal-kg')), '105');
     await tester.pumpAndSettle();
@@ -351,7 +352,7 @@ void main() {
 
     // Back to rest: Edit returns, SAVE goes quiet, and the boxes show the row
     // as stored — the save left a reading, not a form still standing.
-    expect(find.byIcon(Icons.edit_outlined), findsOneWidget);
+    expect(find.byIcon(LucideIcons.pencil), findsOneWidget);
     expect(tester.widget<GlassButton>(saveButton).disabled, isTrue);
     expect(field(tester, 'goal-kg').controller!.text, '105');
     expect(field(tester, 'goal-kg').readOnly, isTrue);
@@ -397,7 +398,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Target date changes'), findsNothing);
 
-    await tester.tap(find.byIcon(Icons.edit_outlined));
+    await tester.tap(find.byIcon(LucideIcons.pencil));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('goal-target-date-clear')));
     await tester.pumpAndSettle();
@@ -548,7 +549,7 @@ void main() {
     tester,
   ) async {
     final writes = await openSheet(tester, goal: goal(), failWrite: true);
-    await tester.tap(find.byIcon(Icons.edit_outlined));
+    await tester.tap(find.byIcon(LucideIcons.pencil));
     await tester.pumpAndSettle();
 
     await tester.enterText(notesField, 'Slow off the chest');
@@ -559,7 +560,7 @@ void main() {
     expect(writes, hasLength(1));
     expect(find.text('Could not save the goal.'), findsOneWidget);
     expect(
-      find.byIcon(Icons.edit_outlined),
+      find.byIcon(LucideIcons.pencil),
       findsNothing,
       reason: 'a failure leaves the form unlocked — the edit is still in hand',
     );

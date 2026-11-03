@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
@@ -199,7 +200,7 @@ class _SessionRatingsSheetState extends State<_SessionRatingsSheet> {
                     GlassButton(
                       key: const ValueKey('session-ratings-edit'),
                       label: '',
-                      icon: Icons.edit_outlined,
+                      icon: LucideIcons.pencil,
                       semanticsLabel: _editing
                           ? 'Stop editing ratings'
                           : 'Edit ratings',
@@ -212,7 +213,7 @@ class _SessionRatingsSheetState extends State<_SessionRatingsSheet> {
                   GlassButton(
                     key: const ValueKey('session-ratings-close'),
                     label: '',
-                    icon: Icons.close,
+                    icon: LucideIcons.x,
                     semanticsLabel: 'Close ratings',
                     compact: true,
                     onPressed: () => Navigator.of(context).pop(),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
 import '../../../core/styles/app_radius.dart';
@@ -454,7 +455,7 @@ class _ProgramBlockEditorScreenState extends State<ProgramBlockEditorScreen>
                 PageHeader(
                   title: _isNew ? 'New Block' : widget.block!.name,
                   left: HeaderIconButton(
-                    icon: Icons.arrow_back_ios_new,
+                    icon: LucideIcons.chevronLeft,
                     semanticsLabel: 'Back',
                     glyphSize: 18,
                     color: AppColors.primary,
@@ -466,13 +467,13 @@ class _ProgramBlockEditorScreenState extends State<ProgramBlockEditorScreen>
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             HeaderIconButton(
-                              icon: Icons.history,
+                              icon: LucideIcons.history,
                               semanticsLabel: "This block's history",
                               color: AppColors.accent,
                               onPressed: _openHistory,
                             ),
                             HeaderIconButton(
-                              icon: Icons.delete_outline,
+                              icon: LucideIcons.trash2,
                               semanticsLabel: 'Archive block',
                               color: AppColors.danger,
                               onPressed: _confirmArchive,
@@ -646,7 +647,7 @@ class _ProgramBlockEditorScreenState extends State<ProgramBlockEditorScreen>
                         if (_isNew || hasUnsavedChanges)
                           GlassButton(
                             label: _saving ? 'Saving…' : 'Save',
-                            icon: Icons.check,
+                            icon: LucideIcons.check,
                             onPressed: _saveAndClose,
                           ),
                         const SizedBox(height: AppSpacing.xl),
@@ -669,7 +670,7 @@ class _ProgramBlockEditorScreenState extends State<ProgramBlockEditorScreen>
                             if (!_isNew)
                               GlassButton(
                                 label: '',
-                                icon: Icons.add,
+                                icon: LucideIcons.plus,
                                 semanticsLabel: 'Add workout',
                                 compact: true,
                                 onPressed: _openAddMenu,
@@ -720,7 +721,7 @@ class _ProgramBlockEditorScreenState extends State<ProgramBlockEditorScreen>
                                   onTap: () => _openEditWorkout(_workouts[i]),
                                   swipeActions: [
                                     SwipeAction(
-                                      icon: Icons.copy_rounded,
+                                      icon: LucideIcons.copy,
 
                                       color: AppColors.accent,
                                       foreground: AppColors.accentText,
@@ -728,7 +729,7 @@ class _ProgramBlockEditorScreenState extends State<ProgramBlockEditorScreen>
                                           _duplicateWorkout(_workouts[i]),
                                     ),
                                     SwipeAction(
-                                      icon: Icons.remove_circle_outline,
+                                      icon: LucideIcons.circleMinus,
 
                                       color: AppColors.danger,
                                       foreground: AppColors.dangerText,
@@ -787,7 +788,7 @@ class _ProgramBlockEditorScreenState extends State<ProgramBlockEditorScreen>
               ),
             ),
             ListTile(
-              leading: Icon(Icons.add, color: AppColors.accent),
+              leading: Icon(LucideIcons.plus, color: AppColors.accent),
               title: Text(
                 'New workout',
                 style: AppFonts.ui(
@@ -799,7 +800,7 @@ class _ProgramBlockEditorScreenState extends State<ProgramBlockEditorScreen>
             ),
             ListTile(
               leading: Icon(
-                Icons.library_add_outlined,
+                LucideIcons.libraryBig,
                 color: AppColors.accent,
               ),
               title: Text(
@@ -813,7 +814,7 @@ class _ProgramBlockEditorScreenState extends State<ProgramBlockEditorScreen>
             ),
             ListTile(
               leading: Icon(
-                Icons.drive_file_move_outline,
+                LucideIcons.folderInput,
                 color: AppColors.accent,
               ),
               title: Text(
@@ -1043,7 +1044,7 @@ class _DateField extends StatelessWidget {
                     GestureDetector(
                       onTap: onClear,
                       child: Icon(
-                        Icons.close,
+                        LucideIcons.x,
                         size: 16,
                         color: AppColors.muted,
                       ),

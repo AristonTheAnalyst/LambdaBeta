@@ -4,6 +4,7 @@ import 'package:lambda/core/theme/lambda_theme.dart';
 import 'package:lambda/features/profile/view/appearance_screen.dart';
 import 'package:lambda/features/profile/view/profile_hub_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'support/readable_text.dart';
 
@@ -73,7 +74,7 @@ void main() {
       expect(
         find.descendant(
           of: _option(variant),
-          matching: find.byIcon(Icons.check),
+          matching: find.byIcon(LucideIcons.check),
         ),
         variant == LambdaThemeVariant.primary ? findsOneWidget : findsNothing,
         reason: variant.name,
@@ -96,14 +97,14 @@ void main() {
     expect(
       find.descendant(
         of: _option(LambdaThemeVariant.ruby),
-        matching: find.byIcon(Icons.check),
+        matching: find.byIcon(LucideIcons.check),
       ),
       findsOneWidget,
     );
     expect(
       find.descendant(
         of: _option(LambdaThemeVariant.primary),
-        matching: find.byIcon(Icons.check),
+        matching: find.byIcon(LucideIcons.check),
       ),
       findsNothing,
     );
@@ -160,7 +161,7 @@ void main() {
 
     expect(find.text('User Profile'), findsOneWidget);
     expect(find.text('Appearance'), findsOneWidget);
-    expect(find.byIcon(Icons.palette_outlined), findsOneWidget);
+    expect(find.byIcon(LucideIcons.palette), findsOneWidget);
     expectReadableText(tester, find.byType(ProfileHubScreen));
   });
 

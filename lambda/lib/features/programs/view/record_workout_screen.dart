@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
@@ -195,7 +196,7 @@ class _RecordWorkoutScreenState extends State<RecordWorkoutScreen> {
             PageHeader(
               title: widget.name,
               left: HeaderIconButton(
-                icon: Icons.arrow_back_ios_new,
+                icon: LucideIcons.chevronLeft,
                 semanticsLabel: 'Back',
                 glyphSize: 18,
                 color: AppColors.primary,
@@ -268,7 +269,7 @@ class _RecordWorkoutScreenState extends State<RecordWorkoutScreen> {
               const SizedBox(width: AppSpacing.sm),
               BarIconButton(
                 key: const ValueKey('record-ratings-button'),
-                icon: Icons.star_rounded,
+                icon: LucideIcons.star,
                 semanticsLabel: 'Session ratings',
                 onPressed: () {},
                 enabled: false,
@@ -670,7 +671,7 @@ class _ReviewVersionBar extends StatelessWidget {
         children: [
           SessionChevronButton(
             key: const ValueKey('record-version-bar-older'),
-            icon: Icons.chevron_left,
+            icon: LucideIcons.chevronLeft,
             semanticsLabel: 'Older version',
             enabled: onOlder != null,
             onPressed: onOlder ?? () {},
@@ -680,7 +681,7 @@ class _ReviewVersionBar extends StatelessWidget {
           const SizedBox(width: AppSpacing.xs),
           SessionChevronButton(
             key: const ValueKey('record-version-bar-newer'),
-            icon: Icons.chevron_right,
+            icon: LucideIcons.chevronRight,
             semanticsLabel: 'Newer version',
             enabled: onNewer != null,
             onPressed: onNewer ?? () {},

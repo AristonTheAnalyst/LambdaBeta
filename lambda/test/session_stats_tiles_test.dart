@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lambda/core/styles/app_colors.dart';
 import 'package:lambda/features/session/view/session_stats_bar.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 /// The session bar's three doors (2026-10-22, reworked 2026-10-27): the
 /// trophy, the goals bullseye and the note — **glyphs alone**, none of them
@@ -82,17 +83,17 @@ void main() {
     );
 
     expect(
-      _inTile('session-prs-tile', find.byIcon(Icons.emoji_events)),
+      _inTile('session-prs-tile', find.byIcon(LucideIcons.trophy)),
       findsOneWidget,
     );
     expect(
-      _inTile('session-goals-button', find.byIcon(Icons.track_changes)),
+      _inTile('session-goals-button', find.byIcon(LucideIcons.target)),
       findsOneWidget,
     );
     expect(
       _inTile(
         'session-notes-tile',
-        find.byIcon(Icons.sticky_note_2_outlined),
+        find.byIcon(LucideIcons.stickyNote),
       ),
       findsOneWidget,
     );

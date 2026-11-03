@@ -331,6 +331,12 @@ const schema = Schema([
     // unaccepted row and grants nothing: the coaching_data stream requires
     // it, and #22's accept flow is what sets it.
     Column.text('accepted_date'),
+    // Who asked (2026-10-30, 20261030120000_coaching_requests.sql): the
+    // caller's own id when they sent the request or offer; the coach's on
+    // rows that predate the column. A pending row's SHAPE cannot tell "I
+    // asked them" from "they asked me" — this column is that answer, and it
+    // decides which side may accept.
+    Column.text('requested_by_user_id'),
   ]),
   // A coach assigning one of their workouts to an accepted athlete
   // (2026-10-26, #24). The row carries the workout as a frozen ProgramContent

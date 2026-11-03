@@ -17,6 +17,8 @@ class Friend {
     this.friendCode,
     this.createdDate,
     this.shareNotes = false,
+    this.coachesMe = false,
+    this.iCoachThem = false,
   });
 
   final String userId;
@@ -41,6 +43,22 @@ class Friend {
   /// When the caller added this friend — the list's tiebreaker under the
   /// name.
   final DateTime? createdDate;
+
+  /// Whether this friend is the caller's accepted coach (2026-10-30) — the
+  /// coaching edge lives on `coaching_relationship`, and the list's watch
+  /// joins it in. Only an ACCEPTED edge counts; a pending ask has no pill.
+  final bool coachesMe;
+
+  /// Whether the caller is this friend's accepted coach.
+  final bool iCoachThem;
+
+  /// The pill the row draws: coach, client, or none when the friendship
+  /// carries no accepted coaching edge.
+  FriendCoachingRole? get coachingRole {
+    if (coachesMe) return FriendCoachingRole.coach;
+    if (iCoachThem) return FriendCoachingRole.client;
+    return null;
+  }
 
   /// What the row reads when no nickname is set: the friend's own name, else
   /// their code (the shareable handle), else `Friend` while both are on their
@@ -78,6 +96,8 @@ class Friend {
     // The mirror has no boolean type: 1 = sharing, 0 (or a row that predates
     // the column) = numbers only.
     shareNotes: (map['share_notes'] as int? ?? 0) != 0,
+    coachesMe: (map['coaches_me'] as int? ?? 0) != 0,
+    iCoachThem: (map['i_coach'] as int? ?? 0) != 0,
   );
 
   Map<String, dynamic> toMap() => {
@@ -88,5 +108,17 @@ class Friend {
     'friend_code': friendCode,
     'created_date': createdDate?.toIso8601String(),
     'share_notes': shareNotes ? 1 : 0,
+    'coaches_me': coachesMe ? 1 : 0,
+    'i_coach': iCoachThem ? 1 : 0,
   };
+}
+
+/// Which side of a coaching edge a friend is on (2026-10-30), as the row's
+/// pill reads it.
+enum FriendCoachingRole {
+  /// They are the caller's coach.
+  coach,
+
+  /// The caller is their coach.
+  client,
 }

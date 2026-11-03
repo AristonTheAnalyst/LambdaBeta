@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lambda/shared/widgets/dropdown_select.dart';
 import 'package:lambda/shared/widgets/session_set_row.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 /// The duplicate gesture end-to-end at the row level (2026-10-13): swipe the
 /// row, tap the copy icon, and the caller receives the on-screen values —
@@ -89,7 +90,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      find.byIcon(Icons.copy_rounded),
+      find.byIcon(LucideIcons.copy),
       findsOneWidget,
       reason: 'the icon-only drawer shows the duplicate action',
     );
@@ -99,7 +100,7 @@ void main() {
       reason: 'labels are gone from swipe actions',
     );
 
-    await tester.tap(find.byIcon(Icons.copy_rounded));
+    await tester.tap(find.byIcon(LucideIcons.copy));
     await tester.pumpAndSettle();
 
     expect(
@@ -140,7 +141,7 @@ void main() {
       const Offset(-400, 0),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.byIcon(Icons.copy_rounded));
+    await tester.tap(find.byIcon(LucideIcons.copy));
     await tester.pumpAndSettle();
 
     expect(

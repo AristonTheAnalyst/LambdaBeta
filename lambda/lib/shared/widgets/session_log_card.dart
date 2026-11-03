@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_fonts.dart';
 import '../../core/styles/app_radius.dart';
@@ -97,7 +98,7 @@ class SessionLogCard extends StatelessWidget {
           : SwipeActions(
               actions: [
                 SwipeAction(
-                  icon: Icons.delete_outline,
+                  icon: LucideIcons.trash2,
 
                   color: AppColors.danger,
                   foreground: AppColors.dangerText,
@@ -282,7 +283,7 @@ class SessionLogCard extends StatelessWidget {
             if ((prsByExercise?[exId] ?? 0) > 0) ...[
               const SizedBox(width: AppSpacing.sm),
               Icon(
-                Icons.emoji_events_outlined,
+                LucideIcons.trophy,
                 size: 14,
                 color: AppColors.accent,
               ),

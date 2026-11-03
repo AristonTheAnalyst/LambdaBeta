@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:go_router/go_router.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_text_styles.dart';
 import '../../../core/utils/validators.dart';
@@ -103,7 +104,7 @@ class _SignupScreenState extends State<SignupScreen> {
                     child: // The header's own control: one glyph, its word kept as the
                         // tooltip and the screen-reader label (2026-10-20).
                         HeaderIconButton(
-                          icon: Icons.arrow_back_ios_new,
+                          icon: LucideIcons.chevronLeft,
                           semanticsLabel: 'Back',
                           glyphSize: 18,
                           onPressed: () => context.pop(),

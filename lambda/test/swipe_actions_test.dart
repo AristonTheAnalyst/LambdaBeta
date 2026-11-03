@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lambda/core/styles/app_colors.dart';
 import 'package:lambda/shared/widgets/swipe_actions.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 /// The swipe drawer the whole app uses (2026-10-23).
 ///
@@ -60,9 +61,9 @@ void main() {
     await tester.pumpWidget(
       harness(
         actions: [
-          action(Icons.copy_rounded, AppColors.accent, AppColors.accentText),
-          action(Icons.sticky_note_2_outlined, AppColors.primary, AppColors.bg),
-          action(Icons.delete_outline, AppColors.danger, AppColors.dangerText),
+          action(LucideIcons.copy, AppColors.accent, AppColors.accentText),
+          action(LucideIcons.stickyNote, AppColors.primary, AppColors.bg),
+          action(LucideIcons.trash2, AppColors.danger, AppColors.dangerText),
         ],
       ),
     );
@@ -71,9 +72,9 @@ void main() {
     // Closed: every circle is at zero, and nothing anywhere in the drawer
     // fades — the arrival is scale and only scale.
     for (final icon in [
-      Icons.copy_rounded,
-      Icons.sticky_note_2_outlined,
-      Icons.delete_outline,
+      LucideIcons.copy,
+      LucideIcons.stickyNote,
+      LucideIcons.trash2,
     ]) {
       expect(
         find.ancestor(of: find.byIcon(icon), matching: find.byType(Opacity)),
@@ -89,7 +90,7 @@ void main() {
                 .widget<Container>(
                   find
                       .ancestor(
-                        of: find.byIcon(Icons.delete_outline),
+                        of: find.byIcon(LucideIcons.trash2),
                         matching: find.byType(Container),
                       )
                       .first,
@@ -99,7 +100,7 @@ void main() {
     expect(disc.shape, BoxShape.circle);
     expect(disc.color, AppColors.danger);
     expect(
-      tester.widget<Icon>(find.byIcon(Icons.delete_outline)).color,
+      tester.widget<Icon>(find.byIcon(LucideIcons.trash2)).color,
       AppColors.dangerText,
     );
 
@@ -109,7 +110,7 @@ void main() {
       tester.getSize(
         find
             .ancestor(
-              of: find.byIcon(Icons.delete_outline),
+              of: find.byIcon(LucideIcons.trash2),
               matching: find.byType(Container),
             )
             .first,
@@ -124,30 +125,30 @@ void main() {
     );
     await gesture.moveBy(const Offset(-52, 0));
     await tester.pump();
-    expect(scaleOf(tester, Icons.delete_outline), greaterThan(0.9));
-    expect(scaleOf(tester, Icons.sticky_note_2_outlined), 0);
-    expect(scaleOf(tester, Icons.copy_rounded), 0);
+    expect(scaleOf(tester, LucideIcons.trash2), greaterThan(0.9));
+    expect(scaleOf(tester, LucideIcons.stickyNote), 0);
+    expect(scaleOf(tester, LucideIcons.copy), 0);
 
     // Second slot-width: the note circle's turn, copy still waiting.
     await gesture.moveBy(const Offset(-52, 0));
     await tester.pump();
-    expect(scaleOf(tester, Icons.sticky_note_2_outlined), greaterThan(0.9));
-    expect(scaleOf(tester, Icons.copy_rounded), 0);
+    expect(scaleOf(tester, LucideIcons.stickyNote), greaterThan(0.9));
+    expect(scaleOf(tester, LucideIcons.copy), 0);
 
     // Third: copy lands, all three seated in list order.
     await gesture.moveBy(const Offset(-52, 0));
     await tester.pump();
-    expect(scaleOf(tester, Icons.copy_rounded), greaterThan(0.9));
+    expect(scaleOf(tester, LucideIcons.copy), greaterThan(0.9));
     await gesture.up();
     await tester.pumpAndSettle();
 
     // Fully open: one 52pt slot between neighbouring circle centres, which
     // leaves 12 between 40 discs — one cluster, not three separate controls.
-    final copyX = tester.getCenter(find.byIcon(Icons.copy_rounded)).dx;
+    final copyX = tester.getCenter(find.byIcon(LucideIcons.copy)).dx;
     final noteX = tester
-        .getCenter(find.byIcon(Icons.sticky_note_2_outlined))
+        .getCenter(find.byIcon(LucideIcons.stickyNote))
         .dx;
-    final deleteX = tester.getCenter(find.byIcon(Icons.delete_outline)).dx;
+    final deleteX = tester.getCenter(find.byIcon(LucideIcons.trash2)).dx;
     expect(noteX - copyX, 52);
     expect(deleteX - noteX, 52);
   });
@@ -170,9 +171,9 @@ void main() {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                row('row-a', Icons.delete_outline),
+                row('row-a', LucideIcons.trash2),
                 const SizedBox(height: 12),
-                row('row-b', Icons.flag),
+                row('row-b', LucideIcons.flag),
               ],
             ),
           ),
@@ -188,7 +189,7 @@ void main() {
     await tester.pump();
     await gesture.up();
     await tester.pumpAndSettle();
-    expect(scaleOf(tester, Icons.delete_outline), 1);
+    expect(scaleOf(tester, LucideIcons.trash2), 1);
 
     // Swiping the second row hands the stage over: the first goes back —
     // one drawer on screen at a time, without the screens wiring anything.
@@ -199,8 +200,8 @@ void main() {
     await tester.pump();
     await gesture.up();
     await tester.pumpAndSettle();
-    expect(scaleOf(tester, Icons.flag), 1);
-    expect(scaleOf(tester, Icons.delete_outline), 0);
+    expect(scaleOf(tester, LucideIcons.flag), 1);
+    expect(scaleOf(tester, LucideIcons.trash2), 0);
   });
 
   testWidgets('a tap anywhere but the action circles puts the row back', (
@@ -209,7 +210,7 @@ void main() {
     await tester.pumpWidget(
       harness(
         actions: [
-          action(Icons.delete_outline, AppColors.danger, AppColors.dangerText),
+          action(LucideIcons.trash2, AppColors.danger, AppColors.dangerText),
         ],
       ),
     );
@@ -221,13 +222,13 @@ void main() {
     await tester.pump();
     await gesture.up();
     await tester.pumpAndSettle();
-    expect(scaleOf(tester, Icons.delete_outline), 1);
+    expect(scaleOf(tester, LucideIcons.trash2), 1);
 
     // A tap on the page, away from the row — the drawer was open and the
     // release travelled nowhere, so it counts as a tap and the row goes back.
     await tester.tapAt(const Offset(20, 20));
     await tester.pumpAndSettle();
-    expect(scaleOf(tester, Icons.delete_outline), 0);
+    expect(scaleOf(tester, LucideIcons.trash2), 0);
   });
 
   testWidgets('tapping an action fires it and puts the row back', (
@@ -238,7 +239,7 @@ void main() {
       harness(
         actions: [
           SwipeAction(
-            icon: Icons.delete_outline,
+            icon: LucideIcons.trash2,
             color: AppColors.danger,
             foreground: AppColors.dangerText,
             onTap: () => fired++,
@@ -254,13 +255,13 @@ void main() {
     await tester.pump();
     await gesture.up();
     await tester.pumpAndSettle();
-    expect(scaleOf(tester, Icons.delete_outline), 1);
+    expect(scaleOf(tester, LucideIcons.trash2), 1);
 
-    await tester.tap(find.byIcon(Icons.delete_outline));
+    await tester.tap(find.byIcon(LucideIcons.trash2));
     await tester.pumpAndSettle();
     expect(fired, 1);
     expect(
-      scaleOf(tester, Icons.delete_outline),
+      scaleOf(tester, LucideIcons.trash2),
       0,
       reason: 'the action was taken — the row it belonged to goes back',
     );

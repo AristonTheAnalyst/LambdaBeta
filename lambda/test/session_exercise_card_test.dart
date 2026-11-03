@@ -8,6 +8,7 @@ import 'package:lambda/shared/widgets/lambda_input.dart';
 import 'package:lambda/shared/widgets/lambda_readout.dart';
 import 'package:lambda/shared/widgets/session_exercise_card.dart';
 import 'package:lambda/shared/widgets/session_set_row.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'support/readable_text.dart';
 
@@ -262,7 +263,7 @@ void main() {
 
     // One note glyph on the card — the bar and the Notes pill both wear the
     // set row's sticky note, never a pin (2026-10-23).
-    expect(find.byIcon(Icons.sticky_note_2_outlined), findsNWidgets(2));
+    expect(find.byIcon(LucideIcons.stickyNote), findsNWidgets(2));
 
     // The bar holds one ellipsized line, so a tap reads before it navigates:
     // the complete message, in a popup, with no sheet opened behind it.

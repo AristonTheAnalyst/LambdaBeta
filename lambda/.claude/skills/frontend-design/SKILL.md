@@ -297,7 +297,8 @@ sticky-note icon) — the note indicator, not a color.
     pointer up), so it blinks the keyboard when the user moves between
     adjacent cells.
   - **Read vs edit is one box (2026-10-28).** The study under Dev → Visual
-    Pairings (`/dev/visual-pairings`) picked **C · Hollow** and it shipped
+    Pairings lab (`/dev/visual-pairings`, deleted 2026-10-31) picked **C ·
+    Hollow** and it shipped
     the same day: a control's mode is its **fill** — filled = it takes
     input, hollow = it only reads — and the edge never moves. `LambdaReadout`
     is `LambdaInput` hollowed (one geometry, so a toggle moves no words, not
@@ -458,9 +459,9 @@ note at `AppTextStyles.body` / height 1.35 inside a
 dismisses the reader and opens the sheet. Close, the barrier and the back
 gesture only read; a surface with no sheet behind it still shows the
 reader and withholds only that door. The bar's marker glyph is the set
-row's own `Icons.sticky_note_2_outlined` — **one note glyph everywhere**
+row's own `LucideIcons.stickyNote` — **one note glyph everywhere**
 (the floor tile, the Notes pill, the pinned bar, the recap's EXERCISE
-NOTES label); the **pin** (`Icons.push_pin`, accent when pinned) survives
+NOTES label); the **pin** (`LucideIcons.pin`, accent when pinned) survives
 only inside the notes sheet, where it is a pin/unpin control, not a
 marker.
 

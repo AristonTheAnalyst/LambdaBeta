@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lambda/shared/widgets/dropdown_select.dart';
 import 'package:lambda/shared/widgets/session_exercise_card.dart';
 import 'package:lambda/shared/widgets/session_set_row.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 /// Holding a set number to move the row.
 ///
@@ -81,7 +82,7 @@ void main() {
     final transform = tester.widget<Transform>(
       find
           .ancestor(
-            of: find.byIcon(Icons.delete_outline).first,
+            of: find.byIcon(LucideIcons.trash2).first,
             matching: find.byType(Transform),
           )
           .first,

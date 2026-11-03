@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../../core/styles/app_colors.dart';
 import '../../../../core/styles/app_fonts.dart';
 import '../../../../core/styles/app_spacing.dart';
@@ -314,7 +315,7 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
                   ? null
                   : GlassButton(
                       label: '',
-                      icon: Icons.add,
+                      icon: LucideIcons.plus,
                       semanticsLabel: 'New workout',
                       compact: true,
                       onPressed: _create,
@@ -375,7 +376,7 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
                                 const SizedBox(width: AppSpacing.sm),
                                 GlassButton(
                                   label: '',
-                                  icon: Icons.add,
+                                  icon: LucideIcons.plus,
                                   semanticsLabel: 'New workout',
                                   onPressed: _create,
                                   compact: true,
@@ -383,7 +384,7 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
                                 const SizedBox(width: AppSpacing.sm),
                                 GlassButton(
                                   label: '',
-                                  icon: Icons.archive_outlined,
+                                  icon: LucideIcons.archive,
                                   semanticsLabel: 'Archived workouts',
                                   onPressed: _openArchived,
                                   compact: true,
@@ -441,20 +442,20 @@ class _WorkoutLibraryScreenState extends State<WorkoutLibraryScreen> {
                                       // receives it.
                                       if (widget.userId == null)
                                         SwipeAction(
-                                          icon: Icons.history,
+                                          icon: LucideIcons.history,
                                           color: AppColors.primary,
                                           foreground: AppColors.bg,
                                           onTap: () => _openNameHistory(w),
                                         ),
                                       SwipeAction(
-                                        icon: Icons.copy_rounded,
+                                        icon: LucideIcons.copy,
                                         color: AppColors.accent,
                                         foreground: AppColors.accentText,
                                         onTap: () => _duplicate(w),
                                       ),
                                       if (widget.canDelete)
                                         SwipeAction(
-                                          icon: Icons.delete_outline,
+                                          icon: LucideIcons.trash2,
                                           color: AppColors.danger,
                                           foreground: AppColors.dangerText,
                                           onTap: () => _delete(w),

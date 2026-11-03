@@ -2,20 +2,22 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lambda/core/styles/app_spacing.dart';
 import 'package:lambda/core/theme/lambda_theme.dart';
+import 'package:lambda/shared/widgets/floating_bar.dart';
 import 'package:lambda/shared/widgets/scroll_shrink_nav_bar.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 /// The scroll-driven half of [ScrollShrinkNavBar]. In tests the bottom safe
 /// area is zero, so the bar's painted height is exactly its box height.
 void main() {
   const items = [
     ScrollShrinkNavItem(
-      icon: Icons.home_outlined,
-      activeIcon: Icons.home,
+      icon: LucideIcons.house,
+      activeIcon: LucideIcons.house,
       label: 'Home',
     ),
     ScrollShrinkNavItem(
-      icon: Icons.search,
-      activeIcon: Icons.search,
+      icon: LucideIcons.search,
+      activeIcon: LucideIcons.search,
       label: 'Search',
     ),
   ];
@@ -65,6 +67,16 @@ void main() {
 
   double barHeight(WidgetTester tester) => barRect(tester).height;
 
+  /// The opacity layer the bar shrinks behind — full size is fully opaque,
+  /// and the far end rests at [ScrollShrinkNavBar.collapsedOpacity].
+  double barOpacity(WidgetTester tester) {
+    final layer = find.ancestor(
+      of: find.byType(FloatingBar),
+      matching: find.byType(Opacity),
+    );
+    return tester.widget<Opacity>(layer.first).opacity;
+  }
+
   /// A jump is what a real scroll produces, minus the gesture. The first jump
   /// only primes the direction — the bar needs two samples to see one.
   Future<void> scrollTo(
@@ -76,9 +88,23 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('starts at full size', (tester) async {
+  testWidgets('starts at full size, fully opaque', (tester) async {
     await pumpBar(tester);
     expect(barHeight(tester), ScrollShrinkNavBar.expandedHeight);
+    expect(barOpacity(tester), 1.0);
+  });
+
+  testWidgets('fades as it shrinks, to one fifth opacity at the far end', (
+    tester,
+  ) async {
+    final controller = await pumpBar(tester);
+
+    await scrollTo(tester, controller, 50);
+    await scrollTo(tester, controller, 400);
+
+    expect(barHeight(tester), ScrollShrinkNavBar.collapsedHeight);
+    expect(barOpacity(tester), ScrollShrinkNavBar.collapsedOpacity);
+    expect(ScrollShrinkNavBar.collapsedOpacity, 0.2);
   });
 
   testWidgets('shrinks when the page scrolls down', (tester) async {
@@ -145,7 +171,7 @@ void main() {
     int? tapped;
     await pumpBar(tester, onTap: (i) => tapped = i);
 
-    await tester.tap(find.byIcon(Icons.search));
+    await tester.tap(find.byIcon(LucideIcons.search));
     expect(tapped, 1);
   });
 
@@ -157,7 +183,7 @@ void main() {
     await pumpBar(tester);
     await tester.pumpAndSettle();
 
-    Color? selectedInk() => tester.widget<Icon>(find.byIcon(Icons.home)).color;
+    Color? selectedInk() => tester.widget<Icon>(find.byIcon(LucideIcons.house)).color;
 
     expect(selectedInk(), LambdaColors.dark.accent);
 

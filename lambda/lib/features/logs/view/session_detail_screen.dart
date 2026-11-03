@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
@@ -313,7 +314,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
                       // owner for both surfaces: [sessionTitle] (2026-10-23).
                       title: state.sessionTitle ?? 'Freestyle Session',
                       left: HeaderIconButton(
-                        icon: Icons.arrow_back_ios_new,
+                        icon: LucideIcons.chevronLeft,
                         semanticsLabel: 'Back',
                         glyphSize: 18,
                         color: AppColors.primary,
@@ -337,7 +338,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
                           // (golden rule 5): Done saves and leaves the mode,
                           // exactly like the live page's check.
                           ? HeaderIconButton(
-                              icon: Icons.check,
+                              icon: LucideIcons.check,
                               semanticsLabel: 'Done editing',
                               glyphSize: 22,
                               color: AppColors.success,
@@ -346,7 +347,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
                                   : () => _vm.saveNotes(),
                             )
                           : HeaderIconButton(
-                              icon: Icons.edit_outlined,
+                              icon: LucideIcons.pencil,
                               semanticsLabel: 'Edit session',
                               glyphSize: 20,
                               color: AppColors.primary,
@@ -610,7 +611,7 @@ class SessionDetailView extends StatelessWidget {
                 // feeling stars (2026-10-23). Neutral glass — the star stays
                 // white while the three score doors take the accent
                 // (2026-10-27).
-                icon: Icons.star_rounded,
+                icon: LucideIcons.star,
                 semanticsLabel: 'Session ratings',
                 onPressed: () => _openRatings(context),
               ),
@@ -1605,7 +1606,7 @@ class _CoachFeedbackSheetState extends State<_CoachFeedbackSheet> {
                 GlassButton(
                   key: const ValueKey('session-coach-feedback-close'),
                   label: '',
-                  icon: Icons.close,
+                  icon: LucideIcons.x,
                   semanticsLabel: 'Close feedback',
                   compact: true,
                   onPressed: () => Navigator.of(context).pop(),

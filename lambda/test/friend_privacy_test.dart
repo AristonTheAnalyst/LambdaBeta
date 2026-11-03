@@ -3,7 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lambda/data/models/friend.dart';
 import 'package:lambda/data/repositories/friend_repository.dart';
 import 'package:lambda/features/friends/view/friends_screen.dart';
-import 'package:lambda/features/friends/viewmodel/friends_viewmodel.dart';
+import 'package:lambda/features/friends/viewmodel/friend_profile_viewmodel.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 /// Per-friend privacy tiers (2026-10-26, #23): the flag rides the caller's own
 /// `friend_relationship` row, the sheet writes through the ViewModel, and the
@@ -63,126 +64,142 @@ void main() {
     });
   });
 
-  group('FriendsViewModel.setShareNotes', () {
+  group('FriendProfileViewModel.setShareNotes', () {
     test('hands the friend and the choice to the repository', () async {
       final repo = _FakeFriendRepository([_friend()]);
-      final vm = FriendsViewModel(repo: repo, userId: 'me');
+      final vm = FriendProfileViewModel(
+        me: 'me',
+        friendId: 'friend-1',
+        friendRepo: repo,
+      );
       addTearDown(vm.dispose);
-      vm.start();
-      await pumpEventQueue();
 
-      expect(await vm.setShareNotes(_friend(), true), isTrue);
+      expect(await vm.setShareNotes(true), isTrue);
       expect(repo.writes, [('friend-1', true)]);
     });
 
     test('a failed write answers false and records the sentence', () async {
       final repo = _FakeFriendRepository([_friend()], failWrites: true);
-      final vm = FriendsViewModel(repo: repo, userId: 'me');
+      final vm = FriendProfileViewModel(
+        me: 'me',
+        friendId: 'friend-1',
+        friendRepo: repo,
+      );
       addTearDown(vm.dispose);
-      vm.start();
-      await pumpEventQueue();
 
-      expect(await vm.setShareNotes(_friend(), true), isFalse);
+      expect(await vm.setShareNotes(true), isFalse);
       expect(vm.state.value.error, isNotNull);
     });
   });
 
   group('the per-friend privacy sheet', () {
-    Future<FriendsViewModel> pumpFriends(
+    Future<void> pumpSheet(
       WidgetTester tester,
-      _FakeFriendRepository repo,
-    ) async {
+      Friend friend, {
+      required Future<bool> Function(bool shareNotes) onShareNotes,
+      String? Function()? errorOf,
+    }) async {
       tester.view.physicalSize = const Size(1206, 2622);
       tester.view.devicePixelRatio = 3;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.reset);
 
-      final vm = FriendsViewModel(repo: repo, userId: 'me');
-      addTearDown(vm.dispose);
-      await tester.pumpWidget(MaterialApp(home: FriendsScreen(viewModel: vm)));
-      await tester.pumpAndSettle();
-      return vm;
-    }
-
-    Future<void> openSheet(WidgetTester tester) async {
-      await tester.drag(find.text('Jamie'), const Offset(-120, 0));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byIcon(Icons.visibility_outlined));
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => TextButton(
+                onPressed: () => showFriendPrivacySheet(
+                  context,
+                  friend: friend,
+                  onShareNotes: onShareNotes,
+                  errorOf: errorOf,
+                ),
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
     }
 
     testWidgets('draws both tiers, the notes one off by default', (
       tester,
     ) async {
-      await pumpFriends(tester, _FakeFriendRepository([_friend()]));
-      await openSheet(tester);
+      await pumpSheet(tester, _friend(), onShareNotes: (_) async => true);
 
       expect(find.text('Privacy'), findsOneWidget);
       expect(find.text('Training and sets'), findsOneWidget);
       expect(find.text('Exercise and session notes'), findsOneWidget);
       expect(
-        find.byIcon(Icons.check_circle),
+        find.byIcon(LucideIcons.circleCheck),
         findsOneWidget,
         reason: 'only the always-on tier is marked',
       );
     });
 
     testWidgets('the always-on tier cannot be turned off', (tester) async {
-      final repo = _FakeFriendRepository([_friend()]);
-      await pumpFriends(tester, repo);
-      await openSheet(tester);
+      final writes = <bool>[];
+      await pumpSheet(tester, _friend(), onShareNotes: (v) async {
+        writes.add(v);
+        return true;
+      });
 
       await tester.tap(find.text('Training and sets'));
       await tester.pumpAndSettle();
 
-      expect(repo.writes, isEmpty);
-      expect(find.byIcon(Icons.check_circle), findsOneWidget);
+      expect(writes, isEmpty);
+      expect(find.byIcon(LucideIcons.circleCheck), findsOneWidget);
     });
 
     testWidgets('tapping the notes tier writes, and writes back off', (
       tester,
     ) async {
-      final repo = _FakeFriendRepository([_friend()]);
-      await pumpFriends(tester, repo);
-      await openSheet(tester);
+      final writes = <bool>[];
+      await pumpSheet(tester, _friend(), onShareNotes: (v) async {
+        writes.add(v);
+        return true;
+      });
 
       await tester.tap(find.text('Exercise and session notes'));
       await tester.pumpAndSettle();
-      expect(repo.writes, [('friend-1', true)]);
-      expect(find.byIcon(Icons.check_circle), findsNWidgets(2));
+      expect(writes, [true]);
+      expect(find.byIcon(LucideIcons.circleCheck), findsNWidgets(2));
 
       await tester.tap(find.text('Exercise and session notes'));
       await tester.pumpAndSettle();
-      expect(repo.writes, [('friend-1', true), ('friend-1', false)]);
-      expect(find.byIcon(Icons.check_circle), findsOneWidget);
+      expect(writes, [true, false]);
+      expect(find.byIcon(LucideIcons.circleCheck), findsOneWidget);
     });
 
     testWidgets('a sheet opened on a sharing friend starts marked', (
       tester,
     ) async {
-      await pumpFriends(
+      await pumpSheet(
         tester,
-        _FakeFriendRepository([_friend(shareNotes: true)]),
+        _friend(shareNotes: true),
+        onShareNotes: (_) async => true,
       );
-      await openSheet(tester);
 
-      expect(find.byIcon(Icons.check_circle), findsNWidgets(2));
+      expect(find.byIcon(LucideIcons.circleCheck), findsNWidgets(2));
     });
 
     testWidgets('a failed write keeps the old mark and says so', (
       tester,
     ) async {
-      await pumpFriends(
+      await pumpSheet(
         tester,
-        _FakeFriendRepository([_friend()], failWrites: true),
+        _friend(),
+        onShareNotes: (_) async => false,
+        errorOf: () => 'Something went wrong. Please try again.',
       );
-      await openSheet(tester);
 
       await tester.tap(find.text('Exercise and session notes'));
       await tester.pumpAndSettle();
 
       expect(
-        find.byIcon(Icons.check_circle),
+        find.byIcon(LucideIcons.circleCheck),
         findsOneWidget,
         reason: 'a choice that did not land must not read as one that did',
       );

@@ -4,6 +4,7 @@ import 'package:lambda/data/models/exercise_note.dart';
 import 'package:lambda/data/repositories/exercise_note_repository.dart';
 import 'package:lambda/features/session/view/exercise_notes_modal.dart';
 import 'package:lambda/shared/widgets/swipe_actions.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'support/readable_text.dart';
 
@@ -179,12 +180,12 @@ void main() {
 
     // Pin "note two" via the pin button inside its row, regardless of the
     // modal's sort order.
-    expect(find.byIcon(Icons.push_pin), findsNWidgets(2));
+    expect(find.byIcon(LucideIcons.pin), findsNWidgets(2));
     final twoRow = find
         .ancestor(of: find.text('note two'), matching: find.byType(Row))
         .first;
     await tester.tap(
-      find.descendant(of: twoRow, matching: find.byIcon(Icons.push_pin)),
+      find.descendant(of: twoRow, matching: find.byIcon(LucideIcons.pin)),
     );
     await tester.pumpAndSettle();
 
@@ -610,7 +611,7 @@ void main() {
         .ancestor(of: find.text('Plain cue'), matching: find.byType(Row))
         .first;
     await tester.tap(
-      find.descendant(of: plainRow, matching: find.byIcon(Icons.push_pin)),
+      find.descendant(of: plainRow, matching: find.byIcon(LucideIcons.pin)),
     );
     await tester.pumpAndSettle();
     expect(

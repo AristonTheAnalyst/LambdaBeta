@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../core/styles/app_colors.dart';
 import '../../../core/styles/app_fonts.dart';
@@ -459,7 +460,7 @@ class _ChangeCard extends StatelessWidget {
               // is somewhere behind this.
               if (onTap != null) ...[
                 const SizedBox(width: AppSpacing.xs),
-                Icon(Icons.chevron_right, size: 15, color: AppColors.muted),
+                Icon(LucideIcons.chevronRight, size: 15, color: AppColors.muted),
               ],
             ],
           ),
@@ -515,7 +516,7 @@ class _Line extends StatelessWidget {
         children: [
           Expanded(child: text),
           const SizedBox(width: AppSpacing.xs),
-          Icon(Icons.chevron_right, size: 15, color: AppColors.muted),
+          Icon(LucideIcons.chevronRight, size: 15, color: AppColors.muted),
         ],
       ),
     );

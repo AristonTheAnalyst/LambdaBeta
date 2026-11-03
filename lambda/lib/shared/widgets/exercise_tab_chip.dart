@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_fonts.dart';
 import '../../core/styles/app_radius.dart';
@@ -76,7 +77,7 @@ class ExerciseTabChip extends StatelessWidget {
               GestureDetector(
                 onTap: onRemove,
                 child: Icon(
-                  Icons.close,
+                  LucideIcons.x,
                   size: 13,
                   color: isActive ? color : AppColors.border,
                 ),
@@ -104,7 +105,7 @@ class AddExerciseButton extends StatelessWidget {
         height: 30,
         alignment: Alignment.center,
         decoration: glassBox(AppColors.primary),
-        child: Icon(Icons.add, size: 16, color: AppColors.primary),
+        child: Icon(LucideIcons.plus, size: 16, color: AppColors.primary),
       ),
     );
   }

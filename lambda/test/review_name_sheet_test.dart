@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lambda/features/reviews/view/review_name_sheet.dart';
 import 'package:lambda/shared/widgets/glass_button.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 /// The sheet the + button opens — the whole of its question since the picker
 /// was cut (2026-10-27): what is this pass called?
@@ -36,7 +37,7 @@ void main() {
   }
 
   GlassButton startButton(WidgetTester tester) => tester.widget<GlassButton>(
-    find.widgetWithIcon(GlassButton, Icons.arrow_forward_ios),
+    find.widgetWithIcon(GlassButton, LucideIcons.chevronRight),
   );
 
   testWidgets('Start stays disabled until the review has a name', (
@@ -61,7 +62,7 @@ void main() {
     await tester.enterText(find.byType(TextField), '  End of block 1  ');
     await tester.pump();
 
-    await tester.tap(find.byIcon(Icons.arrow_forward_ios));
+    await tester.tap(find.byIcon(LucideIcons.chevronRight));
     await tester.pumpAndSettle();
     expect(result, 'End of block 1');
   });

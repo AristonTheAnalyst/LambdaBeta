@@ -59,7 +59,7 @@ number), and to this table in the same change.
   2026-10-22 app-wide rollout. No production or shared screen draws below 12
   now, and `test/typography_guard_test.dart` fails the build if one appears
   (`lib/features/dev/` demos are the only exemption).
-- Icons inline with text are ≥ 14 (`Icons.*` at 14–20); an icon-only control's
+- Icons inline with text are ≥ 14 (`LucideIcons.*` at 14–20); an icon-only control's
   glyph is 18–20 (see **frontend-design** §5).
 - Prose is never mono. Mono is for data and labels; a sentence in mono reads as
   code.

@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lambda/data/models/planned_session.dart';
 import 'package:lambda/features/programs/view/program_workout_row.dart';
 import 'package:lambda/shared/widgets/swipe_actions.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 /// The row both the program detail screen and the block editor render their
 /// workouts with. Null callbacks hide their control — the convention the
@@ -27,7 +28,7 @@ void main() {
     await tester.pumpWidget(_host(ProgramWorkoutRow(workout: _workout())));
 
     expect(find.text('Session 1'), findsNothing);
-    expect(find.byIcon(Icons.drag_handle), findsNothing);
+    expect(find.byIcon(LucideIcons.gripHorizontal), findsNothing);
     expect(
       find.byType(SwipeActions),
       findsNothing,
@@ -45,7 +46,7 @@ void main() {
           dragIndex: 0,
           swipeActions: [
             SwipeAction(
-              icon: Icons.copy_rounded,
+              icon: LucideIcons.copy,
 
               color: Colors.blue,
               foreground: Colors.white,
@@ -56,9 +57,9 @@ void main() {
       ),
     );
 
-    expect(find.byIcon(Icons.drag_handle), findsOneWidget);
+    expect(find.byIcon(LucideIcons.gripHorizontal), findsOneWidget);
     expect(find.byType(SwipeActions), findsOneWidget);
-    expect(find.byIcon(Icons.copy_rounded), findsOneWidget);
+    expect(find.byIcon(LucideIcons.copy), findsOneWidget);
   });
 
   testWidgets('tapping the card opens the workout', (tester) async {

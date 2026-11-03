@@ -58,7 +58,8 @@ dependencies:
   # Content hashing for program revisions (already resolved transitively;
   # promoted to a direct dep so the revision hash can't break on a bump).
   crypto: ^3.0.7
-
+  lucide_icons_flutter: ^4.0.1
+  remixicon: ^4.9.3
 dev_dependencies:
   flutter_test:
     sdk: flutter

@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lambda/core/styles/app_colors.dart';
 import 'package:lambda/shared/widgets/menu_popover.dart';
 import 'package:lambda/shared/widgets/undo_redo_buttons.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 /// The undo/redo pair and its trash slot (2026-10-13). The pair is the
 /// ordinary case; the slot is the live session's deleted planned exercises —
@@ -40,9 +41,9 @@ void main() {
     // The planner's and the logs viewer's headers: they keep the plain pair.
     await pumpPair(tester);
 
-    expect(find.byIcon(Icons.undo), findsOneWidget);
-    expect(find.byIcon(Icons.redo), findsOneWidget);
-    expect(find.byIcon(Icons.restore_from_trash), findsNothing);
+    expect(find.byIcon(LucideIcons.undo2), findsOneWidget);
+    expect(find.byIcon(LucideIcons.redo2), findsOneWidget);
+    expect(find.byIcon(LucideIcons.rotateCcw), findsNothing);
     expect(find.byType(MenuPopover), findsNothing);
   });
 
@@ -51,7 +52,7 @@ void main() {
   ) async {
     await pumpPair(tester, onRestore: (_) {});
 
-    final trash = tester.widget<Icon>(find.byIcon(Icons.restore_from_trash));
+    final trash = tester.widget<Icon>(find.byIcon(LucideIcons.rotateCcw));
     expect(
       trash.color,
       AppColors.muted,
@@ -63,7 +64,7 @@ void main() {
       reason: 'no menu hangs off a slot with nothing in it',
     );
 
-    await tester.tap(find.byIcon(Icons.restore_from_trash));
+    await tester.tap(find.byIcon(LucideIcons.rotateCcw));
     await tester.pumpAndSettle();
     expect(
       find.byType(MenuPopover),
@@ -82,12 +83,12 @@ void main() {
     );
 
     expect(
-      tester.widget<Icon>(find.byIcon(Icons.restore_from_trash)).color,
+      tester.widget<Icon>(find.byIcon(LucideIcons.rotateCcw)).color,
       AppColors.primary,
       reason: 'there is something in the slot — it lights',
     );
 
-    await tester.tap(find.byIcon(Icons.restore_from_trash));
+    await tester.tap(find.byIcon(LucideIcons.rotateCcw));
     await tester.pumpAndSettle();
 
     expect(find.text('Bench Press'), findsOneWidget);
@@ -121,7 +122,7 @@ void main() {
     // hanging over the session.
     await tester.pumpWidget(const MaterialApp(home: _Host()));
 
-    await tester.tap(find.byIcon(Icons.restore_from_trash));
+    await tester.tap(find.byIcon(LucideIcons.rotateCcw));
     await tester.pumpAndSettle();
     expect(find.text('Bench Press'), findsOneWidget);
     expect(find.text('Back Squat'), findsOneWidget);
@@ -143,7 +144,7 @@ void main() {
       reason: 'list empty — the slot falls back to the greyed button',
     );
     expect(
-      tester.widget<Icon>(find.byIcon(Icons.restore_from_trash)).color,
+      tester.widget<Icon>(find.byIcon(LucideIcons.rotateCcw)).color,
       AppColors.muted,
     );
   });

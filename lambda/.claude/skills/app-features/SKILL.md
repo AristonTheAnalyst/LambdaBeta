@@ -255,7 +255,7 @@ reads one as a "program" review — the acceptable old behavior.
   with a green **plus** (`ExerciseMark`, over `workoutExerciseSlots`) — a
   dropped exercise is never listed, so a live pass shows **no minus**, and the
   marks go with the flip: a pass at rest is bare (2026-10-12). The glyph is a
-  plus or minus **inside a filled disc** (`Icons.add_circle`/`remove_circle`):
+  plus or minus **inside a filled disc** (`LucideIcons.circlePlus`/`circleMinus`):
   a bare stroke at 14px read as a hyphen against the name it was about.
 - **Finishing** (`completeReview`) applies the pass's stage to the live rows
   row-for-row, builds the snapshot through that same staged store and writes
@@ -470,7 +470,9 @@ the friendship immediately and mutually. Two tables carry it:
   owner's own rows ever stream, so a label never reaches the friend. Either
   side can end the friendship with `remove_friend`, which deletes both rows.
 
-The Friends tab (`lib/features/friends/`) shows the user's code, adds by code,
+The Social tab (`lib/features/friends/`, header `Social` since 2026-10-29 —
+the Friends panel plus the Coach panel from `lib/features/coach/`) shows the
+user's code, adds by code,
 lists friends, and opens a friend's history in the existing **read-only**
 viewer: `LogsScreen(userId:, readOnly:)` → `SessionDetailScreen(userId:,
 readOnly:, navRoute: '/friends')`, with `showExerciseNotesModal(readOnly:)`.
@@ -560,7 +562,7 @@ slow a client-computed daily-summary table is the fix.
 | **Rest timer** | in-memory only | `fact_rest` was dropped 2026-08-14 — no rest analytics. Timer still drives the AVG REST stat from `restDurationsThisSession` |
 | **Supersets** | retired | Column `superset_group_number` DROPPED 2026-08-24 (schema v2). No UI creates supersets; dormant slot support renders a restored multi-exercise slot as its first exercise |
 | **Feelings** | `fact_session.pre_feeling` / `post_feeling` | Pre-workout feeling is shown in logs; `post_feeling` is written but **never displayed yet** — logs screen is the candidate place |
-| **Coaching** | `coaching_relationship` + coach RLS policies **+ `coaching_data` stream**, plus `fact_coach_assignment` / `fact_coach_feedback` (2026-10-26, #24) | Invite / accept / revoke (2026-10-26, #22): Profile → Coach invites by friend code, the athlete accepts or declines from the same screen, and either side can end the edge. Consent gate = `accepted_date`; an unaccepted invitation sends no athlete rows (the coach's name does reach the athlete). An accepted athlete's history opens in the existing read-only viewer. **Authoring (#24):** a coach hands an athlete a workout (the assignment carries a frozen `ProgramContent` snapshot + an id→name map; accepting copies it into the athlete's own library, remapping exercise/variation names), and writes feedback on any completed session of theirs — the athlete reads the same card on their own record |
+| **Coaching** | `coaching_relationship` + coach RLS policies **+ `coaching_data` stream**, plus `fact_coach_assignment` / `fact_coach_feedback` (2026-10-26, #24) | Ask / accept / end (2026-10-26, #22; either direction since 2026-10-30): coaching rides a friendship and is asked from the friend's **profile** (Social → a friend) — the athlete asks a friend to coach them, or the coach offers, and the other side accepts. An accepted edge draws a COACH / CLIENT pill on the Social row; either side can end it. Consent gate = `accepted_date`; an unaccepted invitation sends no athlete rows (the coach's name does reach the athlete). An accepted athlete's history opens in the existing read-only viewer. **Authoring (#24):** a coach hands an athlete a workout (the assignment carries a frozen `ProgramContent` snapshot + an id→name map; accepting copies it into the athlete's own library, remapping exercise/variation names), and writes feedback on any completed session of theirs — the athlete reads the same card on their own record |
 | **Friends** | `dim_friend_code` + `friend_relationship.nickname` | Instant, mutual, by code (2026-10-23). No pending state; completed sessions only in the stream; the existing viewer reads a friend's history read-only. A friend reads **nickname → their name → their code → `Friend`** (2026-10-25); the nickname is the caller's own label on their directed row |
 | **Onboarding** | `dim_user.onboarded` | Gate flag for first-run flow |
 
@@ -776,45 +778,54 @@ the friends stream instead.
 
 ### coaching_relationship (RPC-written + both-sides SELECT)
 `coach_user_id` + `athlete_user_id` (composite PK), `created_date`,
-`accepted_date` (nullable — the consent gate, 2026-10-26). A row without
-`accepted_date` is an invitation still waiting on the athlete: the
-`coaching_data` stream's `my_athletes` CTE requires it, so nothing about that
-athlete reaches the coach's device. The coach's own rows (the column
-included) ride `user_data`, so the local mirror can see a pending invitation.
-The athlete's name and completed training arrive only through
-`coaching_data`.
+`accepted_date` (nullable — the consent gate, 2026-10-26),
+`requested_by_user_id` (2026-10-30 — who asked; backfilled to the coach on
+older rows). A row without `accepted_date` is a request still waiting on the
+OTHER side; the column is what tells "I asked them" from "they asked me",
+because the row's two ids cannot. The `coaching_data` stream's `my_athletes`
+CTE requires `accepted_date`, so nothing about that athlete reaches the
+coach's device. The coach's own rows (every column) ride `user_data`, so the
+local mirror can see a pending request. The athlete's name and completed
+training arrive only through `coaching_data`.
 
-**Lifecycle (2026-10-26, #22) — three SECURITY DEFINER RPCs are the only
-writes:**
-- `coach_invite_by_code(p_code)` resolves a friend code the caller cannot
-  read by any other route and inserts the pending row. Returns
-  `{athlete_user_id, created}`; `created` is false when the row already
-  existed, so the client mirrors only a brand-new invitation.
-- `accept_coaching_invitation(p_coach_user_id)` stamps `accepted_date` — the
-  athlete's consent, and the moment the gate opens.
+**Lifecycle (2026-10-30) — SECURITY DEFINER RPCs are the only writes:**
+- `request_coaching(p_coach_user_id)` — the athlete asks a **friend** to
+  coach them. Refused (`not_friends`) unless both directed friend rows exist.
+  Returns `{coach_user_id, athlete_user_id, created}`.
+- `offer_coaching(p_athlete_user_id)` — a coach offers to coach a friend.
+  Same shape and the same friendship rail.
+- `accept_coaching_request(p_other_user_id)` — the OTHER side of the pending
+  row accepts, whichever direction it was asked in. Stamps `accepted_date`
+  and the athlete's `friend_relationship` grant
+  (`coaching_requested_at` / `coaching_granted_at`) that `is_coach_of()`
+  reads.
 - `remove_coaching_relationship(p_other_user_id)` deletes the edge from
-  either side: decline (a pending row), withdraw (the coach's own pending),
-  revoke (the coach's accepted edge) or withdrawal of consent (the athlete's
-  accepted edge). One verb, one row.
+  either side — decline, withdraw, revoke or consent withdrawal — and clears
+  the friend-row grant with it. One verb, one row.
+- `coach_invite_by_code` / `accept_coaching_invitation` remain callable
+  (older builds) and now write `requested_by_user_id` / the grant too.
 
 The client mirrors each RPC locally — the coach's insert under
 `coach_user_id || '-' || athlete_user_id`, the athlete's accepted-date
 UPDATE, the pair DELETE (whose queued op the uploader then skips, exactly as
 on friends). The two surviving client write policies are shaped for those
-mirrors alone: **coach INSERT** requires `accepted_date is null` (an
-invitation, never consent), **athlete UPDATE** only their own row. There is
-no client DELETE policy — removal is the RPC's. Every **coach access**
-SELECT policy on the athlete's tables now carries
-`cr.accepted_date is not null`, so REST refuses what the stream refuses.
+mirrors alone: an INSERT must be the pending row the caller requested
+(`requested_by_user_id = auth.uid()`, either side), and an UPDATE may accept
+only a row the OTHER side requested. There is no client DELETE policy —
+removal is the RPC's. Every **coach access** SELECT policy on the athlete's
+tables now carries `cr.accepted_date is not null`, so REST refuses what the
+stream refuses.
 
-The same screen serves both sides: Profile → Coach lists incoming
-invitations (the coach's name arrives while the invitation is still pending
-— `coaching_data`'s `my_coaches` slice, because an athlete cannot consent to
-an anonymous request), the accepted athletes (opening
-`LogsScreen(userId:, readOnly:)` → `SessionDetailScreen(userId:, readOnly:,
-navRoute: '/profile')`), the caller's own coaches, and nameless pending-sent
-rows — nothing about an unaccepted athlete reaches the coach's device, not
-even a name.
+The friend **profile** serves both sides (2026-10-30): the Social row's pill
+says COACH or CLIENT, and the profile's coaching card holds the verbs —
+incoming requests show Accept / Decline (the coach's name arrives while the
+request is pending — `coaching_data`'s `my_coaches` slice, because an athlete
+cannot consent to an anonymous request), the caller's own request shows a
+waiting line and Cancel, an accepted coach opens coach mode
+(`/coach-mode/:athleteId`) and its record viewer
+(`SessionDetailScreen(userId:, readOnly:, navRoute: '/friends')`), and an
+accepted client gets Open as coach and Assign workout. Nothing about an
+unaccepted athlete reaches the coach's device, not even a name.
 
 ### fact_coach_assignment — a workout a coach hands an athlete (2026-10-26, #24)
 `assignment_id` (text PK, client-generated uuid), `coach_user_id` /
@@ -885,7 +896,7 @@ What actually happens to each table's rows.
 | fact_bodyweight | profile weight logging | — | hard delete (rarely used) |
 | dim_friend_code | `after insert on dim_user` trigger (SECURITY DEFINER) + migration backfill | never (codes are stable in v1) | never (cascade from auth.users → dim_user) |
 | friend_relationship | `add_friend_by_code` RPC writes BOTH directions; the client mirrors only the caller's own directed row | — | `remove_friend` RPC deletes both directions, callable from either side; the client also deletes its own local row and drops the friend's cached timeline |
-| coaching_relationship | `coach_invite_by_code` RPC writes the pending row; the client mirrors it locally only when `created` (coach→athlete). `accept_coaching_invitation` RPC + an accepted-date mirror (athlete) | acceptance only (`accepted_date`), via RPC | `remove_coaching_relationship` RPC from either side (decline / withdraw / revoke / consent withdrawal) + a local pair delete whose queued op the uploader skips |
+| coaching_relationship | `request_coaching` / `offer_coaching` RPCs write the pending row (either direction, friendship required); the client mirrors it locally only when `created`. `accept_coaching_request` RPC + an accepted-date mirror | acceptance only (`accepted_date`), via RPC — the side that did NOT ask | `remove_coaching_relationship` RPC from either side (decline / withdraw / revoke / consent withdrawal) + a local pair delete whose queued op the uploader skips |
 | fact_coach_assignment | `createAssignment` (coach, local INSERT with a `ProgramContent` snapshot + `names_json`) | athlete's accept (`accepted_date`, `athlete_planned_session_id`) / decline (`declined_date`), local-first on the synced row | `withdrawAssignment` (coach, local DELETE while `accepted_date is null`; the accepted copy is untouched) |
 | fact_coach_feedback | `saveFeedback` (local INSERT, id = `feedback_id`) | `saveFeedback` rewrites the author's own row (`body` + `edited_date`) | `deleteFeedback` (author only, local DELETE) |
 | app_config | manual/ops | manual/ops | manual/ops |
@@ -937,7 +948,7 @@ Every table has RLS enabled. Three policy shapes:
 | fact_goal | ✅ | ✅ |
 | fact_goal_target | ✅ | ✅ |
 | fact_bodyweight | ✅ | ✅ |
-| coaching_relationship | coach INSERT (accepted_date is null) + athlete UPDATE (own row) + read SELECT (either side); removal is the RPC's, so no DELETE policy | — |
+| coaching_relationship | insert of a pending row the caller requested (`requested_by_user_id = auth.uid()`, either side) + UPDATE that accepts only a row the OTHER side requested + read SELECT (either side); removal is the RPC's, so no DELETE policy | — |
 | fact_coach_assignment | coach INSERT (own + `coaches_athlete` + both stamps null) + athlete UPDATE (own row) + coach DELETE (own, while `accepted_date is null`) + read SELECT (either side) | — |
 | fact_coach_feedback | coach INSERT (own + `coaches_athlete` + the session belongs to the athlete) + coach UPDATE/DELETE (own rows) + read SELECT (either side) | — |
 | dim_friend_code | **owner SELECT only** (no insert/update/delete grants; the trigger writes it) | — |

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_fonts.dart';
 import '../../core/styles/app_radius.dart';
@@ -147,7 +148,7 @@ class _ArchivedSheetState extends State<ArchivedSheet> {
                       ),
                       trailing: widget.onDelete == null
                           ? Icon(
-                              Icons.restore,
+                              LucideIcons.rotateCcw,
                               size: 18,
                               color: AppColors.accent,
                             )
@@ -155,7 +156,7 @@ class _ArchivedSheetState extends State<ArchivedSheet> {
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Icon(
-                                  Icons.restore,
+                                  LucideIcons.rotateCcw,
                                   size: 18,
                                   color: AppColors.accent,
                                 ),
@@ -169,7 +170,7 @@ class _ArchivedSheetState extends State<ArchivedSheet> {
                                     await _load();
                                   },
                                   child: Icon(
-                                    Icons.delete_outline,
+                                    LucideIcons.trash2,
                                     size: 18,
                                     color: AppColors.danger,
                                   ),
@@ -187,7 +188,7 @@ class _ArchivedSheetState extends State<ArchivedSheet> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       _PagerButton(
-                        icon: Icons.chevron_left,
+                        icon: LucideIcons.chevronLeft,
                         enabled: _canPrev,
                         onTap: () => setState(() => _page--),
                       ),
@@ -202,7 +203,7 @@ class _ArchivedSheetState extends State<ArchivedSheet> {
                       ),
                       const SizedBox(width: AppSpacing.md),
                       _PagerButton(
-                        icon: Icons.chevron_right,
+                        icon: LucideIcons.chevronRight,
                         enabled: _canNext,
                         onTap: () => setState(() => _page++),
                       ),

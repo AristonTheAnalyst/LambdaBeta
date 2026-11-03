@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../core/styles/app_colors.dart';
 import '../../core/styles/app_fonts.dart';
@@ -231,8 +232,8 @@ class _SessionDateBarState extends State<SessionDateBar>
             children: [
               Icon(
                 selected
-                    ? Icons.radio_button_checked
-                    : Icons.radio_button_unchecked,
+                    ? LucideIcons.circleDot
+                    : LucideIcons.circle,
                 size: 14,
                 color: selected ? AppColors.accent : AppColors.muted,
               ),
@@ -339,7 +340,7 @@ class _SessionDateBarState extends State<SessionDateBar>
       children: [
         SessionChevronButton(
           key: const ValueKey('session-date-bar-older'),
-          icon: Icons.chevron_left,
+          icon: LucideIcons.chevronLeft,
           // What a step is depends on the stack the bar walks (2026-10-23).
           semanticsLabel: widget.mode == SessionDateMode.exercise
               ? 'Previous performance'
@@ -354,7 +355,7 @@ class _SessionDateBarState extends State<SessionDateBar>
         const SizedBox(width: AppSpacing.xs),
         SessionChevronButton(
           key: const ValueKey('session-date-bar-newer'),
-          icon: Icons.chevron_right,
+          icon: LucideIcons.chevronRight,
           semanticsLabel: widget.mode == SessionDateMode.exercise
               ? 'Next performance'
               : 'Next session',
